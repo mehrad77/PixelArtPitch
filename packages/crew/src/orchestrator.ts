@@ -240,12 +240,29 @@ export class Crew {
     return g;
   }
 
+  /** after a crash or restart: continue every crew that was working (not ones the person paused) */
+  resumeInterrupted() {
+    const out: string[] = [];
+    for (const { id } of this.deps.workspace.list()) {
+      try {
+        const p = this.deps.workspace.get(id);
+        if (!p.state.running || p.state.paused) continue;
+        p.emit("log", { level: "info", text: `resuming the crew at ${p.state.stage} after a restart` });
+        p.setStatus({ line: "Picking up where the crew left off" });
+        this.run(p, { stage: p.state.stage }).catch(() => {});
+        out.push(id);
+      } catch {}
+    }
+    return out;
+  }
+
   async run(p: OpenProject, opts: { stage?: string } = {}) {
     if (this.runs.has(p.id)) throw new Error("the crew is already working on this project");
     const r: Run = { abort: new AbortController(), paused: false, startedAt: new Date().toISOString() };
     this.runs.set(p.id, r);
     p.state.startedAt ??= r.startedAt;
     p.state.paused = false;
+    p.state.running = true;
     p.saveState();
     p.setDigest("The crew is working.");
     p.setStatus({ line: "The crew is working", problem: undefined });
@@ -263,6 +280,9 @@ export class Crew {
       throw e;
     } finally {
       this.runs.delete(p.id);
+      // a finished, failed or deliberately stopped run is not resumed; only a crash leaves `running` set
+      p.state.running = false;
+      p.saveState();
     }
   }
 
@@ -1120,7 +1140,12 @@ export class Crew {
     const { lintProject } = await import("@pap/engine/lints");
     const cat = recipeCatalog();
     const d0 = p.doc();
-    const scenes = d0.scenes.filter((s) => s.kind === "decl");
+    // on a resume, scenes an animator already finished are not redone
+    const scenes = d0.scenes.filter(
+      (s) =>
+        s.kind === "decl" &&
+        !(p.state.sceneStatus[s.id]?.version === "render" && p.state.sceneStatus[s.id]?.state === "ready"),
+    );
     await Promise.all(
       scenes.map(async (s) => {
         await this.checkpoint(p, r);

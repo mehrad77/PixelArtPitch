@@ -41,23 +41,14 @@ export function SettingsPage({ tab }: { tab: SettingsTab }) {
       <h1>Settings</h1>
       <nav aria-label="Settings sections" className="settings-tabs">
         <ul>
-          <li>
-            <Link href="/settings/setup" aria-current={tab === "setup" ? "page" : undefined}>
-              {TAB_LABEL.setup}
-            </Link>
-          </li>
+          {SETTINGS_TABS.map((t) => (
+            <li key={t}>
+              <Link href={`/settings/${t}`} aria-current={t === tab ? "page" : undefined}>
+                {TAB_LABEL[t]}
+              </Link>
+            </li>
+          ))}
         </ul>
-        <Disclosure size="sm" summary="Advanced" open={tab !== "setup" ? true : undefined}>
-          <ul>
-            {SETTINGS_TABS.filter((t) => t !== "setup").map((t) => (
-              <li key={t}>
-                <Link href={`/settings/${t}`} aria-current={t === tab ? "page" : undefined}>
-                  {TAB_LABEL[t]}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Disclosure>
       </nav>
       {s.error && (
         <Callout tone="error" title="Settings didn't load">
@@ -871,10 +862,12 @@ function Mcp() {
     );
   if (!s.data) return <Skeleton lines={3} label="Loading the MCP details" />;
   const endpoint = `${location.protocol}//${location.hostname}:5141/mcp`;
-  const token = s.data.token;
-  const cli = `claude mcp add --transport http pap ${endpoint} --header "X-PAP-Token: ${token}"`;
+  const token: string = (s.data as any).mcpToken ?? "";
+  const cliPath: string = (s.data as any).cli ?? "apps/server/src/cli.ts";
+  const cli = `claude mcp add --transport http pap ${endpoint} --header "Authorization: Bearer ${token}"`;
+  const stdio = `claude mcp add pap -- node ${cliPath} mcp`;
   const json = JSON.stringify(
-    { mcpServers: { pap: { type: "http", url: endpoint, headers: { "X-PAP-Token": token } } } },
+    { mcpServers: { pap: { type: "http", url: endpoint, headers: { Authorization: `Bearer ${token}` } } } },
     null,
     2,
   );
@@ -892,8 +885,15 @@ function Mcp() {
           </CopyButton>
         </dd>
       </dl>
-      <p className="muted small">The token changes when the server restarts. Treat it like a password.</p>
-      <CodeBlock label="Claude Code" code={cli} copy copyLabel="Copy command" copiedLabel="Copied" />
+      <p className="muted small">The token stays the same across restarts. Treat it like a password.</p>
+      <CodeBlock label="Claude Code (HTTP)" code={cli} copy copyLabel="Copy command" copiedLabel="Copied" />
+      <CodeBlock
+        label="Claude Code (stdio, no token: it talks to this studio when it's running)"
+        code={stdio}
+        copy
+        copyLabel="Copy command"
+        copiedLabel="Copied"
+      />
       <CodeBlock label=".mcp.json" lang="json" code={json} copy copyLabel="Copy config" copiedLabel="Copied" />
     </div>
   );

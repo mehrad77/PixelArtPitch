@@ -22,6 +22,11 @@ export async function wireCrew(deps: {
 }): Promise<{ crew?: CrewApi; hooks?: Hooks }> {
   const gateway = new ModelGateway();
   const crew = new Crew({ workspace: deps.workspace, registry: deps.registry, gateway });
+  // a crash or restart never loses a crew: pick up every run that was in progress
+  setTimeout(() => {
+    const resumed = crew.resumeInterrupted();
+    if (resumed.length) console.log(`resumed the crew on: ${resumed.join(", ")}`);
+  }, 500).unref();
   gateway.onThreshold = (project, f) => {
     try {
       deps.workspace

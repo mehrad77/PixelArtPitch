@@ -180,7 +180,13 @@ export function createApp(o: ServerOpts) {
 
   // ---- session, projects ----
   app.get("/api/session", (c) =>
-    c.json({ version: VERSION, token, workspace: { roots: [], libraryDir: o.workspace.libraryDir } }),
+    c.json({
+      version: VERSION,
+      token,
+      mcpToken,
+      cli: new URL("./cli.ts", import.meta.url).pathname,
+      workspace: { roots: [], libraryDir: o.workspace.libraryDir },
+    }),
   );
   app.get("/api/projects", (c) =>
     c.json(

@@ -99,6 +99,8 @@ export type RuntimeState = {
   digest: string;
   startedAt: string | null;
   paused: boolean;
+  /** a crew run was in progress; if the process dies, the next start resumes it */
+  running?: boolean;
   files: { name: string; bytes: number; kind: string }[];
   /** what a person reads: one plain line, the phase (0-4), and an unrecovered problem if any */
   status: {
