@@ -39,10 +39,67 @@
   line-height: 1;
   white-space: pre;
 }
+.crew-face {
+  position: relative;
+}
 .crew-face[data-size="lg"] {
   --face: 4.25rem;
-  position: relative;
   z-index: var(--z-raised);
+}
+/* each member's small mark of the trade: whole pixel cells of 4.5% of the face (never under 1px), in the page ink with
+   a page-coloured edge so it reads on the disc and off it. The row overlaps each face's end side, so marks sit on the
+   top, the bottom or the start side (the Reviewer is last, so nothing covers its end). */
+.crew-face-detail {
+  --cell: max(1px, calc(var(--face) * 0.045));
+  position: absolute;
+  inline-size: calc(var(--cell) * var(--cells));
+  color: var(--text);
+  filter: drop-shadow(0 1px 0 var(--surface)) drop-shadow(0 -1px 0 var(--surface)) drop-shadow(1px 0 0 var(--surface))
+    drop-shadow(-1px 0 0 var(--surface));
+  pointer-events: none;
+}
+.crew-face-detail svg {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+}
+.crew-face[data-mood="later"] .crew-face-detail {
+  color: var(--text-muted);
+}
+.crew-face-detail[data-detail="producer"] {
+  inset-block-end: calc(var(--cell) * -1);
+  inset-inline-start: calc(50% - var(--cell) * 3.5);
+}
+.crew-face-detail[data-detail="writer"] {
+  inset-block-start: calc(var(--cell) * -2);
+  inset-inline-start: calc(var(--cell) * -1);
+}
+.crew-face-detail[data-detail="artist"] {
+  inset-block-start: calc(var(--cell) * -2.5);
+  inset-inline-start: calc(50% - var(--cell) * 5);
+  rotate: -12deg;
+}
+/* trailing behind it, as if it just zipped in */
+.crew-face-detail[data-detail="animator"] {
+  inset-block-start: calc(50% - var(--cell) * 2.5);
+  inset-inline-start: calc(var(--cell) * -3);
+}
+.crew-face-detail[data-detail="animator"] svg:dir(rtl) {
+  scale: -1 1;
+}
+/* the one mark that wraps the head: a thin band over the top, cups at the sides */
+.crew-face-detail[data-detail="sound"] {
+  --cell: max(1px, calc(var(--face) * 0.075));
+  inset-block-start: calc(var(--face) * -0.08);
+  inset-inline-start: calc(50% - var(--cell) * 7.5);
+}
+.crew-face-detail[data-detail="editor"] {
+  inset-block-end: calc(var(--cell) * -1);
+  inset-inline-start: calc(var(--cell) * -1);
+}
+.crew-face-detail[data-detail="reviewer"] {
+  inset-block-end: calc(var(--cell) * -1);
+  inset-inline-end: calc(var(--cell) * -1.5);
 }
 .crew-face[data-mood="later"] {
   background: var(--surface-raised);

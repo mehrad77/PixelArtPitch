@@ -32,6 +32,32 @@ const CALM: Record<string, string> = {
   editor: "= =",
   reviewer: "° °",
 };
+/** each member's one small mark of the trade, drawn in whole cells ("#" filled), smaller than Pip's crown: the
+    Producer's bow tie, the Writer's pencil, the Artist's beret, the Animator's speed lines, the Sound's headphones,
+    the Editor's scissors, the Reviewer's magnifier. Where it sits is in CrewStrip.css (`data-detail`). */
+const DETAIL: Record<string, string[]> = {
+  producer: ["##...##", "#######", "##...##"],
+  writer: [".....##", "....###", "...###.", "..###..", ".###...", ".##....", "#......"],
+  artist: ["...#...", ".#####.", "#######", ".#####."],
+  animator: ["####", "....", ".###", "....", "####"],
+  sound: [
+    ".....#####.....",
+    "...##.....##...",
+    "..#.........#..",
+    ".#...........#.",
+    "##...........##",
+    "##...........##",
+  ],
+  editor: ["#.....#", ".#...#.", "..#.#..", "...#...", ".##.##.", ".##.##."],
+  reviewer: [".###...", "#...#..", "#...#..", ".###...", "....##.", ".....##"],
+};
+/** one rect per run of filled cells in a row */
+const cellsPath = (rows: string[]) =>
+  rows
+    .flatMap((row, y) => [...row.matchAll(/#+/g)].map((m) => `M${m.index} ${y}h${m[0].length}v1H${m.index}z`))
+    .join("");
+const DETAIL_PATH = Object.fromEntries(Object.entries(DETAIL).map(([id, rows]) => [id, cellsPath(rows)]));
+
 /** working: look, blink, look, think */
 const WORK_FRAMES = (calm: string) => [calm, calm, "- -", calm, "> <"];
 
@@ -108,6 +134,7 @@ export function CrewFace({
               : calm;
   // the glance: eyes shift a cell to one side on some working steps
   const glance = mood === "working" ? (["", "start", "", "end", ""] as const)[step % 5] : mood === "needs" ? "up" : "";
+  const detail = DETAIL[member.id];
   return (
     <span
       className="crew-face"
@@ -118,6 +145,22 @@ export function CrewFace({
       aria-hidden="true"
     >
       <span className="crew-face-glyphs">{glyphs}</span>
+      {detail && (
+        <span
+          className="crew-face-detail"
+          data-detail={member.id}
+          style={{ "--cells": detail[0].length } as CSSProperties}
+        >
+          <svg
+            viewBox={`0 0 ${detail[0].length} ${detail.length}`}
+            shapeRendering="crispEdges"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path fill="currentColor" d={DETAIL_PATH[member.id]} />
+          </svg>
+        </span>
+      )}
     </span>
   );
 }
