@@ -539,7 +539,7 @@ The P4 run's Pixel Artist spent 84% of its tokens thinking at `effort: high` (fo
   - Non-Anthropic providers are still always sent `low` (local reasoning models think through a whole budget).
   - `pixel-artist/draw.md` and `critique.md` ask for `medium` (version 2). `director/storyboard.md` and `reviewer/final.md` still ask for `high`, so they are clamped to the ceiling unless it is `high`.
   - The ledger's `effort` column records the effort each call really sent (after the clamp), or null.
-- **Variants per asset.** How many drawings a new asset gets (1–3): the asset's own `variants` (the storyboard's `newAssets[]`, Pip's `add` op), then the project's `crew.variants` in `pitch.json`, then Settings' `defaults.variants` (default 2) (`variantsOf`).
+- **Variants per asset.** How many drawings a new asset gets (1–3): the asset's own `variants` (Pip's `add` op; a chain's `NewAsset.variants`, which the storyboard's `newAssets[]` don't set), then the project's `crew.variants` in `pitch.json`, then Settings' `defaults.variants` (default 2) (`variantsOf`).
   - With 1 there is no judge task: the single draw is the pick, and it writes and casts the asset itself (a failed one casts the library stand-in, as the judge would). Its critique and repair rounds stay as they are.
   - With 2–3 the judge reads the variants it waits on (one "Finish within" dropped stays out).
   - A chain stores `variants` on its tasks only when it isn't 2, so older plans are unchanged.
