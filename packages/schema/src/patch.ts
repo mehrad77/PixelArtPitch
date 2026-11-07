@@ -80,14 +80,6 @@ export function getAt(doc: unknown, path: string): unknown {
   }
   return cur;
 }
-const has = (doc: unknown, path: string) => {
-  try {
-    getAt(doc, path);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 const index = (arr: unknown[], k: string, path: string, forAdd: boolean) => {
   if (k === "-" && forAdd) return arr.length;

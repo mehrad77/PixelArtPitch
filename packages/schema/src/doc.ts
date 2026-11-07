@@ -230,7 +230,7 @@ export const Mix = z.object({
   voHighpass: z.number().default(80),
   sfxDb: z.number().default(-15),
   musicDb: z.number().default(-14),
-  lufs: z.number().min(-30).max(-9).default(-15),
+  lufs: z.number().min(-30).max(-9).default(-16),
   limiter: z.number().min(0.1).max(1).default(0.84),
 });
 export const Delivery = z.object({

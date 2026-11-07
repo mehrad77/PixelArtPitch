@@ -1,7 +1,6 @@
 // The model layer's contract. Providers are plain HTTP (fetch) clients: the Anthropic Messages API, and the
 // OpenAI-compatible chat completions API used by OpenAI, OpenRouter, LM Studio, Ollama and llama.cpp.
-// Relative on purpose: packages/crew has no node_modules link to @pap/schema yet.
-import type { RoleT } from "../../../schema/src/index.ts";
+import type { RoleT } from "@pap/schema";
 
 export type ProviderKind = "anthropic" | "openai" | "openrouter" | "lmstudio" | "ollama" | "llamacpp" | "custom";
 
@@ -51,7 +50,14 @@ export type Price = {
   source: "table" | "provider" | "manual";
 };
 
-export type ModelInfo = { id: string /* "<providerId>/<model>" */; provider: string; model: string; label: string; caps: Caps; price: Price | null };
+export type ModelInfo = {
+  id: string /* "<providerId>/<model>" */;
+  provider: string;
+  model: string;
+  label: string;
+  caps: Caps;
+  price: Price | null;
+};
 
 // ---- requests ----
 export type ContentPart =

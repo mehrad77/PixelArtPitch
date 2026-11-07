@@ -822,10 +822,14 @@ export const exportVideo = defineTool({
     });
     const subs: string[] = [];
     const st = subtitles(p.project());
-    if (d.subtitles.srt)
-      writeFileSync(join(out, del.out.replace(/\.mp4$/, ".srt")), st.srt), subs.push(del.out.replace(/\.mp4$/, ".srt"));
-    if (d.subtitles.vtt)
-      writeFileSync(join(out, del.out.replace(/\.mp4$/, ".vtt")), st.vtt), subs.push(del.out.replace(/\.mp4$/, ".vtt"));
+    if (d.subtitles.srt) {
+      writeFileSync(join(out, del.out.replace(/\.mp4$/, ".srt")), st.srt);
+      subs.push(del.out.replace(/\.mp4$/, ".srt"));
+    }
+    if (d.subtitles.vtt) {
+      writeFileSync(join(out, del.out.replace(/\.mp4$/, ".vtt")), st.vtt);
+      subs.push(del.out.replace(/\.mp4$/, ".vtt"));
+    }
     const res = await encode(r, {
       out: join(out, del.out),
       scale: del.scale,

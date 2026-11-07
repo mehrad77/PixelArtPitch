@@ -1,11 +1,194 @@
-// Connects the crew (orchestrator, providers, ledger, settings) to the server. Until the crew package is present this
-// returns nothing and the studio runs without agents.
-import type { Registry, Workspace } from "@pap/tools";
+// Connects the crew (orchestrator, providers, ledger, settings) to the server and registers the crew tools.
+
+import { ModelGateway } from "@pap/crew/gateway-impl";
+import {
+  createProvider,
+  type ModelInfo,
+  modelsFor,
+  publicSettings,
+  ROLES,
+  rolesForProfile,
+  saveSettings,
+  withProbe,
+} from "@pap/crew/llm/index";
+import { Crew } from "@pap/crew/orchestrator";
+import { defineTool, fail, ok, type Registry, type Workspace } from "@pap/tools";
+import { z } from "zod";
 import type { CrewApi, Hooks } from "./app.ts";
 
-export async function wireCrew(_deps: {
+export async function wireCrew(deps: {
   workspace: Workspace;
   registry: Registry;
 }): Promise<{ crew?: CrewApi; hooks?: Hooks }> {
-  return {};
+  const gateway = new ModelGateway();
+  const crew = new Crew({ workspace: deps.workspace, registry: deps.registry, gateway });
+  gateway.onThreshold = (project, f) => {
+    try {
+      deps.workspace
+        .get(project)
+        .emit("log", { level: "warn", text: `budget: ${Math.round(f * 100)}% of the cap is spent or reserved` });
+    } catch {}
+  };
+
+  deps.registry.add(
+    defineTool({
+      name: "crew_run",
+      title: "Start the crew",
+      description:
+        "Start (or continue) the crew on a project from its current stage. Returns at once; follow crew_status.",
+      input: z.object({ stage: z.string().optional() }),
+      output: z.object({ started: z.boolean() }),
+      roles: [],
+      tier: "basic",
+      effects: "spend",
+      project: true,
+      handler: async (i, ctx) => {
+        const p = ctx.project!;
+        crew.run(p, { stage: i.stage }).catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
+        return ok({ started: true });
+      },
+    }),
+    defineTool({
+      name: "crew_status",
+      title: "Crew status",
+      description: "Stage, gates, tasks, open questions, budget and ETA of a project's crew.",
+      input: z.object({}),
+      output: z.unknown(),
+      roles: "*",
+      tier: "basic",
+      effects: "read",
+      project: true,
+      handler: async (_i, ctx) => {
+        const p = ctx.project!;
+        return ok({
+          stage: p.state.stage,
+          digest: p.state.digest,
+          paused: p.state.paused,
+          gates: p.state.gates.map((g) => ({ id: g.id, status: g.status })),
+          tasks: p.state.tasks.slice(-20).map((t) => ({
+            id: t.id,
+            role: t.role,
+            title: t.title,
+            status: t.status,
+            usd: +t.usd.toFixed(4),
+            model: t.model,
+            error: t.error,
+          })),
+          questions: p.state.questions.filter((q) => q.status === "open"),
+          ...crew.status(p),
+        });
+      },
+    }),
+    defineTool({
+      name: "crew_pause",
+      title: "Pause the crew",
+      description: "Pause after the current step (default) or now.",
+      input: z.object({ mode: z.enum(["after_step", "now"]).default("after_step") }),
+      output: z.object({ paused: z.boolean() }),
+      roles: [],
+      tier: "basic",
+      effects: "write",
+      project: true,
+      handler: async (i, ctx) => {
+        crew.pause(ctx.project!, i.mode);
+        return ok({ paused: true });
+      },
+    }),
+    defineTool({
+      name: "gate_decide",
+      title: "Pass or reject a gate",
+      description: "Approve a gate (brief, script, animatic, rough cut, final) or ask for changes with reasons.",
+      input: z.object({
+        gate: z.enum(["g0_brief", "g1_script", "g2_animatic", "g3_rough", "g4_final"]),
+        verdict: z.enum(["approve", "approve_notes", "changes"]),
+        reasons: z.array(z.string().max(300)).max(10).default([]),
+      }),
+      output: z.unknown(),
+      roles: [],
+      tier: "basic",
+      effects: "write",
+      project: true,
+      handler: async (i, ctx) => {
+        const p = ctx.project!;
+        if (!p.state.gates.some((g) => g.id === i.gate)) return fail("not_found", `no gate ${i.gate}`);
+        return ok(
+          crew.gate(p, i.gate, { verdict: i.verdict, reasons: i.reasons, by: ctx.author.client ?? ctx.author.kind }),
+        );
+      },
+    }),
+  );
+
+  const models = async (): Promise<ModelInfo[]> => {
+    const s = gateway.publicSettings();
+    const out: ModelInfo[] = [];
+    for (const cfg of s.providers.filter((p) => p.enabled)) {
+      try {
+        out.push(
+          ...(await createProvider(cfg, gateway.secrets).listModels(AbortSignal.timeout(5000))).map((m) =>
+            withProbe(m),
+          ),
+        );
+      } catch {}
+    }
+    return out;
+  };
+
+  const hooks: Hooks = {
+    settings: {
+      get: () => publicSettings(gateway.publicSettings(), gateway.secrets),
+      put: (v: any) => {
+        const cur = structuredClone(gateway.publicSettings());
+        const next = { ...cur, ...v, providers: v.providers ?? cur.providers, roles: v.roles ?? cur.roles };
+        if (v.profile && v.profile !== cur.profile && !v.roles)
+          next.roles =
+            rolesForProfile(v.profile, { providers: next.providers, current: cur.roles as any }) ?? cur.roles;
+        saveSettings(next);
+        gateway.reload();
+        return publicSettings(gateway.publicSettings(), gateway.secrets);
+      },
+      setKey: (id, key) => {
+        const cfg = gateway.publicSettings().providers.find((p) => p.id === id);
+        if (cfg) gateway.secrets.setKey(cfg.id, key);
+        gateway.reload();
+      },
+      test: async (id) => {
+        const cfg = gateway.publicSettings().providers.find((p) => p.id === id);
+        if (!cfg) return { ok: false, error: `no provider ${id}` };
+        try {
+          const list = await createProvider({ ...cfg, enabled: true }, gateway.secrets).listModels(
+            AbortSignal.timeout(8000),
+          );
+          return { ok: true, models: list.map((m) => m.id) };
+        } catch (e: any) {
+          return { ok: false, models: [], error: String(e?.message ?? e) };
+        }
+      },
+      models: async () => {
+        const list = await models();
+        return list.map((m) => ({
+          id: m.id,
+          provider: m.provider,
+          label: m.label,
+          local: m.caps.local,
+          caps: {
+            vision: m.caps.vision,
+            structured: m.caps.structured,
+            tools: m.caps.tools,
+            longOutput: m.caps.longOutput,
+          },
+          ctx: m.caps.ctx,
+          maxOut: m.caps.maxOut,
+          price: m.price,
+          speed: gateway.ledger.speed(m.id) ?? null,
+          spend30dUsd: gateway.ledger.totalUsd({
+            model: m.id,
+            since: new Date(Date.now() - 30 * 864e5).toISOString(),
+          } as any),
+          fit: Object.fromEntries(ROLES.map((r) => [r, modelsFor(r, [m]).shown.length ? 1 : 0])),
+        }));
+      },
+    },
+    ledger: (q) => gateway.ledger.query({ project: q.project } as any).slice(-(q.limit ?? 200)),
+  };
+  return { crew, hooks };
 }

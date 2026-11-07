@@ -1,0 +1,301 @@
+{
+  "_about": "Per-task-kind priors seeded from the proof of concept's 411 logged calls (aggregates only). Tokens are per call; usd is repriced at the bundled Opus 5.5 rates. size: output tokens ~ (cells / refCells)^exponent, fitted on sprite draws with known sizes.",
+  "source": {
+    "model": "claude-opus-5-5",
+    "calls": 411
+  },
+  "kinds": {
+    "asset.draw": {
+      "n": 102,
+      "effort": "high",
+      "tokens": {
+        "in": {
+          "p50": 4,
+          "p90": 4
+        },
+        "cacheWrite": {
+          "p50": 2140,
+          "p90": 2879
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 14368,
+          "p90": 22740
+        },
+        "thinking": {
+          "p50": 12883,
+          "p90": 20040
+        }
+      },
+      "usd": {
+        "p50": 0.2963,
+        "p90": 0.468
+      },
+      "size": {
+        "refCells": 2048,
+        "exponent": 0.74,
+        "n": 92
+      }
+    },
+    "asset.critique": {
+      "n": 244,
+      "effort": "high",
+      "tokens": {
+        "in": {
+          "p50": 4,
+          "p90": 4
+        },
+        "cacheWrite": {
+          "p50": 6364,
+          "p90": 19218
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 11271,
+          "p90": 30640
+        },
+        "out": {
+          "p50": 3670,
+          "p90": 8615
+        },
+        "thinking": {
+          "p50": 1530,
+          "p90": 6066
+        }
+      },
+      "usd": {
+        "p50": 0.1152,
+        "p90": 0.2656
+      },
+      "size": {
+        "refCells": 3072,
+        "exponent": 0.57,
+        "n": 234
+      }
+    },
+    "asset.repair": {
+      "n": 9,
+      "effort": "high",
+      "tokens": {
+        "in": {
+          "p50": 4,
+          "p90": 4
+        },
+        "cacheWrite": {
+          "p50": 14599,
+          "p90": 21587
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 1727,
+          "p90": 2100
+        },
+        "out": {
+          "p50": 2474,
+          "p90": 5534
+        },
+        "thinking": {
+          "p50": 906,
+          "p90": 1592
+        }
+      },
+      "usd": {
+        "p50": 0.1228,
+        "p90": 0.2158
+      },
+      "size": {
+        "refCells": 3072,
+        "exponent": 0.52,
+        "n": 9
+      }
+    },
+    "asset.judge": {
+      "n": 29,
+      "effort": "high",
+      "tokens": {
+        "in": {
+          "p50": 4,
+          "p90": 4
+        },
+        "cacheWrite": {
+          "p50": 2658,
+          "p90": 5864
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 438,
+          "p90": 583
+        },
+        "thinking": {
+          "p50": 275,
+          "p90": 393
+        }
+      },
+      "usd": {
+        "p50": 0.0225,
+        "p90": 0.0388
+      },
+      "size": {
+        "refCells": 2048,
+        "exponent": 0.17,
+        "n": 24
+      }
+    },
+    "review.final": {
+      "n": 3,
+      "effort": "high",
+      "tokens": {
+        "in": {
+          "p50": 45900,
+          "p90": 46075
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 64000,
+          "p90": 115200
+        },
+        "thinking": {
+          "p50": 64000,
+          "p90": 115200
+        }
+      },
+      "usd": {
+        "p50": 1.4636,
+        "p90": 2.4883
+      }
+    },
+    "direct.plan": {
+      "n": 3,
+      "effort": "high",
+      "tokens": {
+        "in": {
+          "p50": 43209,
+          "p90": 43341
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 12869,
+          "p90": 16647
+        },
+        "thinking": {
+          "p50": 5359,
+          "p90": 8233
+        }
+      },
+      "usd": {
+        "p50": 0.4294,
+        "p90": 0.5056
+      }
+    },
+    "scene.code": {
+      "n": 9,
+      "effort": "high",
+      "tokens": {
+        "in": {
+          "p50": 26861,
+          "p90": 27285
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 17478,
+          "p90": 32125
+        },
+        "thinking": {
+          "p50": 12461,
+          "p90": 25191
+        }
+      },
+      "usd": {
+        "p50": 0.4574,
+        "p90": 0.7516
+      }
+    },
+    "scene.patch": {
+      "n": 12,
+      "effort": "high",
+      "tokens": {
+        "in": {
+          "p50": 9233,
+          "p90": 11364
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 8831,
+          "p90": 16791
+        },
+        "thinking": {
+          "p50": 2738,
+          "p90": 10078
+        }
+      },
+      "usd": {
+        "p50": 0.2158,
+        "p90": 0.3781
+      }
+    }
+  }
+}
