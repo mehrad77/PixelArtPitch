@@ -1,0 +1,511 @@
+/* Pip: the host's line, the ask bar and its sheet, the cards. Few borders, room to breathe, one primary per card. */
+
+/* ---- Pip's line: under the crew row, Pip's words ---- */
+.pip-line {
+  display: grid;
+  gap: var(--space-1);
+  /* a quiet tie to Pip at the head of the row: a hairline on the start edge, like a quote */
+  padding-inline-start: var(--space-4);
+  border-inline-start: 2px solid var(--fill-accent);
+}
+.pip-line-label {
+  margin: 0;
+  color: var(--text-accent);
+}
+.pip-face-btn {
+  display: inline-grid;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.pip-face-btn:focus-visible {
+  outline: var(--focus-ring, 2px solid var(--stroke-strong));
+  outline-offset: 4px;
+}
+.pip-line-text {
+  display: grid;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+/* ---- the ask bar ---- */
+.pip-ask {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: stretch;
+  inline-size: min(100%, 38rem);
+  margin-inline: auto;
+}
+.pip-bar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-4) var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--field-raised, var(--surface-raised));
+  box-shadow: inset 0 0 0 1px var(--stroke);
+}
+.pip-bar:focus-within {
+  box-shadow: inset 0 0 0 1px var(--stroke-strong);
+}
+.pip-input {
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: var(--target-min);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-serif);
+  font-size: var(--step-0);
+}
+.pip-input::placeholder {
+  color: var(--text-placeholder);
+}
+.pip-input:focus,
+.pip-input:focus-visible {
+  outline: 0;
+}
+.pip-kbd {
+  color: var(--text-muted);
+}
+.pip-send {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-disabled);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.pip-send[data-ready] {
+  background: var(--fill-accent);
+  color: var(--text-on-fill);
+}
+.pip-send:focus-visible {
+  outline: var(--focus-ring, 2px solid var(--stroke-strong));
+  outline-offset: 2px;
+}
+.pip-bar-note {
+  flex-basis: 100%;
+  margin: 0;
+  padding-block-end: var(--space-2);
+  color: var(--text-muted);
+}
+.pip-under {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2) var(--space-3);
+}
+.pip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pip-chip {
+  position: relative;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+.pip-chip::after {
+  content: "";
+  position: absolute;
+  inset: min(0px, (100% - var(--target-min)) / 2) 0;
+}
+.pip-chip:hover {
+  background-image: linear-gradient(var(--state-hover), var(--state-hover));
+}
+.pip-chip:focus-visible {
+  outline: var(--focus-ring, 2px solid var(--stroke-strong));
+  outline-offset: 2px;
+}
+.pip-show {
+  white-space: nowrap;
+}
+
+/* ---- the sheet: in place, above the bar ---- */
+.pip-sheet {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface-raised);
+}
+.pip-sheet[hidden] {
+  display: none;
+}
+.pip-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.pip-scroll {
+  max-block-size: min(26rem, 46vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pip-ask[data-open] .pip-sheet {
+    animation: pip-rise var(--dur-moderate) var(--ease-enter);
+    transform-origin: 50% 100%;
+  }
+  @keyframes pip-rise {
+    from {
+      opacity: 0;
+      translate: 0 var(--space-3);
+    }
+  }
+}
+
+/* ---- the thread ---- */
+.pip-thread {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pip-thread p {
+  margin: 0;
+}
+.pip-user {
+  justify-self: end;
+  max-inline-size: 85%;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3);
+  border-radius: calc(var(--radius) * 3);
+  background: var(--surface-sunken);
+  font-size: var(--step--1);
+}
+.pip-says {
+  display: grid;
+  gap: var(--space-2);
+  max-inline-size: 100%;
+}
+.pip-text {
+  font-family: var(--font-serif);
+  font-size: var(--step-0);
+  line-height: var(--leading);
+  max-inline-size: var(--measure);
+}
+.pip-thinking .pip-text {
+  color: var(--text-muted);
+}
+/* a calm ellipsis: the dots fade in turn; under reduced motion they just sit there */
+@media (prefers-reduced-motion: no-preference) {
+  .pip-dots > span {
+    animation: pip-dot 1.5s var(--ease, ease-in-out) infinite;
+  }
+  .pip-dots > span:nth-child(2) {
+    animation-delay: 0.25s;
+  }
+  .pip-dots > span:nth-child(3) {
+    animation-delay: 0.5s;
+  }
+  @keyframes pip-dot {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    40% {
+      opacity: 1;
+    }
+  }
+}
+.pip-note {
+  padding-block: var(--space-2);
+}
+
+/* ---- cards ---- */
+.pip-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--stroke-subtle, var(--stroke));
+}
+.pip-card p {
+  margin: 0;
+}
+.pip-card[data-status="declined"] {
+  opacity: 0.8;
+}
+.pip-plan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+.pip-plan-title {
+  margin: 0;
+  font-size: var(--step-0);
+}
+.pip-plan-detail {
+  font-family: var(--font-serif);
+}
+.pip-who {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.pip-who-faces {
+  display: inline-flex;
+}
+.pip-who-faces .crew-face {
+  --face: 1.75rem;
+}
+.pip-who-faces > * + * {
+  margin-inline-start: calc(var(--space-2) * -1);
+}
+.pip-effects {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-inline-start: var(--space-4);
+  color: var(--text-muted);
+}
+.pip-lend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.pip-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--status-warning-fill);
+  color: var(--text);
+}
+.pip-warning .icon {
+  flex: none;
+  color: var(--status-warning);
+}
+.pip-edit textarea {
+  font-family: var(--font-serif);
+}
+.pip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.pip-error:empty {
+  display: none;
+}
+.pip-error {
+  color: var(--status-error);
+}
+.pip-result {
+  display: grid;
+  gap: var(--space-2);
+}
+.pip-result[data-ok="true"] .pip-mark {
+  color: var(--status-success);
+}
+.pip-result[data-ok="false"] .pip-mark {
+  color: var(--status-error);
+}
+.pip-nearest {
+  color: var(--text-muted);
+}
+.pip-nearest .label {
+  margin-inline-end: var(--space-2);
+}
+.pip-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+}
+.pip-result .pip-files {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+.pip-file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--target-min);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  text-decoration: none;
+}
+a.pip-file:hover {
+  background-image: linear-gradient(var(--state-hover), var(--state-hover));
+}
+.pip-file[data-off] {
+  color: var(--text-disabled);
+}
+.pip-file-size {
+  font-size: var(--step--2);
+}
+
+/* ---- Studio's tab ---- */
+.pip-panel {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-3);
+  block-size: 100%;
+  min-block-size: 0;
+  padding: var(--space-3);
+}
+.pip-panel-head,
+.pip-inline-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.pip-panel .pip-scroll {
+  max-block-size: none;
+  min-block-size: 8rem;
+}
+.pip-panel-foot {
+  display: grid;
+  gap: var(--space-2);
+}
+.pip-panel .pip-chips {
+  justify-content: flex-start;
+}
+
+/* ---- the header drawer ---- */
+.pip-inline {
+  display: grid;
+  flex: none;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-block-end: 1px solid var(--stroke-subtle, var(--stroke));
+}
+.pip-inline-title {
+  margin: 0;
+  font-size: var(--step-0);
+}
+.pip-inline .pip-chips {
+  justify-content: flex-start;
+}
+.pip-inline-scroll {
+  max-block-size: 16rem;
+}
+
+/* ---- the connection form ---- */
+.mcp-form {
+  display: grid;
+  gap: var(--space-3);
+}
+.mcp-form textarea {
+  min-block-size: 8rem;
+}
+.mcp-preview,
+.mcp-result {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mcp-row {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+.mcp-actions code {
+  font-family: var(--font-mono);
+}
+.mcp-row code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.mcp-row-keys code + code {
+  margin-inline-start: var(--space-2);
+}
+.mcp-row-problem {
+  color: var(--status-warning);
+}
+.mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.mcp-error:empty {
+  display: none;
+}
+.mcp-error {
+  margin: 0;
+  color: var(--status-error);
+}
+.mcp-result li {
+  display: flex;
+  gap: var(--space-2);
+}
+.mcp-result p {
+  margin: 0;
+}
+.mcp-result li[data-status="connected"] .mcp-mark {
+  color: var(--status-success);
+}
+.mcp-result li[data-status="failed"] .mcp-mark {
+  color: var(--status-error);
+}
+.mcp-form p,
+.mcp-form .small {
+  margin: 0;
+}
+@media (pointer: coarse) {
+  .pip-kbd {
+    display: none;
+  }
+}
+
+/* ---- Pip's line on the simple view (last: these override the bar and chip defaults) ---- */
+/* inside Pip's column: start-aligned, as wide as the column, like a thread */
+.pip-line .pip-ask {
+  inline-size: 100%;
+  max-inline-size: 38rem;
+  margin-inline: 0;
+}
+.pip-line .pip-under,
+.pip-line .pip-chips {
+  justify-content: flex-start;
+}
+@media (max-width: 40rem) {
+  .pip-line {
+    padding-inline-start: var(--space-3);
+  }
+}

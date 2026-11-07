@@ -8,10 +8,12 @@ import { useShownProject } from "../lib/current.ts";
 import { needsYouCount } from "../lib/derive.ts";
 import { isControlTarget, useLoad, useProject } from "../lib/hooks.ts";
 import { getLastProject, setView, type View } from "../lib/human.ts";
+import { hasNews, pipMood, usePip } from "../lib/pip.ts";
 import { navigate } from "../lib/router.tsx";
 import type { ProjectState } from "../lib/types.ts";
 import { AgentActivity } from "./AgentActivity.tsx";
 import { CrewFace, crewRows, type Mood } from "./CrewStrip.tsx";
+import { PipFace } from "./PipFace.tsx";
 import "./AppHeader.css";
 
 /** Simple | Studio, as a row of chip radios; `mode` is null where neither applies */
@@ -67,6 +69,8 @@ export function CrewButton({ routeId }: { routeId: string | null }) {
   // the page on screen shares its state; anywhere else the button follows the target project itself
   const own = useProject(target && target !== routeId && target !== shown?.id ? target : null);
   const state = target && shown?.id === target ? shown.state : own.state;
+  // Pip in the drawer talks about the page's project, or about the workspace off a project page
+  const pip = usePip(routeId);
 
   const reload = useRef(projects.reload);
   reload.current = projects.reload;
@@ -91,7 +95,8 @@ export function CrewButton({ routeId }: { routeId: string | null }) {
     ? [...rows].sort((a, b) => PRIORITY.indexOf(a.mood) - PRIORITY.indexOf(b.mood)).slice(0, 3)
     : [];
   const status = needs > 0 ? `needs you (${needs})` : working ? "working" : "";
-  const name = status ? `Crew, ${status}` : "Crew";
+  const pipNews = hasNews(pip);
+  const name = `${status ? `Crew, ${status}` : "Crew"}${pipNews ? ". Pip has something for you" : ""}. Ask Pip`;
 
   const close = () => {
     setOpen(false);
@@ -115,6 +120,9 @@ export function CrewButton({ routeId }: { routeId: string | null }) {
           }}
         >
           <span className="crew-btn-faces" aria-hidden="true">
+            <span className="crew-btn-pip">
+              <PipFace mood={pipMood(pip, routeId ? (state ?? null) : null)} size="sm" dot={pipNews} />
+            </span>
             {faces.map((r, i) => (
               <span key={r.m.id} style={{ "--face-i": i } as CSSProperties}>
                 <CrewFace member={r.m} mood={r.mood} step={0} />
@@ -138,7 +146,8 @@ export function CrewButton({ routeId }: { routeId: string | null }) {
           key={target}
           projectId={target}
           state={state}
-          memberId={firstMember(state)}
+          memberId={!routeId || pipNews ? "pip" : firstMember(state)}
+          pipProject={routeId}
           onClose={close}
           picker={
             list.length > 1 ? (

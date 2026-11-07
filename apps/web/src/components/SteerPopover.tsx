@@ -1,11 +1,14 @@
 // Steering from the picture: pressing the paused film opens this at the press. "What should change at 0:04?", six
-// plain chips and an optional line; it sends one note to the Producer, who routes it. A native popover: Esc and a
-// click outside close it, and focus goes back to the frame.
+// plain chips and an optional line. The default is to ask Pip (a draft in Pip's field, to edit and send); sending a
+// note straight to the crew is one disclosure away. A native popover: Esc and a click outside close it, and focus
+// goes back to the frame.
 import { Button, Field, Fieldset, Radio } from "@shabboo/kit/react";
 import { type FormEvent, useLayoutEffect, useRef, useState } from "react";
 import { client } from "../lib/client.ts";
 import { mss } from "../lib/human.ts";
+import { askPipAbout } from "../lib/pip.ts";
 import type { NoteCategory } from "../lib/types.ts";
+import { DirectControls } from "./DirectControls.tsx";
 
 const CHIPS: { label: string; category: NoteCategory }[] = [
   { label: "Too fast", category: "too_fast" },
@@ -64,6 +67,19 @@ export function SteerPopover({
   }, [x, y]);
 
   const close = () => ref.current?.hidePopover?.();
+  /** the default: a draft for Pip, who plans the change with the crew */
+  const ask = (e: FormEvent) => {
+    e.preventDefault();
+    if (!cat && !text.trim()) {
+      setErr("Pick what's off, or write a line.");
+      return;
+    }
+    const what = CHIPS.find((c) => c.category === cat)?.label.toLowerCase();
+    const where = `At ${mss(t)}${scene ? ` (scene ${scene})` : ""}`;
+    const draft = `${where}: ${[what, text.trim()].filter(Boolean).join(". ")}`;
+    close();
+    askPipAbout(projectId, draft);
+  };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!cat && !text.trim()) {
@@ -94,7 +110,7 @@ export function SteerPopover({
           Sent to the crew · they'll show you a fix
         </p>
       ) : (
-        <form className="stack-3" onSubmit={submit} aria-busy={state === "busy" ? "true" : undefined}>
+        <form className="stack-3" onSubmit={ask} aria-busy={state === "busy" ? "true" : undefined}>
           <h2 id="steer-title" className="h4">
             What should change at {mss(t)}?
           </h2>
@@ -130,12 +146,17 @@ export function SteerPopover({
           )}
           <div className="needs-actions">
             <Button type="submit" size="sm" variant="primary">
-              Send to the crew
+              Ask Pip
             </Button>
             <Button size="sm" variant="quiet" onClick={close}>
               Cancel
             </Button>
           </div>
+          <DirectControls who="the crew" summary="Send straight to the crew">
+            <Button size="sm" variant="ghost" onClick={submit}>
+              Send to the crew
+            </Button>
+          </DirectControls>
         </form>
       )}
     </div>

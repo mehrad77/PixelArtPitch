@@ -61,6 +61,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   editor: "Editor",
   reviewer: "Reviewer",
   librarian: "Librarian",
+  assistant: "Pip",
 };
 export const ROLES = Object.keys(ROLE_LABEL) as Role[];
 

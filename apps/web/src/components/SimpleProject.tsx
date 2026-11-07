@@ -9,11 +9,13 @@ import { usePublishProject } from "../lib/current.ts";
 import { clock } from "../lib/format.ts";
 import { isControlTarget, type ProjectView, useProject, useThrottled } from "../lib/hooks.ts";
 import { crewStateOf, effectOf, humanStatus, milestones, PHASES, phaseOf, plainUsd } from "../lib/human.ts";
+import { usePipOpenRequest } from "../lib/pip.ts";
 import { usePlayback } from "../lib/playback.ts";
 import { Link } from "../lib/router.tsx";
 import type { ProjectState } from "../lib/types.ts";
 import { CrewHero, CrewStrip } from "./CrewStrip.tsx";
 import { NeedsYouCard } from "./NeedsYouCard.tsx";
+import { PipAsk, PipCrewFace, PipLine } from "./Pip.tsx";
 import { SteerPopover } from "./SteerPopover.tsx";
 import { Viewer } from "./Viewer.tsx";
 import { WaitLine } from "./WaitLine.tsx";
@@ -47,6 +49,10 @@ function SimpleProject({ id, state, view }: { id: string; state: ProjectState; v
   const pb = usePlayback(state.timeline.duration, id);
   usePublishProject(id, state);
   const [steer, setSteer] = useState<{ t: number; x: number; y: number } | null>(null);
+  // Pip's sheet: opened by asking or by pressing Pip's face, folded by Esc or a handoff to the crew
+  const [pipOpen, setPipOpen] = useState(false);
+  // "Ask Pip about this" from a face or the steer popover opens the sheet with a draft
+  usePipOpenRequest(id, () => setPipOpen(true));
   const phase = phaseOf(state);
   const b = state.budget;
   const money = plainUsd(b.spentUsd + b.reservedUsd, b.capUsd);
@@ -112,9 +118,17 @@ function SimpleProject({ id, state, view }: { id: string; state: ProjectState; v
           onSteer={(t, x, y) => setSteer({ t, x, y })}
         />
       </div>
-      <StatusLine projectId={id} state={state} onNeeds={focusNeeds} />
+      {/* the workers first, quietly; then Pip, who talks to you: the sentence, the thread, the field */}
+      <div className="sp-crew">
+        <CrewStrip
+          projectId={id}
+          state={state}
+          lead={<PipCrewFace project={id} state={state} open={pipOpen} setOpen={setPipOpen} />}
+          pipProject={id}
+        />
+      </div>
+      <StatusLine projectId={id} state={state} onNeeds={focusNeeds} pipOpen={pipOpen} setPipOpen={setPipOpen} />
       <NeedsYouCard projectId={id} state={state} />
-      <CrewStrip projectId={id} state={state} />
       <SoFar state={state} />
       {steer && (
         <SteerPopover
@@ -130,19 +144,36 @@ function SimpleProject({ id, state, view }: { id: string; state: ProjectState; v
   );
 }
 
-/** the one sentence, and under it why nothing moves and the one thing to do about it */
-function StatusLine({ projectId, state, onNeeds }: { projectId: string; state: ProjectState; onNeeds: () => void }) {
+/** the one sentence, said by Pip, and under it why nothing moves and the one thing to do about it */
+function StatusLine({
+  projectId,
+  state,
+  onNeeds,
+  pipOpen,
+  setPipOpen,
+}: {
+  projectId: string;
+  state: ProjectState;
+  onNeeds: () => void;
+  pipOpen: boolean;
+  setPipOpen: (v: boolean) => void;
+}) {
   const st = humanStatus(state);
   const live = useThrottled(st.text, 10000);
   // while nobody has started yet, a few big faces keep the person company
   const starting = !state.tasks.some((t) => t.startedAt) && st.tone !== "needs";
   return (
-    <div className="sp-status" data-tone={st.tone} data-hero={starting ? "" : undefined}>
-      {starting && <CrewHero />}
-      <div className="sp-status-text">
-        <p>{st.text}</p>
-        <WaitLine projectId={projectId} state={state} mainText={st.text} onNeeds={onNeeds} />
-      </div>
+    <div className="sp-status">
+      <PipLine>
+        <div className="sp-said" data-tone={st.tone} data-hero={starting ? "" : undefined}>
+          {starting && <CrewHero />}
+          <div className="sp-status-text">
+            <p>{st.text}</p>
+            <WaitLine projectId={projectId} state={state} mainText={st.text} onNeeds={onNeeds} />
+          </div>
+        </div>
+        <PipAsk project={projectId} state={state} open={pipOpen} setOpen={setPipOpen} />
+      </PipLine>
       <p className="visually-hidden" role="status" aria-live="polite">
         {live}
       </p>

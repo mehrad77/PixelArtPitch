@@ -168,6 +168,7 @@ export const ROLE_MODELS: Record<Role, string> = {
   editor: "anthropic/claude-haiku-5",
   reviewer: "openai/gpt-5.5",
   librarian: "ollama/llama4-scout",
+  assistant: "anthropic/claude-sonnet-5",
 };
 
 export const SETTINGS: Settings = {

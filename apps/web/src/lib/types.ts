@@ -274,9 +274,82 @@ export type ServerEvent =
   /** one more transcript line for a task, as it happens (no persisted id) */
   | { event: "activity"; data: ActivityEntry & { task: string } }
   /** extension: merge these top-level fields (the mock uses it for sceneStatus, findings, art, crew, files, time) */
-  | { event: "x-state"; data: Partial<ProjectState> };
+  | { event: "x-state"; data: Partial<ProjectState> }
+  /** Pip's progress on this project's conversation (or the workspace one on /api/events) */
+  | { event: "pip"; data: PipEvent };
 
 export type ConnState = "connecting" | "open" | "retrying";
+
+// ---- Pip, the assistant (docs/ASSISTANT.md) ----
+export type PipFile = { name: string; kind: string; sizeBytes: number; url: string };
+export type PipAdded = { name: string; status: "connected" | "failed"; tools: string[]; error?: string; fix?: string };
+export type PipCard =
+  | { id: string; type: "files"; files: PipFile[] }
+  | {
+      id: string;
+      type: "plan";
+      title: string;
+      detail: string;
+      who: RoleT[];
+      usd: [number, number] | null;
+      sec: [number, number] | null;
+      effects: string[];
+      warning?: string;
+      confirmLabel: string;
+      editable?: { field: string; label: string; value: string };
+      /** external tools lent to the crew for this task: "server.tool" */
+      lend?: string[];
+      status: "proposed" | "running" | "done" | "declined" | "failed";
+      result?: { text: string; files?: PipFile[]; projectId?: string; error?: string };
+    }
+  | { id: string; type: "cant"; text: string; nearest?: string }
+  | {
+      id: string;
+      type: "form";
+      form: "mcp_add";
+      title: string;
+      detail: string;
+      status: "open" | "submitted" | "done" | "failed";
+      result?: { added: PipAdded[] };
+    };
+export type PipItem =
+  | { id: string; at: string; kind: "user"; text: string }
+  | { id: string; at: string; kind: "pip"; text: string; cards: PipCard[]; model?: string; usd?: number }
+  | { id: string; at: string; kind: "thinking" };
+/** the `pip` SSE event (assumed shape: the spec names only `type`) */
+export type PipEvent =
+  | { type: "thinking"; done?: boolean }
+  | { type: "item"; item: PipItem }
+  | { type: "card"; card: PipCard; itemId?: string }
+  | { type: "error"; message: string };
+export type PipConversation = {
+  items: PipItem[];
+  name: string;
+  model?: string;
+  mode?: "agent" | "menu";
+  /** a turn is running (the page opened mid-answer) */
+  busy?: boolean;
+};
+export type PipDecision = { project?: string; decision: "confirm" | "decline"; edit?: string };
+
+// ---- connections: the person's own MCP servers ----
+export type ConnectionTrust = "ask" | "read_only";
+export type Connection = {
+  name: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  status: "connected" | "failed" | "off";
+  error?: string;
+  fix?: string;
+  tools: string[];
+  enabled: boolean;
+  trust: ConnectionTrust;
+  /** names only: values never come back */
+  envKeys?: string[];
+  headerKeys?: string[];
+};
 
 export type CreateProjectInput = {
   title: string;
@@ -324,6 +397,18 @@ export interface Client {
   models(): Promise<ModelRow[]>;
   library(): Promise<LibraryIndex>;
   sheetUrl(assetId: string): string;
+  /** Pip: the conversation for a project, or the workspace one when project is omitted */
+  pip(project?: string): Promise<PipConversation>;
+  /** 202 { turnId }; a busy conversation rejects with an ApiError of status 409 */
+  pipAsk(project: string | undefined, text: string): Promise<{ turnId: string }>;
+  pipCard(cardId: string, d: PipDecision): Promise<PipCard | null>;
+  /** the workspace stream (/api/events): Pip's workspace-level events */
+  subscribeWorkspace(on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void): () => void;
+  connections(): Promise<Connection[]>;
+  addConnections(json: string): Promise<{ added: PipAdded[] }>;
+  updateConnection(name: string, patch: { enabled?: boolean; trust?: ConnectionTrust }): Promise<Connection | null>;
+  removeConnection(name: string): Promise<void>;
+  testConnection(name: string): Promise<Connection | null>;
   /** subscribe to a project's events; returns an unsubscribe */
   subscribe(id: string, on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void): () => void;
 }

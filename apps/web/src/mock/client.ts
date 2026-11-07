@@ -8,8 +8,10 @@ import type {
   AnswerInput,
   ArtAsset,
   Client,
+  ConnectionTrust,
   ConnState,
   CreateProjectInput,
+  FileRow,
   Finding,
   Gate,
   GateId,
@@ -21,6 +23,7 @@ import type {
   NoteInput,
   PatchEntryT,
   PatchOpT,
+  PipDecision,
   ProjectState,
   ProjectStatus,
   ProjectSummary,
@@ -48,6 +51,7 @@ import {
   SETTINGS,
   scenesFor,
 } from "./fixtures.ts";
+import { blobUrl, MockPip, srtOf } from "./pip.ts";
 
 const TICK_MS = 1000;
 const iso = (offsetSec = 0) => new Date(Date.now() + offsetSec * 1000).toISOString();
@@ -294,8 +298,61 @@ function applyOps(doc: unknown, ops: PatchOpT[]): { doc: unknown; inverse: Patch
   return { doc: root.v, inverse };
 }
 
+/** the video, its .srt and .vtt, as blob URLs so Download and Open work in mock mode */
+function mockFiles(name: string, cues: TimelineJSON["cues"], size: number): FileRow[] {
+  const srt = srtOf(cues);
+  return [
+    { name, url: blobUrl("mock video: the real studio writes an mp4 here", "video/mp4"), bytes: size, kind: "video" },
+    { name: name.replace(/\.mp4$/, ".srt"), url: blobUrl(srt), bytes: srt.length, kind: "subtitles" },
+    {
+      name: name.replace(/\.mp4$/, ".vtt"),
+      url: blobUrl(`WEBVTT\n\n${srt.replace(/,(\d{3})/g, ".$1")}`, "text/vtt"),
+      bytes: srt.length + 8,
+      kind: "subtitles",
+    },
+  ];
+}
+
 class MockBackend {
   projects = new Map<string, MockProject>();
+  pip: MockPip = new MockPip({
+    state: (id) => this.projects.get(id)?.state ?? null,
+    emit: (id, e) => {
+      const p = this.projects.get(id);
+      if (p) this.emit(p, e);
+    },
+    setFiles: (id, files) => {
+      const p = this.projects.get(id);
+      if (p) this.x(p, { files });
+    },
+    handoff: (id) => {
+      const p = this.projects.get(id);
+      if (!p) return;
+      p.phase = 50;
+      p.tick = 0;
+      p.hold = false;
+      this.x(p, { crew: { state: "running" } });
+      this.pushStatus(p);
+    },
+    createProject: async (title, idea) => {
+      let id =
+        title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_|_$/g, "")
+          .slice(0, 30) || "pitch";
+      if (!/^[a-z]/.test(id)) id = `p_${id}`;
+      while (this.projects.has(id)) id = `${id}_2`;
+      const np = newProject(id, title, { idea }, 5, false);
+      np.state.crew = { state: "idle" };
+      np.state.tasks = [];
+      np.phase = 99;
+      this.projects.set(id, np);
+      return id;
+    },
+    titles: () =>
+      [...this.projects.values()].map((p) => ({ id: p.state.doc.id, title: p.state.doc.title, state: p.state })),
+  });
   settings: Settings = clone(SETTINGS);
   models: ModelRow[] = clone(MODELS);
   library: LibraryIndex = clone(LIBRARY);
@@ -340,7 +397,7 @@ class MockBackend {
       tasks: [done("t_producer", "producer", "Reading the brief and planning the crew", -86400)],
       crew: { state: "idle" },
       time: { ...example.state.time, etaSec: null },
-      files: [{ name: "pitch.mp4", url: "", bytes: 2_400_000, kind: "video" }],
+      files: mockFiles("pitch.mp4", example.state.timeline.cues, 2_400_000),
       milestones: [{ id: "m_video", at: iso(-86400), text: "Your video is ready" }],
     });
     for (const sc of example.state.timeline.scenes)
@@ -594,6 +651,8 @@ class MockBackend {
       this.emit(p, { event: "render", data: { kind: "still", url } });
       return url;
     };
+    if (p.phase === 50) return this.change(p, k);
+    if (p.phase === 51) return this.rest(p, k);
     switch (p.phase) {
       case 0:
         if (k === 0) {
@@ -959,9 +1018,7 @@ class MockBackend {
           const name = p.state.doc.delivery[0]?.out ?? "pitch.mp4";
           this.x(p, {
             files: [
-              { name, url: "", bytes: 18_400_000, kind: "video" },
-              { name: name.replace(/\.mp4$/, ".srt"), url: "", bytes: 1200, kind: "subtitles" },
-              { name: name.replace(/\.mp4$/, ".vtt"), url: "", bytes: 1300, kind: "subtitles" },
+              ...mockFiles(name, tl.cues, 18_400_000),
               {
                 name: "contact.png",
                 url: drawFrame({ t: 5, sceneIndex: 2, sceneTitle: "contact", version: "render" }),
@@ -976,6 +1033,135 @@ class MockBackend {
           this.milestone(p, "Your video is ready");
         }
         return;
+    }
+  }
+
+  /** the rest of a stopped run: each scene animated in turn, a check, the export */
+  rest(p: MockProject, k: number) {
+    const tl = p.state.timeline;
+    const n = tl.scenes.length;
+    const per = 4;
+    const i = Math.floor(k / per);
+    if (i < n && k % per === 0) {
+      if (i === 0) this.stage(p, "animate");
+      const id = `t_rest_s${i + 1}_${p.seq}`;
+      this.setTask(p, id, {
+        role: i % 2 ? "scene-coder" : "animator",
+        kind: "scene.tune",
+        title: `Animating scene ${i + 1} of ${n}`,
+        status: "working",
+        etaSec: per,
+        estUsd: 0.06,
+      });
+      p.alias.set(`t_rest_s${i + 1}`, id);
+      const sc = tl.scenes[i];
+      if (sc) this.scene(p, sc.id, { state: "drafting", by: "animator" });
+    }
+    if (i < n && k % per === per - 1) {
+      this.setTask(p, `t_rest_s${i + 1}`, { status: "done" });
+      const sc = tl.scenes[i];
+      if (sc) this.scene(p, sc.id, { state: "ready", version: "render", stale: false });
+    }
+    const base = n * per;
+    if (k === base) {
+      this.stage(p, "sound");
+      this.setTask(p, `t_rest_mix_${p.seq}`, {
+        role: "sound-designer",
+        kind: "sound.mix",
+        title: "Mixing",
+        status: "working",
+        etaSec: 3,
+      });
+      p.alias.set("t_rest_mix", [...p.state.tasks].reverse().find((t) => t.kind === "sound.mix")?.id ?? "");
+    }
+    if (k === base + 3) {
+      this.setTask(p, "t_rest_mix", { status: "done" });
+      this.stage(p, "review");
+      this.setTask(p, `t_rest_review_${p.seq}`, {
+        role: "reviewer",
+        kind: "review.final",
+        title: "Checking the cut",
+        status: "working",
+        etaSec: 3,
+      });
+      p.alias.set("t_rest_review", [...p.state.tasks].reverse().find((t) => t.kind === "review.final")?.id ?? "");
+    }
+    if (k === base + 6) {
+      this.setTask(p, "t_rest_review", { status: "done", summary: "Nothing to fix." });
+      this.stage(p, "deliver");
+      this.setTask(p, `t_rest_export_${p.seq}`, {
+        role: "editor",
+        kind: "deliver.export",
+        title: "Encoding the final at 6×",
+        status: "working",
+        etaSec: 3,
+      });
+      p.alias.set("t_rest_export", [...p.state.tasks].reverse().find((t) => t.kind === "deliver.export")?.id ?? "");
+    }
+    if (k === base + 9) {
+      this.setTask(p, "t_rest_export", { status: "done", title: "Encoded the final" });
+      const name = p.state.doc.delivery[0]?.out ?? "pitch.mp4";
+      this.x(p, { files: mockFiles(name, tl.cues, 18_400_000), crew: { state: "idle" } });
+      this.milestone(p, "Your video is ready");
+      this.digest(p, "The final is encoded with subtitles.");
+      p.phase = 99;
+    }
+  }
+
+  /** a change Pip handed to the crew: reopen Pictures, redo one scene, check it, export again */
+  change(p: MockProject, k: number) {
+    const tl = p.state.timeline;
+    const sc = tl.scenes[1] ?? tl.scenes[0];
+    const n = tl.scenes.length;
+    if (k === 0) {
+      this.stage(p, "animate");
+      if (sc) this.scene(p, sc.id, { stale: true, state: "drafting", by: "animator" });
+      const changeId = `t_change_${p.seq}`;
+      this.setTask(p, changeId, {
+        role: "animator",
+        kind: "scene.tune",
+        title: `Animating scene 2 of ${n}`,
+        status: "working",
+        etaSec: 8,
+        estUsd: 0.2,
+      });
+      p.alias.set("t_change", changeId);
+      this.digest(p, "The animator is redrawing scene 2 with your change.");
+    }
+    if (k === 8) {
+      this.setTask(p, "t_change", { status: "done", summary: "Made the hero bigger in scene 2." });
+      if (sc) this.scene(p, sc.id, { stale: false, state: "ready", version: "render" });
+      this.stage(p, "review");
+      const changeReviewId = `t_change_review_${p.seq}`;
+      this.setTask(p, changeReviewId, {
+        role: "reviewer",
+        kind: "review.final",
+        title: "Checking scene 2",
+        status: "working",
+        etaSec: 5,
+        estUsd: 0.08,
+      });
+      p.alias.set("t_change_review", changeReviewId);
+    }
+    if (k === 13) {
+      this.setTask(p, "t_change_review", { status: "done", summary: "Scene 2 reads well; nothing else moved." });
+      this.stage(p, "deliver");
+      const changeExportId = `t_change_export_${p.seq}`;
+      this.setTask(p, changeExportId, {
+        role: "editor",
+        kind: "deliver.export",
+        title: "Encoding the final at 6×",
+        status: "working",
+        etaSec: 4,
+      });
+      p.alias.set("t_change_export", changeExportId);
+    }
+    if (k === 17) {
+      this.setTask(p, "t_change_export", { status: "done", title: "Encoded the final", summary: "Exported again." });
+      this.x(p, { crew: { state: "idle" }, files: [...p.state.files] });
+      this.digest(p, "Your change is in. The new video is ready.");
+      this.milestone(p, "Scene 2 changed");
+      p.phase = 99;
     }
   }
 
@@ -1165,6 +1351,11 @@ export class MockClient implements Client {
   }
   async crewRun(id: string) {
     const p = be().get(id);
+    // a project the script left alone (stopped, or never started here): run the rest of it as a short demo
+    if (p.phase === 99 && !p.state.files.some((f) => f.kind === "video")) {
+      p.phase = 51;
+      p.tick = 0;
+    }
     be().x(p, { crew: { state: "running" } });
   }
   async crewPause(id: string, mode: "after_step" | "now") {
@@ -1282,6 +1473,41 @@ export class MockClient implements Client {
   sheetUrl(assetId: string) {
     const a = be().library.assets.find((x) => x.id === assetId);
     return drawSheet(assetId, a?.w ?? 16, a?.h ?? 16, a?.frames ?? 1);
+  }
+  async pip(project?: string) {
+    await wait(80);
+    if (project) be().get(project);
+    return be().pip.get(project);
+  }
+  pipAsk(project: string | undefined, text: string) {
+    if (project) be().get(project);
+    return be().pip.ask(project, text);
+  }
+  async pipCard(cardId: string, d: PipDecision) {
+    await wait(80);
+    return be().pip.decide(cardId, d);
+  }
+  subscribeWorkspace(on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void) {
+    onConn?.("open");
+    return be().pip.subscribeWorkspace(on);
+  }
+  async connections() {
+    await wait();
+    return clone(be().pip.connections);
+  }
+  addConnections(json: string) {
+    return be().pip.addConnections(json);
+  }
+  async updateConnection(name: string, patch: { enabled?: boolean; trust?: ConnectionTrust }) {
+    await wait();
+    return be().pip.updateConnection(name, patch);
+  }
+  async removeConnection(name: string) {
+    await wait();
+    be().pip.removeConnection(name);
+  }
+  testConnection(name: string) {
+    return be().pip.testConnection(name);
   }
   subscribe(id: string, on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void) {
     const b = be();

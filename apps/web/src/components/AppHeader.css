@@ -58,3 +58,19 @@
     display: none;
   }
 }
+/* Pip leads the faces: the host, then the crew */
+.crew-btn .pip-face {
+  --pip: 1.5rem;
+  font-size: calc(var(--pip) * 0.32);
+  animation: none;
+}
+.crew-btn-pip {
+  display: inline-flex;
+  margin-inline-end: var(--space-1);
+}
+@media (max-width: 40rem) {
+  /* a phone keeps only Pip's face on the button: the crew is one press away */
+  .crew-btn-faces > span:not(.crew-btn-pip) {
+    display: none;
+  }
+}

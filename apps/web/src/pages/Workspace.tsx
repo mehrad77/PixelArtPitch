@@ -1,5 +1,5 @@
 // The project workspace: header with HUD and stage nav; stage panel (left), viewer (centre), Crew / Inbox / Notes /
-// Changes (right), and the track timeline (bottom). Watching rules: nothing the crew does moves the playhead, the
+// Changes, with Pip first (right), and the track timeline (bottom). Watching rules: nothing the crew does moves the playhead, the
 // scroll or the focus, or opens a dialog; errors stay on the crew row. The Producer's digest is a throttled polite
 // live region.
 import { Badge, Callout, EmptyState, Skeleton } from "@shabboo/kit/react";
@@ -20,6 +20,7 @@ import { buildClips, type Clip, NOTE_CATEGORY, ROLE_LABEL, type TrackId } from "
 import { ago, FPS, timecode } from "../lib/format.ts";
 import { isControlTarget, useProject, useThrottled } from "../lib/hooks.ts";
 import { isStaleDigest } from "../lib/human.ts";
+import { usePipOpenRequest } from "../lib/pip.ts";
 import { usePlayback } from "../lib/playback.ts";
 import type { NoteStatus, NoteTarget, ProjectState, Role, Stage } from "../lib/types.ts";
 import "./Workspace.css";
@@ -80,6 +81,8 @@ function Workspace({
   const [zoom, setZoom] = useState(24);
   const [selected, setSelected] = useState<Clip | null>(null);
   const [tab, setTab] = useState<Tab>("crew");
+  // "Ask Pip about this" anywhere in Studio: Pip is pinned first in the Crew tab
+  usePipOpenRequest(id, () => setTab("crew"));
   const [note, setNote] = useState<{ target: NoteTarget; track: TrackId } | null>(null);
   const [help, setHelp] = useState(false);
   const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({
@@ -164,7 +167,10 @@ function Workspace({
       else if (k === "\\") setCompare((c) => !c);
       else if (k === "q" || k === "Q") nextQuestion();
       else if (k === "?") setHelp(true);
-      else handled = false;
+      else if (k === "/") {
+        setTab("crew");
+        requestAnimationFrame(() => document.getElementById("pip-studio-input")?.focus());
+      } else handled = false;
       if (handled) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);

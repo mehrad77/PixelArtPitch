@@ -5,6 +5,8 @@ import type {
   AnswerInput,
   ApiErrorBody,
   Client,
+  Connection,
+  ConnectionTrust,
   ConnState,
   CreateProjectInput,
   Gate,
@@ -16,6 +18,10 @@ import type {
   NoteInput,
   PatchEntryT,
   PatchOpT,
+  PipAdded,
+  PipCard,
+  PipConversation,
+  PipDecision,
   ProjectState,
   ProjectSummary,
   QuestionT,
@@ -187,6 +193,38 @@ export class HttpClient implements Client {
   }
   sheetUrl(assetId: string) {
     return `/api/library/${enc(assetId)}/sheet.png`;
+  }
+
+  pip(project?: string) {
+    return this.get<PipConversation>(`/api/pip${project ? `?project=${enc(project)}` : ""}`);
+  }
+  pipAsk(project: string | undefined, text: string) {
+    return this.post<{ turnId: string }>("/api/pip", project ? { project, text } : { text });
+  }
+  async pipCard(cardId: string, d: PipDecision) {
+    // the server may answer with the card or with nothing; the `card` event settles it either way
+    const res = await this.post<PipCard | { card?: PipCard } | null>(`/api/pip/cards/${enc(cardId)}`, d);
+    if (res && "type" in res) return res;
+    return (res as { card?: PipCard } | null)?.card ?? null;
+  }
+  subscribeWorkspace(on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void) {
+    return subscribeSse("/api/events", on, onConn);
+  }
+  async connections() {
+    const res = await this.get<Connection[] | { connections: Connection[] }>("/api/connections");
+    return Array.isArray(res) ? res : (res?.connections ?? []);
+  }
+  addConnections(json: string) {
+    return this.post<{ added: PipAdded[] }>("/api/connections", { json });
+  }
+  updateConnection(name: string, patch: { enabled?: boolean; trust?: ConnectionTrust }) {
+    return this.req<Connection | null>("PATCH", `/api/connections/${enc(name)}`, patch);
+  }
+  async removeConnection(name: string) {
+    await this.req("DELETE", `/api/connections/${enc(name)}`);
+  }
+  testConnection(name: string) {
+    return this.post<Connection | null>(`/api/connections/${enc(name)}/test`);
   }
 
   subscribe(id: string, on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void) {

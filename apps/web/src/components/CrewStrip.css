@@ -1,8 +1,10 @@
 /* crew faces: flat discs in the category hues, a two-glyph face in dark ink */
 .crew-strip {
+  position: relative;
   display: flex;
   justify-content: center;
 }
+
 .crew-faces {
   display: flex;
   align-items: center;
@@ -134,4 +136,12 @@
 .crew-hero-slot[data-slot="3"] {
   inset-inline-start: 30%;
   inset-block-end: -5rem;
+}
+/* Pip leads the row, a little apart from the workers */
+.crew-faces .crew-lead {
+  display: inline-flex;
+  margin-inline-end: var(--space-3);
+}
+.crew-faces .crew-lead + li {
+  margin-inline-start: 0;
 }

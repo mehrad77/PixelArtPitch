@@ -20,9 +20,10 @@ import { duration, n, usd } from "../lib/format.ts";
 import { useLoad } from "../lib/hooks.ts";
 import { Link } from "../lib/router.tsx";
 import type { Cap, ModelRow, Profile, Provider, ProviderKind, Role, Settings } from "../lib/types.ts";
+import { Connections } from "./Connections.tsx";
 import "./Settings.css";
 
-export const SETTINGS_TABS = ["setup", "providers", "models", "roles", "defaults", "mcp"] as const;
+export const SETTINGS_TABS = ["setup", "providers", "models", "roles", "defaults", "connections", "mcp"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 const TAB_LABEL: Record<SettingsTab, string> = {
   setup: "Setup",
@@ -30,6 +31,7 @@ const TAB_LABEL: Record<SettingsTab, string> = {
   models: "Models",
   roles: "Roles",
   defaults: "Defaults",
+  connections: "Connections",
   mcp: "MCP",
 };
 
@@ -63,6 +65,7 @@ export function SettingsPage({ tab }: { tab: SettingsTab }) {
           {tab === "models" && <Models />}
           {tab === "roles" && <Roles settings={s.data} onSaved={s.reload} />}
           {tab === "defaults" && <Defaults settings={s.data} onSaved={s.reload} />}
+          {tab === "connections" && <Connections />}
           {tab === "mcp" && <Mcp />}
         </section>
       )}
@@ -536,6 +539,7 @@ const NEEDS: Record<Role, Need[]> = {
   editor: ["structured"],
   reviewer: ["vision"],
   librarian: ["vision"],
+  assistant: ["structured"],
 };
 /** rough tokens a role spends per 60 s of video: [in, out] */
 const TOKENS: Record<Role, [number, number]> = {
@@ -551,6 +555,7 @@ const TOKENS: Record<Role, [number, number]> = {
   editor: [20000, 3000],
   reviewer: [80000, 4000],
   librarian: [20000, 2000],
+  assistant: [30000, 3000],
 };
 const capable = (m: ModelRow, needs: Need[]) => needs.find((nd) => m.caps[nd] === "failed" || m.caps[nd] === "unknown");
 function estimate(m: ModelRow | undefined, role: Role) {

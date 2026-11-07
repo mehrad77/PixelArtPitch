@@ -1,0 +1,83 @@
+/* Pip: a neutral disc in the text ink, glyphs in the page colour, an accent ring; a step larger than a crew face */
+.pip-face {
+  --pip: 3.75rem;
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--pip);
+  block-size: var(--pip);
+  border-radius: var(--radius-pill);
+  background: var(--text);
+  color: var(--surface);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--fill-accent);
+  font-family: var(--font-mono);
+  font-size: calc(var(--pip) * 0.3);
+  font-weight: 700;
+  line-height: 1;
+  white-space: pre;
+}
+/* small faces: bigger glyphs for their size, a thin ring that never changes width */
+.pip-face[data-size="sm"],
+.pip-face[data-size="xs"] {
+  --pip: 1.75rem;
+  font-size: calc(var(--pip) * 0.4);
+  box-shadow:
+    0 0 0 1.5px var(--surface),
+    0 0 0 3px var(--fill-accent);
+}
+.pip-face[data-size="xs"] {
+  --pip: 1.5rem;
+  font-size: calc(var(--pip) * 0.42);
+}
+/* in the crew row: a touch larger than a crew disc (3.25rem) */
+.pip-face[data-size="row"] {
+  --pip: 3.5rem;
+}
+.pip-face[data-size="lg"] {
+  --pip: 4.5rem;
+}
+.pip-face[data-mood="sorry"] {
+  background: var(--text-muted);
+}
+.pip-face-dot {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: calc(var(--pip) * 0.26);
+  block-size: calc(var(--pip) * 0.26);
+  min-inline-size: 0.5rem;
+  min-block-size: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--text-signal);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pip-face-glyphs {
+    transition: translate var(--dur-step, 120ms) steps(1);
+  }
+  .pip-face[data-glance="up-start"] .pip-face-glyphs {
+    translate: calc(var(--pip) * -0.07) calc(var(--pip) * -0.08);
+  }
+  .pip-face[data-glance="up-end"] .pip-face-glyphs {
+    translate: calc(var(--pip) * 0.07) calc(var(--pip) * -0.08);
+  }
+  .pip-face:is([data-size="row"], [data-size="md"], [data-size="lg"])[data-mood="thinking"] {
+    animation: pip-ring 1.4s steps(1) infinite;
+  }
+  @keyframes pip-ring {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 2px var(--surface),
+        0 0 0 4px var(--fill-accent);
+    }
+    50% {
+      box-shadow:
+        0 0 0 2px var(--surface),
+        0 0 0 6px var(--fill-accent);
+    }
+  }
+}

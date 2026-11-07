@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { client } from "./client.ts";
 import { currentView, onViewChange, type View } from "./human.ts";
+import { forwardPip } from "./pip.ts";
 import { applyEvent } from "./reducer.ts";
 import type { ConnState, PatchEntryT, ProjectState, ServerEvent } from "./types.ts";
 
@@ -92,6 +93,7 @@ export function useProject(id: string | null): ProjectView {
         () => {},
       );
     const on = (e: ServerEvent) => {
+      if (e.event === "pip") return forwardPip(id, e);
       setSeq((x) => x + 1);
       if (e.event === "patch") {
         setHistory((h) => (h.some((x) => x.seq === e.data.seq) ? h : [...h, e.data]));

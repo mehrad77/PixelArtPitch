@@ -4,11 +4,13 @@
 // about once a second; the glance and the working ring move only without reduced motion. Names stay plain
 // ("Artist, working"). Pressing a face opens one line about it and its last picture.
 import { Popover } from "@shabboo/kit/react";
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { leadTask } from "../lib/derive.ts";
 import { CREW, type Member, plainTitle, problemOf, visibleTasks } from "../lib/human.ts";
+import { askPipAbout, usePip } from "../lib/pip.ts";
 import type { ProjectState, Task } from "../lib/types.ts";
 import { AgentActivity } from "./AgentActivity.tsx";
+import { ThoughtLayer, useThoughts } from "./Thoughts.tsx";
 import "./CrewStrip.css";
 
 export type Mood = "idle" | "working" | "needs" | "stuck" | "done" | "later";
@@ -120,9 +122,24 @@ export function CrewFace({
   );
 }
 
-export function CrewStrip({ projectId, state }: { projectId: string; state: ProjectState }) {
+export function CrewStrip({
+  projectId,
+  state,
+  lead,
+  pipProject,
+}: {
+  projectId: string;
+  state: ProjectState;
+  /** first in the row: Pip, the host */
+  lead?: ReactNode;
+  /** whose conversation Pip's bubbles follow */
+  pipProject?: string;
+}) {
   const rows = crewRows(state);
   const step = useStep(rows.some((r) => r.mood === "working"));
+  const pip = usePip(pipProject ?? projectId);
+  const thoughts = useThoughts(state, lead ? pip : null);
+  const box = useRef<HTMLElement>(null);
   // hidden by default: the activity view opens only when the person asks for it from a face
   const [watching, setWatching] = useState<string | null>(null);
   const watch = (id: string) => {
@@ -134,16 +151,27 @@ export function CrewStrip({ projectId, state }: { projectId: string; state: Proj
     setWatching(null);
     if (id) requestAnimationFrame(() => document.getElementById(`crew-face-btn-${id}`)?.focus());
   };
+  const holds = (id: string) => ({
+    onMouseEnter: () => thoughts.hold(id, true),
+    onMouseLeave: () => thoughts.hold(id, false),
+    onFocus: () => thoughts.hold(id, true),
+    onBlur: () => thoughts.hold(id, false),
+  });
   return (
-    <section className="crew-strip" aria-labelledby="crew-strip-h">
+    <section className="crew-strip" aria-labelledby="crew-strip-h" ref={box}>
       <h2 id="crew-strip-h" className="visually-hidden">
         The crew
       </h2>
       <ul className="crew-faces">
+        {lead && (
+          <li className="crew-lead" data-thought-anchor="pip" {...holds("pip")}>
+            {lead}
+          </li>
+        )}
         {rows.map(({ m, mood, img, line }, i) => {
           const name = `${m.label}, ${MOOD_WORD[mood]}`;
           return (
-            <li key={m.id} style={{ "--face-i": i } as CSSProperties}>
+            <li key={m.id} style={{ "--face-i": i } as CSSProperties} data-thought-anchor={m.id} {...holds(m.id)}>
               <Popover
                 id={`crew-face-${m.id}`}
                 label={name}
@@ -156,6 +184,16 @@ export function CrewStrip({ projectId, state }: { projectId: string; state: Proj
                   <p className="label">{m.label}</p>
                   <p>{line}</p>
                   {img && <img className="pixelated" src={img} alt={`Latest from the ${m.label.toLowerCase()}`} />}
+                  <button
+                    type="button"
+                    className="linkish crew-face-ask"
+                    onClick={() => {
+                      document.getElementById(`crew-face-${m.id}`)?.hidePopover?.();
+                      askPipAbout(projectId, `About the ${m.label.toLowerCase()}'s work: `);
+                    }}
+                  >
+                    Ask Pip about this
+                  </button>
                   <button type="button" className="linkish crew-face-watch" onClick={() => watch(m.id)}>
                     See what it's doing
                   </button>
@@ -165,6 +203,10 @@ export function CrewStrip({ projectId, state }: { projectId: string; state: Proj
           );
         })}
       </ul>
+      <ThoughtLayer bubbles={thoughts.bubbles} box={box} />
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {thoughts.live}
+      </p>
       {watching && <AgentActivity projectId={projectId} state={state} memberId={watching} onClose={stopWatching} />}
     </section>
   );

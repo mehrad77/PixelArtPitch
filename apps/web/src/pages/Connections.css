@@ -1,0 +1,67 @@
+/* Settings › Connections: rows on the sunken layer, no boxes inside boxes */
+.conn-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.conn-row,
+.conn-add {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface-sunken);
+}
+.conn-row p,
+.conn-add p {
+  margin: 0;
+}
+.conn-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+}
+.conn-name {
+  margin: 0;
+  font-size: var(--step-0);
+}
+.conn-how code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.conn-problem {
+  display: grid;
+  gap: var(--space-1);
+}
+.conn-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+}
+.conn-trust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+.conn-trust legend {
+  float: inline-start;
+  margin-inline-end: var(--space-2);
+}
+.conn-end {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+.conn-msg:empty {
+  display: none;
+}

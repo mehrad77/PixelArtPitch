@@ -1,6 +1,6 @@
 // The muted line under the status: why nothing is moving and what it waits for (waitReason), with at most one
 // action, which says what it causes before it runs. The words are a polite live region; the action sits beside them.
-import { Button } from "@shabboo/kit/react";
+import { Button, Icon } from "@shabboo/kit/react";
 import type { ReactNode } from "react";
 import { client } from "../lib/client.ts";
 import { useThrottled } from "../lib/hooks.ts";
@@ -61,12 +61,24 @@ export function WaitLine({
         onRun={() => client.crewRun(projectId, stage)}
       />
     );
-  } else if (r.action === "open" && video)
-    action = (
-      <Button size="sm" variant="ghost" href={video.url} target="_blank" rel="noreferrer">
-        Open
-      </Button>
-    );
+  } else if (r.action === "open" && video) {
+    const subs = state.files.find((f) => f.kind === "subtitles" && /\.srt$/i.test(f.name) && f.url);
+    action = video.url ? (
+      <>
+        <Button size="sm" variant="primary" href={video.url} download={video.name}>
+          <Icon name="download" size="sm" /> Download
+        </Button>
+        {subs && (
+          <Button size="sm" variant="quiet" href={subs.url} download={subs.name}>
+            Subtitles
+          </Button>
+        )}
+        <Button size="sm" variant="quiet" href={video.url} target="_blank" rel="noreferrer">
+          Open
+        </Button>
+      </>
+    ) : null;
+  }
   return (
     <div className="wait-line" data-kind={r.kind}>
       <p className="wait-text">{text}</p>

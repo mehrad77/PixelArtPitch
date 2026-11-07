@@ -354,3 +354,44 @@
 .activity-picker .field {
   max-inline-size: 24rem;
 }
+
+/* steering a member: Ask Pip first; talking to it directly is one disclosure away */
+.activity-steer {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-block-start: 1px dashed var(--stroke);
+  background: var(--surface-raised);
+}
+.activity-steer .direct {
+  inline-size: 100%;
+}
+.activity-steer .activity-compose {
+  padding: var(--space-2) 0 0;
+  border: 0;
+  background: none;
+}
+.direct-note {
+  margin: 0;
+}
+/* Pip's pane: the field and chips at the bottom, like a member's message box */
+.activity-pip-compose {
+  display: block;
+}
+.pip-composer {
+  display: grid;
+  gap: var(--space-2);
+}
+.pip-composer .pip-chips {
+  justify-content: flex-start;
+}
+.crew-face-ask {
+  justify-self: start;
+  font-size: var(--step--1);
+}
+@media (max-width: 40rem) {
+  .activity-steer {
+    padding-inline: var(--space-3);
+  }
+}

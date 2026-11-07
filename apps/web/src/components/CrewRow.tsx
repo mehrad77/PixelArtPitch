@@ -6,8 +6,10 @@ import { client } from "../lib/client.ts";
 import { DEPARTMENTS, type Department, leadTask, ROLE_LABEL, TASK_STATUS, taskProgress } from "../lib/derive.ts";
 import { duration, usd } from "../lib/format.ts";
 import { memberOf, modelShort, plainTitle, retriesOf, STAGE_WORD, visibleTasks } from "../lib/human.ts";
+import { askPipAbout } from "../lib/pip.ts";
 import type { ProjectState, Task } from "../lib/types.ts";
 import { AgentActivity } from "./AgentActivity.tsx";
+import { PipPanel } from "./Pip.tsx";
 import "./CrewRow.css";
 
 const modelName = (m?: string) => (m ? modelShort(m) : "Model picked when it starts");
@@ -33,6 +35,10 @@ export function CrewPanel({
   return (
     <div className="crew">
       <ul className="crew-list">
+        {/* Pip, pinned first: the one to ask; the rows below are the workers */}
+        <li className="crew-row crew-row-pip">
+          <PipPanel project={projectId} state={state} inputId="pip-studio-input" />
+        </li>
         {DEPARTMENTS.map((d) => (
           <CrewRow
             key={d.id}
@@ -146,7 +152,19 @@ export function CrewRow({
         )}
       </div>
       <div className="crew-actions">
-        <Button size="sm" variant="ghost" onClick={() => onOpen(lead)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() =>
+            askPipAbout(
+              state.doc.id,
+              `About the ${dept.label.toLowerCase()}'s ${plainTitle(lead, state).toLowerCase()}: `,
+            )
+          }
+        >
+          Ask Pip
+        </Button>
+        <Button size="sm" variant="quiet" onClick={() => onOpen(lead)}>
           Details
         </Button>
       </div>
@@ -245,7 +263,20 @@ function TaskDrawer({
             <p className="muted">No decisions asked by this role.</p>
           )}
         </section>
-        <p>
+        <p className="crew-drawer-actions">
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => {
+              onClose();
+              askPipAbout(
+                projectId,
+                `About the ${ROLE_LABEL[task.role].toLowerCase()}'s ${plainTitle(task, state).toLowerCase()}: `,
+              );
+            }}
+          >
+            Ask Pip about this
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => onWatch(task)}>
             See what it's doing
           </Button>

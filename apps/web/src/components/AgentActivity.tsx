@@ -28,9 +28,13 @@ import { TASK_STATUS } from "../lib/derive.ts";
 import { clock, duration } from "../lib/format.ts";
 import { useLoad } from "../lib/hooks.ts";
 import { isRecovered, type Member, modelShort, modelWords, retriesOf } from "../lib/human.ts";
+import { askPipAbout, type Conv, hasNews, markSeen, pipMood, usePip, usePipOpenRequest } from "../lib/pip.ts";
 import { navigate } from "../lib/router.tsx";
 import type { ActivityEntry, ProjectState, Role, Task } from "../lib/types.ts";
 import { CrewFace, crewRows, MOOD_WORD, useStep } from "./CrewStrip.tsx";
+import { DirectControls } from "./DirectControls.tsx";
+import { PipComposer, PipThread } from "./Pip.tsx";
+import { PipFace } from "./PipFace.tsx";
 import "./AgentActivity.css";
 
 const startOf = (t: Task) => Date.parse(t.startedAt ?? "") || Number.POSITIVE_INFINITY;
@@ -44,6 +48,7 @@ export function AgentActivity({
   currentScene,
   onClose,
   picker,
+  pipProject,
 }: {
   projectId: string;
   state: ProjectState;
@@ -56,12 +61,19 @@ export function AgentActivity({
   onClose: () => void;
   /** above the crew: a project picker (the header's Crew button, when there is more than one project) */
   picker?: ReactNode;
+  /** Pip, pinned first: whose conversation it shows (null: the workspace); undefined: this project's */
+  pipProject?: string | null;
 }) {
   const rows = crewRows(state);
   // the model each role is set to for its next step; the drawer is the place that names models
   const settings = useLoad(() => client.settings(), []);
   const [sel, setSel] = useState(memberId);
+  const pipKey = pipProject === undefined ? projectId : pipProject;
+  const pip = usePip(pipKey);
+  usePipOpenRequest(pipKey, () => setSel("pip"));
+  const onPip = sel === "pip";
   const row = rows.find((r) => r.m.id === sel) ?? rows[0];
+  const tabIds = ["pip", ...rows.map((r) => r.m.id)];
   const step = useStep(rows.some((r) => r.mood === "working"));
   const focused = focusTask ? state.tasks.find((t) => t.id === focusTask) : undefined;
   const [showRetries, setShowRetries] = useState(focused ? isRecovered(focused, state.tasks) : false);
@@ -159,8 +171,8 @@ export function AgentActivity({
     const dir = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : e.key === "Home" ? -i : e.key === "End" ? 99 : 0;
     if (!dir) return;
     e.preventDefault();
-    const n = Math.max(0, Math.min(rows.length - 1, i + dir));
-    setSel(rows[n].m.id);
+    const n = Math.max(0, Math.min(tabIds.length - 1, i + dir));
+    setSel(tabIds[n]);
     tabs.current[n]?.focus();
   };
 
@@ -203,8 +215,29 @@ export function AgentActivity({
         {picker && <div className="activity-picker">{picker}</div>}
         <div className="activity-layout">
           <div className="activity-crew" role="tablist" aria-orientation="vertical" aria-label="The crew">
-            {rows.map((r, i) => {
-              const on = r.m.id === row.m.id;
+            <button
+              ref={(el) => {
+                tabs.current[0] = el;
+              }}
+              type="button"
+              role="tab"
+              id="activity-tab-pip"
+              aria-selected={onPip}
+              aria-controls={panelId}
+              tabIndex={onPip ? 0 : -1}
+              className="activity-who activity-who-pip"
+              onClick={() => setSel("pip")}
+              onKeyDown={(e) => onTabKey(e, 0)}
+            >
+              <PipFace mood={pipMood(pip, pipKey ? state : null)} size="sm" dot={hasNews(pip) && !onPip} />
+              <span className="activity-who-text">
+                <span className="activity-who-name">Pip</span>
+                <span className="activity-who-line">{pipLine(pip)}</span>
+              </span>
+            </button>
+            {rows.map((r, j) => {
+              const i = j + 1;
+              const on = !onPip && r.m.id === row.m.id;
               return (
                 <button
                   key={r.m.id}
@@ -233,82 +266,174 @@ export function AgentActivity({
             })}
           </div>
 
-          <section
-            className="activity-main"
-            id={panelId}
-            role="tabpanel"
-            aria-labelledby={`activity-tab-${row.m.id}`}
-            style={{ "--who-hue": `var(--category-${row.m.hue})` } as CSSProperties}
-          >
-            <header className="activity-head">
-              <CrewFace member={row.m} mood={row.mood} step={step} size="lg" />
-              <div className="activity-head-text">
-                <div className="activity-name-row">
-                  <h3 className="activity-name">{row.m.label}</h3>
-                  <Tag
-                    variant="chip"
-                    size="sm"
-                    href="/settings/roles"
-                    title="Model in use. Change it in Settings › Roles"
-                    aria-label={`Model: ${modelChip}. Open Settings, Roles`}
-                    onClick={(e) => {
-                      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                      e.preventDefault();
-                      onClose();
-                      navigate("/settings/roles");
-                    }}
-                  >
-                    {modelChip}
-                  </Tag>
-                </div>
-                <p className="activity-now">
-                  <span className="visually-hidden">{MOOD_WORD[row.mood]}: </span>
-                  {headLine}
-                </p>
-              </div>
-              <Switch
-                id="activity-retries"
-                size="sm"
-                label="Show retries"
-                checked={showRetries}
-                onChange={(e) => setShowRetries(e.currentTarget.checked)}
-                className="activity-retries"
-              />
-            </header>
-
-            <div className="activity-thread-wrap">
-              <div className="activity-thread" ref={threadRef} onScroll={onScroll}>
-                {!groups.length && (
-                  <p className="activity-empty muted">
-                    {row.mood === "later"
-                      ? `${row.m.label} hasn't started yet. What it does will show up here.`
-                      : "Nothing to show yet."}
+          {onPip ? (
+            <PipPane projectId={pipKey} state={pipKey ? state : null} conv={pip} panelId={panelId} />
+          ) : (
+            <section
+              className="activity-main"
+              id={panelId}
+              role="tabpanel"
+              aria-labelledby={`activity-tab-${row.m.id}`}
+              style={{ "--who-hue": `var(--category-${row.m.hue})` } as CSSProperties}
+            >
+              <header className="activity-head">
+                <CrewFace member={row.m} mood={row.mood} step={step} size="lg" />
+                <div className="activity-head-text">
+                  <div className="activity-name-row">
+                    <h3 className="activity-name">{row.m.label}</h3>
+                    <Tag
+                      variant="chip"
+                      size="sm"
+                      href="/settings/roles"
+                      title="Model in use. Change it in Settings › Roles"
+                      aria-label={`Model: ${modelChip}. Open Settings, Roles`}
+                      onClick={(e) => {
+                        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                        e.preventDefault();
+                        onClose();
+                        navigate("/settings/roles");
+                      }}
+                    >
+                      {modelChip}
+                    </Tag>
+                  </div>
+                  <p className="activity-now">
+                    <span className="visually-hidden">{MOOD_WORD[row.mood]}: </span>
+                    {headLine}
                   </p>
-                )}
-                {groups.map((g) => (
-                  <TaskGroup
-                    key={g.t.id}
-                    task={g.t}
-                    tries={retriesOf(g.t, all) + 1}
-                    showTry={showRetries}
-                    entries={g.entries}
-                    loading={g.loading}
-                    failed={g.failed}
-                  />
-                ))}
-              </div>
-              {fresh && (
-                <Button size="sm" variant="primary" className="activity-fresh" onClick={toBottom}>
-                  New activity ↓
-                </Button>
-              )}
-            </div>
+                </div>
+                <Switch
+                  id="activity-retries"
+                  size="sm"
+                  label="Show retries"
+                  checked={showRetries}
+                  onChange={(e) => setShowRetries(e.currentTarget.checked)}
+                  className="activity-retries"
+                />
+              </header>
 
-            <Compose key={row.m.id} projectId={projectId} member={row.m} role={role} currentScene={currentScene} />
-          </section>
+              <div className="activity-thread-wrap">
+                <div className="activity-thread" ref={threadRef} onScroll={onScroll}>
+                  {!groups.length && (
+                    <p className="activity-empty muted">
+                      {row.mood === "later"
+                        ? `${row.m.label} hasn't started yet. What it does will show up here.`
+                        : "Nothing to show yet."}
+                    </p>
+                  )}
+                  {groups.map((g) => (
+                    <TaskGroup
+                      key={g.t.id}
+                      task={g.t}
+                      tries={retriesOf(g.t, all) + 1}
+                      showTry={showRetries}
+                      entries={g.entries}
+                      loading={g.loading}
+                      failed={g.failed}
+                    />
+                  ))}
+                </div>
+                {fresh && (
+                  <Button size="sm" variant="primary" className="activity-fresh" onClick={toBottom}>
+                    New activity ↓
+                  </Button>
+                )}
+              </div>
+
+              <div className="activity-steer">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setSel("pip");
+                    askPipAbout(
+                      pipKey,
+                      `About the ${row.m.label.toLowerCase()}'s work${pipKey ? "" : ` on ${state.doc.title}`}: `,
+                    );
+                  }}
+                >
+                  Ask Pip about this
+                </Button>
+                <DirectControls who={article(row.m)}>
+                  <Compose
+                    key={row.m.id}
+                    projectId={projectId}
+                    member={row.m}
+                    role={role}
+                    currentScene={currentScene}
+                  />
+                </DirectControls>
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </Drawer>
+  );
+}
+
+/** Pip's one line in the list, like the crew's */
+function pipLine(c: Conv): string {
+  if (c.thinking) return "Thinking…";
+  const last = [...c.items].reverse().find((i) => i.kind === "pip");
+  if (
+    last?.kind === "pip" &&
+    last.cards.some((k) => (k.type === "plan" && k.status === "proposed") || (k.type === "form" && k.status === "open"))
+  )
+    return "Waiting for your answer";
+  if (hasNews(c)) return "Has something for you";
+  return "Here when you need me";
+}
+
+/** Pip in the drawer's right pane: the same header, a thread, and the field at the bottom */
+function PipPane({
+  projectId,
+  state,
+  conv,
+  panelId,
+}: {
+  projectId: string | null;
+  state: ProjectState | null;
+  conv: Conv;
+  panelId: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const n = `${conv.items.length}|${conv.thinking}|${JSON.stringify(conv.items.at(-1) ?? "").length}`;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: follows the newest item
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    markSeen(projectId);
+  }, [n]);
+  return (
+    <section className="activity-main activity-pip" id={panelId} role="tabpanel" aria-labelledby="activity-tab-pip">
+      <header className="activity-head">
+        <PipFace mood={pipMood(conv, state)} size="lg" />
+        <div className="activity-head-text">
+          <div className="activity-name-row">
+            <h3 className="activity-name">Pip</h3>
+            {conv.model && (
+              <Tag variant="chip" size="sm" title="Pip's model. Change it in Settings › Roles">
+                {modelWords(conv.model)}
+              </Tag>
+            )}
+          </div>
+          <p className="activity-now">
+            {projectId
+              ? "Ask me anything about this video. I'll plan it with the crew."
+              : "Ask about any project, or start a new one."}
+          </p>
+        </div>
+      </header>
+      <div className="activity-thread-wrap">
+        <div className="activity-thread" ref={ref}>
+          <PipThread project={projectId} conv={conv} />
+        </div>
+      </div>
+      <div className="activity-compose activity-pip-compose">
+        <PipComposer project={projectId} inputId="pip-drawer-input" conv={conv} state={state} />
+      </div>
+    </section>
   );
 }
 
