@@ -51,7 +51,8 @@ export type PlanCard = {
   /** external tools this card lends to the crew task it starts ("server.tool"), shown as "Lends: …" */
   lend?: string[];
   status: PlanStatus;
-  result?: { text: string; files?: PipFile[]; projectId?: string; error?: string };
+  /** `draftId`: "Make another like this" opened a draft on /new (docs/PIP-ORCHESTRATION.md §3.4) */
+  result?: { text: string; files?: PipFile[]; projectId?: string; draftId?: string; error?: string };
   /** a plan revision past the 20% line (docs/PIP-ORCHESTRATION.md §4.4): what it adds and the new total */
   revision?: {
     rev: number;
@@ -184,7 +185,8 @@ export const PIP_PROPOSE = [
   "export_video",
   "subtitles_translate",
   "crew_request_change",
-  "project_fork",
+  // "Make another like this" opens a draft on /new (§3.4); project_fork stays a registry tool for MCP clients
+  "draft_create",
   "crew_run",
   "crew_pause",
   "note_add",
@@ -494,6 +496,15 @@ export class Pip {
       if (data.type === "thinking") p.events.emit("event", { seq: 0, event: "pip", data, ts: now() });
       else p.emit("pip", data);
     } else this.events.emit("event", { seq: ++this.wsSeq, event: "pip", data, ts: now() });
+  }
+
+  /** a draft's `pip` event on the workspace stream (docs/PIP-ORCHESTRATION.md §4.3): `draft` names it */
+  emitDraft(draft: string, data: { type: string; [k: string]: unknown }) {
+    this.events.emit("event", { seq: ++this.wsSeq, event: "pip", data: { ...data, draft }, ts: now() });
+  }
+  /** the workspace guard ($1 a day by default): where a draft's reading is metered */
+  workspaceBudget(): { key: string; capUsd: number; spentUsd: number } {
+    return this.budget(undefined);
   }
 
   items(projectId?: string): PipItem[] {
@@ -1538,6 +1549,27 @@ export class Pip {
         };
         break;
       }
+      case "draft_create": {
+        const from = String(input.from ?? p?.id ?? "");
+        const src = from ? this.deps.workspace.list().find((x) => x.id === from) : undefined;
+        if (!src) return { error: "draft_create needs the project to copy (from)" };
+        input.from = src.id;
+        c = {
+          ...base,
+          title: "Make another video like this",
+          detail: `A new video with ${src.title}'s style, cast and settings opens in New video. You tell me what it's about there.`,
+          who: [],
+          usd: [0, 0],
+          sec: null,
+          effects: [
+            "Nothing is made or spent until you press Start there.",
+            "The script, storyboard, renders and private files are not copied.",
+          ],
+          confirmLabel: "Open it",
+          action: { tool, input },
+        };
+        break;
+      }
       case "project_fork": {
         if (!p) return { error: "project_fork needs project_id" };
         const brief = String(input.brief);
@@ -1807,6 +1839,8 @@ export class Pip {
       case "new_from_this":
         if (!p)
           return { cards: [cant("Open the project to copy first.", "Or start a new project from the Projects page.")] };
+        // the draft wins over a direct fork (PIP-JOURNEY §3.6): the person says the new idea on /new
+        if (this.deps.registry.get("draft_create")) return { cards: plan("draft_create", { from: p.id }) };
         return {
           cards: plan("project_fork", {
             brief: m.params.brief || said,
@@ -2134,6 +2168,8 @@ function resultFor(tool: string, data: any, p?: OpenProject): NonNullable<PlanCa
       };
     case "project_fork":
       return { text: "Your new project is ready for its brief.", projectId: data.projectId };
+    case "draft_create":
+      return { text: "It's open in New video: tell me what this one is about.", draftId: data.draftId };
     case "export_video": {
       const names = [String(data.file).replace(/^out\//, ""), ...(data.subtitles ?? [])];
       return { text: `Exported: ${data.seconds?.toFixed?.(1) ?? "?"} s.`, files: p ? outFiles(p, names) : undefined };

@@ -1,12 +1,14 @@
 // Connects the crew (orchestrator, providers, ledger, settings) to the server and registers the crew tools.
 
 import { type ExternalTools, Pip, translator } from "@pap/crew/assistant";
+import { DraftConversations } from "@pap/crew/brief/drafts";
 import { PipConductor } from "@pap/crew/conductor";
 import { ModelGateway } from "@pap/crew/gateway-impl";
 import {
   createProvider,
   type ModelInfo,
   modelsFor,
+  probeModel,
   publicSettings,
   ROLES,
   rolesForProfile,
@@ -16,6 +18,7 @@ import {
 import { Crew } from "@pap/crew/orchestrator";
 import {
   crewRequestChangeTool,
+  DraftStore,
   defineTool,
   fail,
   ok,
@@ -35,6 +38,8 @@ export async function wireCrew(deps: {
   external?: ExternalTools;
   /** false: don't resume interrupted crews (scripts) */
   resume?: boolean;
+  /** where drafts live (default $PAP_HOME/drafts) */
+  drafts?: DraftStore;
 }): Promise<{
   crew?: CrewApi;
   hooks?: Hooks;
@@ -42,6 +47,7 @@ export async function wireCrew(deps: {
   gateway: ModelGateway;
   crewImpl: Crew;
   connections: Connections;
+  drafts: DraftConversations;
 }> {
   const gateway = deps.gateway ?? new ModelGateway();
   // the person's MCP servers: saved in settings (secrets in the SecretStore), never in the registry
@@ -229,6 +235,54 @@ export async function wireCrew(deps: {
     } catch {}
   }, 1500).unref();
 
+  // /new as a conversation (docs/PIP-ORCHESTRATION.md §3): drafts in $PAP_HOME/drafts, their turns on /api/events
+  const isLocalKind = (k: string) => ["lmstudio", "ollama", "llamacpp"].includes(k);
+  const drafts = new DraftConversations({
+    store: deps.drafts ?? new DraftStore(),
+    workspace: deps.workspace,
+    gateway,
+    pick: () => pip.pick(undefined),
+    budget: () => pip.workspaceBudget(),
+    emit: (draft, data) => pip.emitDraft(draft, data),
+    localOn: () => gateway.publicSettings().providers.some((p) => p.enabled && isLocalKind(p.kind)),
+    profile: () => gateway.publicSettings().profile,
+    modelsFor: async (profile) => {
+      const s = gateway.publicSettings();
+      const r = rolesForProfile(profile, {
+        providers: s.providers,
+        models: profile === "local" ? await models() : [],
+      });
+      return r ? Object.fromEntries(Object.entries(r).map(([role, v]) => [role, v.model])) : null;
+    },
+    run: (p) => {
+      crew.run(p).catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
+    },
+  });
+  deps.registry.add(
+    defineTool({
+      name: "draft_create",
+      title: "Make another like this",
+      description:
+        "Open a new draft on New video that keeps a project's audience, length, narration, involvement, profile, style and budget (never its idea or files). The person says the new idea there; nothing is made until they press Start.",
+      input: z.object({ from: z.string().min(1).max(80) }),
+      output: z.object({ draftId: z.string() }),
+      roles: [],
+      tier: "basic",
+      effects: "write",
+      project: false,
+      examples: [{ input: { from: "questday" } }],
+      handler: async (i) => {
+        try {
+          return ok({ draftId: drafts.create(i.from).draft.id });
+        } catch (e: any) {
+          return fail(e?.code ?? "not_found", String(e?.message ?? e), {
+            fix: e?.fix ?? "use an id from project_list",
+          });
+        }
+      },
+    }),
+  );
+
   const models = async (): Promise<ModelInfo[]> => {
     const s = gateway.publicSettings();
     const out: ModelInfo[] = [];
@@ -244,9 +298,62 @@ export async function wireCrew(deps: {
     return out;
   };
 
+  /** a model as GET /api/models lists it */
+  const row = (m: ModelInfo) => ({
+    id: m.id,
+    provider: m.provider,
+    label: m.label,
+    local: m.caps.local,
+    caps: {
+      vision: m.caps.vision,
+      structured: m.caps.structured,
+      tools: m.caps.tools,
+      longOutput: m.caps.longOutput,
+    },
+    ctx: m.caps.ctx,
+    maxOut: m.caps.maxOut,
+    price: m.price,
+    speed: gateway.ledger.speed(m.id) ?? null,
+    spend30dUsd: gateway.ledger.totalUsd({
+      model: m.id,
+      since: new Date(Date.now() - 30 * 864e5).toISOString(),
+    } as any),
+    fit: Object.fromEntries(ROLES.map((r) => [r, modelsFor(r, [m]).shown.length ? 1 : 0])),
+  });
+  /**
+   * GET /api/settings (N20): every role names the model it really runs on, Pip's included. A role left unset gets the
+   * gateway's default; `effective` says which is which, and the fallback the gateway would use (Pip: the Producer's).
+   */
+  const settingsView = () => {
+    const pub = publicSettings(gateway.publicSettings(), gateway.secrets);
+    const saved = gateway.publicSettings().roles ?? {};
+    const roles: Record<string, { model: string; fallback?: string }> = {};
+    const effective: Record<
+      string,
+      {
+        model: string;
+        fallback: string | null;
+        source: "saved" | "default";
+        fallbackSource: "saved" | "producer" | "none";
+      }
+    > = {};
+    for (const r of ROLES) {
+      const own = saved[r];
+      roles[r] = own?.model ? own : { model: gateway.modelFor(r) };
+      const fb = gateway.fallbackFor(r) ?? null;
+      effective[r] = {
+        model: gateway.modelFor(r),
+        fallback: fb,
+        source: own?.model ? "saved" : "default",
+        fallbackSource: own?.fallback ? "saved" : fb ? "producer" : "none",
+      };
+    }
+    return { ...pub, roles: { ...pub.roles, ...roles }, effective };
+  };
+
   const hooks: Hooks = {
     settings: {
-      get: () => publicSettings(gateway.publicSettings(), gateway.secrets),
+      get: settingsView,
       put: (v: any) => {
         const cur = structuredClone(gateway.publicSettings());
         // connections change only through /api/connections
@@ -262,7 +369,30 @@ export async function wireCrew(deps: {
             rolesForProfile(v.profile, { providers: next.providers, current: cur.roles as any }) ?? cur.roles;
         saveSettings(next);
         gateway.reload();
-        return publicSettings(gateway.publicSettings(), gateway.secrets);
+        return settingsView();
+      },
+      // N22: what each profile assigns, from the server's own rule (rolesForProfile), so the UI never guesses
+      profiles: async () => {
+        const s = gateway.publicSettings();
+        const local = s.providers.some((p) => p.enabled && isLocalKind(p.kind)) ? await models() : [];
+        return {
+          best: rolesForProfile("best", { providers: s.providers }),
+          balanced: rolesForProfile("balanced", { providers: s.providers }),
+          local: rolesForProfile("local", { providers: s.providers, models: local }),
+          custom: s.profile === "custom" ? s.roles : null,
+        };
+      },
+      // N21: probe one model's skills now (spends a few cents on a paid model; only on the person's request)
+      probe: async (id) => {
+        const s = gateway.publicSettings();
+        const cfg = s.providers.find((p) => p.enabled && id.startsWith(`${p.id}/`));
+        if (!cfg) return null;
+        const prov = createProvider(cfg, gateway.secrets);
+        const list = await prov.listModels(AbortSignal.timeout(8000)).catch(() => []);
+        const m = list.find((x) => x.id === id);
+        if (!m) return null;
+        await probeModel(prov, m, { force: true, signal: AbortSignal.timeout(120_000) });
+        return row(withProbe(m));
       },
       setKey: (id, key) => {
         const cfg = gateway.publicSettings().providers.find((p) => p.id === id);
@@ -281,32 +411,9 @@ export async function wireCrew(deps: {
           return { ok: false, models: [], error: String(e?.message ?? e) };
         }
       },
-      models: async () => {
-        const list = await models();
-        return list.map((m) => ({
-          id: m.id,
-          provider: m.provider,
-          label: m.label,
-          local: m.caps.local,
-          caps: {
-            vision: m.caps.vision,
-            structured: m.caps.structured,
-            tools: m.caps.tools,
-            longOutput: m.caps.longOutput,
-          },
-          ctx: m.caps.ctx,
-          maxOut: m.caps.maxOut,
-          price: m.price,
-          speed: gateway.ledger.speed(m.id) ?? null,
-          spend30dUsd: gateway.ledger.totalUsd({
-            model: m.id,
-            since: new Date(Date.now() - 30 * 864e5).toISOString(),
-          } as any),
-          fit: Object.fromEntries(ROLES.map((r) => [r, modelsFor(r, [m]).shown.length ? 1 : 0])),
-        }));
-      },
+      models: async () => (await models()).map(row),
     },
     ledger: (q) => gateway.ledger.query({ project: q.project } as any).slice(-(q.limit ?? 200)),
   };
-  return { crew, hooks, pip, gateway, crewImpl: crew, connections };
+  return { crew, hooks, pip, gateway, crewImpl: crew, connections, drafts };
 }

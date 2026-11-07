@@ -6,6 +6,8 @@ import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } f
 import { extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { Pip } from "@pap/crew/assistant";
+import type { DraftConversations } from "@pap/crew/brief/drafts";
+import { lineOf, lineRows, needsWords } from "@pap/crew/brief/line";
 import { PHASE } from "@pap/crew/orchestrator";
 import { InstanceKey } from "@pap/crew/plan/instances";
 import type { Registry, ToolContext } from "@pap/tools";
@@ -61,6 +63,10 @@ export interface Hooks {
     setKey(id: string, key: string): void;
     test(id: string): Promise<unknown>;
     models(): Promise<unknown>;
+    /** each profile's role assignments (PIP-JOURNEY N22) */
+    profiles?(): Promise<unknown>;
+    /** probe one model's skills on request (N21); null for an unknown model */
+    probe?(id: string): Promise<unknown | null>;
   };
   ledger?: (q: { project?: string; limit?: number }) => unknown;
 }
@@ -75,6 +81,8 @@ export type ServerOpts = {
   pip?: Pip;
   /** the person's MCP servers */
   connections?: Connections;
+  /** /new as a conversation: the drafts and their side of Pip (docs/PIP-ORCHESTRATION.md §3) */
+  drafts?: DraftConversations;
   token?: string;
   mcpToken?: string;
   /** allow the Vite dev server's origin (http://localhost:5140) */
@@ -197,7 +205,15 @@ export function createApp(o: ServerOpts) {
   app.onError((e: any, c) => {
     const status = e instanceof StoreError ? e.status : 500;
     return c.json(
-      { ok: false, error: { code: e.code ?? "error", message: String(e.message ?? e), fix: e.fix } },
+      {
+        ok: false,
+        error: {
+          code: e.code ?? "error",
+          message: String(e.message ?? e),
+          fix: e.fix,
+          ...(e.path ? { path: e.path } : {}),
+        },
+      },
       status as any,
     );
   });
@@ -247,9 +263,11 @@ export function createApp(o: ServerOpts) {
       workspace: { roots: [], libraryDir: o.workspace.libraryDir },
     }),
   );
+  const noDrafts = (c: any) =>
+    c.json({ ok: false, error: { code: "no_drafts", message: "/new is not configured" } }, 503);
   app.get("/api/projects", (c) =>
-    c.json(
-      o.workspace.list().map((x) => {
+    c.json([
+      ...o.workspace.list().map((x) => {
         let extra: any = { stage: "brief", spentUsd: 0, etaSec: null, deadline: null, needsYou: 0, updatedAt: null };
         try {
           const p = proj(x.id);
@@ -262,6 +280,12 @@ export function createApp(o: ServerOpts) {
             needsYou:
               p.state.questions.filter((q) => q.status === "open").length +
               p.state.gates.filter((g) => g.status === "open").length,
+            // what it waits on, in the Projects line's words ("one pick", "your OK on the rough cut")
+            needs:
+              needsWords(
+                p.state.questions.filter((q) => q.status === "open").length,
+                p.state.gates.filter((g) => g.status === "open").map((g) => g.id),
+              ) ?? undefined,
             updatedAt: statSync(join(p.dir, "pitch.json")).mtime.toISOString(),
             // a glanceable card: is a crew working, what it says, where it is, and a frame to show
             running: st?.crew?.running ?? false,
@@ -278,12 +302,22 @@ export function createApp(o: ServerOpts) {
         } catch {}
         return { ...x, ...extra };
       }),
-    ),
+      // drafts from /new are listed too (§4.5): zeroed fields, `status.line` is Pip's last question (N14)
+      ...(o.drafts?.summaries() ?? []),
+    ]),
   );
   app.post("/api/projects", async (c) => {
     const b = await c.req.json();
+    // "Show all options", then submit: the composer starts the draft (its files and conversation move in)
+    const draft = typeof b?.draft === "string" ? b.draft : undefined;
+    if (draft) {
+      if (!o.drafts) return noDrafts(c);
+      o.drafts.get(draft);
+    }
     const res = await o.registry.call("project_create", b, ctxFor(undefined));
-    return res.ok ? c.json(res.data) : c.json(res, 400);
+    if (!res.ok) return c.json(res, 400);
+    if (draft && o.drafts) await o.drafts.adopt(draft, proj((res.data as { id: string }).id));
+    return c.json(res.data);
   });
   app.post("/api/projects/open", async (c) => {
     const { dir } = await c.req.json();
@@ -463,6 +497,8 @@ export function createApp(o: ServerOpts) {
   const projectArg = (v: unknown) => (typeof v === "string" && v ? v : undefined);
   app.get("/api/pip", (c) => {
     if (!o.pip) return noPip(c);
+    const draft = projectArg(c.req.query("draft"));
+    if (draft) return o.drafts ? c.json(o.drafts.conversation(draft)) : noDrafts(c);
     const project = projectArg(c.req.query("project"));
     const { model, mode } = o.pip.pick(project);
     return c.json({
@@ -477,6 +513,14 @@ export function createApp(o: ServerOpts) {
   app.post("/api/pip", async (c) => {
     if (!o.pip) return noPip(c);
     const b = await c.req.json().catch(() => ({}));
+    // a draft's turn (/new): one reading, one card; it streams on /api/events with `draft`
+    const draft = projectArg(b.draft);
+    if (draft) {
+      if (!o.drafts) return noDrafts(c);
+      const { turnId, done } = o.drafts.ask(draft, String(b.text ?? ""));
+      done.catch((e) => console.error(`pip draft: ${e?.message ?? e}`));
+      return c.json({ turnId }, 202);
+    }
     const project = projectArg(b.project);
     // /context is measured, not said: nothing is stored
     if (/^\s*\/context\b/i.test(String(b.text ?? ""))) return c.json({ context: await o.pip.context(project) });
@@ -520,6 +564,14 @@ export function createApp(o: ServerOpts) {
     const b = await c.req.json().catch(() => ({}));
     if (b.decision !== "confirm" && b.decision !== "decline")
       return c.json({ ok: false, error: { code: "bad_decision", message: 'decision is "confirm" or "decline"' } }, 400);
+    // a draft's card: a brief_fields answer (checked with the field registry), or Start on the brief card
+    const draft = projectArg(b.draft);
+    if (draft) {
+      if (!o.drafts) return noDrafts(c);
+      const values = b.values && typeof b.values === "object" && !Array.isArray(b.values) ? b.values : {};
+      const r = await o.drafts.decide(draft, c.req.param("cardId"), b.decision, values);
+      return c.json({ card: r.card });
+    }
     const { card, done } = o.pip.decide(
       projectArg(b.project),
       c.req.param("cardId"),
@@ -544,6 +596,66 @@ export function createApp(o: ServerOpts) {
       pip.events.off("event", on);
     });
   });
+
+  // ---- /new as a conversation: drafts (docs/PIP-ORCHESTRATION.md §3, §4.5) ----
+  app.post("/api/drafts", async (c) => {
+    if (!o.drafts) return noDrafts(c);
+    const b = await c.req.json().catch(() => ({}));
+    const from = projectArg(b?.from);
+    return c.json(o.drafts.create(from));
+  });
+  app.get("/api/drafts/:id", (c) => (o.drafts ? c.json(o.drafts.get(c.req.param("id"))) : noDrafts(c)));
+  app.delete("/api/drafts/:id", (c) => {
+    if (!o.drafts) return noDrafts(c);
+    o.drafts.remove(c.req.param("id"));
+    return c.json({ ok: true });
+  });
+  app.patch("/api/drafts/:id", async (c) => {
+    if (!o.drafts) return noDrafts(c);
+    const b = await c.req.json().catch(() => ({}));
+    const fields = b?.fields && typeof b.fields === "object" && !Array.isArray(b.fields) ? b.fields : null;
+    if (!fields)
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: "bad_fields",
+            message: "send { fields: { … } }",
+            fix: 'e.g. { "fields": { "lengthSec": 45 } }',
+          },
+        },
+        400,
+      );
+    return c.json(o.drafts.setFields(c.req.param("id"), fields));
+  });
+  app.get("/api/drafts/:id/composer", async (c) =>
+    o.drafts ? c.json(await o.drafts.composer(c.req.param("id"))) : noDrafts(c),
+  );
+  app.post("/api/drafts/:id/files", async (c) => {
+    if (!o.drafts) return noDrafts(c);
+    const id = c.req.param("id");
+    o.drafts.get(id);
+    const len = Number(c.req.header("content-length") ?? 0);
+    if (len > 20 * 1024 * 1024)
+      return c.json({ ok: false, error: { code: "too_big", message: "max 20 MB", fix: "send a smaller file" } }, 413);
+    const buf = new Uint8Array(await c.req.arrayBuffer());
+    const ref = o.drafts.addFile(id, c.req.query("name") ?? "", buf, c.req.header("content-type") ?? "");
+    return c.json({ ref });
+  });
+  app.get("/api/drafts/:id/files/:name", (c) => {
+    if (!o.drafts) return noDrafts(c);
+    const f = o.drafts.filePath(c.req.param("id"), c.req.param("name"));
+    return existsSync(f) ? fileResponse(f) : c.text("not found", 404);
+  });
+  app.patch("/api/drafts/:id/refs/:name", async (c) => {
+    if (!o.drafts) return noDrafts(c);
+    const b = await c.req.json().catch(() => ({}));
+    return c.json(o.drafts.patchRef(c.req.param("id"), c.req.param("name"), { type: b?.type, rights: b?.rights }));
+  });
+  // Pip's line over the Projects page, from state (D7): no model call
+  app.get("/api/workspace/line", (c) =>
+    c.json(lineOf(lineRows(o.workspace, (p) => o.crew?.status(p).crew?.running ?? false))),
+  );
 
   // ---- connections (the person's MCP servers); secrets are never echoed ----
   const noConn = (c: any) =>
@@ -607,6 +719,26 @@ export function createApp(o: ServerOpts) {
     c.json((await o.hooks?.settings?.test(c.req.param("id"))) ?? { ok: false }),
   );
   app.get("/api/models", async (c) => c.json((await o.hooks?.settings?.models()) ?? []));
+  // each profile's role assignments, as the server would set them (N22)
+  app.get("/api/settings/profiles", async (c) => c.json((await o.hooks?.settings?.profiles?.()) ?? {}));
+  // check one model's skills now (N21); a model id has slashes: send it encoded, or as is
+  app.post("/api/models/:id{.+}/probe", async (c) => {
+    const id = decodeURIComponent(c.req.param("id"));
+    const row = await o.hooks?.settings?.probe?.(id);
+    if (!row)
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: "not_found",
+            message: `no model ${id.slice(0, 80)} on an enabled provider`,
+            fix: "use an id from GET /api/models, such as anthropic/claude-sonnet-5-5",
+          },
+        },
+        404,
+      );
+    return c.json(row);
+  });
   app.get("/api/ledger", (c) =>
     c.json(o.hooks?.ledger?.({ project: c.req.query("project"), limit: Number(c.req.query("limit") ?? 200) }) ?? []),
   );
@@ -646,6 +778,21 @@ export function createApp(o: ServerOpts) {
     if (!outs.length) return c.body(null, 202);
     return c.json(Array.isArray(body) ? outs : outs[0]);
   });
+
+  // an unknown API route is a JSON 404 with a fix, never the UI's page
+  app.all("/api/*", (c) =>
+    c.json(
+      {
+        ok: false,
+        error: {
+          code: "not_found",
+          message: `no route ${c.req.method} ${c.req.path.slice(0, 120)}`,
+          fix: "see docs/API.md for the studio's routes",
+        },
+      },
+      404,
+    ),
+  );
 
   // ---- the built UI ----
   app.get("*", (c) => {

@@ -5,13 +5,11 @@ import { ProjectStage } from "./components/ProjectStage.tsx";
 import { SimpleProjectPage } from "./components/SimpleProject.tsx";
 import { client } from "./lib/client.ts";
 import { isStage } from "./lib/derive.ts";
-import { docsRoute } from "./lib/docs.ts";
 import { useView } from "./lib/hooks.ts";
 import type { View } from "./lib/human.ts";
 import { Link, match, navigate, usePath } from "./lib/router.tsx";
 import { type Adopted, freshStage, useAdopted } from "./lib/stage.ts";
 import { ComposerPage } from "./pages/Composer.tsx";
-import { DocsPage } from "./pages/Docs.tsx";
 import { LibraryPage } from "./pages/Library.tsx";
 import { ProjectsPage } from "./pages/Projects.tsx";
 import { RecordPage } from "./pages/Record.tsx";
@@ -37,8 +35,6 @@ function Route({ path, view, adopted }: { path: string; view: View; adopted: Ado
   n = match("/new/:draftId", path);
   if (n) return <ProjectStage key={stageKey} draftId={n.draftId} />;
   if (path === "/library") return <LibraryPage />;
-  const docs = docsRoute(path);
-  if (docs) return <DocsPage route={docs} path={path} />;
   if (path === "/settings") {
     navigate("/settings/setup", { replace: true });
     return null;
@@ -78,13 +74,7 @@ export function App() {
   useEffect(() => {
     if (path === "/new") freshStage();
   }, [path]);
-  const section = path.startsWith("/library")
-    ? "library"
-    : path.startsWith("/settings")
-      ? "settings"
-      : docsRoute(path)
-        ? "docs"
-        : "projects";
+  const section = path.startsWith("/library") ? "library" : path.startsWith("/settings") ? "settings" : "projects";
   return (
     <div className="app">
       <SkipLink href="#main" label="Skip to content" />
@@ -101,9 +91,6 @@ export function App() {
           </Link>
           <Link href="/settings/setup" aria-current={section === "settings" ? "page" : undefined}>
             Settings
-          </Link>
-          <Link href="/docs" aria-current={section === "docs" ? "page" : undefined}>
-            Docs
           </Link>
         </nav>
         <div className="topbar-end">

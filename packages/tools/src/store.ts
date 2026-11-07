@@ -522,7 +522,7 @@ export class OpenProject {
     this.state.questions.push(q);
     this.saveState();
     this.emit("question", q);
-    if (q.timeoutSec)
+    if (q.timeoutSec && !q.rights)
       setTimeout(
         () => this.answer(q.id, { optionId: q.recommendedId }, "timeout").catch(() => {}),
         q.timeoutSec * 1000,
@@ -544,6 +544,14 @@ export class OpenProject {
     const q = this.state.questions.find((x) => x.id === id);
     if (!q) throw new StoreError("not_found", `no question ${id}`);
     if (q.status !== "open") return q;
+    // a likeness or logo is the person's claim: nobody else answers its rights question (PIP-JOURNEY N15)
+    if (q.rights && by !== "user")
+      throw new StoreError(
+        "person_only",
+        `only the person can answer the rights question for ${q.rights.asset}`,
+        "ask the person in the studio; the crew waits for them",
+        403,
+      );
     if (a.optionId && !q.options.some((o) => o.id === a.optionId))
       throw new StoreError(
         "bad_answer",
@@ -695,6 +703,54 @@ export class OpenProject {
   }
 }
 
+/** a title as a folder and id stem: "QuestDay pitch" -> "questday_pitch" */
+export const projectSlug = (title: string) =>
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40) || "pitch";
+
+/**
+ * The document a new project starts with (pure: no folder). `Workspace.create` writes it, and `/new`'s brief card
+ * plans and prices the very same document before anything is made.
+ */
+export function newProjectDoc(input: { title: string; brief: ProjectT["brief"]; budgetUsd: number }): ProjectT {
+  const slug = projectSlug(input.title);
+  const id = /^[a-z]/.test(slug) ? slug : `p_${slug}`;
+  return Project.parse({
+    pap: 1,
+    rev: 0,
+    id,
+    title: input.title,
+    canvas: { w: 320, h: 180, fps: 30, palette: "pap-night@1" },
+    brief: input.brief,
+    script: { cues: [{ id: "c01", text: "Placeholder: the Writer replaces this." }], timing: { mode: "estimate" } },
+    composition: { hold: 1, endHold: 3, duration: "E(c01)+endHold" },
+    scenes: [
+      {
+        id: "s01",
+        title: "Placeholder",
+        kind: "decl",
+        from: 0,
+        to: "duration",
+        recipes: [{ id: "backdrop_night", params: {} }],
+      },
+    ],
+    audio: { sfx: {}, music: { generator: "chip-bed" } },
+    delivery: [{ id: "hd", scale: 6, crf: 16, out: `${slug}.mp4` }],
+    // what the night backdrop and the common recipes draw, so a new project never shows missing-asset boxes
+    assets: [
+      { id: "font", src: "lib:font-5x8@1" },
+      ...["moon", "skyline", "tiles", "props", "qblock", "items", "powerups", "castle", "gamers"].map((id) => ({
+        id,
+        src: `lib:${id}@1`,
+      })),
+    ],
+    budget: { capUsd: input.budgetUsd },
+  });
+}
+
 /** All projects this process knows: the roots it scans plus folders opened by path. */
 export class Workspace {
   readonly libraryDir = LIBRARY_DIR;
@@ -761,49 +817,13 @@ export class Workspace {
     return this.get(id);
   }
   create(input: { title: string; brief: ProjectT["brief"]; budgetUsd: number; dir?: string }): OpenProject {
-    const slug =
-      input.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "")
-        .slice(0, 40) || "pitch";
+    const slug = projectSlug(input.title);
     const root = this.roots()[0] ?? join(PAP_HOME, "projects");
     let dir = input.dir ?? join(root, slug);
     for (let n = 2; !input.dir && existsSync(dir); n++) dir = join(root, `${slug}_${n}`);
     if (existsSync(join(dir, "pitch.json"))) throw new StoreError("exists", `a project already lives in ${dir}`);
     mkdirSync(join(dir, "assets"), { recursive: true });
-    const id = /^[a-z]/.test(slug) ? slug : `p_${slug}`;
-    const doc = Project.parse({
-      pap: 1,
-      rev: 0,
-      id,
-      title: input.title,
-      canvas: { w: 320, h: 180, fps: 30, palette: "pap-night@1" },
-      brief: input.brief,
-      script: { cues: [{ id: "c01", text: "Placeholder: the Writer replaces this." }], timing: { mode: "estimate" } },
-      composition: { hold: 1, endHold: 3, duration: "E(c01)+endHold" },
-      scenes: [
-        {
-          id: "s01",
-          title: "Placeholder",
-          kind: "decl",
-          from: 0,
-          to: "duration",
-          recipes: [{ id: "backdrop_night", params: {} }],
-        },
-      ],
-      audio: { sfx: {}, music: { generator: "chip-bed" } },
-      delivery: [{ id: "hd", scale: 6, crf: 16, out: `${slug}.mp4` }],
-      // what the night backdrop and the common recipes draw, so a new project never shows missing-asset boxes
-      assets: [
-        { id: "font", src: "lib:font-5x8@1" },
-        ...["moon", "skyline", "tiles", "props", "qblock", "items", "powerups", "castle", "gamers"].map((id) => ({
-          id,
-          src: `lib:${id}@1`,
-        })),
-      ],
-      budget: { capUsd: input.budgetUsd },
-    });
+    const doc = newProjectDoc(input);
     writeFileSync(join(dir, "pitch.json"), `${JSON.stringify(doc, null, 2)}\n`);
     writeFileSync(join(dir, ".gitignore"), "out/\nruns/\nprivate/\nhistory/blobs/\n");
     return this.openDir(dir);

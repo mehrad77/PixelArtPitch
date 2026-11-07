@@ -5,6 +5,7 @@ import { Registry } from "./registry.ts";
 export * from "./align.ts";
 export * from "./assist.ts";
 export * from "./defs.ts";
+export * from "./drafts.ts";
 export * from "./registry.ts";
 export * from "./store.ts";
 

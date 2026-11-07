@@ -48,6 +48,8 @@ export const QuestionInput = z.object({
   /** what happens if nobody answers: the recommended option is taken after this many seconds (null: wait) */
   timeoutSec: z.number().int().positive().nullable().default(null),
   from: z.string().default("producer"),
+  /** the plan's `rights` node for a likeness or logo (PIP-JOURNEY N15): only the person answers it, never a timeout */
+  rights: z.object({ asset: z.string(), private: z.literal(true) }).optional(),
 });
 export type QuestionInput = z.input<typeof QuestionInput>;
 export const Question = QuestionInput.extend({

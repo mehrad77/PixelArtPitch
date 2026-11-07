@@ -24,7 +24,13 @@ Pip sits above the orchestrator but never competes with it:
 
 Menu intents: `files`, `translate_subtitles`, `change`, `new_from_this`, `export`, `status`, `explain`, `other`.
 
-The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-5-5` with the Producer's model as the fallback. Under the Local profile it is the local text model, in menu mode.
+The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-5-5` with the Producer's model as the fallback. Under the Local profile it is the local text model, in menu mode. `GET /api/settings` names it in `roles.assistant` even when it was never saved (`effective.assistant.source: "default"`).
+
+### Fallbacks (what a role's fallback covers, PIP-JOURNEY N23)
+
+- **The gateway** escalates once to the role's fallback on a model failure of a **structured** (`json`) call only, never on a budget stop or a cancel. Every crew role's calls are structured.
+- **Pip's own turn** (agent or menu) is retried once, whole, on Pip's fallback (`Pip.turn`); its tool steps (`chat`) never switch model mid-turn.
+- **No fallback:** the conductor's tool turns (`assistant.conduct`), Pip's plan revision (`assistant.plan`: one repair, then the rules plan) and the reading on `/new` (`assistant.brief`: the rules parse stands in).
 
 ## Tools Pip can use
 
@@ -33,7 +39,7 @@ The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-
   - `export_video`
   - `subtitles_translate` (new)
   - `crew_request_change` (new)
-  - `project_fork` (new)
+  - `draft_create` ("Make another like this": it opens a draft on `/new`; `project_fork` stays in the registry for MCP clients but is no longer Pip's)
   - `crew_run`, `crew_pause`
   - `note_add`
   - `question_answer` and `gate_decide`: only when the person asked in words, and the card states the decision
@@ -55,6 +61,7 @@ The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-
   - It gets this project's settings, cast and style, and a new brief. The brief is Pip's draft, which the person sees and can edit on the card.
   - The script, storyboard and renders are not copied.
   - The new project waits at G0 (brief) for the person. It returns `{projectId}`.
+- **`draft_create({from})`** (registered by the server, `apps/server/src/wire.ts`) opens a draft on `/new` from a project: it keeps the audience, length, narration, involvement, profile, style and budget, never the idea or the files, and returns `{draftId}`. Pip's card for it is "Make another video like this" (`usd: [0, 0]`, no editable brief, confirm "Open it"); its result is `{ text, draftId }` and the UI goes to `/new/:draftId` (PIP-JOURNEY N25). Start there copies the project's look (`copyLook`) without its private art.
 - **`feature_request({text, context})`** appends to `~/.pixelartpitch/feature-requests.jsonl`.
 
 ## Facts Pip must know (in its system prompt, generated from code where possible)
@@ -69,7 +76,19 @@ The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-
 
 - **Per project:** `<project>/runs/pip.jsonl`, one JSON line per turn item.
 - **Workspace-level** (asked from the Projects page, no project): `~/.pixelartpitch/pip.jsonl`. From there Pip can list projects, fork one, or start a new one: it drafts a brief and opens the composer prefilled with it.
+- **Per draft** (`/new`, PIP-ORCHESTRATION §3): `$PAP_HOME/drafts/<id>/pip.jsonl`, in the same format. Start appends it to the new project's `runs/pip.jsonl`, so the project's Pip has the whole thread.
 - The model sees the last 20 items plus a fresh project summary, never the whole log.
+
+## `/new`: the draft conversation (`packages/crew/src/brief/`)
+
+- A draft turn is not the tool loop. It is **one reading** of the person's words, then Pip's reply and **at most one card**.
+  - Agent mode: one `assistant.brief` call (prompt `assistant/brief.md`, Pip's model, no fallback), metered on the `_workspace` guard ($1 a day). Its output is `BriefReadOut` (§3.3); code keeps a value only when its `quote` appears in the person's messages, and parses it with the field registry (`brief/registry.ts`).
+  - Menu mode, a local model, or a failed read: the rules parse (`rulesRead`), free.
+  - The idea is the first message (minus the clauses the parse took); the title is Pip's in agent mode, else "<Product> pitch" or the first 6 words.
+- **The question card** (`form: "brief_fields"`): the open fields in the order audience, involvement, lengthSec, narration, budget, with Pip's wording, plus the rights of any file still `unsure`; 3 fields or fewer. A second card only for a likeness, voice or logo the first left `unsure`; at most 2 before the brief card.
+- **The brief card** (`type: "brief"`): the rules plan of the very document Start writes, priced, with the ETA, the crew preview and the picks line. Free.
+- **Start** (the brief card's confirm): the project under the first project root, G0 passed, the crew runs. A message typed instead of answering reads again and marks the open card `superseded`.
+- The events go on `/api/events` as `pip` events with `draft` in the data. Slash commands answer "Commands work inside a project."
 
 ## Item and card shapes (the contract between server and UI)
 

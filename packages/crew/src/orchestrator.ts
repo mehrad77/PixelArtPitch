@@ -2701,6 +2701,7 @@ export class Crew {
         recommendedId: "use",
         blocks: ["animate"],
         from: "pip",
+        rights: { asset: name, private: true },
       },
       "pip",
     );

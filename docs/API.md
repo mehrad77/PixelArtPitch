@@ -128,23 +128,40 @@ type Cap = "passed" | "claimed" | "failed" | "unknown";
 Each stored event has `id` (event-log seq), `event` name and JSON `data`; a transient one (seq 0) is sent with no `id`, so it never moves the client's `Last-Event-ID`:
 `patch` (PatchEntry), `task` (Task), `question` (QuestionT), `note` (Note), `gate` (Gate), `ledger` ({ usd, spentUsd, reservedUsd, model, role }), `digest` ({ text }), `render` ({ kind: "proxy" | "still" | "final", url }), `log` ({ level, text, role? }), `stage` ({ stage }), `pip` ({ type: "thinking" } (transient, id 0) | { type: "item", item: PipItem } | { type: "card", itemId, card: PipCard } | { type: "summary", summary: PipSummary }), `channel` (ChannelMsg), `plan` ({ view: PlanView; revision?: PlanRevisionSummary }: stored when it carries a revision; a status-only change is transient, id 0), `run` ({ id, status: "start" \| "done" \| "failed" \| "stopped" }: stored, a crew run's bounds; at its end the run's still-open plan rows are cancelled with `endedAt`), `plan_status` ({ rev, tasks: { id, status, note?, taskIds? }[] }: stored, just before that transient view: the plan tasks whose status moved, so the instances replay from the log; the UI may ignore it), `instance` ({ instance: Instance; change: "spawn" \| "ghost" \| "live" \| "idle" \| "end" \| "revive" }: transient, derived; a `spawn` or `revive` comes before its task's `working` row, an `end` after its last task event), `milestone` ({ id, at, kind: "gate" \| "answer" \| "stage" \| "export" \| "change" \| "plan", text }; the ones derived from other events are sent live with id 0, and `ProjectState.milestones` derives them all from the log). The `plan` milestones are "Plan ready · N tasks to start" (when G0 passes) and "Plan changed: <reason>" (each revision with ops). The Producer's own milestone is now "Brief read".
 
-## `/new` as a conversation (the mock answers these now; the server from P3)
+## `/new` as a conversation (served since P3)
 
-`apps/web` calls these from `HttpClient` and the mock (`apps/web/src/mock/drafts.ts`) answers them in `?mock=1`. Until the server serves `/api/drafts`, the studio keeps the composer at `/new`. The shapes are PIP-ORCHESTRATION §4.2; the UI's needs that differ are PIP-JOURNEY §7.2 (N7, N13–N18).
+The server answers these as the mock (`apps/web/src/mock/drafts.ts`) does. The shapes are PIP-ORCHESTRATION §4.2; the UI's needs are PIP-JOURNEY §7.2 (N7–N9, N13–N18, N25). Drafts live in `$PAP_HOME/drafts/<id>/` (`draft.json`, `pip.jsonl`, `refs/`), never in a project root.
 
 | Method + path | Body / query | Returns |
 |---|---|---|
-| `POST /api/drafts` | `{ from?: projectId }` | `{ draft: Draft, items: PipItem[] }`; the first item is Pip's "What are we making?". Called on the first send or the first file drop, never on opening `/new` |
-| `GET /api/drafts/:id` | | `{ draft, items }` (404 once it is started or removed) |
-| `DELETE /api/drafts/:id` | | `{ ok }` |
-| `POST /api/drafts/:id/files` | raw body, `?name=` | `{ ref: DraftRef }` (rights start `unsure`; the type is guessed from the name) |
-| `PATCH /api/drafts/:id/refs/:name` | `{ type?, rights? }` | `DraftRef` |
-| `PATCH /api/drafts/:id` | `{ fields }` | `Draft` (the composer's "‹ Back to the conversation", no model call) |
-| `GET /api/drafts/:id/composer` | | `{ title, brief, budgetUsd, profile }` |
-| `POST /api/projects` | `+ draft?` | `{ id }`; the draft's conversation and files move to the project |
-| `GET /api/workspace/line` | | `{ text, parts: { projectId, kind, text }[] }`, at most 3 clauses, finished → working → waiting |
-| `GET /api/pip` | `?draft=` | a draft's conversation |
-| `POST /api/pip` | `{ draft?, about?: { instance } }` | as above; a draft's turns stream on `/api/events` as `pip` events with `draft` |
-| `POST /api/pip/cards/:cardId` | `{ draft?, values? }` | a `brief_fields` card's `values` are checked against the field registry (400 with a `fix` keeps it open); the `brief` card's confirm is Start and answers `{ card }` with `status: "started"` and `result.projectId` |
+| `POST /api/drafts` | `{ from?: projectId }` | `{ draft: Draft, items: PipItem[] }`; the first item is Pip's "What are we making?", or with `from` "Another one like <title>: same style, cast and settings. What's this one about?" (`from` prefills audience, length, narration, involvement, profile, style and budget; never the idea or the files; `404` for an unknown project). Call it on the first send or the first file drop, never on opening `/new` |
+| `GET /api/drafts/:id` | | `{ draft, items }` (404 with a `fix` once it is started or removed) |
+| `DELETE /api/drafts/:id` | | `{ ok }` (the folder goes) |
+| `POST /api/drafts/:id/files` | raw body, `?name=` (an image or a sound file, ≤ 20 MB) | `{ ref: DraftRef }`: rights start `unsure`, the type is guessed from the name; the name is made safe (last path segment, `[A-Za-z0-9._ -]`, ≤ 80 chars); `415` for another kind of file, `413` past 20 MB |
+| `GET /api/drafts/:id/files/:name` | | the file (`DraftRef.url` points here) |
+| `PATCH /api/drafts/:id/refs/:name` | `{ type?, rights? }` | `DraftRef` (the rights chips; 400 with a `fix` for a bad value) |
+| `PATCH /api/drafts/:id` | `{ fields }` | `Draft`: each field checked with the registry (400 with a `fix` and `path`), no model call (N7) |
+| `GET /api/drafts/:id/composer` | | `{ title, brief, budgetUsd, profile }` (`budgetUsd`: the draft's, else the brief card's recommendation; `profile`: the draft's, else the settings') |
+| `POST /api/projects` | `+ draft?` | `{ id }`; the draft's files move to `private/refs/`, its conversation to `runs/pip.jsonl`, `brief.source` is `composer` (so `producer.plan` stays and G0 waits) |
+| `GET /api/workspace/line` | | `{ text, parts: { projectId, kind, text }[] }`, at most 3 clauses, finished → working → failed → waiting, from state (no model call) |
+| `GET /api/pip` | `?draft=` | a draft's conversation (`summary: null`) |
+| `POST /api/pip` | `{ draft, text }` | `202 { turnId }`; `409` while its turn runs. One reading (`assistant.brief` in agent mode, metered on the `_workspace` guard; the rules parse in menu mode or on a local model), then at most one card. Its events go on `/api/events` as `pip` events with `draft` in `data`. A slash command in a draft gets "Commands work inside a project." |
+| `POST /api/pip/cards/:cardId` | `{ draft, decision, values? }` | `{ card }`. A `brief_fields` card's `values` are checked with the field registry (400 with a `fix` and `path` keeps it open); `references` is `[{ name, rights, type? }]`. The `brief` card's confirm is Start and answers `{ card }` with `status: "started"` and `result.projectId` (the project exists before the answer). Decline marks either `superseded` |
+| `GET /api/settings/profiles` | | `{ best, balanced, local, custom }`: each `Record<Role, { model, fallback? }>` or null (N22) |
+| `POST /api/models/:id/probe` | (the id encoded, or with its slashes as is) | `ModelRow` after a fresh probe (spends a few cents on a paid model), `404` with a `fix` for a model no enabled provider lists (N21) |
 
-`GET /api/projects` lists drafts too: `{ id: "draft_…", title, draft: true, createdAt, updatedAt, status: { line /* Pip's last question */ } }` with the other fields zeroed.
+- `GET /api/projects` lists drafts too: `{ id: "draft_…", title /* "New video" until the first message */, draft: true, createdAt, updatedAt, status: { line /* Pip's last question */, phase: 0 } }` with the other fields zeroed. Projects also carry `needs` ("one pick", "your OK on the rough cut", "N things").
+- `GET /api/settings`: `roles` names every role, defaults included (N20), and `effective: Record<Role, { model, fallback: string | null, source: "saved" | "default", fallbackSource: "saved" | "producer" | "none" }>`.
+- An unknown `/api/*` route is a JSON `404` with a `fix`, never the UI's page.
+- A `QuestionT` may carry `rights: { asset, private: true }` (the plan's `rights` node, N15): only the person answers it (`403 person_only` otherwise), and it never times out.
+
+**Where the server differs from the mock** (the UI needs no change for any of these):
+1. Draft ids are `draft_` + 10 hex characters (the mock: `draft_1`).
+2. `DraftRef.url` is `/api/drafts/:id/files/:name` (the mock: a blob URL), and the stored name is made safe.
+3. The audience options include `application` ("A selection committee"); the brief's `audience` text is the registry's ("People who might use it" for `users`).
+4. The brief card's estimate, ETA, preview and the budget recommendation come from the real rules plan and the ledger (the mock scales fixed numbers). The recommended budget is the p90 plus the reserve, rounded up to $0.50, within $0.50–$50.
+5. `picks` is built from the plan's gates and `rights` nodes, so an `unsure` logo or likeness gives no rights pick (it is left out of the plan) and the warning says so.
+6. The composer's `profile` defaults to the settings' profile, not "balanced".
+7. A second question card comes only for a likeness, voice or logo the first card left `unsure` (or a file dropped after it), and at most 2 question cards come before the brief card. A field the brief card showed with its default is never asked later.
+8. Pip's "Make another like this" card is the `draft_create` tool's (title "Make another video like this", confirm "Open it"); its result is `{ text, draftId }` (N25).
+9. The budget field takes $0.50–$50 (the registry table said $1–$50; the P4 e2e brief says "under $0.90").

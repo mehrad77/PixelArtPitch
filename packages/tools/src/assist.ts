@@ -75,6 +75,56 @@ export const featureRequest = defineTool({
 });
 
 // ---------------------------------------------------------------- project_fork
+/**
+ * A new project takes an old one's look: its cast (project-drawn members are files, copied; never out/, runs/ or
+ * private/), crew models, mix, subtitles, canvas, holds and deliveries, and (unless `budget: false`) its budget.
+ * `skipPrivate` leaves out a likeness or a logo: those stay private to the project they were made for.
+ */
+export async function copyLook(
+  src: OpenProject,
+  np: OpenProject,
+  author: ToolContext["author"],
+  opts: { skipPrivate?: boolean; budget?: boolean } = {},
+) {
+  const d = src.doc();
+  const assets = d.assets.filter((a) => !(opts.skipPrivate && a.flags.private));
+  for (const a of assets)
+    if (a.src.startsWith("file:")) {
+      const rel = a.src.slice(5);
+      for (const f of [rel, rel.replace(/\.json$/, ".png")])
+        if (existsSync(join(src.dir, f))) {
+          mkdirSync(join(np.dir, "assets"), { recursive: true });
+          copyFileSync(join(src.dir, f), join(np.dir, f));
+        }
+    }
+  const nd = np.doc();
+  const slugOut = nd.delivery[0]?.out ?? `${nd.id}.mp4`;
+  await np.patch(
+    [
+      { op: "replace", path: "/assets", value: assets },
+      { op: "replace", path: "/crew", value: d.crew },
+      { op: "replace", path: "/mix", value: d.mix },
+      { op: "replace", path: "/subtitles", value: d.subtitles },
+      { op: "replace", path: "/canvas", value: d.canvas },
+      {
+        op: "replace",
+        path: "/composition",
+        value: { ...d.composition, duration: nd.composition.duration },
+      },
+      {
+        op: "replace",
+        path: "/delivery",
+        value: (d.delivery.length ? d.delivery : nd.delivery).map((x, k) => ({
+          ...x,
+          out: k === 0 ? slugOut : slugOut.replace(/\.mp4$/, `-${x.id}.mp4`),
+        })),
+      },
+      ...(opts.budget === false ? [] : [{ op: "replace" as const, path: "/budget", value: d.budget }]),
+    ],
+    { reason: `made from ${src.id}: its settings, cast and style`, author },
+  );
+}
+
 export const projectFork = defineTool({
   name: "project_fork",
   title: "Make another one like this",
@@ -103,42 +153,7 @@ export const projectFork = defineTool({
       deadline: undefined,
     };
     const np = ctx.workspace.create({ title, brief, budgetUsd: d.budget.capUsd });
-    // project-drawn cast members are files: copy them (never out/, runs/ or private/)
-    for (const a of d.assets)
-      if (a.src.startsWith("file:")) {
-        const rel = a.src.slice(5);
-        for (const f of [rel, rel.replace(/\.json$/, ".png")])
-          if (existsSync(join(src.dir, f))) {
-            mkdirSync(join(np.dir, "assets"), { recursive: true });
-            copyFileSync(join(src.dir, f), join(np.dir, f));
-          }
-      }
-    const nd = np.doc();
-    const slugOut = nd.delivery[0]?.out ?? `${nd.id}.mp4`;
-    await np.patch(
-      [
-        { op: "replace", path: "/assets", value: d.assets },
-        { op: "replace", path: "/crew", value: d.crew },
-        { op: "replace", path: "/mix", value: d.mix },
-        { op: "replace", path: "/subtitles", value: d.subtitles },
-        { op: "replace", path: "/canvas", value: d.canvas },
-        {
-          op: "replace",
-          path: "/composition",
-          value: { ...d.composition, duration: nd.composition.duration },
-        },
-        {
-          op: "replace",
-          path: "/delivery",
-          value: (d.delivery.length ? d.delivery : nd.delivery).map((x, k) => ({
-            ...x,
-            out: k === 0 ? slugOut : slugOut.replace(/\.mp4$/, `-${x.id}.mp4`),
-          })),
-        },
-        { op: "replace", path: "/budget", value: d.budget },
-      ],
-      { reason: `made from ${src.id}: its settings, cast and style`, author: ctx.author },
-    );
+    await copyLook(src, np, ctx.author);
     np.setGate("g0_brief", { status: "open", items: [{ label: "Brief and budget" }] });
     np.setStatus({ line: "Waiting for you: check the brief", phase: 0 });
     np.setDigest(`Made from ${d.title}. Check the brief, then start the crew.`);

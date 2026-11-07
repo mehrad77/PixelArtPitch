@@ -18,7 +18,6 @@ You tell Pip what you're making: a 30-second pitch for your app, a launch teaser
 - **The budget is a hard cap.** Every model call reserves its worst case before it runs. The studio shows the spend, the in-flight reserve and the ETA, and asks you before the cap is crossed.
 - **Any model:** Anthropic, OpenAI, OpenRouter, and local servers (LM Studio, Ollama, llama.cpp). Each model is probed for vision, tools and structured output before it is trusted with a role.
 - **Everything is a tool.** Pip, the crew and the studio share one tool registry, and the same tools are served over MCP (stdio and Streamable HTTP). Any other agent can drive a project or join the crew. The crew can also use your own MCP servers.
-- **Docs inside the studio.** The Docs page reads the repo's guides in place and lists every tool: the studio's own, with their inputs, examples and whether they need your OK, and the ones your MCP servers add.
 - **Private stays private.** A project is a folder that can live anywhere. Likenesses of real people, logos and trademarks never leave their project, and the public library refuses them in code.
 
 ## Quick start
