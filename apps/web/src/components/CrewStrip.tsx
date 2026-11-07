@@ -660,35 +660,41 @@ function InstanceStrip({ projectId, state, lead, pipProject, conn }: StripProps)
       <h2 id="crew-strip-h" className="visually-hidden">
         The crew
       </h2>
-      <ul className="crew-faces">
+      {/* Pip at the row's start, its conversation's rule hanging from it; the crew follows toward the end, and the
+          finished line sits under the crew, never under Pip */}
+      <div className="crew-inst-row">
         {lead && (
-          <li className="crew-lead" data-thought-anchor="pip" {...holds("pip")}>
+          <div className="crew-lead" data-thought-anchor="pip" {...holds("pip")}>
             <ConductContext.Provider value={conducting}>{lead}</ConductContext.Provider>
-          </li>
+          </div>
         )}
-        {liveRow.map((x, k) => face(x, k))}
-        {ghostRow.map((x, k) => face(x, liveRow.length + k))}
-      </ul>
-      {/* who has finished: one quiet line under the row, not a face among the faces */}
-      {finished > 0 && (
-        <p className="crew-finished-line">
-          <span dir="auto">
-            <span>
-              <bdi>{finished}</bdi> {finished === 1 ? "has" : "have"} finished
-            </span>
-            {" · "}
-            <button
-              type="button"
-              id="crew-finished-btn"
-              className="linkish crew-finished-btn"
-              aria-label={`See who worked, ${finished} ${finished === 1 ? "has" : "have"} finished`}
-              onClick={() => open("finished", "crew-finished-btn")}
-            >
-              See who worked
-            </button>
-          </span>
-        </p>
-      )}
+        <div className="crew-inst-main">
+          <ul className="crew-faces">
+            {liveRow.map((x, k) => face(x, k))}
+            {ghostRow.map((x, k) => face(x, liveRow.length + k))}
+          </ul>
+          {/* who has finished: one quiet line under the row, not a face among the faces */}
+          {finished > 0 && (
+            <p className="crew-finished-line">
+              <span dir="auto">
+                <span>
+                  <bdi>{finished}</bdi> {finished === 1 ? "has" : "have"} finished
+                </span>
+                {" · "}
+                <button
+                  type="button"
+                  id="crew-finished-btn"
+                  className="linkish crew-finished-btn"
+                  aria-label={`See who worked, ${finished} ${finished === 1 ? "has" : "have"} finished`}
+                  onClick={() => open("finished", "crew-finished-btn")}
+                >
+                  See who worked
+                </button>
+              </span>
+            </p>
+          )}
+        </div>
+      </div>
       <ThoughtLayer bubbles={thoughts.bubbles} box={box} />
       <p className="visually-hidden" role="status" aria-live="polite">
         {thoughts.live}

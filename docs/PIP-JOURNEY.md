@@ -120,7 +120,7 @@ This file now matches those answers: the roster (§2), C7–C12, the brief card 
 
 ### 3.1 The crew row (simple view, `CrewStrip`)
 
-The order is Pip first, then live faces in join order, then ghosts. The row holds only those. Who has finished is one quiet line under the row, not a face or a chip among the faces. The row wraps and never scrolls sideways.
+The order is Pip first, then live faces in join order, then ghosts. The row holds only those, and it is start-aligned, never centred: Pip's face sits at the row's inline start (left in LTR, right in RTL), right above Pip's conversation, whose vertical rule hangs from the bottom of the face; the crew follows toward the inline end and wraps after Pip. Who has finished is one quiet line under the crew faces, aligned with the first of them (never under Pip, so it doesn't cut the rule); with nobody live it sits just after Pip's column, on its middle. The row never scrolls sideways.
 
 | State | When | Face | Accessible name (button) | Visible |
 |---|---|---|---|---|
@@ -195,9 +195,10 @@ The side rail becomes three groups. Each group is a list of buttons with `aria-c
 
 - **A Finished row**, at 375px on two lines:
   - Line 1: `<face> Pixel artist · founder`
-  - Line 2: `Sonnet 5.5 · 3 min · $0.31 · ✓ done`
+  - Line 2: `Sonnet 5.5 · 3 min · $0.31 · ✓ done`; with more than one life, `Sonnet 5.5 · 4 min · 2 lives · $0.39 · ✓ done`. Model names are `modelShort` everywhere ("Opus 5.5", a local one "gpt-oss 20b")
 - **Outcome words** (always an icon and a word): `✓ done`, `◐ partly done`, `■ stopped`, `✕ failed`.
-- **Time alive** is the sum of its spans, so a return adds up.
+- **Time alive** is the sum of its lives (`from` → `to`), so a return adds up; "N lives" follows it when there is more than one.
+- **The kept log renders the log's entries as they come**: a task id the state holds gets its title and status; one it doesn't (a project from before the plan, whose rows carry no `instance`) is "Earlier work". A kept row with no end time ends with the life it ran in.
 - **The kept log** (opening a finished row) is read-only:
   - A header: label, model, outcome, $, "Joined 21:04 · Left 21:07". Every time is in `<time datetime>`.
   - Pip's reason in quotes: Joined "The library had no founder sprite." Left "Drawn and approved."
@@ -311,7 +312,7 @@ Buttons: **Start** (primary) · **Show all options** (quiet).
 
 | Screen | 375px | RTL (fa) |
 |---|---|---|
-| Crew row | The row wraps. The faces stay `md`, a live face `lg`. The captions clamp at 8ch. The finished line sits under the row at its start. | The order mirrors with the flow. The spawn offset flips under `:dir(rtl)`. Bubbles use the layout's existing `rtl` branch. |
+| Crew row | Pip stays at the start; the faces wrap after it. The faces stay `md`, a live face `lg`. The captions clamp at 8ch. The finished line sits under the first crew face. | The order mirrors with the flow. The spawn offset flips under `:dir(rtl)`. Bubbles use the layout's existing `rtl` branch. |
 | Pip's line and thread | the existing simple view | every text node `dir="auto"` |
 | Question card | The fields stack, and the radios run in one column. The file row wraps: name, then the chips. | The file name is in `<bdi class="ltr" translate="no">` |
 | Brief card | The `dl` turns into label-above-value pairs | Money, durations, counts and times in `<bdi>`, numbers through `Intl` for the page's `lang` |
@@ -537,7 +538,8 @@ The faces at each moment are the §2 checkpoint table.
 | Finished line | "{n} have finished · See who worked" ("1 has finished") · the button's name "See who worked, {n} have finished" |
 | Drawer groups | "Working" · "Up next" · "Finished" |
 | Outcomes | "✓ done" · "◐ partly done" · "■ stopped" · "✕ failed" |
-| Drawer, Finished row | "{model} · {time alive} · {$} · {outcome}" |
+| Drawer, Finished row | "{modelShort} · {time alive} · {n} lives · {$} · {outcome}" ("{n} lives" only past one) · a log task the state lacks: "Earlier work" |
+| Model names | `modelWords`: "Sonnet 5.5 · Anthropic", a local model "gpt-oss 20b · LM Studio" (its last path segment, a hyphen before a number read as a space); `modelShort` is the part before " · " |
 | Studio, Plan | "Plan · rev {n}" · "rev {n} · {time} · {Rules / Pip / You}: {reason}." · "Loading the plan's changes…" · "No changes kept for this plan." |
 | Kept log | "Joined {time}" · "Left {time}" · "Back for a fix · {time}" · "Ask Pip about this" |
 | Milestones (server, `kind: "plan"`) | "Plan ready · {n} tasks to start" · "Plan changed: {revision.reason}", the reason verbatim with its first letter lowered |
@@ -554,7 +556,7 @@ The faces at each moment are the §2 checkpoint table.
 
 - **Where.** The journey lives in `apps/web/src/mock/journey.ts`. It is data (the plan's tasks, how many ticks each runs, what each reports and the revisions it triggers) played by a small deterministic executor in the same file: slots, the horizon rule and the instance fold. A list of hand-written beats couldn't stay true with `slots=1`, so the beats below are what the executor emits, not a list it reads. `MockClient` plays it with timers and the person's presses; the same class drives the node test with no DOM.
 - **/new** in mock is `apps/web/src/mock/drafts.ts`: the draft store, the rules parse (ORCHESTRATION §3.3, step 4), the question card and the brief card. Start makes the project, moves the conversation and starts the journey.
-- **The film.** The project Start makes has its own doc (`makeQuestDayDoc` in `mock/fixtures.ts`): QuestDay's six cues and the plan's four scenes s01–s04, 30 s, so its slate and timeline are its own ("0:30"), not another fixture's.
+- **The film.** The project Start makes has its own doc (`makeQuestDayDoc` in `mock/fixtures.ts`): QuestDay's six cues and the plan's four scenes s01–s04, 30 s, so its slate and timeline are its own ("0:30"), not another fixture's. Its frames are QuestDay's own cut too (`drawFrame` with `look: "questday"` in `mock/art.ts`): s01 the todo list growing beside the founder, s02 the rows turning into quest cards (the founder 2× once the step 10 change is done), s03 the quest board with the founder and a teammate left of the "Quest done!" toast, s04 the end card, "QuestDay · Make the day a quest.", with the achievement toast showing the 16 px Q badge (a star without a logo, or when the logo was left out).
 - **Turning it on.** `?mock=1&journey=todo` seeds two fixture projects: "QuestDay teaser" (finished two hours ago) and "Lantern · demo night" (one open pick). Without `journey=todo` the older fixtures stay, and `/new` still works; a project started from a draft always plays this journey.
 - **Flags**, read once at boot and kept for the tab (`sessionStorage`), so a reload keeps them:
 
@@ -675,6 +677,7 @@ Checked against `docs/PIP-ORCHESTRATION.md` as it stands today. The first list i
 | N21 | A way to check one model's skills: `POST /api/models/:id/probe` → `ModelRow` | a "Not checked" row could offer "Check it now"; today it points to Providers › Test, which checks a whole provider | only `POST /api/providers/:id/test` |
 | N22 | The profiles' assignments: `GET /api/settings/profiles` → `Record<Profile, Record<Role, {model, fallback?}>>` | each profile's "about $X per 60 s video" and the "What changes" list are computed in the UI (`pickFor`), which may pick differently from the server's `rolesForProfile` | not on the wire |
 | N23 | The fallback covers chat turns too, or says it doesn't | the gateway escalates to a role's fallback only for structured (`json`) calls; Pip's tool turns (`chat`) never fall back, so the warning on Pip's row can promise less than it says | `gateway-impl.ts` `json()` only |
+| N24 | A life ends when its last task ends or is cancelled | on a project from before the plan the Animator's first life runs 1 h 37 min (its five tasks were cancelled with the run and have no `endedAt`), so its time alive reads long though it is the sum of its lives | `lives[].to` is the next event's time |
 
 ## 8. Open questions for the person
 

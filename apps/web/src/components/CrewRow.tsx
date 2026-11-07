@@ -481,6 +481,7 @@ function InstanceRow({
               <>
                 {" · "}
                 <bdi>{duration(alive)}</bdi>
+                {i.lives.length > 1 && ` · ${i.lives.length} lives`}
               </>
             )}
           </span>

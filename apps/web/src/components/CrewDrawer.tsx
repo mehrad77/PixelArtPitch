@@ -35,7 +35,13 @@ function moodOf(i: Instance, kind: Kind, s: ProjectState, stuck: Set<string>): M
 
 /** "Sonnet 5.5 · 3 min · $0.31 · ✓ done" */
 const finishedLine = (i: Instance) =>
-  [i.model ? modelShort(i.model) : null, duration(timeAlive(i)), usd(i.usd), i.outcome ? OUTCOME_WORD[i.outcome] : null]
+  [
+    i.model ? modelShort(i.model) : null,
+    duration(timeAlive(i)),
+    i.lives.length > 1 ? `${i.lives.length} lives` : null,
+    usd(i.usd),
+    i.outcome ? OUTCOME_WORD[i.outcome] : null,
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -223,15 +229,16 @@ function InstancePane({
   onAsk: () => void;
 }) {
   const kept = kind === "finished";
-  const tasks = visibleTasks(state.tasks.filter((t) => t.instance === inst.id))
-    .map((t, i) => ({ t, i }))
-    .sort((a, b) => startOf(a.t) - startOf(b.t) || a.i - b.i)
-    .map((x) => x.t);
+  // its rows: by `Task.instance`, or by the ids the instance lists (plan task ids, or row ids on a project from
+  // before the plan, whose rows carry no instance)
+  const own = state.tasks.filter(
+    (t) => t.instance === inst.id || inst.tasks.includes(t.id) || (!!t.planTask && inst.tasks.includes(t.planTask)),
+  );
 
   // the kept log (finished), or each task's transcript (working); live lines merge in from state.activity
   const [log, setLog] = useState<InstanceLog | null | "error" | undefined>(undefined);
   const [fetched, setFetched] = useState<Record<string, ActivityEntry[] | null | "error">>({});
-  const ids = tasks.map((t) => t.id).join(",");
+  const ids = own.map((t) => t.id).join(",");
   useEffect(() => {
     let live = true;
     if (kept)
@@ -261,6 +268,35 @@ function InstancePane({
   }, [projectId, ids, kept, log]);
 
   const fromLog = log && log !== "error" ? log.entries : null;
+  // a kept log's entries show whatever the rows say: a task the state doesn't hold still gets its thread
+  const extra: Task[] = [];
+  for (const e of fromLog ?? []) {
+    if (e.source !== "task" || own.some((t) => t.id === e.taskId)) continue;
+    const t = extra.find((x) => x.id === e.taskId);
+    if (t) t.endedAt = e.at;
+    else
+      extra.push({
+        id: e.taskId,
+        kind: "",
+        role: inst.role,
+        title: "Earlier work",
+        status: "done",
+        usd: 0,
+        startedAt: e.at,
+        endedAt: e.at,
+      });
+  }
+  // a kept row that never got an end time (cancelled with the run) ends with the life it ran in, not now
+  const lifeEnd = (t: Task) => {
+    const at = Date.parse(t.startedAt ?? "");
+    const life = inst.lives.find((l) => Date.parse(l.from) <= at + 1 && (!l.to || Date.parse(l.to) >= at));
+    return life?.to ?? inst.endedAt ?? undefined;
+  };
+  const closed = (t: Task): Task => (kept && !t.endedAt && t.status !== "working" ? { ...t, endedAt: lifeEnd(t) } : t);
+  const tasks = visibleTasks([...own, ...extra].map(closed))
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => startOf(a.t) - startOf(b.t) || a.i - b.i)
+    .map((x) => x.t);
   const groups = tasks.map((t) => {
     const f = fetched[t.id];
     const base = fromLog
@@ -358,7 +394,8 @@ function InstancePane({
       </header>
       <div className="activity-thread-wrap">
         <div className="activity-thread">
-          {!groups.length && (
+          {!groups.length && kept && log === undefined && <p className="activity-empty muted">Loading what it did…</p>}
+          {!groups.length && !(kept && log === undefined) && (
             <p className="activity-empty muted">
               {kind === "upNext"
                 ? `${inst.label} hasn't started yet. What it does will show up here.`

@@ -589,13 +589,22 @@ const PROVIDER_WORD: Record<string, string> = {
   custom: "Custom",
 };
 const LOCAL = new Set(["lmstudio", "ollama", "llamacpp"]);
-/** "anthropic/claude-sonnet-5-5" → "Sonnet 5.5 · Anthropic"; "lmstudio/gemma-4-26b" → "gemma-4-26b · on this Mac" */
+const LOCAL_WORD: Record<string, string> = { lmstudio: "LM Studio", ollama: "Ollama", llamacpp: "llama.cpp" };
+/** a local model's own name: its last path segment, a hyphen before a number read as a space
+    ("openai/gpt-oss-20b" → "gpt-oss 20b", "google/gemma-4-26b-a4b-qat" → "gemma 4 26b-a4b-qat") */
+const localName = (name: string) =>
+  name
+    .split("/")
+    .pop()
+    ?.replace(/:latest$/, "")
+    .replace(/-(?=\d)/g, " ") ?? name;
+/** "anthropic/claude-sonnet-5-5" → "Sonnet 5.5 · Anthropic"; "lmstudio/openai/gpt-oss-20b" → "gpt-oss 20b · LM Studio" */
 export function modelWords(id?: string): string {
   if (!id) return "Model picked when it starts";
   const slash = id.indexOf("/");
   const provider = slash > 0 ? id.slice(0, slash) : "";
   const name = slash > 0 ? id.slice(slash + 1) : id;
-  if (LOCAL.has(provider)) return `${name} · on this Mac`;
+  if (LOCAL.has(provider)) return `${localName(name)} · ${LOCAL_WORD[provider]}`;
   let pretty = name;
   const claude = name.match(/^claude-([a-z]+)((?:-\d+)*)$/i);
   if (claude) {

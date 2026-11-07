@@ -1606,12 +1606,19 @@ export class MockClient implements Client {
     if (i < 0) i = t <= 0 ? 0 : tl.scenes.length - 1;
     const sc = tl.scenes[i];
     const st = sc ? p.state.sceneStatus?.[sc.id] : undefined;
+    const j = p.journey;
+    // the journey's film is QuestDay's own cut: its four scenes, its logo toast, the step 10 change on scene 2
+    const bigger =
+      j?.nodes.find((n) => n.id === "t_tune_s02_r2")?.status === "done" && (rev == null || rev >= p.state.rev);
+    const logo =
+      !!j && j.opts.logo !== false && p.state.questions.find((q) => q.id === "q_rights")?.answer?.optionId !== "leave";
     return drawFrame({
       t,
       sceneIndex: i,
       sceneTitle: (sc && SCENE_TITLES[sc.id]) || sc?.id || "",
       version: st?.version ?? "slate",
-      variant: rev != null && rev < p.state.rev ? 1 : 0,
+      variant: j ? (i === 1 && bigger ? 2 : 0) : rev != null && rev < p.state.rev ? 1 : 0,
+      ...(j ? { look: "questday" as const, from: sc?.from, to: sc?.to, logo } : {}),
     });
   }
   proxyUrl() {

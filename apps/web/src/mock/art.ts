@@ -78,11 +78,18 @@ export type FrameSpec = {
   version: SceneVersion;
   caption?: string;
   variant?: number;
+  /** whose film: "questday" draws the journey's own 30 s cut (its four scenes), anything else the night market */
+  look?: "questday";
+  /** the scene's start and end, for motion inside it */
+  from?: number;
+  to?: number;
+  /** the end card's achievement toast shows the logo (the draft had one, and the rights pick said use it) */
+  logo?: boolean;
 };
 
 /** one 320×180 frame as a PNG data URL */
 export function drawFrame(spec: FrameSpec): string {
-  const key = `${Math.round(spec.t * 10)}|${spec.sceneIndex}|${spec.version}|${spec.variant ?? 0}`;
+  const key = `${Math.round(spec.t * 10)}|${spec.sceneIndex}|${spec.version}|${spec.variant ?? 0}|${spec.look ?? ""}|${spec.logo ? 1 : 0}`;
   const hit = frameCache.get(key);
   if (hit) return hit;
   const W = 320;
@@ -108,6 +115,20 @@ export function drawFrame(spec: FrameSpec): string {
     c.fillStyle = k.muted;
     c.font = `8px ${font}`;
     c.fillText("not drawn yet", 16, 110);
+    return cache(key);
+  }
+
+  if (spec.look === "questday") {
+    drawQuestDay(spec, px, k, (text, x, y, size, col) => {
+      c.fillStyle = col;
+      c.font = `${size}px ${font}`;
+      c.fillText(text, x, y);
+    });
+    if (spec.version === "board") {
+      c.globalCompositeOperation = "saturation";
+      px(0, 0, W, H, k.sky);
+      c.globalCompositeOperation = "source-over";
+    }
     return cache(key);
   }
 
@@ -232,4 +253,124 @@ export function drawLogo(scale = 1): string {
   const url = c.canvas.toDataURL("image/png");
   if (scale === 1) logoCache = url;
   return url;
+}
+
+// ---- QuestDay's own cut (the journey "todo"): four scenes, 30 s, drawn from the doc's scene ids ----
+type Px = (x: number, y: number, w: number, h: number, col: string) => void;
+type Txt = (text: string, x: number, y: number, size: number, col: string) => void;
+
+/** the founder, 10×18 cells, facing the way they walk; `big` doubles them (the step 10 change on scene 2) */
+function founder(px: Px, k: Ink, x: number, y: number, step: number, big = 1) {
+  const u = big;
+  px(x + 2 * u, y, 6 * u, 5 * u, k.moon); // head
+  px(x + 2 * u, y, 6 * u, 2 * u, k.bloom); // hair
+  px(x + 6 * u, y + 2 * u, 1 * u, 1 * u, k.sky); // eye
+  px(x + 1 * u, y + 5 * u, 8 * u, 7 * u, k.hue4); // hoodie
+  px(x + 1 * u, y + 11 * u, 8 * u, 1 * u, k.sky3);
+  px(x + (step ? 2 : 4) * u, y + 12 * u, 2 * u, 6 * u, k.sky3); // legs
+  px(x + (step ? 6 : 5) * u, y + 12 * u, 2 * u, 6 * u, k.sky3);
+}
+function teammate(px: Px, k: Ink, x: number, y: number) {
+  px(x + 2, y, 6, 5, k.moonShade);
+  px(x + 2, y, 6, 2, k.hue7);
+  px(x + 3, y + 2, 1, 1, k.sky);
+  px(x + 1, y + 5, 8, 7, k.leaf);
+  px(x + 2, y + 12, 2, 6, k.sky3);
+  px(x + 6, y + 12, 2, 6, k.sky3);
+}
+/** a 7×7 star, the quest mark */
+function star(px: Px, x: number, y: number, col: string) {
+  px(x + 3, y, 1, 7, col);
+  px(x, y + 3, 7, 1, col);
+  px(x + 1, y + 1, 5, 5, col);
+}
+
+function drawQuestDay(spec: FrameSpec, px: Px, k: Ink, txt: Txt) {
+  const W = 320;
+  const H = 180;
+  const from = spec.from ?? 0;
+  const to = spec.to ?? from + 7;
+  const u = Math.max(0, Math.min(1, (spec.t - from) / Math.max(0.1, to - from)));
+  const step = Math.floor(spec.t * 6) % 2;
+  // a desk at night: the room, a window with the moon, the floor
+  px(0, 0, W, H, k.sky);
+  px(0, 132, W, 48, k.ground);
+  px(0, 132, W, 1, k.line);
+  px(236, 18, 64, 48, k.sky2);
+  px(236, 18, 64, 1, k.line);
+  for (let y = -6; y <= 6; y++)
+    for (let x = -6; x <= 6; x++) if (x * x + y * y <= 36) px(276 + x, 36 + y, 1, 1, x + y > 4 ? k.moonShade : k.moon);
+  const r = rng(spec.sceneIndex * 31 + 7);
+  for (let i = 0; i < 6; i++) px(240 + Math.floor(r() * 56), 22 + Math.floor(r() * 40), 1, 1, k.muted);
+
+  if (spec.sceneIndex === 0) {
+    // The list grows: a long todo list scrolls up beside the founder, who slumps
+    px(120, 14, 96, 116, k.sky2);
+    px(120, 14, 96, 1, k.line);
+    txt("TODO", 128, 26, 8, k.muted);
+    const rows = 3 + Math.floor(u * 10);
+    for (let i = 0; i < Math.min(rows, 11); i++) {
+      const y = 32 + i * 9;
+      px(128, y, 5, 5, k.line);
+      px(136, y + 1, 30 + ((i * 17) % 40), 3, k.muted);
+    }
+    founder(px, k, 64, 114, 0);
+    px(66, 112, 6, 2, k.sky); // a slump: the head drops a cell
+  } else if (spec.sceneIndex === 1) {
+    // Every task a quest: the rows turn into quest cards, each with a star; the founder perks up
+    const big = spec.variant === 2 ? 2 : 1;
+    const turned = Math.floor(u * 5);
+    for (let i = 0; i < 5; i++) {
+      const y = 20 + i * 21;
+      const on = i < turned;
+      px(128, y, 100, 17, on ? k.sky3 : k.sky2);
+      px(128, y, on ? 3 : 0, 17, k.signal);
+      if (on) star(px, 134, y + 5, k.signal);
+      px(146, y + 7, 40 + ((i * 13) % 30), 3, on ? k.text : k.muted);
+      if (on) txt("+10", 202, y + 11, 7, k.leaf);
+    }
+    founder(px, k, 70 - (big - 1) * 10, 132 - 18 * big, step, big);
+  } else if (spec.sceneIndex === 2) {
+    // The quest board: three columns, cards moving to Done; two people left of the box, a toast for the line
+    const cols = ["QUESTS", "DOING", "DONE"];
+    cols.forEach((name, j) => {
+      const x = 120 + j * 64;
+      px(x, 14, 58, 112, k.sky2);
+      txt(name, x + 4, 24, 7, k.muted);
+    });
+    const done = Math.floor(u * 4);
+    for (let i = 0; i < 4; i++) {
+      const col = i < done ? 2 : i === done ? 1 : 0;
+      const x = 124 + col * 64;
+      const y = 30 + (i % 4) * 22;
+      px(x, y, 50, 16, k.sky3);
+      star(px, x + 4, y + 5, col === 2 ? k.signal : k.muted);
+      px(x + 15, y + 7, 26, 3, col === 2 ? k.text : k.muted);
+    }
+    founder(px, k, 40, 114, step);
+    teammate(px, k, 78, 114);
+    // the toast: one line instead of two people talking
+    const tx = 14;
+    px(tx, 70, 96, 22, k.sky3);
+    px(tx, 70, 96, 1, k.signal);
+    txt("Quest done!", tx + 6, 85, 8, k.text);
+  } else {
+    // End card: the wordmark, the line, and the achievement toast with the logo (or a star)
+    px(0, 0, W, H, k.sky);
+    for (let i = 0; i < 30; i++) px(Math.floor(r() * W), Math.floor(r() * 60), 1, 1, i % 5 ? k.muted : k.moon);
+    txt("QuestDay", 106, 86, 20, k.text);
+    txt("Make the day a quest.", 104, 104, 8, k.muted);
+    const slide = Math.min(1, u * 3);
+    const tx = Math.round(W - 8 - 130 * slide);
+    px(tx, 132, 122, 28, k.sky3);
+    px(tx, 132, 122, 1, k.signal);
+    if (spec.logo) {
+      // the 16 px Q badge, cell for cell
+      Q_BADGE.forEach((row, y) => {
+        for (let x = 0; x < row.length; x++) if (row[x] === "#") px(tx + 6 + x, 138 + y, 1, 1, k.signal);
+      });
+    } else star(px, tx + 9, 142, k.signal);
+    txt("Achievement", tx + 28, 144, 7, k.muted);
+    txt("Day complete", tx + 28, 154, 8, k.text);
+  }
 }

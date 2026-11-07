@@ -212,12 +212,33 @@
   outline-offset: -1px;
 }
 .crew-strip[data-instances] {
+  display: block;
+}
+/* Pip at the inline start, the crew after it; the row is start-aligned and wraps after Pip */
+.crew-inst-row {
   display: grid;
-  justify-content: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+}
+.crew-inst-row > .crew-lead {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 4.5rem;
+}
+.crew-inst-main {
+  display: grid;
+  align-content: start;
+  min-inline-size: 0;
+}
+.crew-strip[data-instances] .crew-inst-main .crew-faces {
+  justify-content: flex-start;
+}
+.crew-strip[data-instances] .crew-inst-main .crew-faces:empty {
+  display: none;
 }
 /* who has finished: one quiet line under the row, at its start; muted, body size, a link-style button */
 .crew-finished-line {
-  justify-self: stretch;
   margin: var(--space-2) 0 0;
   color: var(--text-muted);
   text-align: start;
@@ -302,4 +323,11 @@
 .crew-inst-end {
   margin-block-start: calc(var(--space-1) * -1);
   color: var(--text);
+}
+/* nobody live: the finished line sits just after Pip, on its middle */
+.crew-inst-main:has(> .crew-faces:empty) {
+  align-self: center;
+}
+.crew-inst-main:has(> .crew-faces:empty) .crew-finished-line {
+  margin-block-start: 0;
 }
