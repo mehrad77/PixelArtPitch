@@ -53,6 +53,7 @@ import {
   LIBRARY,
   MODELS,
   makeDoc,
+  makeQuestDayDoc,
   ROLE_MODELS,
   SCENE_TITLES,
   SETTINGS,
@@ -122,7 +123,9 @@ function timelineOf(doc: ProjectT): TimelineJSON {
   const al = doc.script.timing.aligned;
   if (doc.script.timing.mode === "aligned" && al)
     cues = cues.map((c) => (al[c.id] ? { ...c, start: al[c.id][0], end: al[c.id][1] } : c));
-  const scenes = scenesFor(cues);
+  // a doc that sets its own scene times (the journey's QuestDay) keeps them; the older fixtures derive them from cues
+  const own = doc.scenes.length > 0 && doc.scenes.every((s) => typeof s.from === "number" && /^s\d\d$/.test(s.id));
+  const scenes = own ? doc.scenes.map((s) => ({ id: s.id, from: Number(s.from), to: Number(s.to) })) : scenesFor(cues);
   return {
     cues,
     hold: doc.composition.hold,
@@ -143,8 +146,9 @@ function newProject(
   brief: Partial<ProjectT["brief"]>,
   capUsd: number,
   seeded: boolean,
+  make: typeof makeDoc = makeDoc,
 ): MockProject {
-  const doc = makeDoc(id, title, brief);
+  const doc = make(id, title, brief);
   doc.budget.capUsd = capUsd;
   if (!seeded) doc.notes = [];
   const timeline = timelineOf(doc);
@@ -604,6 +608,7 @@ class MockBackend {
       },
       typeof f.budget === "number" ? f.budget : JOURNEY.capUsd,
       false,
+      makeQuestDayDoc,
     );
     Object.assign(p.state, {
       tasks: [],
@@ -622,6 +627,7 @@ class MockBackend {
       ...FLAGS,
       base: Date.now(),
       sceneIds: p.state.timeline.scenes.map((sc) => sc.id),
+      logo: d.refs.some((r) => r.type === "logo"),
       logoIcon: d.refs.some((r) => r.type === "logo") ? drawLogo() : undefined,
       files: () => {
         const rows = mockFiles("questday-pitch.mp4", cues, 2_400_000);

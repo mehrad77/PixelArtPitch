@@ -41,8 +41,8 @@ const rowOf = (s: ProjectState): Row => {
 const key = (r: Row) => `${[...r.live].sort().join("|")}#${[...r.ghosts].sort().join("|")}#${r.counter}`;
 
 type Run = { states: ProjectState[]; events: ServerEvent[][]; final: ProjectState; sim: Journey };
-function play(slots: number, maxTicks = 200): Run {
-  const sim = new Journey({ speed: 1, slots, auto: true, base: BASE });
+function play(slots: number, maxTicks = 200, logo = true): Run {
+  const sim = new Journey({ speed: 1, slots, auto: true, base: BASE, logo });
   let s = blank();
   const states: ProjectState[] = [];
   const events: ServerEvent[][] = [];
@@ -111,9 +111,11 @@ test("the crew row passes every §2 checkpoint, in order", () => {
   }
 });
 
-test("live faces are instances with a working task, never more than 3 ghosts", () => {
+test("live faces are instances with a working task or one waiting on the person, never more than 3 ghosts", () => {
   for (const s of play(3).states) {
-    const working = new Set(s.tasks.filter((t) => t.status === "working").map((t) => t.instance));
+    const working = new Set(
+      s.tasks.filter((t) => t.status === "working" || t.status === "waiting_user").map((t) => t.instance),
+    );
     const live = new Set((s.instances ?? []).filter((i) => i.state === "live").map((i) => i.id));
     assert.deepEqual([...live].sort(), [...working].sort());
     assert.ok((s.instances ?? []).filter((i) => i.ghost).length <= 3);
@@ -241,4 +243,25 @@ test("every reason and milestone matches its §5 template", () => {
   // role words in sentence case (N5), qualifier after " · "
   for (const e of flat)
     if (e.event === "instance") assert.match(e.data.instance.label, /^[A-Z][a-z]+( [a-z]+)?( · [a-z0-9 ]+)?$/);
+});
+
+test("the picks follow the draft: 3 with a logo, 2 without (no import, no logo pick, no toast)", () => {
+  const picks = (r: Run) => {
+    const flat = r.events.flat();
+    const asked = new Set(flat.flatMap((e) => (e.event === "question" ? [e.data.id] : [])));
+    const gates = new Set(flat.flatMap((e) => (e.event === "gate" && e.data.status === "open" ? [e.data.id] : [])));
+    return asked.size + gates.size;
+  };
+  const withLogo = play(3);
+  assert.equal(picks(withLogo), 3, "the script, the logo, the rough cut");
+  const without = play(3, 200, false);
+  assert.ok(without.sim.ended, "the run without a logo reaches step 12");
+  assert.equal(picks(without), 2, "the script and the rough cut");
+  const flat = without.events.flat();
+  assert.ok(!flat.some((e) => e.event === "question" && e.data.id === "q_rights"), "no logo pick");
+  assert.ok(!flat.some((e) => e.event === "task" && e.data.kind === "asset.import"), "no import");
+  assert.ok(!without.sim.nodes.some((n) => n.gate === "rights"), "no rights node, so no logo toast waits on one");
+  assert.ok(flat.some((e) => e.event === "milestone" && e.data.text === "Plan ready · 10 tasks to start"));
+  assert.equal(rowOf(without.final).counter, 11);
+  assert.ok(Math.abs(without.final.budget.spentUsd - 1.77) <= 0.01);
 });

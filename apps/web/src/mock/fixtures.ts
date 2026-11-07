@@ -65,7 +65,26 @@ export function scenesFor(cues: TimelineJSON["cues"]): TimelineJSON["scenes"] {
   }
   return out;
 }
+/** the journey's own film (PIP-JOURNEY §6): QuestDay, a fictional todo app, 30 s in the 4 scenes the plan expects */
+export const CUES_QUESTDAY = [
+  { id: "c01", text: "Your list keeps growing, and nothing feels done." },
+  { id: "c02", text: "QuestDay turns every task into a quest." },
+  { id: "c03", text: "Tap one, and the board rewards you." },
+  { id: "c04", text: "Streaks, small wins, a reason to come back." },
+  { id: "c05", text: "Teams finish a third more of their week." },
+  { id: "c06", text: "QuestDay. Make the day a quest." },
+];
+export const QUESTDAY_SCENES: TimelineJSON["scenes"] = [
+  { id: "s01", from: 0, to: 7 },
+  { id: "s02", from: 7, to: 14 },
+  { id: "s03", from: 14, to: 22 },
+  { id: "s04", from: 22, to: 30 },
+];
 export const SCENE_TITLES: Record<string, string> = {
+  s01: "The list grows",
+  s02: "Every task a quest",
+  s03: "The quest board",
+  s04: "End card",
   s1_open: "Market wakes",
   s2_problem: "The long walk",
   s3_product: "Lanterns light up",
@@ -327,3 +346,34 @@ export const LIBRARY: LibraryIndex = {
     },
   ],
 };
+
+/** a new 30 s QuestDay pitch, as Start makes it from the draft: its own cues and the plan's 4 scenes, no Lantern art */
+export function makeQuestDayDoc(id: string, title: string, brief: Partial<ProjectT["brief"]> = {}): ProjectT {
+  const doc = makeDoc(id, title, {
+    idea: "A 30 s pitch for QuestDay, a todo app that turns tasks into quests.",
+    audience: "Investors",
+    ask: "",
+    tone: [],
+    mustSay: [],
+    references: [],
+    narration: "none",
+    ...brief,
+  });
+  doc.script.cues = CUES_QUESTDAY;
+  doc.composition.duration = "30";
+  doc.scenes = QUESTDAY_SCENES.map((s) => ({
+    kind: "decl" as const,
+    id: s.id,
+    title: SCENE_TITLES[s.id] ?? s.id,
+    from: s.from,
+    to: s.to,
+    cues: [],
+    notes: "",
+    recipes: [],
+    layers: [],
+  }));
+  doc.assets = [];
+  doc.delivery = [{ id: "main", scale: 6, crf: 16, out: "questday-pitch.mp4" }];
+  doc.notes = [];
+  return doc;
+}

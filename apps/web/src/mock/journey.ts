@@ -93,6 +93,10 @@ type Node = {
   /** runs at the start of each of its ticks (elapsed counts from 1) */
   during?: (sim: Journey, n: Node, elapsed: number) => void;
   done?: Hook;
+  /** the question its member asks the person when its work is done: the member stays (needs you) until answered */
+  asks?: (at: string) => QuestionT;
+  /** the task row's title while it waits on the person */
+  asking?: string;
 };
 type Meta = {
   id: string;
@@ -105,6 +109,8 @@ type Meta = {
   lives: { from: string; to: string | null; reason?: string }[];
   lastReport?: Instance["lastReport"];
   endReason?: string;
+  /** the question it is waiting on the person for, and the task that asked */
+  asking?: { qid: string; node: Node } | null;
   /** plan order of its first task */
   order: number;
 };
@@ -148,6 +154,8 @@ export type JourneyOpts = JourneyFlags & {
   files?: () => { rows: FileRow[]; pip: PipFile[] };
   /** the logo as a 16×16 icon (a data URL in the browser) */
   logoIcon?: string;
+  /** the draft had a logo: the import, the `rights` pick and the logo toast are planned only then (default true) */
+  logo?: boolean;
 };
 
 export class Journey {
@@ -249,31 +257,35 @@ export class Journey {
       usd: 0.22,
       title: "Writing three script angles",
       reason: "Pip brought in the Writer for three script angles",
-      done: (s) => s.question(Q_ANGLE(s.at())),
+      asks: Q_ANGLE,
+      asking: "Waiting for you to pick an angle",
     });
-    this.add({
-      id: "t_import",
-      kind: "asset.import",
-      role: "art-director",
-      instance: "art-director",
-      asset: "logo",
-      stage: "storyboard",
-      deps: ["g0"],
-      ticks: 1,
-      usd: 0,
-      title: "Bringing in your logo as a 16 px icon",
-      reason: "Pip brought in the Art director to bring in your logo",
-      done: (s) => s.question(Q_RIGHTS(s.at())),
-    });
+    const logo = this.opts.logo !== false;
+    if (logo)
+      this.add({
+        id: "t_import",
+        kind: "asset.import",
+        role: "art-director",
+        instance: "art-director",
+        asset: "logo",
+        stage: "storyboard",
+        deps: ["g0"],
+        ticks: 1,
+        usd: 0,
+        title: "Bringing in your logo as a 16 px icon",
+        reason: "Pip brought in the Art director to bring in your logo",
+        asks: Q_RIGHTS,
+        asking: "Waiting for your OK on the logo",
+      });
     this.gate("g1", "g1_script", "script", ["t_write"]);
-    this.gate("rights", "rights", "storyboard", ["t_import"]);
+    if (logo) this.gate("rights", "rights", "storyboard", ["t_import"]);
     this.add({
       id: "t_board",
       kind: "director.storyboard",
       role: "director",
       instance: "director",
       stage: "storyboard",
-      deps: ["g1", "t_import"],
+      deps: logo ? ["g1", "t_import"] : ["g1"],
       ticks: 5,
       usd: 0.18,
       title: "Storyboarding 4 scenes",
@@ -299,8 +311,8 @@ export class Journey {
       s01: { ticks: 4, usd: 0.14, deps: ["g2"] },
       s02: { ticks: 5, usd: 0.12, deps: ["g2"] },
       s03: { ticks: 3, usd: 0.19, deps: ["g2"] },
-      // the end card carries the achievement toast with your logo: it waits on the rights pick
-      s04: { ticks: 6, usd: 0.12, deps: ["g2", "rights"] },
+      // the end card carries the logo toast only when there is a logo
+      s04: { ticks: 6, usd: 0.12, deps: logo ? ["g2", "rights"] : ["g2"] },
     };
     SCENES.forEach((sc, i) => {
       this.add({
@@ -802,6 +814,14 @@ export class Journey {
     if (n.role !== "person") this.spend(n.usd, n.role, ROLE_MODELS[n.role]);
     n.done?.(this, n);
     const m = this.metas.get(n.instance);
+    if (m && n.asks) {
+      // its work is done and the plan moves on, but its row waits on the person, so the member stays (needs you)
+      const q = n.asks(this.at());
+      m.asking = { qid: q.id, node: n };
+      this.emit({ event: "task", data: { ...row, status: "waiting_user", title: n.asking ?? n.title } });
+      this.question(q);
+      return;
+    }
     if (m) {
       const life = m.lives.at(-1);
       if (life && !life.to && !this.nodes.some((x) => x !== n && x.instance === m.id && x.status === "running"))
@@ -860,6 +880,7 @@ export class Journey {
       const ok = n.status === "ready" || (n.status === "pending" && (dist.get(n.id) ?? 9) <= 2);
       if (!ok) return;
       if (this.nodes.some((x) => x.instance === n.instance && x.status === "running")) return;
+      if (this.metas.get(n.instance)?.asking) return;
       const d = n.status === "ready" ? 0 : (dist.get(n.id) ?? 9);
       const cur = best.get(n.instance);
       if (!cur || d < cur.d) best.set(n.instance, { d, order });
@@ -873,8 +894,11 @@ export class Journey {
     const m = this.metas.get(id) as Meta;
     const mine = this.nodes.filter((n) => n.instance === id && n.status !== "dropped");
     const running = mine.filter((n) => n.status === "running").length;
-    const unfinished = mine.some((n) => ["pending", "ready", "running", "waiting_person"].includes(n.status));
-    const state: Instance["state"] = running > 0 ? "live" : !m.spawnedAt ? "planned" : unfinished ? "idle" : "finished";
+    // a member whose task waits on the person stays live: its face asks (needs you), and it isn't finished
+    const asking = !!m.asking;
+    const unfinished = asking || mine.some((n) => ["pending", "ready", "running", "waiting_person"].includes(n.status));
+    const state: Instance["state"] =
+      running > 0 || asking ? "live" : !m.spawnedAt ? "planned" : unfinished ? "idle" : "finished";
     const usd = +mine
       .filter((n) => n.status === "done")
       .reduce((a, n) => a + n.usd, 0)
@@ -953,6 +977,16 @@ export class Journey {
       if (!q) return [];
       const optionId = a.optionId ?? q.recommendedId;
       this.emit({ event: "question", data: { ...q, status: "answered", answer: { optionId, by: "user" } } });
+      // the member that asked is done once it has its answer
+      for (const m of this.metas.values())
+        if (m.asking?.qid === a.qid) {
+          const n = m.asking.node;
+          m.asking = null;
+          this.emit({ event: "task", data: this.taskRow(n, "done") });
+          const life = m.lives.at(-1);
+          if (life && !life.to) life.to = this.at();
+          m.lastReport = { status: "done", did: n.title };
+        }
       if (a.qid === "q_angle") {
         this.node("g1").status = "done";
         this.emit({ event: "gate", data: { id: "g1_script", status: "passed", items: GATE_ITEMS.g1_script } });
