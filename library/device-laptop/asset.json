@@ -1,0 +1,73 @@
+{
+ "id": "device-laptop",
+ "version": 1,
+ "kind": "decor",
+ "w": 32,
+ "h": 32,
+ "frames": [
+  "laptop_frame"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "device",
+  "laptop",
+  "mockup",
+  "app",
+  "screen"
+ ],
+ "description": "laptop_frame = a generic open laptop seen from the front, sitting on the bottom rows (Y q e lid, e webcam, W P p deck, q front lip), 1 px dark outline, with an empty screen of flat E at x 5, y 11, 22 x 15 cells, meant to hold an app or website mockup pasted over it. No brand, no logo.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "generated",
+  "role": "pixel-artist",
+  "model": "claude-opus-5-5",
+  "provider": "claude-code-subagent",
+  "origin": "startup pitch library pack (2026-11-07)",
+  "sourceAssets": [],
+  "judgeReason": "A generic open laptop with a webcam dot, hinge, deck and front lip. It is 32x32 decor so the screen (22x15 flat E, with 1 px side bezels; rect in the description) is big enough for a pixel mockup. A prop is at most 24 wide, which would cap the screen at 20 wide."
+ },
+ "hash": "59672d392ed987ca",
+ "standard": null,
+ "grid": {
+  "laptop_frame": [
+   "................................",
+   "................................",
+   "................................",
+   "................................",
+   "................................",
+   "................................",
+   "................................",
+   "................................",
+   ".....kkkkkkkkkkkkkkkkkkkkkk.....",
+   "....kqqqqqqqqqqqqqqqqqqqqqqk....",
+   "...kqYYYYYYYYYYeeYYYYYYYYYYek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqEEEEEEEEEEEEEEEEEEEEEEek...",
+   "...kqYYYYYYYYYYYYYYYYYYYYYYek...",
+   "..kkeeeeeeeeeeeeeeeeeeeeeeeekk..",
+   ".kPPPWWWWWWWWWWWWWWWWWWWWWWWWpk.",
+   "kPPWWWWWWWWWWppppppWWWWWWWWWWppk",
+   "kpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk",
+   ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk."
+  ]
+ }
+}

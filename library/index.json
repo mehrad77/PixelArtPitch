@@ -182,6 +182,264 @@
     "text",
     "bitmap"
    ]
+  },
+  {
+   "id": "icons-pitch",
+   "kind": "icon",
+   "w": 16,
+   "h": 16,
+   "frames": 12,
+   "tags": [
+    "startup",
+    "pitch",
+    "growth",
+    "money",
+    "idea",
+    "goal"
+   ]
+  },
+  {
+   "id": "icons-product",
+   "kind": "icon",
+   "w": 16,
+   "h": 16,
+   "frames": 12,
+   "tags": [
+    "startup",
+    "product",
+    "app",
+    "digital",
+    "tech",
+    "commerce"
+   ]
+  },
+  {
+   "id": "icons-problem",
+   "kind": "icon",
+   "w": 16,
+   "h": 16,
+   "frames": 9,
+   "tags": [
+    "startup",
+    "problem",
+    "pain",
+    "risk",
+    "slow",
+    "loss"
+   ]
+  },
+  {
+   "id": "cast-founder",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "tags": [
+    "npc",
+    "founder",
+    "startup",
+    "team",
+    "hoodie"
+   ]
+  },
+  {
+   "id": "cast-investor",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "tags": [
+    "npc",
+    "investor",
+    "money",
+    "startup",
+    "suit"
+   ]
+  },
+  {
+   "id": "cast-developer",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "tags": [
+    "npc",
+    "developer",
+    "code",
+    "team",
+    "headphones"
+   ]
+  },
+  {
+   "id": "cast-designer",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "tags": [
+    "npc",
+    "designer",
+    "creative",
+    "team",
+    "sketchbook"
+   ]
+  },
+  {
+   "id": "cast-shopper",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "tags": [
+    "npc",
+    "customer",
+    "shopper",
+    "retail",
+    "commerce"
+   ]
+  },
+  {
+   "id": "cast-elder",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "tags": [
+    "npc",
+    "customer",
+    "elder",
+    "user",
+    "cane"
+   ]
+  },
+  {
+   "id": "users-crowd",
+   "kind": "crowd",
+   "w": 48,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "npc",
+    "users",
+    "customers",
+    "audience",
+    "cheer",
+    "startup"
+   ]
+  },
+  {
+   "id": "props-office",
+   "kind": "prop",
+   "w": 24,
+   "h": 32,
+   "frames": 6,
+   "tags": [
+    "office",
+    "startup",
+    "workplace",
+    "furniture",
+    "tech"
+   ]
+  },
+  {
+   "id": "buildings-startup",
+   "kind": "building",
+   "w": 64,
+   "h": 56,
+   "frames": 3,
+   "tags": [
+    "building",
+    "startup",
+    "garage",
+    "shop",
+    "office",
+    "city"
+   ]
+  },
+  {
+   "id": "skyline-tech",
+   "kind": "backdrop",
+   "w": 96,
+   "h": 40,
+   "frames": 3,
+   "tags": [
+    "city",
+    "tech",
+    "parallax",
+    "tileable",
+    "night",
+    "startup"
+   ]
+  },
+  {
+   "id": "device-phone",
+   "kind": "prop",
+   "w": 16,
+   "h": 32,
+   "frames": 1,
+   "tags": [
+    "device",
+    "phone",
+    "mockup",
+    "app",
+    "screen"
+   ]
+  },
+  {
+   "id": "device-laptop",
+   "kind": "decor",
+   "w": 32,
+   "h": 32,
+   "frames": 1,
+   "tags": [
+    "device",
+    "laptop",
+    "mockup",
+    "app",
+    "screen"
+   ]
+  },
+  {
+   "id": "vehicles",
+   "kind": "prop",
+   "w": 24,
+   "h": 32,
+   "frames": 2,
+   "tags": [
+    "vehicle",
+    "mobility",
+    "delivery",
+    "startup",
+    "transport"
+   ]
+  },
+  {
+   "id": "vehicle-van",
+   "kind": "building",
+   "w": 48,
+   "h": 24,
+   "frames": 1,
+   "tags": [
+    "vehicle",
+    "delivery",
+    "van",
+    "logistics",
+    "startup"
+   ]
+  },
+  {
+   "id": "pets",
+   "kind": "icon",
+   "w": 16,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "pet",
+    "dog",
+    "cat",
+    "animal",
+    "startup"
+   ]
   }
  ]
 }

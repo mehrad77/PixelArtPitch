@@ -1,0 +1,76 @@
+{
+ "id": "pets",
+ "version": 1,
+ "kind": "icon",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "dog",
+  "cat"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "pet",
+  "dog",
+  "cat",
+  "animal",
+  "startup"
+ ],
+ "description": "Pet head icons, front view, centred in the 16x16 frame with a 1 px dark outline (k), light from the upper left: dog = a brown dog with floppy ears (c n s, S muzzle, k nose, r tongue); cat = a grey tabby cat with pointed ears (W P p q, S inner ears and nose, T eyes). No brands, no text.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "generated",
+  "role": "pixel-artist",
+  "model": "claude-opus-5-5",
+  "provider": "claude-code-subagent",
+  "origin": "startup pitch library pack (2026-11-07)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "15c1c3f4b4466649",
+ "standard": null,
+ "grid": {
+  "dog": [
+   "................",
+   "..kkkkkkkkkkkk..",
+   ".knnnscccccnnnk.",
+   "kcnnkscccccknnnk",
+   "kcnnkscccccknnnk",
+   "kcnnkckcckcknnnk",
+   "kcnnkccccccknnnk",
+   "kcnnkcSSSScknnnk",
+   ".knnkSSkkSsknnk.",
+   ".knkkSSSSSskknk.",
+   "..k.ksSrrSsk.k..",
+   ".....kssssk.....",
+   "......kkkk......",
+   "................",
+   "................",
+   "................"
+  ],
+  "cat": [
+   "...k........k...",
+   "..kPk......kpk..",
+   "..kPWk....kWpk..",
+   "..kPSWkkkkWSpk..",
+   "..kPSWWqqWWSpk..",
+   ".kPWWWWqqWWWWpk.",
+   ".kPWWTkWWTkWWpk.",
+   ".kPWWWWWWWWWWpk.",
+   ".kPWWWWSSWWWWpk.",
+   ".kpWWWWqqWWWWpk.",
+   "..kpWWWWWWWWpk..",
+   "...kppWWWWppk...",
+   "....kppppppk....",
+   ".....kkkkkk.....",
+   "................",
+   "................"
+  ]
+ }
+}

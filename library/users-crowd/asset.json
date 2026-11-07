@@ -1,0 +1,77 @@
+{
+ "id": "users-crowd",
+ "version": 1,
+ "kind": "crowd",
+ "w": 48,
+ "h": 16,
+ "frames": [
+  "cheer0",
+  "cheer1"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "npc",
+  "users",
+  "customers",
+  "audience",
+  "cheer",
+  "startup"
+ ],
+ "description": "A small crowd of four users standing side by side facing RIGHT, each about 10 px wide and 14 px tall, varied skin, hair and tops: long black hair and a red top (A a, z n, r R, D d); a teal beanie and a yellow tee (X x, s S z, H h, Y e); a violet headscarf and a green top (V U, S s, G g, I N); an older man with grey hair and beard in a light-blue shirt (W p, s z, L D, c n). cheer0: arms down; cheer1: arms raised, jumped up 1 px. Feet on the bottom row in cheer0.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "generated",
+  "role": "pixel-artist",
+  "model": "claude-opus-5-5",
+  "provider": "claude-code-subagent",
+  "origin": "startup pitch library pack (2026-11-07)",
+  "sourceAssets": [],
+  "judgeReason": "Built on the gamers layout (12 px cells, arms-down and arms-up-jumped frames, feet on the last row in cheer0), so it drops into crowd_cheer. Four varied people: deep, medium and light skin, long hair, a beanie, a headscarf and an older bearded man. Each is separated by its outline."
+ },
+ "hash": "6ad581178119bfde",
+ "standard": null,
+ "grid": {
+  "cheer0": [
+   "................................................",
+   "................kkk.........kkkk................",
+   "...kkkkk.......kXXXkk......kVVVVk......kkkkk....",
+   "..kAAAAAk.....kXXXXXxk....kVVVVVUk....kWWWWWk...",
+   "..kAAAAAak....kxxxxxxk....kVVSSSUk....kWWWWWpk..",
+   "..kAazzkzk....knsSsksk....kVVSSkSk....kpWssksk..",
+   "..kAzzzznk....knsssszk....kVVSSSsk....kpsssszk..",
+   "..kAAzzznk.....ksssszk....kUVVSssk.....kWWWWpk..",
+   "..krrrrrrk....kHHHHHhk....kUUGGGGk....kLLLLLDk..",
+   ".krRrrrRkRk..kHhHHHhkhk..kGgGGGgkgk..kLDLLLDkDk.",
+   ".krRrrrRkRk..kHhHHHhkhk..kGgGGGgkgk..kLDLLLDkDk.",
+   ".kzkrrrRknk..kskHHHhkzk..kSkGGGgksk..kskLLLDkzk.",
+   "..kDDDDdkk....kYYYYekk....kIIIINkk....kccccnkk..",
+   "..kDDkDdk.....kYYkYek.....kIIkINk.....kcckcnk...",
+   "..kDdkDdk.....kYekYek.....kINkINk.....kcnkcnk...",
+   "..kPpkPPpk....krRkrrRk....kWwkWWwk....kqekqqek.."
+  ],
+  "cheer1": [
+   ".k........k..k..kkk...k..k..kkkk..k..k........k.",
+   "kzkkkkkk.knkkskkXXXkkkzkkSkkVVVVkkskkskkkkkk.kzk",
+   "kzkAAAAAkknkkskXXXXXxkzkkSkVVVVVUkskkskWWWWWkkzk",
+   "kzkAAAAAaknkkskxxxxxxkzkkSkVVSSSUkskkskWWWWWpkzk",
+   "krkAazzkzkRkkHknsSskskhkkGkVVSSkSkgkkLkpWsskskDk",
+   "krkAzzzznkRkkHknsssszkhkkGkVVSSSskgkkLkpsssszkDk",
+   "krkAAzzznkRkkHkksssszkhkkGkUVVSsskgkkLkkWWWWpkDk",
+   "krrrrrrrrRRkkHHHHHHHhhhkkGGGUGGGGggkkLLLLLLLDDDk",
+   ".kkrrrrRkkk..kkHHHHhkkk..kkGGGGgkkk..kkLLLLDkkk.",
+   "..krrrrRk.....kHHHHhk.....kGGGGgk.....kLLLLDk...",
+   "...krrrRk......kHHHhk......kGGGgk......kLLLDk...",
+   "..kDDDDdk.....kYYYYek.....kIIIINk.....kccccnk...",
+   "..kDDkDdk.....kYYkYek.....kIIkINk.....kcckcnk...",
+   "..kDdkDdk.....kYekYek.....kINkINk.....kcnkcnk...",
+   "..kPpkPPpk....krRkrrRk....kWwkWWwk....kqekqqek..",
+   "...kk.kkk......kk.kkk......kk.kkk......kk.kkk..."
+  ]
+ }
+}

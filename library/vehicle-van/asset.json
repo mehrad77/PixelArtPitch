@@ -1,0 +1,65 @@
+{
+ "id": "vehicle-van",
+ "version": 1,
+ "kind": "building",
+ "w": 48,
+ "h": 24,
+ "frames": [
+  "van"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "vehicle",
+  "delivery",
+  "van",
+  "logistics",
+  "startup"
+ ],
+ "description": "van = a white delivery van in side view, facing RIGHT, wheels on the bottom rows, 1 px dark outline: cargo body and cab (W P w), a raked windscreen (C E), a green side stripe (G T), a brass headlight (B), a red tail light (r), a grey bumper (q e), wheels (e q p) in dark arches (l). The cargo side above the stripe is blank for a logo: flat W at x 3-33, y 4-11 (31 x 8 cells). No brand.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "generated",
+  "role": "pixel-artist",
+  "model": "claude-opus-5-5",
+  "provider": "claude-code-subagent",
+  "origin": "startup pitch library pack (2026-11-07)",
+  "sourceAssets": [],
+  "judgeReason": "Kept as a 48x24 building because a 24-px-wide prop van would look like a toy next to a 16x24 character. At this size it is about two people long and a person tall. The cargo side above the stripe is left blank for a logo (rect in the description); the door seam was dropped to keep it clear."
+ },
+ "hash": "998a371b11efbb1c",
+ "standard": null,
+ "grid": {
+  "van": [
+   "................................................",
+   "................................................",
+   "..kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.............",
+   ".kPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPk............",
+   ".kPWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWk............",
+   ".kPWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWkkkkk........",
+   ".kPWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWPPPPPPk.......",
+   ".kPWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWpWWWWWWk......",
+   ".kPWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWpWEEECWWk.....",
+   ".kPWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWpWEEECCWWk....",
+   ".kPWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWpWECCCCCWWk...",
+   ".kPWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWpWCCCCCCCWWk..",
+   ".kPTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTpGWWWWWWWWWwk.",
+   ".kPGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGpGGGGGGGGGGwk.",
+   ".krrWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWpWWqqWWWWWBBk.",
+   ".krrWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWpWWWWWWWWWBBk.",
+   ".krrWWWWlllllWWWWWWWWWWWWWWWWWWWWWpWlllllWWWWwk.",
+   ".kPWWWWlleeellWWWWWWWWWWWWWWWWWWWWplleeellWWWwk.",
+   "kqqqqqqlepqeelqqqqqqqqqqqqqqqqqqqqqlepqeelqqqqqk",
+   "keeeeeleeqqeeeleeeeeeeeeeeeeeeeeeeleeqqeeeleeeek",
+   ".kkkkkleeqqeeelkkkkkkkkkkkkkkkkkkkleeqqeeelkkkk.",
+   "......kleeeeelk...................kleeeeelk.....",
+   "......klleeellk...................klleeellk.....",
+   ".......kkkkkkk.....................kkkkkkk......"
+  ]
+ }
+}
