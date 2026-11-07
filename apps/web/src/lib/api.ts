@@ -84,6 +84,13 @@ export class HttpClient implements Client {
     const res = await fetch(path, { method, headers, body: payload, credentials: "same-origin" });
     const text = await res.text();
     const json = text ? safeJson(text) : null;
+    // a server without this route answers with the studio page (200, HTML): that's a missing route, not an empty answer
+    if (res.ok && text && json === null && /^\s*</.test(text))
+      throw new ApiError(404, {
+        code: "no_route",
+        message: "This studio doesn't have that yet",
+        fix: "Update the studio server and restart it.",
+      });
     if (!res.ok) {
       const err = (json as { error?: ApiErrorBody } | null)?.error;
       throw new ApiError(

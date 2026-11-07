@@ -97,6 +97,13 @@
   font-size: var(--step--1);
   overflow-wrap: anywhere;
 }
+.pcard-err {
+  position: relative;
+  color: var(--status-error);
+}
+.pcard-err::before {
+  content: "✕ ";
+}
 .pcard-tools {
   position: absolute;
   inset-block-start: var(--space-2);

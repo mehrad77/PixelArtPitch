@@ -24,19 +24,16 @@ function projectRoute(path: string, view: View): { id: string; mode: View | null
   return m ? { id: m.id, mode: view } : null;
 }
 
-/** /new is a conversation with Pip where the backend has drafts (the mock now; the server from P3); elsewhere the
- * composer, as before */
-const NEW_IS_TALK = client.mock;
-
 function Route({ path, view, adopted }: { path: string; view: View; adopted: Adopted }) {
-  // one shell, kept mounted: /new, /new/:draftId and the project it became (PIP-JOURNEY §3.5)
+  // one shell, kept mounted: /new, /new/:draftId and the project it became (PIP-JOURNEY §3.5); "Show all options"
+  // (/new/:draftId/options) is the composer
   const stageKey = `stage:new:${adopted.n}`;
   if (path === "/" || path === "") return <ProjectsPage />;
-  if (path === "/new") return NEW_IS_TALK ? <ProjectStage key={stageKey} /> : <ComposerPage />;
+  if (path === "/new") return <ProjectStage key={stageKey} />;
   let n = match("/new/:draftId/options", path);
   if (n) return <ComposerPage draftId={n.draftId} />;
   n = match("/new/:draftId", path);
-  if (n) return NEW_IS_TALK ? <ProjectStage key={stageKey} draftId={n.draftId} /> : <ComposerPage />;
+  if (n) return <ProjectStage key={stageKey} draftId={n.draftId} />;
   if (path === "/library") return <LibraryPage />;
   if (path === "/settings") {
     navigate("/settings/setup", { replace: true });

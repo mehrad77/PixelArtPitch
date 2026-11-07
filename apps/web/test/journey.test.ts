@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { cardRank, laterCard, revertCard } from "../src/lib/cards.ts";
 import {
   crewGroups,
   ghostLine,
@@ -16,7 +17,8 @@ import {
   timeAlive,
 } from "../src/lib/instances.ts";
 import { applyEvent } from "../src/lib/reducer.ts";
-import type { Instance, ProjectState, Role, ServerEvent } from "../src/lib/types.ts";
+import type { Draft, Instance, PipCard, PipItem, ProjectState, Role, ServerEvent } from "../src/lib/types.ts";
+import { COPIED, copyLine, MockDrafts } from "../src/mock/drafts.ts";
 import { JOURNEY, Journey } from "../src/mock/journey.ts";
 
 const BASE = Date.UTC(2026, 10, 7, 21, 0, 0);
@@ -388,4 +390,90 @@ test("Pip's messages float over the member they are about; plan revisions read a
     "rev 2 · 21:06 · Pip: added a Pixel artist for the founder: the library had no founder sprite.",
   );
   assert.match(lines[3], /^rev 4 · 21:06 · You: scene 2 goes back/);
+});
+
+// ---- /new on the real server: the races and "Make another like this" (PIP-JOURNEY §3.6, §9) ----
+
+test("a late reply never moves a card back from where its own events took it", () => {
+  const form = { id: "c_q1", type: "form", form: "brief_fields", title: "", fields: [] } as const;
+  const plan = {
+    id: "c_f",
+    type: "plan",
+    title: "",
+    detail: "",
+    who: [],
+    usd: null,
+    sec: null,
+    effects: [],
+    confirmLabel: "",
+  } as const;
+  const at = <C extends object>(c: C, status: string) => ({ ...c, status }) as unknown as PipCard;
+  // the form's done event came first; the "submitted" reply lands after
+  assert.equal(laterCard(at(form, "done"), at(form, "submitted")).status, "done");
+  assert.equal(laterCard(at(form, "superseded"), at(form, "submitted")).status, "superseded");
+  assert.equal(laterCard(at(form, "open"), at(form, "submitted")).status, "submitted");
+  // a fork's done before its "running" reply; a Start's reply moves the brief card on
+  assert.equal(laterCard(at(plan, "done"), at(plan, "running")).status, "done");
+  assert.equal(laterCard(at(plan, "running"), at(plan, "failed")).status, "failed");
+  assert.equal(cardRank(at(form, "open")) < cardRank(at(form, "submitted")), true);
+  // a failed press puts the card back only while its optimistic status still shows
+  const before = at(plan, "proposed");
+  const optimistic = at(plan, "running");
+  assert.equal(revertCard(optimistic, optimistic, before), before);
+  assert.equal(revertCard(at(plan, "done"), optimistic, before), null, "a 409 after its done event keeps done");
+  assert.equal(revertCard(at(form, "open"), null, at(form, "open"))?.status, "open");
+});
+
+function drafts(projects: Record<string, { title: string; fields: Draft["fields"] }>) {
+  const pushed: PipItem[] = [];
+  const d = new MockDrafts({
+    push: (_draft, item) => pushed.push(item),
+    update: () => {},
+    card: (_draft, card) => card,
+    thinking: () => {},
+    start: () => "p",
+    started: () => {},
+    copyOf: (id) => projects[id] ?? null,
+  });
+  return { d, pushed };
+}
+
+test("Make another like this copies the settings, never the idea or the files, and says so first", () => {
+  const { d } = drafts({
+    questday_teaser: {
+      title: "QuestDay teaser",
+      fields: {
+        audience: "investors",
+        lengthSec: 15,
+        narration: "none",
+        involvement: "key",
+        style: ["playful"],
+        budget: 3,
+        profile: "balanced",
+        idea: "never copied",
+      },
+    },
+  });
+  const { draft, items } = d.create("questday_teaser");
+  assert.equal(draft.from, "questday_teaser");
+  assert.deepEqual(Object.keys(draft.fields).sort(), [...COPIED].sort());
+  assert.equal(draft.fields.idea, undefined);
+  assert.deepEqual(draft.refs, []);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind === "pip" && items[0].text, copyLine("QuestDay teaser"));
+  assert.equal(
+    copyLine("QuestDay teaser"),
+    "Another one like QuestDay teaser: same style, cast and settings. What's this one about?",
+  );
+  // the idea alone: nothing is left open, so the brief comes straight away, and Pip repeats nothing it inherited
+  const r = d.reply(draft.id, "a pitch for Lumenbook, a reading app");
+  assert.equal(r.reply, "Got it.");
+  assert.equal(r.cards[0].type, "brief");
+  const brief = r.cards[0] as Extract<PipCard, { type: "brief" }>;
+  assert.equal(brief.fields.find((f) => f.key === "lengthSec")?.value, "15 s");
+  assert.throws(() => d.create("gone"), /That project is gone/);
+  // a fresh /new still opens on "What are we making?"
+  const fresh = d.create();
+  assert.equal(fresh.items[0].kind === "pip" && fresh.items[0].text, "What are we making?");
+  assert.deepEqual(fresh.draft.fields, {});
 });

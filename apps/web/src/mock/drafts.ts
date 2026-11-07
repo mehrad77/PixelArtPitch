@@ -31,7 +31,23 @@ export type DraftHost = {
   start(d: Draft): string;
   /** after the card says so: the conversation moves to the project, the draft goes, and the journey begins */
   started(draft: string, projectId: string): void;
+  /** "Make another like this": the project's title and the settings a copy inherits; null for an unknown id */
+  copyOf(projectId: string): { title: string; fields: Draft["fields"] } | null;
 };
+
+/** what a copy inherits (PIP-ORCHESTRATION §3.4): the settings, never the idea or the files */
+export const COPIED: BriefFieldKey[] = [
+  "audience",
+  "lengthSec",
+  "narration",
+  "involvement",
+  "profile",
+  "style",
+  "budget",
+];
+/** Pip's opening line in a copy (PIP-JOURNEY §3.6) */
+export const copyLine = (title: string) =>
+  `Another one like ${title}: same style, cast and settings. What's this one about?`;
 
 const AUDIENCE = [
   { id: "investors", label: "Investors", purpose: "pitch" },
@@ -104,20 +120,40 @@ export class MockDrafts {
     return s;
   }
   create(from?: string): { draft: Draft; items: PipItem[] } {
+    const copy = from ? this.host.copyOf(from) : null;
+    if (from && !copy)
+      throw new ApiError(404, {
+        code: "no_project",
+        message: "That project is gone",
+        fix: "Pick a project on the Projects page.",
+      });
     const id = `draft_${++this.n}`;
     const now = new Date().toISOString();
+    const fields: Draft["fields"] = {};
+    const source: Draft["source"] = {};
+    for (const k of COPIED)
+      if (copy?.fields[k] != null) {
+        fields[k] = structuredClone(copy.fields[k]);
+        source[k] = "default";
+      }
     const draft: Draft = {
       id,
       createdAt: now,
       updatedAt: now,
       title: null,
-      fields: {},
-      source: {},
+      fields,
+      source,
       refs: [],
       ...(from ? { from } : {}),
     };
     this.drafts.set(id, { draft, files: new Map() });
-    const first: PipItem = { id: `${id}_pip_0`, at: now, kind: "pip", text: FIRST_LINE, cards: [] };
+    const first: PipItem = {
+      id: `${id}_pip_0`,
+      at: now,
+      kind: "pip",
+      text: copy ? copyLine(copy.title) : FIRST_LINE,
+      cards: [],
+    };
     this.host.push(id, first);
     return { draft: structuredClone(draft), items: [first] };
   }
@@ -208,10 +244,18 @@ export class MockDrafts {
     }
     if (first) d.title = String(said.title ?? "");
     this.touch(id);
+    // what the person said, never what a copy inherited
+    const said_ = (k: BriefFieldKey) => d.source[k] === "said";
     const heard = [
-      typeof d.fields.lengthSec === "number" ? `${d.fields.lengthSec} seconds` : "",
-      d.fields.narration === "none" ? "no voice" : d.fields.narration === "user" ? "your voice" : "",
-      typeof d.fields.budget === "number" ? `under ${usdWords(d.fields.budget)}` : "",
+      typeof d.fields.lengthSec === "number" && said_("lengthSec") ? `${d.fields.lengthSec} seconds` : "",
+      !said_("narration")
+        ? ""
+        : d.fields.narration === "none"
+          ? "no voice"
+          : d.fields.narration === "user"
+            ? "your voice"
+            : "",
+      typeof d.fields.budget === "number" && said_("budget") ? `under ${usdWords(d.fields.budget)}` : "",
     ].filter(Boolean);
     const ask = this.open(d);
     const head = heard.length ? `${heard.join(", ").replace(/^./, (c) => c.toUpperCase())}.` : "Got it.";

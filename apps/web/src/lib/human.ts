@@ -2,6 +2,7 @@
 // sentence, milestones and money as one quiet line. The rule: if the crew can fix it alone, the person never hears
 // about it; if it can't, they get one sentence and one button. Pure functions, no React.
 import { clock, duration } from "./format.ts";
+import { numberLocale } from "./locale.ts";
 import type {
   ClipState,
   CrewState,
@@ -288,7 +289,7 @@ export function milestones(s: ProjectState): Milestone[] {
 }
 
 // ---- money ----
-const LOCALE = typeof navigator !== "undefined" ? navigator.language : "en";
+const LOCALE = numberLocale();
 const whole = new Intl.NumberFormat(LOCALE, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const cents = new Intl.NumberFormat(LOCALE, { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 /** "$5", "$0.42": whole dollars without the cents */

@@ -28,7 +28,10 @@ import {
   decidePip,
   fillPip,
   hasNews,
+  MAKE_ANOTHER,
+  makeAnotherFrom,
   markSeen,
+  openDraft,
   pipMood,
   saveSummary,
   setListening,
@@ -715,6 +718,19 @@ function PlanResult({ card }: { card: Extract<PipCard, { type: "plan" }> }) {
           Open the new project
         </Link>
       )}
+      {r?.draftId && (
+        <Link
+          href={`/new/${encodeURIComponent(r.draftId)}`}
+          className="small"
+          onClick={(e) => {
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            openDraft(r.draftId as string);
+          }}
+        >
+          Go to the new video
+        </Link>
+      )}
     </div>
   );
 }
@@ -884,6 +900,7 @@ function Composer({
           aria-activedescendant={menu ? optId(cur) : undefined}
           aria-describedby={unknown ? `${inputId}-unknown` : undefined}
           placeholder={placeholder ?? `${label}…`}
+          dir="auto"
           autoComplete="off"
           enterKeyHint="send"
           value={text}
@@ -1022,7 +1039,9 @@ function Chips({ project, items, onSent }: { project: Project; items: string[]; 
             dir="auto"
             onClick={() => {
               onSent?.();
-              askPip(project, s);
+              // "Make another like this" opens /new prefilled from this project, with no turn (PIP-JOURNEY §3.6)
+              if (s === MAKE_ANOTHER) makeAnotherFrom(project);
+              else askPip(project, s);
             }}
           >
             {s}

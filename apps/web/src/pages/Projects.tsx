@@ -6,14 +6,15 @@ import { Button, Callout, Dialog, Menu, Skeleton } from "@shabboo/kit/react";
 import { Fragment, useEffect, useState } from "react";
 import { CrewFace, type Mood, useStep } from "../components/CrewStrip.tsx";
 import { PipFace } from "../components/PipFace.tsx";
+import { ApiError } from "../lib/api.ts";
 import { client } from "../lib/client.ts";
 import { STAGE_LABEL } from "../lib/derive.ts";
 import { ago, duration } from "../lib/format.ts";
 import { useLoad } from "../lib/hooks.ts";
 import { type Member, memberOf, PHASES, setView, usdPlain } from "../lib/human.ts";
+import { MAKE_ANOTHER, makeAnother } from "../lib/pip.ts";
 import { Link, LinkButton, navigate } from "../lib/router.tsx";
 import type { ProjectSummary, WorkspaceLine } from "../lib/types.ts";
-import { ComposerPage } from "./Composer.tsx";
 import "./Projects.css";
 
 type Kind = "needs" | "working" | "problem" | "stopped" | "finished" | "fresh" | "draft";
@@ -26,9 +27,6 @@ const GROUPS: { id: string; title: string; kinds: Kind[] }[] = [
   // an unstarted /new: only its conversation is saved (PIP-JOURNEY §3.6)
   { id: "drafts", title: "Drafts", kinds: ["draft"] },
 ];
-
-/** /new is a conversation where the backend has drafts (the mock now; the server from P3) */
-const NEW_IS_TALK = client.mock;
 
 function kindOf(p: ProjectSummary): Kind {
   if (p.draft) return "draft";
@@ -51,9 +49,9 @@ export function ProjectsPage() {
   const empty = !loading && !error && !!data && data.length === 0;
   // no projects yet: the empty stage is the first screen
   useEffect(() => {
-    if (empty && NEW_IS_TALK) navigate("/new", { replace: true });
+    if (empty) navigate("/new", { replace: true });
   }, [empty]);
-  if (empty) return NEW_IS_TALK ? null : <ComposerPage first />;
+  if (empty) return null;
   const byKind = (kinds: Kind[]) =>
     (data ?? [])
       .filter((p) => kinds.includes(kindOf(p)))
@@ -195,6 +193,7 @@ function Faces({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: number 
 function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: number }) {
   const [playing, setPlaying] = useState(false);
   const [showPath, setShowPath] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const href = `/p/${encodeURIComponent(p.id)}`;
   const video = kind === "finished" ? p.video || client.proxyUrl(p.id) : "";
   const phase = p.phase ?? (p.finished ? PHASES.length : (p.status?.phase ?? 0));
@@ -223,7 +222,11 @@ function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: n
         </h3>
         <MiniSteps phase={phase} />
         <StatusMark p={p} kind={kind} />
-        {line && <p className="pcard-line">{line}</p>}
+        {line && (
+          <p className="pcard-line" dir="auto">
+            {line}
+          </p>
+        )}
         <div className="pcard-foot">
           <Faces p={p} kind={kind} step={step} />
           <span className="pcard-meta">
@@ -234,6 +237,11 @@ function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: n
           </span>
         </div>
         {showPath && <p className="pcard-path mono ltr">{p.dir}</p>}
+        {err && (
+          <p className="pcard-err small" role="status">
+            {err}
+          </p>
+        )}
       </div>
       <div className="pcard-tools">
         {video && !playing && (
@@ -248,11 +256,18 @@ function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: n
           variant="quiet"
           placement="block-end"
           items={[
+            // a finished one can be the start of the next (PIP-JOURNEY §3.6)
+            ...(kind === "finished" ? [{ label: MAKE_ANOTHER, value: "another" }] : []),
             { label: "Open in Studio", value: "studio" },
             { label: showPath ? "Hide folder path" : "Show folder path", value: "path" },
           ]}
           onSelect={(v) => {
-            if (v === "studio") {
+            if (v === "another") {
+              setErr(null);
+              makeAnother(p.id).catch((e: Error) =>
+                setErr(`Didn't start another one: ${e.message}.${e instanceof ApiError && e.fix ? ` ${e.fix}` : ""}`),
+              );
+            } else if (v === "studio") {
               setView("studio");
               navigate(`${href}/${p.stage}`);
             } else setShowPath((x) => !x);

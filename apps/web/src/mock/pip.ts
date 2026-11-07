@@ -31,6 +31,8 @@ export type PipHost = {
   /** hand a change to the crew: reopens the stage and runs it */
   handoff(id: string, text: string): void;
   createProject(title: string, idea: string): Promise<string>;
+  /** "Make another like this": a draft that copies the project's settings; its id */
+  createDraft(from: string): string;
   titles(): { id: string; title: string; state: ProjectState }[];
   /** the newest change that can be undone, for /undo */
   lastChange(id: string): { seq: number; reason: string; by: string } | null;
@@ -604,6 +606,47 @@ export class MockPip {
               const card = this.pending.get(id)?.card;
               if (card?.type === "plan")
                 this.update(key, { ...card, status: "done", result: { text: `${name} subtitles are ready.`, files } });
+            },
+          ),
+        ],
+      };
+    }
+
+    // in a project, another like it is a draft that copies its settings, and the card ends on its stage (PIP-JOURNEY
+    // §3.6); in the workspace, a new project waiting at the brief, as before
+    if (s && /another|like this|new one|new video|for my|\bfork\b|start a new/.test(t)) {
+      const id = uid("card");
+      const from = s.doc.id;
+      return {
+        reply: "I'll start a new video with this one's style, cast and settings. You tell me what it's about.",
+        cards: [
+          this.card(
+            key,
+            {
+              id,
+              type: "plan",
+              title: "Make another video like this",
+              detail: `A new video with ${s.doc.title}'s style, cast and settings.`,
+              who: [],
+              usd: [0, 0],
+              sec: [1, 2],
+              effects: [
+                "Copies who it's for, the length, the voice, your picks, the style and the budget.",
+                "The idea, the script and the pictures start fresh. Nothing is spent until you press Start.",
+              ],
+              confirmLabel: "Make it",
+              status: "proposed",
+            },
+            async () => {
+              await later(300);
+              const draftId = this.host.createDraft(from);
+              const card = this.pending.get(id)?.card;
+              if (card?.type === "plan")
+                this.update(key, {
+                  ...card,
+                  status: "done",
+                  result: { text: "The new video is ready for its idea.", draftId },
+                });
             },
           ),
         ],

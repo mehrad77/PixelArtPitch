@@ -329,7 +329,8 @@ export type PipCard =
       /** external tools lent to the crew for this task: "server.tool" */
       lend?: string[];
       status: "proposed" | "running" | "done" | "declined" | "failed";
-      result?: { text: string; files?: PipFile[]; projectId?: string; error?: string };
+      /** `draftId` (PIP-JOURNEY N25): "Make another like this" made this draft; the stage goes to /new/:draftId */
+      result?: { text: string; files?: PipFile[]; projectId?: string; error?: string; draftId?: string };
       /** PIP-JOURNEY N2: the instances, when `who` can't say which ("Animator · scene 2") */
       whoInstances?: { instance: string; label: string }[];
       /** PIP-ORCHESTRATION §4.4: a revision over the 20% line, or a change */

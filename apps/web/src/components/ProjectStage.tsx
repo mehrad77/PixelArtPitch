@@ -5,6 +5,7 @@
 // Watching rules as in Studio: nothing the crew does moves the playhead or the focus.
 import { Button, Callout, Popover, Skeleton, Steps } from "@shabboo/kit/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "../lib/api.ts";
 import { guessType } from "../lib/brief.ts";
 import { channelSummary, useChannel } from "../lib/channel.ts";
 import { client } from "../lib/client.ts";
@@ -32,8 +33,18 @@ const NO_OVERLAYS = { safe: false, captions: true, grid: false };
 const NO_RANGE: [null, null] = [null, null];
 type Pending = AttachFile & { file: File };
 
-/** Pip's first item in a draft says what the stage already says */
-const isFirstLine = (it: PipItem) => it.kind === "pip" && it.text === FIRST_LINE && !it.cards.length;
+/** Pip's opening item in a draft ("What are we making?", or "Another one like …" for a copy): the stage's line says
+ * it, so the thread leaves it out */
+/** an error in words, with its fix when the server sent one ("…. Update the studio server and restart it") */
+const errWords = (e: unknown) => {
+  const fix = e instanceof ApiError && e.fix ? ` ${e.fix.replace(/\.$/, "")}` : "";
+  return `${(e as Error).message}.${fix}`.replace(/\.$/, "");
+};
+
+function openingOf(items: PipItem[]): PipItem | null {
+  const it = items.find((i) => i.kind !== "thinking");
+  return it?.kind === "pip" && !it.cards.length ? it : null;
+}
 /** the project a draft's Start made, once its brief card says so */
 function startedProject(items: PipItem[]): string | null {
   for (const it of items)
@@ -66,7 +77,7 @@ export function ProjectStage({
     let live = true;
     client.draft(draftId).then(
       (d) => live && seedConv(draftId, d.items),
-      (e: Error) => live && setDraftError(e.message),
+      (e: Error) => live && setDraftError(errWords(e)),
     );
     return () => {
       live = false;
@@ -106,7 +117,7 @@ export function ProjectStage({
         ...xs.filter((x) => !files.some((f) => f.name === x.name)),
         ...files.map((file) => ({ file, name: file.name, type: guessType(file.name, file.type) })),
       ]);
-      ensureDraft().catch((e: Error) => setDraftError(e.message));
+      ensureDraft().catch((e: Error) => setDraftError(errWords(e)));
     },
     [ensureDraft],
   );
@@ -122,7 +133,7 @@ export function ProjectStage({
       try {
         id = await ensureDraft();
       } catch (e) {
-        setDraftError((e as Error).message);
+        setDraftError(errWords(e));
         return false;
       }
       // the files upload with the message
@@ -132,7 +143,7 @@ export function ProjectStage({
         for (const f of files) await client.draftFile(id, f.name, f.file);
       } catch (e) {
         setPending(files);
-        setDraftError(`A file didn't upload: ${(e as Error).message}`);
+        setDraftError(`A file didn't upload: ${errWords(e)}`);
         return false;
       }
       return askPip(id, text, { files: files.map((f) => f.name), ...(about ? { about } : {}) });
@@ -148,7 +159,7 @@ export function ProjectStage({
       if (idea) await client.draftFields(id, { idea });
       navigate(`/new/${encodeURIComponent(id)}/options`);
     } catch (e) {
-      setDraftError((e as Error).message);
+      setDraftError(errWords(e));
     }
   };
 
@@ -414,7 +425,9 @@ function StageTalk({
   allOptions?: () => void;
 }) {
   const st = state ? humanStatus(state) : null;
-  const line = st?.text ?? (projectId ? "The crew is getting ready." : FIRST_LINE);
+  const opening = openingOf(usePip(talk).items);
+  const line =
+    st?.text ?? (projectId ? "The crew is getting ready." : opening?.kind === "pip" ? opening.text : FIRST_LINE);
   const live = useThrottled(st ? st.text : "", 10000);
   // what Pip and the crew said to each other lately, in one plain sentence
   const behind = channelSummary(useChannel(projectId));
@@ -456,7 +469,7 @@ function StageTalk({
           onSend={send}
           attach={attach}
           emptyNote={projectId ? undefined : null}
-          skip={isFirstLine}
+          skip={(it) => it.id === opening?.id || (it.kind === "pip" && it.text === FIRST_LINE && !it.cards.length)}
         />
       </PipLine>
       <p className="visually-hidden" role="status" aria-live="polite">

@@ -303,10 +303,12 @@ Buttons: **Start** (primary) · **Show all options** (quiet).
   - The card links to `/new/:id`.
   - Its ⋯ menu has "Remove draft". That opens a Dialog: "Remove this draft? Only the conversation is saved, and it goes too." with **Remove draft** (danger) and **Keep it**.
 - **"Make another like this".**
-  - It is in a finished card's ⋯ menu and in a finished project's Pip chips.
-  - It calls `POST /api/drafts {from}`, which inherits the audience, length, narration, involvement, profile, style and budget (not the idea or the references). Then it goes to `/new/:draftId`.
-  - Pip's first line there: "Another one like QuestDay teaser: same style, cast and settings. What's this one about?"
-  - The existing `project_fork` plan card ends at the same place.
+  - It is in a finished card's ⋯ menu and in a finished project's Pip chips. The chip doesn't ask Pip: like the menu item, it calls the route directly, with no model call.
+  - It calls `POST /api/drafts {from}`, which inherits the audience, length, narration, involvement, profile, style and budget (not the idea or the references). Then it goes to `/new/:draftId`, on a new stage (the stage that made the project never carries over).
+  - Pip's first line there: "Another one like QuestDay teaser: same style, cast and settings. What's this one about?" It is the stage's line, in place of "What are we making?", and the thread leaves it out.
+  - Pip repeats only what the person said, never what the copy inherited. With every askable field inherited, the idea alone brings the brief card straight away ("Got it.").
+  - Typed instead ("make another one like this"), Pip answers with a plan card, "Make another video like this", whose confirm makes the same draft: its result carries `draftId` (N25), and the card ends at the same place, `/new/:draftId`. It goes there on its own only in the tab where the person pressed "Make it"; elsewhere the card's result links to it ("Go to the new video").
+  - A failure is one line: under the card on Projects ("✕ Didn't start another one: …"), or under Pip's field for the chip.
 
 ### 3.7 375px and RTL
 
@@ -549,6 +551,8 @@ The faces at each moment are the §2 checkpoint table.
 | Question card, settled | "✓ Investors · only the key picks · logo: mine" (the choices' labels, then each file's type and rights) |
 | Logo pick (`rights`) | "Your logo in an achievement toast. Use it in the video?" · "Use it" · "Leave it out" · "Private to this project" |
 | Drafts | "Drafts" · "✎ Draft" · "Remove draft" · "Remove this draft? Only the conversation is saved, and it goes too." · "Keep it" |
+| Make another like this | "Make another like this" (the finished card's ⋯ menu, a finished project's chip) · Pip's opening line "Another one like {title}: same style, cast and settings. What's this one about?" · the plan card "Make another video like this", "Make it", its result "The new video is ready for its idea." and the link "Go to the new video" · "Didn't start another one: {message}." |
+| A route the studio lacks | "This studio doesn't have that yet." with the fix "Update the studio server and restart it." (a server that answers an `/api` route with its page) |
 | Too many revisions | "I've changed the plan 6 times on this run. The next change is yours to approve." (Pip, with a plan card) |
 | Over 20% | "Adding the {label} raises the estimate by {p}%. Add it?", with "Add it" · "Not now" (a plan card) |
 
@@ -626,6 +630,8 @@ The `ledger` events follow each task's `usd` from §2 as it ends. Pip's six mete
 12. the row's sentences and Pip's bubbles follow §5 (a batch over scenes merges, a return says its life's reason, one sentence per leave), and Pip conducts exactly when it brings someone in;
 13. the drawer's groups: no instance in two, Up next uncapped in plan order, Finished newest first; time alive is the sum of the lives; the ghost lines ("Waiting for a free slot. 3 are working.", "Starts after the script pick.");
 14. a channel message finds its instance by role and `ref`, and the plan revisions read as one line each.
+15. a late reply never moves a card back from where its events took it (a form's "submitted" after its done, a fork's "running" after done), and a failed press reverts only a card still in its optimistic state;
+16. "Make another like this" copies the settings (`COPIED`) and never the idea or the files, opens with the copy line, and the idea alone brings the brief card; a fresh draft still opens on "What are we making?".
 
 ## 7. Needs from the backend
 
@@ -678,15 +684,17 @@ Checked against `docs/PIP-ORCHESTRATION.md` as it stands today. The first list i
 | N22 | The profiles' assignments: `GET /api/settings/profiles` → `Record<Profile, Record<Role, {model, fallback?}>>` | each profile's "about $X per 60 s video" and the "What changes" list are computed in the UI (`pickFor`), which may pick differently from the server's `rolesForProfile` | not on the wire |
 | N23 | The fallback covers chat turns too, or says it doesn't | the gateway escalates to a role's fallback only for structured (`json`) calls; Pip's tool turns (`chat`) never fall back, so the warning on Pip's row can promise less than it says | `gateway-impl.ts` `json()` only |
 | N24 | A life ends when its last task ends or is cancelled | on a project from before the plan the Animator's first life runs 1 h 37 min (its five tasks were cancelled with the run and have no `endedAt`), so its time alive reads long though it is the sum of its lives | **met (P2)**: a life ends when the member's last task ends, fails or is cancelled, or when its run stops (a stored `run` event); a run that died without one ends at the last event it wrote, found at the next run's start. `questday_teaser`'s Animator: 13:27:15 to 13:27:15, 8.5 s alive in all (ORCHESTRATION P2 item 29) |
+| N25 | "Make another like this" typed to Pip on a project: the `project_fork` plan card's confirm makes a draft (`POST /api/drafts {from}`'s prefill and first line) instead of a project, and its result is `{ text, draftId }` (`PlanCard.result.draftId`, added in the web type). The card has no `editable` brief (the copy never takes the idea) and `usd: [0, 0]` | the card ends where the menu item and the chip do, `/new/:draftId`, and the idea is the person's next message | P3, asked of the backend: today the card makes a project at the brief |
+| N26 | Plan revision numbers: the server's first plan is rev 0 (`by: "rules"`), and Pip's revision after G0 is rev 1; this file (§2) and the mock count the rules plan as rev 1 | "Plan · rev N" and the revision lines show the server's numbers as they are; the UI shows the plan from rev 0 (it hid a plan still at rev 0 until P3) | to reconcile: the doc's rev numbers or the server's |
 
 ## 8. Open questions for the person
 
 - **Q1. What "Only the key picks" covers.** Resolved by Decision 2: G1, the `rights` pick and G3; G2 passes in code, and the G3 press passes G4.
 - **Q2.** N12 above: whether the horizon should need all of a pending task's dependencies within reach.
 
-## 9. What P1 built (UI, mock)
+## 9. What is built (UI)
 
-The UI half of P1 runs in mock only (`?mock=1`); `/new` stays the composer against the real server until P3 serves `/api/drafts` (`NEW_IS_TALK` in `App.tsx` and `pages/Projects.tsx`).
+P1 and P2 built the UI in mock (`?mock=1`). P3 wired it to the real server: `/new` is the conversation everywhere (the `NEW_IS_TALK` switch is gone), "Show all options" (`/new/:draftId/options`) is the way to the composer, and Projects with no projects goes straight to `/new`.
 
 | Part | Where | State |
 |---|---|---|
@@ -704,7 +712,12 @@ The UI half of P1 runs in mock only (`?mock=1`); `/new` stays the composer again
 | P2: the crew drawer's Working / Up next / Finished groups, the kept log (`GET …/instances/:iid/log`, read-only, "Back for a fix" markers, "Ask Pip about this" sending `about: {instance}`) | `components/CrewDrawer.tsx`, `AgentActivity.tsx` (dispatches), `lib/pip.ts` (`about` on the draft) | built (mock); the real endpoint is the backend's P2 |
 | P2: Studio's Crew tab: instance rows in Working / Up next / Finished · N, and "Plan · rev N" (`GET …/plan/revisions`) | `components/CrewRow.tsx` (`InstancePanel`) | built (mock) |
 | P2: no Crew lane on the video timeline (D3) | `components/TrackTimeline.tsx` has none | confirmed |
-| "Make another like this", the server's drafts, the brief read by a model | | P3 |
+| P3: `/new` on the real server: `HttpClient` calls the draft and line routes (`lib/api.ts`); a fresh `/new` holds `/api/events` before the first send, so a reply that beats the re-render is kept (by its `draft`); a route the server lacks (it answers with the page) is an error with a fix, never an empty answer, so nothing is sent on | `lib/api.ts`, `lib/pip.ts`, `components/ProjectStage.tsx`, `App.tsx`, `pages/Projects.tsx` | built; checked against the real studio while its drafts routes were still landing: `/new` opens, nothing is sent; the end-to-end run waits for the backend's P3 |
+| P3: a reply never moves a card back: a `brief_fields` form's "submitted" reply after its done event, a fork's "running" after done, and a failed press reverts only a card nothing moved on | `lib/cards.ts` (pure, tested), `lib/pip.ts` (`decidePip`) | built |
+| P3: "Make another like this": the finished card's ⋯ menu and the chip call `POST /api/drafts {from}` and open `/new/:draftId` on a new stage; Pip's copy line leads it; the plan card ends there (N25) | `lib/pip.ts` (`makeAnother`, `openDraft`), `pages/Projects.tsx`, `components/Pip.tsx`, `components/ProjectStage.tsx`, `mock/drafts.ts` (`COPIED`, `copyLine`), `mock/pip.ts` | built (mock end to end; the server's prefill and N25 are the backend's P3) |
+| P3: the kept log and the plan revisions against the real server: the log of a project from before the plan (questday_teaser: 7 members, "Earlier work", "Back for a fix") renders as in mock; the revisions from the server's own store read as one line each; "Plan · rev N" now shows from rev 0 (N26) | `components/CrewDrawer.tsx`, `components/CrewRow.tsx` | checked |
+| P3: `?lang=fa` turns the studio right-to-left (kept for the browser; `?lang=en` turns it back), so the RTL check needs no hand-set `dir`. The words stay English and the digits are Persian through Intl ("$۰٫۴۲ of $۶"); `lang` says "fa" for text that is still English, so it is a check, not a translation | `lib/locale.ts`, `main.tsx`, `lib/format.ts`, `lib/human.ts` | built |
+| The brief read by a model | | the backend's P3 |
 
 ## 10. Settings › Roles (`/settings/roles`)
 

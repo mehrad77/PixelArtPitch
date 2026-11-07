@@ -380,6 +380,7 @@ class MockBackend {
       this.projects.set(id, np);
       return id;
     },
+    createDraft: (from) => this.drafts.create(from).draft.id,
     titles: () =>
       [...this.projects.values()].map((p) => ({ id: p.state.doc.id, title: p.state.doc.title, state: p.state })),
     lastChange: (id) => {
@@ -450,6 +451,26 @@ class MockBackend {
     },
     thinking: (draft) => this.pip.send(draft, { type: "thinking" }),
     start: (d) => this.startDraft(d),
+    copyOf: (id) => {
+      const s = this.projects.get(id)?.state;
+      if (!s) return null;
+      const b = s.doc.brief;
+      const audience = { pitch: "investors", social: "users", launch: "launch" }[String(b.purpose)] as
+        | string
+        | undefined;
+      return {
+        title: s.doc.title,
+        fields: {
+          ...(audience ? { audience } : {}),
+          ...(typeof b.lengthSec === "number" ? { lengthSec: b.lengthSec } : {}),
+          ...(b.narration === "none" || b.narration === "user" ? { narration: b.narration } : {}),
+          ...(b.involvement ? { involvement: b.involvement } : {}),
+          ...(b.tone?.length ? { style: [...b.tone].slice(0, 3) } : {}),
+          ...(s.budget.capUsd > 0 ? { budget: s.budget.capUsd } : {}),
+          profile: this.settings.profile,
+        },
+      };
+    },
     started: (draft, id) => {
       const p = this.projects.get(id);
       this.pip.move(draft, id);

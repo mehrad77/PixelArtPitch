@@ -3,8 +3,11 @@
 // (useProject forwards them here); the workspace conversation (no project) listens on /api/events only while shown.
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ApiError } from "./api.ts";
+import { findCard, laterCard, revertCard } from "./cards.ts";
 import { client } from "./client.ts";
 import { hasVideo, humanStatus, PHASES, phaseOf } from "./human.ts";
+import { navigate } from "./router.tsx";
+import { freshStage } from "./stage.ts";
 import type {
   BriefFieldKey,
   PipCard,
@@ -93,6 +96,11 @@ function load(key: string) {
       });
     },
     (e: Error) => {
+      // a draft that is gone (started elsewhere, or removed): the stage says so, with "Start again"
+      if (isDraftKey(key) && e instanceof ApiError && e.status === 404 && e.code !== "no_route") {
+        set(key, (s) => ({ ...s, loaded: true }));
+        return;
+      }
       asked.delete(key);
       set(key, (s) => ({
         ...s,
@@ -149,6 +157,7 @@ export function pipEvent(key: string, e: PipEvent) {
   }
   if (e.type === "card") {
     set(key, (s) => ({ ...s, items: replaceCard(s.items, e.card) }));
+    landed(e.card);
     return;
   }
   if (e.type === "item") {
@@ -206,7 +215,9 @@ export function usePip(project?: string | null): Conv {
   );
   useEffect(() => {
     load(key);
-    if (key === WORKSPACE || isDraftKey(key)) return holdWorkspace();
+    // a fresh /new holds the stream too: the first send makes the draft and asks at once, and a rules-mode reply can
+    // land before the stage re-renders under the draft's key; its events are kept by draft id either way
+    if (key === WORKSPACE || key === NEW_TALK || isDraftKey(key)) return holdWorkspace();
   }, [key]);
   return conv;
 }
@@ -296,6 +307,7 @@ export async function decidePip(
         ? { ...card, status: "submitted" }
         : null;
   if (optimistic) set(key, (s) => ({ ...s, items: replaceCard(s.items, optimistic) }));
+  if (decision === "confirm") pressed.add(card.id);
   try {
     const next = await client.pipCard(card.id, {
       ...target(key),
@@ -303,22 +315,61 @@ export async function decidePip(
       ...(edit != null ? { edit } : {}),
       ...(values ? { values } : {}),
     });
-    // the card's own events can beat this reply (a fork finishes in milliseconds): a reply never moves a card back
-    // from where its events already took it ("done" stays done, not "running" again)
-    if (next)
+    // the card's own events can beat this reply (a fork or a rules-mode form finishes in milliseconds): a reply never
+    // moves a card back from where its events already took it ("done" stays done, not "running" or "submitted")
+    if (next) {
       set(key, (s) => {
-        const now = s.items.flatMap((i) => (i.kind === "pip" ? i.cards : [])).find((c) => c.id === next.id);
-        const settled = (c?: PipCard) => {
-          const st = c && "status" in c ? String(c.status) : "";
-          return !!st && st !== "running" && st !== "proposed" && st !== "open";
-        };
-        return settled(now) && !settled(next) ? s : { ...s, items: replaceCard(s.items, next) };
+        const now = findCard(s.items, next.id);
+        return laterCard(now, next) === now ? s : { ...s, items: replaceCard(s.items, next) };
       });
+      landed(next);
+    }
   } catch (e) {
-    set(key, (s) => ({ ...s, items: replaceCard(s.items, card) }));
+    pressed.delete(card.id);
+    // back to how it was, unless its events moved it on meanwhile (a 409 "already decided" after its done event)
+    set(key, (s) => {
+      const back = revertCard(findCard(s.items, card.id), optimistic, card);
+      return back ? { ...s, items: replaceCard(s.items, back) } : s;
+    });
     throw e;
   }
 }
+
+/** the cards the person confirmed in this tab: only those may take the page somewhere when they finish */
+const pressed = new Set<string>();
+/** a "Make another like this" card the person confirmed here ends on the new draft's stage, as Start ends on the
+ * project's; once, whether its event or the reply says so first */
+function landed(card: PipCard) {
+  if (card.type !== "plan" || card.status !== "done" || !card.result?.draftId || !pressed.has(card.id)) return;
+  pressed.delete(card.id);
+  openDraft(card.result.draftId);
+}
+
+/** "Make another like this" (PIP-JOURNEY §3.6): a draft that copies the project's settings, then /new/:draftId */
+export async function makeAnother(projectId: string): Promise<string> {
+  const { draft, items } = await client.createDraft(projectId);
+  seedConv(draft.id, items);
+  openDraft(draft.id);
+  return draft.id;
+}
+/** go to a draft's stage: a new stage, since the one on screen may still hold the project it copies */
+export function openDraft(draftId: string) {
+  freshStage();
+  navigate(`/new/${encodeURIComponent(draftId)}`);
+}
+/** the same, from a chip in a conversation: a failure is a calm line under that conversation's field */
+export async function makeAnotherFrom(project: string | null | undefined) {
+  const key = keyOf(project);
+  if (key === WORKSPACE || key === NEW_TALK || isDraftKey(key)) return;
+  set(key, (s) => ({ ...s, note: null }));
+  try {
+    await makeAnother(key);
+  } catch (e) {
+    const fix = e instanceof ApiError && e.fix ? ` ${e.fix}` : "";
+    set(key, (s) => ({ ...s, note: `Didn't start another one: ${(e as Error).message}.${fix}` }));
+  }
+}
+export const MAKE_ANOTHER = "Make another like this";
 
 // ---- the default path: ask Pip, not the crew member ----
 const OPEN_EVENT = "pap:pip-open";
@@ -383,7 +434,7 @@ export function pipMood(c: Conv, state: ProjectState | null): PipMood {
 export function suggestions(state: ProjectState | null): string[] {
   if (!state) return ["Start a new video", "What's each project doing?"];
   if (phaseOf(state) >= PHASES.length && hasVideo(state))
-    return ["Subtitles in another language", "Change something", "Make another like this"];
+    return ["Subtitles in another language", "Change something", MAKE_ANOTHER];
   const st = humanStatus(state);
   if (st.tone === "problem") return ["What went wrong?", "What can I do about it?"];
   if (st.tone === "needs") return ["What do they need from me?", "Explain the choice"];

@@ -1,5 +1,7 @@
 // Numbers, money, durations and timecode, through Intl so digits follow the locale.
-const LOCALE = typeof navigator !== "undefined" ? navigator.language : "en";
+import { numberLocale } from "./locale.ts";
+
+const LOCALE = numberLocale();
 export const FPS = 30;
 
 const usdFmt = new Intl.NumberFormat(LOCALE, { style: "currency", currency: "USD", minimumFractionDigits: 2 });

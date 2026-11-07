@@ -317,11 +317,12 @@ function InstancePanel({ projectId, state, currentScene }: PanelProps) {
   // Finished is open while nothing is live, until the person toggles it; then it is theirs
   const [finOpen, setFinOpen] = useState<boolean | null>(null);
   const finishedOpen = finOpen ?? groups.working.length === 0;
-  const rev = state.plan?.rev ?? 0;
+  // the server's first plan is rev 0 (the rules plan), so a plan at rev 0 has one revision to show
+  const rev = state.plan ? state.plan.rev : null;
   const [revs, setRevs] = useState<PlanRevisionSummary[] | null>(null);
   useEffect(() => {
     let live = true;
-    if (rev)
+    if (rev != null)
       client.planRevisions(projectId).then(
         (r) => live && setRevs(r),
         () => live && setRevs([]),
@@ -376,7 +377,7 @@ function InstancePanel({ projectId, state, currentScene }: PanelProps) {
           <ul className="crew-list">{groups.finished.map((i) => row(i, "finished"))}</ul>
         </Disclosure>
       )}
-      {rev > 0 && (
+      {rev != null && (
         <Disclosure size="sm" summary={`Plan · rev ${rev}`} className="crew-group crew-plan">
           {revs === null ? (
             <p className="muted small">Loading the plan's changes…</p>
