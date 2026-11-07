@@ -456,6 +456,22 @@
     "wings",
     "cute"
    ]
+  },
+  {
+   "id": "owl",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 8,
+   "tags": [
+    "character",
+    "owl",
+    "bird",
+    "night",
+    "sleepy",
+    "reader",
+    "cute"
+   ]
   }
  ]
 }
