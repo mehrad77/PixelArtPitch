@@ -1,0 +1,193 @@
+{
+  "pap": 1,
+  "rev": 0,
+  "id": "questday",
+  "title": "QuestDay",
+  "canvas": {
+    "w": 320,
+    "h": 180,
+    "fps": 30,
+    "palette": "pap-night@1"
+  },
+  "brief": {
+    "idea": "QuestDay is a fictional to-do app that turns every task into a small quest: clear tasks, collect stars, raise your flag.",
+    "purpose": "launch",
+    "audience": "people whose to-do list feels like a chore",
+    "ask": "try QuestDay",
+    "lengthSec": 15,
+    "tone": ["playful", "calm", "night"],
+    "narration": "none"
+  },
+  "script": {
+    "cues": [
+      {
+        "id": "c01",
+        "text": "Your to-do list feels like a grind."
+      },
+      {
+        "id": "c02",
+        "text": "QuestDay turns every task into a quest."
+      },
+      {
+        "id": "c03",
+        "text": "Clear tasks, collect stars, raise your flag."
+      },
+      {
+        "id": "c04",
+        "text": "QuestDay. Press start."
+      }
+    ],
+    "timing": {
+      "mode": "estimate",
+      "minCue": 1.6
+    }
+  },
+  "composition": {
+    "hold": 0.5,
+    "endHold": 3.5,
+    "duration": "E(c04)+endHold"
+  },
+  "scenes": [
+    {
+      "id": "grind",
+      "kind": "decl",
+      "title": "A grind",
+      "from": 0,
+      "to": "S(c02)",
+      "cues": ["c01"],
+      "recipes": [
+        {
+          "id": "backdrop_night"
+        },
+        {
+          "id": "walk_in",
+          "params": {
+            "faces": "left"
+          }
+        },
+        {
+          "id": "block_bump"
+        }
+      ]
+    },
+    {
+      "id": "quest",
+      "kind": "decl",
+      "title": "Tasks become quests",
+      "from": "grind.to",
+      "to": "S(c03)",
+      "cues": ["c02"],
+      "recipes": [
+        {
+          "id": "item_collect",
+          "params": {
+            "faces": "left"
+          }
+        },
+        {
+          "id": "toast",
+          "params": {
+            "title": "NEW QUEST",
+            "sub": "3 TASKS TODAY",
+            "at": "S(c02)+0.9"
+          }
+        }
+      ]
+    },
+    {
+      "id": "flag",
+      "kind": "decl",
+      "title": "Raise your flag",
+      "from": "quest.to",
+      "to": "S(c04)",
+      "cues": ["c03"],
+      "recipes": [
+        {
+          "id": "flag_raise",
+          "params": {
+            "hero": "hero",
+            "faces": "left"
+          }
+        },
+        {
+          "id": "crowd_cheer"
+        }
+      ]
+    },
+    {
+      "id": "end",
+      "kind": "decl",
+      "title": "Press start",
+      "from": "flag.to",
+      "to": "duration",
+      "cues": ["c04"],
+      "recipes": [
+        {
+          "id": "end_card_loop",
+          "params": {
+            "title": "QUESTDAY",
+            "url": "questday.example",
+            "url2": "play.questday.example",
+            "swapAfter": 2,
+            "hero": "hero",
+            "faces": "left"
+          }
+        }
+      ]
+    }
+  ],
+  "audio": {
+    "sfx": {}
+  },
+  "assets": [
+    {
+      "id": "font",
+      "src": "lib:font-5x8@1"
+    },
+    {
+      "id": "hero",
+      "src": "lib:mentor-ai@1"
+    },
+    {
+      "id": "crowd",
+      "src": "lib:gamers@1"
+    },
+    {
+      "id": "moon",
+      "src": "lib:moon@1"
+    },
+    {
+      "id": "skyline",
+      "src": "lib:skyline@1"
+    },
+    {
+      "id": "tiles",
+      "src": "lib:tiles@1"
+    },
+    {
+      "id": "props",
+      "src": "lib:props@1"
+    },
+    {
+      "id": "qblock",
+      "src": "lib:qblock@1"
+    },
+    {
+      "id": "items",
+      "src": "lib:items@1"
+    },
+    {
+      "id": "castle",
+      "src": "lib:castle@1"
+    }
+  ],
+  "budget": {
+    "capUsd": 0
+  },
+  "notes": [
+    {
+      "by": "engine",
+      "text": "Public example. The hero is a library mentor standing in until the crew draws one."
+    }
+  ]
+}

@@ -227,6 +227,9 @@ importers:
 
   packages/crew:
     dependencies:
+      '@pap/engine':
+        specifier: workspace:*
+        version: link:../engine
       '@pap/render':
         specifier: workspace:*
         version: link:../render

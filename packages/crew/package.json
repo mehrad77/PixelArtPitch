@@ -3,6 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" },
-  "dependencies": { "@pap/schema": "workspace:*", "@pap/tools": "workspace:*", "@pap/render": "workspace:*", "zod": "^4.6.7" }
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@pap/schema": "workspace:*",
+    "@pap/tools": "workspace:*",
+    "@pap/render": "workspace:*",
+    "zod": "^4.6.7",
+    "@pap/engine": "workspace:*"
+  }
 }
