@@ -47,7 +47,7 @@ export const JOURNEY = {
   say: "a 30 s pitch for QuestDay, my todo app that turns tasks into quests. no voice. keep it under $3",
   logo: "questday-logo.png",
   capUsd: 3,
-  /** the brief card's estimate: rev 1's p50/p90 (the new drawing's placeholder priced in) */
+  /** the brief card's estimate: rev 0's p50/p90 (the new drawing's placeholder priced in) */
   estUsd: [1.4, 2.2] as [number, number],
   estSec: [600, 900] as [number, number],
   /** the step 10 message, typed by `auto` */
@@ -241,10 +241,10 @@ export class Journey {
     return this.add({ id, kind: "gate", role: "person", instance: "", gate, stage, deps, title: gate });
   }
 
-  /** rev 1: the rules skeleton after G0, with the scenes expected for 30 s; the new drawing is a placeholder until the
-   * cast says what it is (it has no face) */
-  private rev1() {
-    this.rev = 1;
+  /** rev 0: the rules skeleton after G0, with the scenes expected for 30 s (the server's first plan is rev 0, N26);
+   * the new drawing is a placeholder until the cast says what it is (it has no face) */
+  private rulesPlan() {
+    this.rev = 0;
     this.gate("g0", "g0_brief", "brief", []).status = "done";
     this.add({
       id: "t_write",
@@ -406,7 +406,7 @@ export class Journey {
     return {
       rev: this.rev,
       at: this.at(),
-      by: this.rev === 1 ? "rules" : this.revBy,
+      by: this.revBy,
       reason: this.revReason,
       tasks,
       estimate: { usd: JOURNEY.estUsd, sec: JOURNEY.estSec, rough: true },
@@ -474,7 +474,7 @@ export class Journey {
   > = {};
 
   // ---- the moments (§4) ----
-  /** 7b: the cast finds no founder sprite; code expands the new-art placeholder into one drawing (rev 2) */
+  /** 7b: the cast finds no founder sprite; code expands the new-art placeholder into one drawing (rev 1) */
   castFindsNoFounder() {
     const ad = this.metas.get("art-director");
     if (ad) ad.lastReport = { status: "partial", did: "Cast 6 sprites from the library", couldnt: "No founder sprite" };
@@ -534,7 +534,7 @@ export class Journey {
     n.ticks = 3;
     this.emit({ event: "task", data: this.taskRow(n, "working") });
   }
-  /** step 9: round 1 finds the clipped headline; code adds the scene 1 redo and round 2 (rev 3) */
+  /** step 9: round 1 finds the clipped headline; code adds the scene 1 redo and round 2 (rev 2) */
   reviewFindsTheHeadline() {
     this.emit({
       event: "x-state",
@@ -595,7 +595,7 @@ export class Journey {
     this.reviveReason.set("animator:s01", redo.reason ?? "");
   }
   reviveReason = new Map<string, string>();
-  /** step 10: the change card's revision (rev 4, the person's) */
+  /** step 10: the change card's revision (rev 3, the person's) */
   change() {
     const g3 = this.node("g3");
     g3.status = "pending";
@@ -668,12 +668,12 @@ export class Journey {
   }
 
   // ---- the executor ----
-  /** Start was pressed on the brief card (G0 passed by the person): rev 1, then the first tick of work */
+  /** Start was pressed on the brief card (G0 passed by the person): rev 0, then the first tick of work */
   start(): ServerEvent[] {
     this.emit({ event: "gate", data: { id: "g0_brief", status: "passed", items: GATE_ITEMS.g0_brief } });
-    this.rev1();
+    this.rulesPlan();
     const revision: PlanRevisionSummary = {
-      rev: 1,
+      rev: 0,
       at: this.at(),
       by: "rules",
       trigger: "start",

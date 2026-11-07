@@ -609,7 +609,7 @@ class MockBackend {
     lantern.phase = 99;
     this.projects.set("lantern", lantern);
   }
-  /** Start on the brief card: the project, its conversation moved over, the draft gone, and rev 1 */
+  /** Start on the brief card: the project, its conversation moved over, the draft gone, and rev 0 */
   startDraft(d: Draft): string {
     const title = d.title || String(d.fields.title ?? "") || JOURNEY.title;
     let id =

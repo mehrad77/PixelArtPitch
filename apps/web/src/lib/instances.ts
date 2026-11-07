@@ -275,7 +275,7 @@ export const msgsOf = (inst: Instance, msgs: ChannelMsg[], all: Instance[]) =>
   msgs.filter((m) => instanceOfMsg(m, all) === inst.id);
 
 const BY_WORD: Record<PlanRevisionSummary["by"], string> = { rules: "Rules", pip: "Pip", code: "Pip", person: "You" };
-/** §3.4: "rev 2 · 21:06 · Pip: added a Pixel artist for the founder: the library had no founder sprite." */
+/** §3.4: "rev 1 · 21:06 · Pip: added a Pixel artist for the founder: the library had no founder sprite." */
 export function revisionLine(r: PlanRevisionSummary, clock: (d: Date) => string): string {
   const reason = r.reason.replace(/\.?$/, ".");
   return `rev ${r.rev} · ${clock(new Date(r.at))} · ${BY_WORD[r.by]}: ${low(reason)}`;

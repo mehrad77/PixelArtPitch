@@ -387,9 +387,10 @@ test("Pip's messages float over the member they are about; plan revisions read a
   assert.equal(lines.length, 4);
   assert.equal(
     lines[1],
-    "rev 2 · 21:06 · Pip: added a Pixel artist for the founder: the library had no founder sprite.",
+    "rev 1 · 21:06 · Pip: added a Pixel artist for the founder: the library had no founder sprite.",
   );
-  assert.match(lines[3], /^rev 4 · 21:06 · You: scene 2 goes back/);
+  assert.match(lines[0], /^rev 0 · 21:06 · Rules: /, "the rules plan is rev 0, as on the server (N26)");
+  assert.match(lines[3], /^rev 3 · 21:06 · You: scene 2 goes back/);
 });
 
 // ---- /new on the real server: the races and "Make another like this" (PIP-JOURNEY §3.6, §9) ----
