@@ -12,7 +12,7 @@ Over MCP the server does not check your role. Stay inside the Producer's scope.
 ## Procedure
 1. `project_list`, or `project_create` with `{ title, brief: { idea, lengthSec, narration }, budgetUsd }`.
 2. `project_get` `{ section: "summary" }`, then `"brief"` and `"budget"`.
-3. G0: check the brief (idea, `lengthSec`, narration, budget). If something is missing, ask once with `ask_user`.
+3. G0: check the brief (idea, `lengthSec`, narration, budget). If something is missing, ask once with `ask_pip`.
 4. Have the Writer run (skill `pap://skills/pap-writer`). At G1, use `ask_user` to let the user pick one of the 3 angles.
 5. Director and Art Director in parallel (`pap://skills/pap-director`, `pap://skills/pap-art-director`). Then `render_contact` for the animatic. G2 is the user's call.
 6. After G2: art, animation and sound in parallel. Route notes (`note_list`): asset → art-director, cue → writer, `sound` → sound-designer, scene → animator.

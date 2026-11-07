@@ -132,10 +132,19 @@ export type StreamEvent =
   | { type: "thinking"; text?: string }
   | { type: "tool_call"; name: string };
 
+/** a model's real context window as its provider reports it */
+export type WindowInfo = { window: number; source: string; note?: string };
+/** an exact input-token count from the provider (free endpoints only) */
+export type CountInfo = { tokens: number; source: string };
+
 export interface Provider {
   config: ProviderConfig;
   listModels(signal?: AbortSignal): Promise<ModelInfo[]>;
   chat(req: ChatRequest, opts: { signal?: AbortSignal; onEvent?: (e: StreamEvent) => void }): Promise<ChatResult>;
+  /** the window the provider reports for this model (never a billed call) */
+  contextWindow?(model: string, signal?: AbortSignal): Promise<WindowInfo | null>;
+  /** the input tokens this request would take, from a free count endpoint */
+  countTokens?(req: ChatRequest, signal?: AbortSignal): Promise<CountInfo | null>;
 }
 
 // ---- ledger and budget ----

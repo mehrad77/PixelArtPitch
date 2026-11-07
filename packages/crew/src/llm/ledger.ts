@@ -39,7 +39,12 @@ export function quantile(xs: number[], p: number): number {
   return s[lo] + (s[hi] - s[lo]) * (i - lo);
 }
 
-export type NewLedgerRow = Omit<LedgerRow, "id" | "ts" | "tokPerSec"> & { ts?: string; tokPerSec?: number };
+export type NewLedgerRow = Omit<LedgerRow, "id" | "ts" | "tokPerSec"> & {
+  ts?: string;
+  tokPerSec?: number;
+  /** our input-token estimate for the request (calibrates estimates per model) */
+  estInTokens?: number;
+};
 
 /** A row from a ChatResult plus who/what it was for. `model` is the full "<provider>/<model>" id. */
 export function rowFromResult(
@@ -86,6 +91,10 @@ export class Ledger {
         id TEXT PRIMARY KEY, project TEXT NOT NULL, usd_micro INTEGER NOT NULL, ts TEXT NOT NULL
       );
     `);
+    // our own input-token estimate for each call, so estimates can be calibrated per model against the real count
+    const cols = this.db.prepare("PRAGMA table_info(calls)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "est_in_tokens"))
+      this.db.exec("ALTER TABLE calls ADD COLUMN est_in_tokens INTEGER");
   }
 
   close(): void {
@@ -97,8 +106,8 @@ export class Ledger {
       .prepare(
         `INSERT INTO calls (ts, project, task, task_kind, role, attempt, provider, model, prompt_version, input_tokens,
           output_tokens, cache_write_tokens, cache_read_tokens, cache_write_1h_tokens, thinking_tokens, usd, usd_source,
-          ttft_ms, duration_ms, tok_per_sec, stop, est_usd, ticket)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ttft_ms, duration_ms, tok_per_sec, stop, est_usd, ticket, est_in_tokens)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.ts ?? new Date().toISOString(),
@@ -124,6 +133,7 @@ export class Ledger {
         row.stop,
         row.estUsd,
         row.ticket ?? null,
+        row.estInTokens ?? null,
       );
     return Number(r.lastInsertRowid);
   }
@@ -151,6 +161,23 @@ export class Ledger {
     const w = this.where(q);
     const r = this.db.prepare(`SELECT COALESCE(SUM(usd), 0) AS s FROM calls ${w.sql}`).get(...w.args) as { s: number };
     return r.s;
+  }
+
+  /**
+   * How far our input-token estimate is off for a model: real prompt tokens ÷ our estimate, over its last calls
+   * that logged both. null below 3 calls.
+   */
+  estimateRatio(model: string, window = 50): { ratio: number; n: number } | null {
+    const rows = this.db
+      .prepare(
+        `SELECT input_tokens + COALESCE(cache_write_tokens, 0) + COALESCE(cache_read_tokens, 0) AS real, est_in_tokens AS est
+         FROM calls WHERE model = ? AND est_in_tokens > 0 AND input_tokens > 0 ORDER BY id DESC LIMIT ?`,
+      )
+      .all(model, window) as { real: number; est: number }[];
+    if (rows.length < 3) return null;
+    const real = rows.reduce((s, r) => s + r.real, 0);
+    const est = rows.reduce((s, r) => s + r.est, 0);
+    return est > 0 ? { ratio: real / est, n: rows.length } : null;
   }
 
   /** Rolling speed for a model over its last `window` completed calls. */

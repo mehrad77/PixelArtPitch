@@ -508,3 +508,615 @@ test("every role is listed for Pip, and the assistant role has a model in each p
   }
   assert.equal(PROFILES.best.assistant.model, "anthropic/claude-sonnet-5-5");
 });
+
+// ---------------------------------------------------------------- change requests: routing, re-board, settling
+async function changeProject() {
+  const w = await setup();
+  await w.p.patch(
+    [
+      { op: "replace", path: "/brief/narration", value: "none" },
+      { op: "replace", path: "/brief/involvement", value: "auto" },
+    ],
+    { reason: "test: no narration, no gates", author: { kind: "user" } },
+  );
+  for (const s of w.p.doc().scenes) w.p.setSceneStatus(s.id, { version: "render", state: "ready" });
+  w.p.setStage("deliver");
+  return w;
+}
+const until = async (f: () => boolean, ms = 30_000) => {
+  for (let t = 0; t < ms && !f(); t += 20) await new Promise((r) => setTimeout(r, 20));
+};
+const review = (blockers: { scene: string; issue: string }[]) => ({
+  json: {
+    verdict: blockers.length ? "fix" : "ship",
+    summary: "checked",
+    blockers: blockers.map((b) => ({ t: 1, scene: b.scene, issue: b.issue, fix: "fix it" })),
+    polish: [],
+  },
+});
+
+test("routing: new characters go to the Director, never the Producer; the card says so", async () => {
+  const { changeOwner, CHANGE_CATEGORIES } = await import("@pap/tools");
+  const npc = "use some NPCs in the video. maybe 2. one is walking and one is telling him about the todo app";
+  assert.equal(changeOwner({}, "other", npc), "director");
+  assert.equal(changeOwner({}, "art", npc), "director");
+  assert.equal(changeOwner({ scene: "s1" }, "story", "x"), "director");
+  assert.equal(changeOwner({ scene: "s1" }, "art", "make the hero bigger"), "animator");
+  assert.equal(changeOwner({}, "sound", "quieter music"), "sound-designer");
+  assert.equal(changeOwner({ cue: "c01" }, "text", "say hello"), "writer");
+  for (const c of CHANGE_CATEGORIES)
+    for (const t of [{}, { scene: "s1" }, { cue: "c01" }])
+      assert.notEqual(changeOwner(t, c, "do something"), "producer");
+  const { pip, id } = await setup();
+  script([
+    { toolCalls: [{ name: "crew_request_change", input: { text: npc, category: "story" } }] },
+    { toolCalls: [{ name: "reply", input: { text: "A card." } }] },
+  ]);
+  const item = (await pip!.ask(id, npc).done) as any;
+  const c = item.cards[0];
+  assert.deepEqual(c.who, ["director", "animator", "reviewer", "editor"]);
+  assert.match(c.detail, /The Director re-plans scenes 1, 2 and 3/);
+  assert.match(c.effects[0], /Scene 4 stays as it is/);
+});
+
+test("bundled review notes are listed on the card, one line each", async () => {
+  const { pip, id, p } = await setup();
+  const n = p.addNote({
+    target: { scene: "grind" },
+    category: "art",
+    text: "the headline is cut off",
+    assignee: "animator",
+    by: "reviewer",
+  });
+  script([
+    {
+      toolCalls: [
+        {
+          name: "crew_request_change",
+          input: { text: "make the hero bigger", scene: "1", category: "art", alsoNotes: [n.id] },
+        },
+      ],
+    },
+    { toolCalls: [{ name: "reply", input: { text: "A card." } }] },
+  ]);
+  const item = (await pip!.ask(id, "make the hero bigger in scene 1 and fix that headline").done) as any;
+  assert.ok(item.cards[0].effects.includes(`Also fixes ${n.id}: the headline is cut off`));
+});
+
+test("a story change: the Director re-boards only that scene, casts from the library, and the card settles", async () => {
+  const w = await changeProject();
+  const before = Object.fromEntries(w.p.doc().scenes.map((s) => [s.id, JSON.stringify(s)]));
+  const tuned: string[] = [];
+  let reboardPrompt = "";
+  answer = (req) => {
+    const sys = req.system ?? "";
+    if (/Re-plan ONLY the listed scenes/.test(sys)) {
+      reboardPrompt = JSON.stringify(req.messages);
+      return {
+        json: {
+          scenes: [
+            {
+              id: "grind",
+              recipes: [
+                { id: "backdrop_night", params: {} },
+                { id: "walk_in", params: { hero: "cast-founder", x: 110 } },
+                { id: "spawn_join", params: { who: "cast-developer", x: 200, banner: "Try QuestDay" } },
+              ],
+            },
+          ],
+          approximated: "A banner stands in for the conversation.",
+        },
+      };
+    }
+    if (/Animator of one scene/.test(sys)) {
+      tuned.push(/Scene \\"(\w+)\\"/.exec(JSON.stringify(req.messages))?.[1] ?? "?");
+      return { json: { changes: [] } };
+    }
+    if (/festival judge/.test(sys)) return review([]);
+    return { error: new Error(`unexpected call: ${sys.slice(0, 60)}`) };
+  };
+  const res = w.pip!.planCards(
+    "crew_request_change",
+    { text: "add two characters, one tells the other about the app", scene: "1", category: "story" },
+    w.p,
+  );
+  assert.ok(!("error" in res));
+  // store the card the way a turn would, then confirm it
+  const card = (res as any).cards[0];
+  (w.pip as any).log(w.p).append({ id: "pip_t", at: new Date().toISOString(), kind: "pip", text: "", cards: [card] });
+  const run = w.pip!.decide(w.id, card.id, "confirm");
+  const first = (await run.done) as any;
+  assert.equal(first.status, "running", "a handoff keeps working until the crew's run ends");
+  await until(() => (w.pip!.items(w.id).at(-1) as any).cards?.[0]?.status !== "running", 90_000);
+  const settled = (w.pip!.items(w.id).find((i) => i.id === "pip_t") as any).cards[0];
+  assert.equal(settled.status, "done", JSON.stringify(settled));
+  assert.match(settled.result.text, /The Director re-planned scene 1\./);
+  assert.match(settled.result.text, /Approximated: A banner stands in for the conversation\./);
+  assert.match(settled.result.text, /A new video is exported/);
+  assert.match(reboardPrompt, /one tells the other about the app/);
+  assert.deepEqual(tuned, ["grind"]);
+  const grind = w.p.doc().scenes.find((s) => s.id === "grind")!;
+  assert.ok(grind.kind === "decl" && grind.recipes.some((r) => r.id === "spawn_join"));
+  assert.ok(
+    w.p.doc().assets.some((a) => a.id === "cast-founder") && w.p.doc().assets.some((a) => a.id === "cast-developer"),
+  );
+  for (const s of w.p.doc().scenes) if (s.id !== "grind") assert.equal(JSON.stringify(s), before[s.id], s.id);
+});
+
+test("blockers left on the changed scene stop the crew at the rough cut, and the card says what's still wrong", async () => {
+  const w = await changeProject();
+  let reviews = 0;
+  answer = (req) => {
+    const sys = req.system ?? "";
+    if (/Animator of one scene/.test(sys)) return { json: { changes: [] } };
+    if (/festival judge/.test(sys)) {
+      reviews++;
+      return review([
+        { scene: "grind", issue: "The hero is still small." },
+        { scene: "flag", issue: "Unrelated: the flag is late." },
+      ]);
+    }
+    return { error: new Error("unexpected") };
+  };
+  const res = w.pip!.planCards(
+    "crew_request_change",
+    { text: "make the hero bigger", scene: "1", category: "art" },
+    w.p,
+  ) as any;
+  const card = res.cards[0];
+  (w.pip as any).log(w.p).append({ id: "pip_g", at: new Date().toISOString(), kind: "pip", text: "", cards: [card] });
+  await w.pip!.decide(w.id, card.id, "confirm").done;
+  await until(() => (w.pip!.items(w.id).find((i) => i.id === "pip_g") as any).cards[0].status !== "running");
+  const settled = (w.pip!.items(w.id).find((i) => i.id === "pip_g") as any).cards[0];
+  assert.equal(settled.status, "done");
+  assert.match(settled.result.text, /Still wrong: scene 1: The hero is still small\./);
+  assert.ok(!/flag is late/.test(settled.result.text), "blockers outside the change aren't the change's");
+  assert.match(settled.result.text, /waits for you at the rough cut/);
+  assert.equal(reviews, 2, "one fix round, then stop");
+  assert.equal(w.p.state.gates.find((g) => g.id === "g3_rough")?.status, "open");
+  assert.notEqual(w.p.state.gates.find((g) => g.id === "g4_final")?.status, "passed");
+  assert.match(w.p.state.status.line, /Waiting for you/);
+  w.crewImpl.pause(w.p, "now");
+});
+
+test("a failed run fails its card; a card a dead process left running settles on start", async () => {
+  const w = await setup();
+  const mk = (id: string, noteId: string) => ({
+    id: `pip_${id}`,
+    at: new Date().toISOString(),
+    kind: "pip",
+    text: "",
+    cards: [
+      {
+        id: `card_${id}`,
+        type: "plan",
+        status: "running",
+        title: "Ask the crew: x",
+        detail: "",
+        who: ["animator"],
+        usd: null,
+        sec: null,
+        effects: [],
+        confirmLabel: "Ask the crew",
+        action: { tool: "crew_request_change", input: {}, projectId: w.id, handoff: { noteId } },
+      },
+    ],
+  });
+  const log = (w.pip as any).log(w.p);
+  log.append(mk("a", "n90"));
+  w.pip!.settle(w.p, {
+    status: "failed",
+    error: "the animator's model is unreachable",
+    notes: ["n90"],
+    redone: [],
+    reboarded: [],
+    approximated: [],
+    openBlockers: [],
+    exported: false,
+  });
+  const a = (w.pip!.items(w.id).find((i) => i.id === "pip_a") as any).cards[0];
+  assert.equal(a.status, "failed");
+  assert.match(a.result.error, /unreachable/);
+  // a restart: nothing is running, the note is still open
+  w.p.addNote({ target: {}, category: "other", text: "x", assignee: "animator", by: "user" });
+  log.append(mk("b", w.p.state.notes.at(-1)!.id));
+  w.pip!.settleStale(() => false);
+  const b = (w.pip!.items(w.id).find((i) => i.id === "pip_b") as any).cards[0];
+  assert.equal(b.status, "failed");
+  assert.match(b.result.text, /stopped before this finished/);
+});
+
+// ---------------------------------------------------------------- slash commands and the summary
+test("/why, /budget and /undo answer without a model call", async () => {
+  const { pip, id, p } = await setup();
+  script([
+    { toolCalls: [{ name: "files_list", input: {} }], usage: { inputTokens: 500, outputTokens: 40 }, usd: 0.002 },
+    { toolCalls: [{ name: "reply", input: { text: "Here." } }], usd: 0.001 },
+  ]);
+  await pip!.ask(id, "what files are there").done;
+  const k0 = fake.calls.length;
+  const why = (await pip!.ask(id, "/why").done) as any;
+  assert.match(why.text, /fake\/model in agent mode \(prompt assistant\/system@2\)/);
+  assert.match(why.text, /files_list → ok/);
+  assert.match(why.text, /cost \$0\.00/);
+  const show = (await pip!.ask(id, "/budget").done) as any;
+  assert.match(show.text, /^The cap is \$5\. \$0\.00\d? spent|^The cap is \$5\. Nothing spent yet\./);
+  const raise = (await pip!.ask(id, "/budget 10").done) as any;
+  assert.equal(raise.cards[0].title, "Raise the cap to $10");
+  // a Pip-made patch to undo
+  await p.patch([{ op: "replace", path: "/title", value: "Renamed" }], {
+    reason: "rename it",
+    author: { kind: "user", via: "pip" },
+  });
+  const undo = (await pip!.ask(id, "/undo").done) as any;
+  assert.match(undo.cards[0].title, /Undo: rename it/);
+  assert.equal(fake.calls.length, k0, "no model call for /why, /budget, /undo");
+  await pip!.decide(id, raise.cards[0].id, "confirm").done;
+  assert.equal(p.doc().budget.capUsd, 10);
+  await pip!.decide(id, undo.cards[0].id, "confirm").done;
+  assert.notEqual(p.doc().title, "Renamed");
+  // anything else that starts with / is a message
+  script([{ toolCalls: [{ name: "reply", input: { text: "ok" } }] }]);
+  await pip!.ask(id, "/dance").done;
+  assert.equal(fake.calls.length, k0 + 1);
+});
+
+test("auto-compact folds the oldest items before they leave the window; the summary reaches the prompt; edits are used", async () => {
+  const { pip, id, p } = await setup();
+  // 24 old items: past the 20-item window
+  const log = (pip as any).log(p);
+  for (let i = 0; i < 12; i++) {
+    log.append({ id: `u_old${i}`, at: new Date().toISOString(), kind: "user", text: `old question ${i}` });
+    log.append({ id: `pip_old${i}`, at: new Date().toISOString(), kind: "pip", text: `old answer ${i}`, cards: [] });
+  }
+  const seen: Req[] = [];
+  answer = (req) => {
+    seen.push(req);
+    if (/keep the memory of a long conversation/.test(req.system ?? ""))
+      return { json: { text: "The person prefers short videos.\nThey asked for Persian subtitles." }, usd: 0.0005 };
+    return { toolCalls: [{ name: "reply", input: { text: "ok" } }] };
+  };
+  await pip!.ask(id, "next question").done;
+  const compactCall = seen.find((r) => /keep the memory/.test(r.system ?? ""))!;
+  assert.ok(compactCall, "a compact call ran");
+  assert.match(JSON.stringify(compactCall.messages), /old question 0/);
+  assert.ok(!/old answer 11/.test(JSON.stringify(compactCall.messages)), "the last 6 items stay out of the fold");
+  const main = seen.at(-1)!;
+  const shown = JSON.stringify(main.messages);
+  assert.match(shown, /The person prefers short videos/);
+  assert.ok(!/old question 0/.test(shown), "folded items aren't sent again");
+  assert.match(shown, /old answer 11/);
+  const sum = pip!.summary(id)!;
+  assert.equal(sum.upTo, "u_old9");
+  assert.equal(sum.freed?.items, 19);
+  assert.equal(sum.freed?.method, "estimate");
+  assert.ok(sum.freed!.before > sum.freed!.after && sum.freed!.freed === sum.freed!.before - sum.freed!.after);
+  // the person edits the summary: the next turn uses it
+  pip!.editSummary(id, "The person wants a 30 s cut.");
+  await pip!.ask(id, "and now?").done;
+  assert.match(JSON.stringify(seen.at(-1)!.messages), /The person wants a 30 s cut/);
+  assert.ok(!/prefers short videos/.test(JSON.stringify(seen.at(-1)!.messages)));
+  // /compact folds now
+  const before = seen.length;
+  const r = (await pip!.ask(id, "/compact").done) as any;
+  assert.match(
+    r.text,
+    /Folded \d+ messages into my summary\. That freed about [\d,]+ tokens of my context \([\d,]+ → [\d,]+\)\.|nothing old enough/,
+  );
+  assert.ok(seen.length - before <= 1, "at most one call");
+});
+
+// ---------------------------------------------------------------- the crew channel: Pip as the orchestrator
+const isConduct = (req: Req) => /directing a small AI crew/.test(req.system ?? "");
+const askIdOf = (req: Req) => /askId (m_[0-9a-f]+)/.exec(JSON.stringify(req.messages))?.[1] ?? "";
+
+test("channel: a member's ask is answered by Pip without the person", async () => {
+  const w = await setup();
+  await w.p.patch([{ op: "replace", path: "/brief/involvement", value: "key" }], {
+    reason: "t",
+    author: { kind: "user" },
+  });
+  w.p.setStage("brief");
+  let pipCalls = 0;
+  answer = (req) => {
+    const sys = req.system ?? "";
+    if (isConduct(req)) {
+      pipCalls++;
+      return {
+        toolCalls: [
+          { name: "crew_answer", input: { askId: askIdOf(req), optionId: "calm", text: "The brief says calm." } },
+        ],
+      };
+    }
+    if (/Producer/.test(sys))
+      return {
+        json: {
+          digest: "A calm launch video for QuestDay, made by the crew.",
+          assumptions: [],
+          questions: [
+            {
+              question: "Should the music feel calm or upbeat?",
+              why: "it sets the pace",
+              options: [
+                { id: "calm", label: "Calm", detail: "" },
+                { id: "upbeat", label: "Upbeat", detail: "" },
+              ],
+              recommendedId: "upbeat",
+            },
+          ],
+          report: { status: "done", did: "planned" },
+        },
+      };
+    return { error: new Error("unexpected") };
+  };
+  w.crewImpl.run(w.p, { stage: "brief" }).catch(() => {});
+  await until(() => w.p.state.gates.find((g) => g.id === "g0_brief")?.status === "open");
+  assert.equal(pipCalls, 1);
+  assert.equal(w.p.state.questions.filter((q) => q.from === "producer").length, 0, "the person wasn't asked");
+  assert.ok(w.p.doc().notes.some((n) => n.by === "pip" && /calm or upbeat\? → Calm/.test(n.text)));
+  const ch = w.p.channel();
+  const ask = ch.find((m) => m.kind === "ask" && m.from === "producer")!;
+  assert.ok(ask);
+  assert.ok(ch.some((m) => m.kind === "answer" && m.from === "pip" && m.replyTo === ask.id && /calm/i.test(m.text)));
+  assert.ok(ch.some((m) => m.kind === "report" && m.from === "producer" && /^done: planned/.test(m.text)));
+  w.crewImpl.pause(w.p, "now");
+});
+
+test("channel: a blocked report gets at most 2 redo rounds, then Pip holds and tells the person", async () => {
+  const w = await changeProject();
+  let tunes = 0;
+  let pipCalls = 0;
+  answer = (req) => {
+    const sys = req.system ?? "";
+    if (isConduct(req)) {
+      pipCalls++;
+      return { toolCalls: [{ name: "crew_redo", input: { scenes: ["grind"], why: "try the walk again" } }] };
+    }
+    if (/Animator of one scene/.test(sys)) {
+      tunes++;
+      return {
+        json: { changes: [], report: { status: "blocked", did: "nothing", couldnt: "no recipe makes him fly" } },
+      };
+    }
+    return { error: new Error("unexpected") };
+  };
+  const ctx = { author: { kind: "user" as const, via: "pip" }, project: w.p, workspace: w.workspace, emit: () => {} };
+  const res = await w.registry.call(
+    "crew_request_change",
+    { text: "make the hero fly", scene: "1", category: "art" },
+    ctx,
+  );
+  assert.ok(res.ok);
+  await until(() => /Waiting for you/.test(w.p.state.status.line));
+  assert.equal(tunes, 3, "the first try plus 2 redo rounds");
+  assert.equal(pipCalls, 3);
+  assert.match(w.p.state.status.line, /already had 2 redo rounds/);
+  const ch = w.p.channel();
+  assert.equal(ch.filter((m) => m.from === "pip" && /^Redo grind/.test(m.text)).length, 2);
+  assert.ok(ch.some((m) => m.from === "pip" && /^Hold:/.test(m.text)));
+  assert.ok(ch.some((m) => m.from === "animator" && /^blocked: .*Couldn't: no recipe makes him fly/.test(m.text)));
+  w.crewImpl.pause(w.p, "now");
+  w.crewImpl.resume(w.p);
+});
+
+test("channel: routine done reports cost no Pip call", async () => {
+  const w = await changeProject();
+  let pipCalls = 0;
+  let reviewed = false;
+  answer = (req) => {
+    const sys = req.system ?? "";
+    if (isConduct(req)) {
+      pipCalls++;
+      return { toolCalls: [{ name: "crew_next", input: {} }] };
+    }
+    if (/Animator of one scene/.test(sys)) return { json: { changes: [], report: { status: "done", did: "tuned" } } };
+    if (/festival judge/.test(sys)) {
+      reviewed = true;
+      w.crewImpl.pause(w.p, "after_step");
+      return { json: { verdict: "ship", summary: "fine", blockers: [], polish: [] } };
+    }
+    return { error: new Error("unexpected") };
+  };
+  const ctx = { author: { kind: "user" as const, via: "pip" }, project: w.p, workspace: w.workspace, emit: () => {} };
+  await w.registry.call("crew_request_change", { text: "make the hero bigger", scene: "1", category: "art" }, ctx);
+  await until(() => reviewed && w.p.channel().some((m) => m.from === "reviewer"));
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(pipCalls, 0);
+  const ch = w.p.channel();
+  assert.ok(
+    ch.some((m) => m.from === "pip" && m.kind === "brief" && /The person asked: make the hero bigger/.test(m.text)),
+  );
+  assert.ok(ch.some((m) => m.from === "animator" && m.kind === "report" && /^done: tuned/.test(m.text)));
+  w.crewImpl.pause(w.p, "now");
+});
+
+test("channel: Pip's brief goes on the member's next task card; weak models fall back to rules", async () => {
+  const { rules } = await import("../src/conductor.ts");
+  const redos = new Map<string, number>();
+  assert.equal(
+    rules(
+      {
+        kind: "ask",
+        from: "producer",
+        askId: "m1",
+        question: "What is the founder's name?",
+        options: [
+          { id: "a", label: "A" },
+          { id: "b", label: "B" },
+        ],
+        recommendedId: "a",
+      },
+      { redos },
+    )[0].kind,
+    "escalate",
+  );
+  assert.equal(
+    rules(
+      {
+        kind: "ask",
+        from: "producer",
+        askId: "m1",
+        question: "Calm or upbeat music?",
+        options: [
+          { id: "a", label: "Calm" },
+          { id: "b", label: "Up" },
+        ],
+        recommendedId: "b",
+      },
+      { redos },
+    )[0].kind,
+    "answer",
+  );
+  assert.equal(
+    rules(
+      { kind: "report", from: "animator", task: "t1", ref: "s01", report: { status: "blocked", did: "x" } },
+      { redos },
+    )[0].kind,
+    "redo",
+  );
+  redos.set("s01", 1);
+  assert.equal(
+    rules(
+      { kind: "report", from: "animator", task: "t1", ref: "s01", report: { status: "blocked", did: "x" } },
+      { redos },
+    )[0].kind,
+    "hold",
+  );
+});
+
+test("budget words never say $0 cap or $0-0", async () => {
+  const { budgetWords } = await import("../src/assistant.ts");
+  assert.equal(budgetWords({ capUsd: 0, spentUsd: 0 }), "No budget cap is set. Nothing spent yet.");
+  assert.equal(budgetWords({ capUsd: 5, spentUsd: 0, est: [0, 0] }), "The cap is $5. Nothing spent yet.");
+  assert.equal(
+    budgetWords({ capUsd: 5, spentUsd: 0.59, est: [0.8, 1.2] }),
+    "The cap is $5. $0.59 spent, $4.41 left. Finishing is estimated at $0.80-$1.20 in all.",
+  );
+  assert.equal(budgetWords({ capUsd: 0, spentUsd: 1.5 }), "No budget cap is set. $1.50 spent.");
+  for (const t of [budgetWords({ capUsd: 0, spentUsd: 0, est: [0, 0] }), budgetWords({ capUsd: 0, spentUsd: 2 })])
+    assert.ok(!/\$0 cap|\$0-0|\$0\.00-\$0\.00|asks before going over/.test(t), t);
+});
+
+test("chat markers come from the event log, with the events' own times", async () => {
+  const { p } = await setup();
+  const t0 = new Date().toISOString();
+  p.milestone("producer.plan", "Plan ready");
+  const q = p.ask(
+    {
+      question: "Which script should the crew make?",
+      options: [
+        { id: "angle_0", label: "The walker", detail: "" },
+        { id: "angle_1", label: "The quest", detail: "" },
+      ],
+      recommendedId: "angle_0",
+    },
+    "writer",
+  );
+  await p.answer(q.id, { optionId: "angle_0" }, "user");
+  p.setGate("g3_rough", { status: "open" });
+  p.setGate("g3_rough", { status: "open" }); // a repeat is no news
+  p.milestone("deliver.export", "Your video is ready");
+  p.state.milestones = p.state.milestones.filter((m) => m.id !== "deliver.export");
+  p.milestone("deliver.export", "Your video is ready"); // a second export is its own marker
+  p.emit("pip", {
+    type: "card",
+    itemId: "x",
+    card: { id: "card_1", type: "plan", status: "done", title: "Ask the crew: add two NPCs" },
+  });
+  const ms = p.markers();
+  assert.deepEqual(
+    ms.map((m) => `${m.kind}: ${m.text}`),
+    [
+      "stage: Plan ready",
+      "answer: You picked the script: The walker",
+      "gate: Rough cut ready",
+      "export: Your video is ready",
+      "export: Your video is ready",
+      "change: Change done: add two NPCs",
+    ],
+  );
+  for (const m of ms) assert.ok(m.at >= t0 && Number.isFinite(Date.parse(m.at)));
+  const log = p.eventsSince(0);
+  assert.equal(ms[1].at, log.find((e) => e.event === "question" && (e.data as any).status === "answered")!.ts);
+});
+
+test("/context measures the next call without a model call and leaves nothing in the history", async () => {
+  const w = await setup();
+  script([{ toolCalls: [{ name: "reply", input: { text: "hello there" } }] }]);
+  await w.pip!.ask(w.id, "hi").done;
+  const k0 = fake.calls.length;
+  const before = w.pip!.items(w.id).length;
+  const ctx = await w.pip!.context(w.id);
+  assert.equal(fake.calls.length, k0, "no model call");
+  assert.deepEqual(
+    ctx.parts.map((x) => x.id),
+    ["system", "facts", "tools", "summary", "messages", "reserve"],
+  );
+  assert.equal(ctx.mode, "agent");
+  assert.equal(ctx.method, "estimate");
+  assert.equal(ctx.window, null, "the fake provider reports no window");
+  assert.equal(ctx.windowSource, "unknown");
+  assert.match(ctx.countSource, /^chars\/3\.5 \(no calls/);
+  assert.equal(
+    ctx.total,
+    ctx.parts.reduce((n, x) => n + x.tokens, 0),
+  );
+  assert.match(ctx.parts[0].detail ?? "", /^assistant\/system@/);
+  assert.match(ctx.parts[2].detail ?? "", /^\d+ tools, of which 0 from connections$/);
+  assert.equal(ctx.parts[4].detail, "2 messages kept");
+  assert.equal(ctx.parts[5].tokens, 4000);
+  // the API: GET and a /context POST, neither stored
+  const { app, token } = createApp({ ...w, port: 5998 });
+  const H = { host: "127.0.0.1:5998", "content-type": "application/json", "x-pap-token": token };
+  const g = await (
+    await app.fetch(new Request(`http://127.0.0.1:5998/api/pip/context?project=${w.id}`, { headers: H }))
+  ).json();
+  assert.equal(g.parts.length, 6);
+  const r = await app.fetch(
+    new Request("http://127.0.0.1:5998/api/pip", {
+      method: "POST",
+      headers: H,
+      body: JSON.stringify({ project: w.id, text: "/context" }),
+    }),
+  );
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).context.parts.length, 6);
+  assert.equal(w.pip!.items(w.id).length, before, "nothing stored");
+  // past calls calibrate the estimate
+  const turnCtx = (await w.pip!.context(w.id)).total;
+  void turnCtx;
+  for (let i = 0; i < 3; i++)
+    w.gateway.ledger.insert({
+      project: w.id,
+      task: "t",
+      taskKind: "assistant.turn",
+      role: "assistant",
+      attempt: 0,
+      provider: "fake",
+      model: "fake/model",
+      promptVersion: "",
+      usage: { inputTokens: 1200, outputTokens: 10 },
+      usd: 0,
+      usdSource: "zero",
+      ttftMs: 1,
+      durationMs: 1,
+      stop: "end",
+      estUsd: null,
+      estInTokens: 1000,
+    });
+  const cal = await w.pip!.context(w.id);
+  assert.match(cal.countSource, /^chars\/3\.5 × \d\.\d\d from \d+ calls$/);
+  // a provider that counts and reports its window gives exact numbers
+  (fake as any).countTokens = async () => ({ tokens: 1234, source: "fake count" });
+  (fake as any).contextWindow = async () => ({ window: 8192, source: "fake loaded length" });
+  try {
+    const exact = await w.pip!.context(w.id);
+    assert.equal(exact.method, "count");
+    assert.equal(exact.countSource, "fake count");
+    assert.equal(exact.total - exact.parts[5].tokens, 1234);
+    assert.deepEqual([exact.window, exact.windowSource, exact.windowDetail], [8192, "provider", "fake loaded length"]);
+  } finally {
+    delete (fake as any).countTokens;
+    delete (fake as any).contextWindow;
+  }
+});

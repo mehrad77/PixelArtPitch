@@ -208,7 +208,8 @@ export function createApp(o: ServerOpts) {
       paused: p.state.paused,
       status: p.state.status,
       crew: st?.crew ?? { running: false, paused: p.state.paused, stage: p.state.stage, lastActiveAt: null, queued: 0 },
-      milestones: p.state.milestones,
+      // what happened, as markers in Pip's chat: derived from the event log, with the events' own times
+      milestones: p.markers(),
       sceneStatus: p.state.sceneStatus,
     };
   };
@@ -351,6 +352,8 @@ export function createApp(o: ServerOpts) {
     o.crew.run(p, { stage: b.stage }).catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
     return c.json({ ok: true });
   });
+  // the crew channel ("Behind the scenes"): Pip's briefs and answers, the members' reports and asks
+  app.get("/api/p/:id/channel", (c) => c.json(proj(c.req.param("id")).channel()));
   app.get("/api/p/:id/tasks/:tid/transcript", (c) => c.json(proj(c.req.param("id")).transcript(c.req.param("tid"))));
   app.post("/api/p/:id/crew/retry", async (c) => {
     if (!o.crew) return c.json({ ok: false, error: { code: "no_crew", message: "the crew is not configured" } }, 503);
@@ -412,15 +415,37 @@ export function createApp(o: ServerOpts) {
     if (!o.pip) return noPip(c);
     const project = projectArg(c.req.query("project"));
     const { model, mode } = o.pip.pick(project);
-    return c.json({ items: o.pip.items(project), name: "Pip", model, mode, busy: o.pip.isBusy(project) });
+    return c.json({
+      items: o.pip.items(project),
+      name: "Pip",
+      model,
+      mode,
+      busy: o.pip.isBusy(project),
+      summary: o.pip.summary(project),
+    });
   });
   app.post("/api/pip", async (c) => {
     if (!o.pip) return noPip(c);
     const b = await c.req.json().catch(() => ({}));
     const project = projectArg(b.project);
+    // /context is measured, not said: nothing is stored
+    if (/^\s*\/context\b/i.test(String(b.text ?? ""))) return c.json({ context: await o.pip.context(project) });
     const { turnId, done } = o.pip.ask(project, String(b.text ?? ""));
     done.catch((e) => console.error(`pip: ${e?.message ?? e}`));
     return c.json({ turnId }, 202);
+  });
+  // what Pip's next call would send, measured on the real request (no model call)
+  app.get("/api/pip/context", async (c) => {
+    if (!o.pip) return noPip(c);
+    return c.json(await o.pip.context(projectArg(c.req.query("project"))));
+  });
+  // the person corrects Pip's summary; Pip uses it from the next turn
+  app.put("/api/pip/summary", async (c) => {
+    if (!o.pip) return noPip(c);
+    const b = await c.req.json().catch(() => ({}));
+    if (typeof b.text !== "string")
+      return c.json({ ok: false, error: { code: "bad_text", message: "text is a string" } }, 400);
+    return c.json({ summary: o.pip.editSummary(projectArg(b.project), b.text) });
   });
   app.post("/api/pip/cards/:cardId", async (c) => {
     if (!o.pip) return noPip(c);

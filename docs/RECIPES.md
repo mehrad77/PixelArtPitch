@@ -261,6 +261,7 @@ The end card. The title drops in, PRESS START bounces in and pulses, and a URL l
 - sprites that vanish into the sky
 - two copies of one character in a scene (`duplicate-actor`)
 - a prop over a character's face (`covers-face`)
+- a toast, panel or banner over a character's body, a third of it or more for 0.3 s (`covers-actor`)
 - banners and toasts off the frame (`text-clipped`)
 - frames that are almost all black (`empty-frame`; `lintFrames` checks rendered frames, cuts included)
 

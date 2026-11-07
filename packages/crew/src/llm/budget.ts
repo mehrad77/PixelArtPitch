@@ -203,7 +203,8 @@ export function metered(provider: Provider, ctx: MeterCtx): Provider {
       if (!price && !free(req.model)) {
         throw new Error(`${req.model}: no price known; set a manual price before spending on it`);
       }
-      const need = worstCaseUsd(price, estimateInputTokens(req), req.maxOut, req.cache);
+      const estIn = estimateInputTokens(req);
+      const need = worstCaseUsd(price, estIn, req.maxOut, req.cache);
       const ticket = ctx.guard.reserve(need);
       let result: ChatResult;
       try {
@@ -213,8 +214,8 @@ export function metered(provider: Provider, ctx: MeterCtx): Provider {
         throw e;
       }
       const slash = req.model.indexOf("/");
-      ctx.ledger?.insert(
-        rowFromResult(result, {
+      ctx.ledger?.insert({
+        ...rowFromResult(result, {
           project: ctx.guard.project,
           task: ctx.task,
           taskKind: ctx.taskKind,
@@ -226,7 +227,8 @@ export function metered(provider: Provider, ctx: MeterCtx): Provider {
           estUsd: ctx.estUsd ?? null,
           ticket: ticket.id,
         }),
-      );
+        estInTokens: estIn,
+      });
       ctx.guard.settle(ticket, result.usd);
       return result;
     },

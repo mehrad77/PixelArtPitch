@@ -1,7 +1,8 @@
 // The Gateway over the plain-HTTP model layer: settings pick the model per role, every call is metered (reserve the
 // worst case, ledger row, settle) under one BudgetGuard per project, and the structured-output ladder returns JSON.
 import type { RoleT } from "@pap/schema";
-import type { CallOut, CallSpec, ChatSpec, Gateway } from "./gateway.ts";
+import type { CallOut, CallSpec, ChatSpec, Gateway, Measure } from "./gateway.ts";
+import { ANTHROPIC_MODELS } from "./llm/anthropic.ts";
 import {
   BudgetError,
   BudgetGuard,
@@ -18,6 +19,7 @@ import {
   SecretStore,
   type Settings,
 } from "./llm/index.ts";
+import type { ChatRequest } from "./llm/types.ts";
 
 const DEFAULT_CAPS: Caps = {
   vision: "claimed",
@@ -225,6 +227,32 @@ export class ModelGateway implements Gateway {
     const g = this.guards.get(project);
     if (g) return { spentUsd: g.spentUsd, reservedUsd: g.reservedUsd };
     return { spentUsd: this.ledger.totalUsd({ project }), reservedUsd: 0 };
+  }
+
+  /**
+   * Measure a request without running it: the provider's count where it has a free one, its reported window, and
+   * the per-model calibration of our estimate from the ledger. Never a billed call.
+   */
+  async measure(req: ChatRequest): Promise<Measure> {
+    const providerId = req.model.slice(0, req.model.indexOf("/"));
+    let prov: Provider | null = null;
+    try {
+      prov = this.provider(providerId);
+    } catch {}
+    const signal = AbortSignal.timeout(8000);
+    const [count, win] = await Promise.all([
+      prov?.countTokens ? prov.countTokens(req, signal).catch(() => null) : null,
+      prov?.contextWindow ? prov.contextWindow(req.model, signal).catch(() => null) : null,
+    ]);
+    // without a provider answer, Anthropic models fall back to the bundled table; others are unknown
+    const bare = req.model.slice(req.model.indexOf("/") + 1);
+    const table = req.model.startsWith("anthropic/") && ANTHROPIC_MODELS[bare] ? 1_000_000 : undefined;
+    const window: Measure["window"] = win
+      ? { tokens: win.window, source: "provider", detail: win.source, ...(win.note ? { note: win.note } : {}) }
+      : table
+        ? { tokens: table, source: "table", detail: "the bundled model table" }
+        : null;
+    return { count, window, calibration: this.ledger.estimateRatio(req.model) };
   }
 
   spentSince(project: string, since: string) {

@@ -28,6 +28,7 @@ import type {
   ChatRequest,
   ChatResult,
   ContentPart,
+  CountInfo,
   ModelInfo,
   Price,
   Provider,
@@ -35,6 +36,7 @@ import type {
   ProviderKind,
   StreamEvent,
   Usage,
+  WindowInfo,
 } from "./types.ts";
 
 export const DEFAULT_BASE_URLS: Record<ProviderKind, string> = {
@@ -217,6 +219,94 @@ export class OpenAICompatProvider implements Provider {
       thinking: capList.includes("thinking") ? "effort" : "none",
       ctx: ctxKey ? Number(b.model_info[ctxKey]) || 0 : 0,
     });
+  }
+
+  /**
+   * The model's real window, as its server reports it: LM Studio's loaded context length (not the model's maximum),
+   * llama.cpp's n_ctx, Ollama's num_ctx (or the model maximum, noted), OpenRouter's context_length.
+   */
+  async contextWindow(model: string, signal?: AbortSignal): Promise<WindowInfo | null> {
+    const s = splitModelId(model);
+    const id = s.provider === this.config.id ? s.model : model;
+    const kind = this.config.kind;
+    try {
+      if (kind === "lmstudio") {
+        const body = await this.getJson(`${this.root()}/api/v0/models`, signal);
+        const m = (body.data ?? []).find((x: any) => x.id === id);
+        if (!m) return null;
+        if (typeof m.loaded_context_length === "number")
+          return { window: m.loaded_context_length, source: "LM Studio loaded_context_length" };
+        if (typeof m.max_context_length === "number")
+          return {
+            window: m.max_context_length,
+            source: "LM Studio max_context_length",
+            note: "the model isn't loaded; LM Studio loads it with a smaller context unless set",
+          };
+        return null;
+      }
+      if (kind === "llamacpp") {
+        const b = await this.getJson(`${this.root()}/props`, signal);
+        const n = b.default_generation_settings?.n_ctx ?? b.n_ctx;
+        return typeof n === "number" ? { window: n, source: "llama.cpp /props n_ctx" } : null;
+      }
+      if (kind === "ollama") {
+        const f: FetchLike = this.opts.fetch ?? fetch;
+        const res = await f(`${this.root()}/api/show`, {
+          method: "POST",
+          headers: this.headers(true),
+          body: JSON.stringify({ model: id }),
+          signal,
+        });
+        if (!res.ok) return null;
+        const b = await res.json();
+        const numCtx = /(?:^|\n)\s*num_ctx\s+(\d+)/.exec(String(b.parameters ?? ""))?.[1];
+        if (numCtx) return { window: Number(numCtx), source: "Ollama num_ctx" };
+        const k = Object.keys(b.model_info ?? {}).find((x) => x.endsWith(".context_length"));
+        return k
+          ? {
+              window: Number(b.model_info[k]),
+              source: `Ollama ${k}`,
+              note: "the model's maximum; Ollama runs it with num_ctx, which is smaller unless set",
+            }
+          : null;
+      }
+      if (kind === "openrouter") {
+        const body = await this.getJson(`${this.base()}/models`, signal);
+        const m = (body.data ?? []).find((x: any) => x.id === id);
+        const n = m?.context_length ?? m?.top_provider?.context_length;
+        return typeof n === "number" ? { window: n, source: "OpenRouter context_length" } : null;
+      }
+    } catch (e) {
+      if (isAbort(e)) throw e;
+    }
+    return null;
+  }
+
+  /** an exact count where the server tokenizes for free: llama.cpp /tokenize (the chat template isn't included) */
+  async countTokens(req: ChatRequest, signal?: AbortSignal): Promise<CountInfo | null> {
+    if (this.config.kind !== "llamacpp") return null;
+    const text = [
+      req.system ?? "",
+      ...req.messages.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))),
+      ...(req.tools ?? []).map((t) => JSON.stringify(t)),
+    ].join("\n");
+    try {
+      const f: FetchLike = this.opts.fetch ?? fetch;
+      const res = await f(`${this.root()}/tokenize`, {
+        method: "POST",
+        headers: this.headers(true),
+        body: JSON.stringify({ content: text }),
+        signal,
+      });
+      if (!res.ok) return null;
+      const b = (await res.json()) as { tokens?: unknown[] };
+      return Array.isArray(b.tokens)
+        ? { tokens: b.tokens.length, source: "llama.cpp /tokenize (no chat template)" }
+        : null;
+    } catch (e) {
+      if (isAbort(e)) throw e;
+      return null;
+    }
   }
 
   private async llamacppCaps(signal?: AbortSignal): Promise<Caps> {

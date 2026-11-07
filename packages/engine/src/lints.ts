@@ -334,6 +334,8 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
     const lowSeen = new Set<string>();
     const faceRun = new Map<string, number>();
     const faced = new Set<string>();
+    const bodyRun = new Map<string, number>();
+    const bodied = new Set<string>();
     for (let t = cs.from + 0.001; t < cs.to; t += every) {
       let seen: Inspected[];
       try {
@@ -382,6 +384,27 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
               message: `${x.id} ("${x.text}") runs off the frame (${x.x},${x.y} ${x.w}x${x.h})`,
               fix: "shorten it, lower its scale, set fit: true, or move it inside 0..320 x 0..180",
             });
+          }
+        }
+        // a toast, panel or banner drawn over a character's body (a third of its box or more)
+        if (x.kind === "actor") {
+          for (const o of seen.slice(seen.indexOf(x) + 1)) {
+            if (!(o.kind === "panel" || o.widget === "toast" || o.widget === "banner")) continue;
+            const key = `${o.id}>${x.id}`;
+            const hit = overlap(o, x) >= (x.w * x.h) / 3;
+            const run = hit ? (bodyRun.get(key) ?? 0) + every : 0;
+            bodyRun.set(key, run);
+            if (run >= 0.3 - 1e-9 && !bodied.has(key)) {
+              bodied.add(key);
+              add({
+                rule: "covers-actor",
+                severity: "error",
+                scene: s.id,
+                t: r2(t),
+                message: `${o.id} is drawn over ${x.id} for ${r2(run)} s, hiding the character`,
+                fix: `move ${o.id} up (a y above ${Math.max(0, x.y - o.h - 4)}) or the character sideways, so the box doesn't sit on them`,
+              });
+            }
           }
         }
         // a prop drawn over a character's face (the top 40% of its box)

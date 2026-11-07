@@ -25,6 +25,13 @@ export type CallSpec<T> = {
   normalize?: (raw: unknown) => T | null;
 };
 
+export type Measure = {
+  count: import("./llm/types.ts").CountInfo | null;
+  window: { tokens: number; source: "provider" | "table"; detail: string; note?: string } | null;
+  /** real prompt tokens ÷ our estimate over this model's recent calls */
+  calibration: { ratio: number; n: number } | null;
+};
+
 export type CallOut<T> = { data: T; result: ChatResult; model: string };
 
 /** One metered chat step with tools (Pip's tool loop). No fallback here: the caller picks the model per turn. */
@@ -44,6 +51,8 @@ export interface Gateway {
   /** the role's fallback model, if any */
   fallbackFor(role: RoleT): string | undefined;
   spent(project: string): { spentUsd: number; reservedUsd: number };
+  /** measure a request without running it (free count endpoints, the provider's window, our calibration) */
+  measure?(req: import("./llm/types.ts").ChatRequest): Promise<Measure>;
   /** ledger spend for a project since an ISO time (the workspace guard's daily cap) */
   spentSince?(project: string, since: string): number;
   estimate(

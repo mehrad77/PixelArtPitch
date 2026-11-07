@@ -10,6 +10,7 @@ import { checkAsset } from "@pap/engine/standard";
 import { contactSheet, LIBRARY_DIR, renderSheet } from "@pap/render";
 import type { RoleT } from "@pap/schema";
 import {
+  type ChannelMsg,
   type GateId,
   type Note,
   type OpenProject,
@@ -31,6 +32,7 @@ import {
   JudgeOut,
   KIND_TEMPLATES,
   PlanOut,
+  ReboardOut,
   ReviewOut,
   type ReviewOutT,
   SpecOut,
@@ -195,10 +197,62 @@ type Run = {
   startedAt: string;
   /** a person's change run: only these scenes may be redone (a Reviewer's blockers elsewhere stay as notes) */
   scope?: Set<string>;
+  /** the person's change this run makes, if any */
+  change?: ChangePlan;
+  /** what this run did, for the card that started it */
+  done: { redone: Set<string>; reboarded: string[]; approximated: string[]; exported: boolean };
+  /** triggers waiting for Pip (handled at the end of the stage) */
+  triggers: Trigger[];
+  /** redo rounds per scene in this run (the request) */
+  redos: Map<string, number>;
+  /** Pip put the crew on hold */
+  held?: string;
+  /** Pip decision rounds in this run */
+  thinks?: number;
+  /** Pip already asked the person something in this run */
+  escalated?: boolean;
 };
-/** the scenes a set of changes touches, or undefined when one of them isn't about a scene (then nothing is fenced) */
-const changeScope = (notes: Note[]) =>
-  notes.every((n) => n.target.scene) ? [...new Set(notes.map((n) => n.target.scene!))] : undefined;
+/** a change run: its notes, the scenes it may redo, the scenes the Director re-plans, and asks no scene carries */
+export type ChangePlan = { notes: string[]; scope?: string[]; reboard?: string[] };
+/** what a run did, reported when it ends or stops at a gate for the person */
+export type RunReport = {
+  status: "done" | "failed" | "stopped" | "waiting";
+  error?: string;
+  /** the change notes this run made (empty when it was a plain run) */
+  notes: string[];
+  redone: string[];
+  reboarded: string[];
+  approximated: string[];
+  /** Reviewer blockers still open on the scenes the change touched */
+  openBlockers: { scene: string; text: string }[];
+  exported: boolean;
+};
+const isEndCard = (sc: { kind: string; recipes?: { id: string }[] }) =>
+  sc.kind === "decl" && !!sc.recipes?.some((r) => r.id === "end_card_loop");
+/** which scenes a set of change notes touches and which the Director re-plans */
+function planChange(p: OpenProject, notes: Note[]): ChangePlan {
+  const d = p.doc();
+  const all = d.scenes.filter((s) => s.kind === "decl").map((s) => s.id);
+  const reboard = new Set<string>();
+  const scope = new Set<string>();
+  let everywhere = false;
+  for (const n of notes) {
+    if (n.assignee === "director") {
+      // a change for the whole video re-plans every scene but the end card
+      const ids = n.target.scene ? [n.target.scene] : d.scenes.filter((s) => !isEndCard(s as any)).map((s) => s.id);
+      for (const id of ids) {
+        reboard.add(id);
+        scope.add(id);
+      }
+    } else if (n.target.scene) scope.add(n.target.scene);
+    else everywhere = true;
+  }
+  return {
+    notes: notes.map((n) => n.id),
+    ...(everywhere ? {} : { scope: [...scope] }),
+    ...(reboard.size ? { reboard: all.filter((id) => reboard.has(id)) } : {}),
+  };
+}
 
 /** the gate a stage's work passes through first: reopening a stage reopens this gate and every later one */
 const STAGE_GATE: Record<Stage, GateId> = {
@@ -226,6 +280,53 @@ const STAGE_MILESTONES: [Stage, string][] = [
 const noteLines = (p: OpenProject, role: string) =>
   p.state.notes.filter((n) => n.assignee === role && n.status === "open").map((n) => `${n.id}: ${n.text}`);
 
+/** every crew task ends with a report to Pip (tiny, so weak models fill it; missing means done) */
+export const TaskReport = z.object({
+  status: z.enum(["done", "partial", "blocked"]).default("done"),
+  did: z.string().max(300).default(""),
+  couldnt: z.string().max(300).optional(),
+  needs: z.string().max(300).optional(),
+});
+export type TaskReportT = z.infer<typeof TaskReport>;
+const REPORT_NOTE =
+  'Also return "report": {"status": "done" | "partial" | "blocked", "did": one short line, "couldnt"?: what you could not do and why, "needs"?: what would unblock you}. Use partial or blocked only when you could not do what was asked.';
+/** the task's own output plus the optional report */
+function withReport<T>(schema: z.ZodType<T>): z.ZodType<T> {
+  return schema instanceof z.ZodObject ? (schema.extend({ report: TaskReport.optional() }) as any) : schema;
+}
+
+/** what makes Pip think: the only triggers, so cost stays bounded (routine "done" reports are not one) */
+export type Trigger =
+  | {
+      kind: "ask";
+      from: RoleT;
+      askId: string;
+      question: string;
+      options: { id: string; label: string }[];
+      recommendedId: string;
+    }
+  | { kind: "report"; from: RoleT; task: string; report: TaskReportT; ref?: string }
+  | { kind: "blocker"; scenes: string[]; text: string[]; round: number }
+  | { kind: "stage"; stage: Stage; notes: string[] };
+/** what Pip can do on a trigger (crew_brief, crew_answer, crew_redo, crew_reboard, crew_next, crew_hold, crew_escalate) */
+export type Decision =
+  | { kind: "brief"; role: RoleT; text: string; ref?: string }
+  | { kind: "answer"; askId: string; text: string; optionId?: string }
+  | { kind: "redo"; scenes: string[]; why: string }
+  | { kind: "reboard"; scenes: string[]; direction: string }
+  | { kind: "next"; why?: string }
+  | { kind: "hold"; why: string }
+  | { kind: "escalate"; question: string; options?: string[] };
+export interface Conductor {
+  think(
+    p: OpenProject,
+    trigger: Trigger,
+    ctx: { change?: ChangePlan; redos: Map<string, number> },
+  ): Promise<Decision[]>;
+}
+/** at most this many redo rounds per scene per request */
+export const MAX_REDO = 2;
+
 export type CrewDeps = { workspace: Workspace; registry: Registry; gateway: Gateway };
 
 export class Crew {
@@ -235,6 +336,174 @@ export class Crew {
   private lendPending = new Map<string, string[]>();
   /** task id -> the external tools it holds; the grant ends with the task */
   private grants = new Map<string, string[]>();
+  /** Pip as the orchestrator: thinks on triggers; without it the stage machine's fixed rules apply */
+  conductor?: Conductor;
+  /** Pip's briefs waiting for a role's next task: "<project>:<role>" */
+  private briefs = new Map<string, ChannelMsg[]>();
+  /** the last report each task gave */
+  private reports = new Map<string, TaskReportT>();
+  /** scene.tune task id -> its scene, for report refs */
+  private taskScenes = new Map<string, string>();
+  private sceneTask(scene: string, t: Task) {
+    this.taskScenes.set(t.id, scene);
+    return t;
+  }
+
+  // ---------------------------------------------------------------- Pip as the orchestrator
+  /** ask_pip from outside a run (the tool): Pip answers, or returns null when only the person can */
+  async askPipNow(
+    p: OpenProject,
+    from: RoleT,
+    q: { question: string; options: { id: string; label: string }[]; recommendedId: string },
+  ) {
+    const r =
+      this.runs.get(p.id) ??
+      ({
+        redos: new Map(),
+        triggers: [],
+        done: { redone: new Set(), reboarded: [], approximated: [], exported: false },
+      } as unknown as Run);
+    return this.askPip(p, r, from, q);
+  }
+
+  /** a member's question goes to Pip first; returns Pip's answer, or null when only the person can answer */
+  private async askPip(
+    p: OpenProject,
+    r: Run,
+    from: RoleT,
+    q: { question: string; options: { id: string; label: string }[]; recommendedId: string },
+  ): Promise<string | null> {
+    if (!this.conductor) return null;
+    const ask = p.say({ from, to: "pip", kind: "ask", text: q.question });
+    const ds = await this.think(p, r, {
+      kind: "ask",
+      from,
+      askId: ask.id,
+      question: q.question,
+      options: q.options.map((o) => ({ id: o.id, label: o.label })),
+      recommendedId: q.recommendedId,
+    });
+    const a = ds.find((d): d is Extract<Decision, { kind: "answer" }> => d.kind === "answer");
+    if (!a) {
+      p.say({
+        from: "pip",
+        to: from,
+        kind: "answer",
+        text: "Only the person can answer that: I've asked them.",
+        replyTo: ask.id,
+      });
+      return null;
+    }
+    const label = q.options.find((o) => o.id === a.optionId)?.label;
+    p.say({ from: "pip", to: from, kind: "answer", text: a.text || label || "", replyTo: ask.id });
+    return label ? `${label}${a.text ? ` (${a.text})` : ""}` : a.text;
+  }
+
+  /** one Pip decision round on a trigger; bounded per run, and the fixed rules when there is no conductor */
+  private async think(p: OpenProject, r: Run, tr: Trigger): Promise<Decision[]> {
+    if (!this.conductor) return [];
+    r.thinks = (r.thinks ?? 0) + 1;
+    if (r.thinks > 12) return [{ kind: "hold", why: "the crew needed Pip more than 12 times in one run" }];
+    try {
+      return await this.conductor.think(p, tr, { change: r.change, redos: r.redos });
+    } catch (e: any) {
+      p.emit("log", { level: "warn", text: `Pip couldn't decide (${String(e?.message ?? e).slice(0, 120)}); holding` });
+      return [{ kind: "hold", why: "Pip couldn't reach its model to decide what to do next" }];
+    }
+  }
+
+  /** apply Pip's decisions; returns whether any scene was redone */
+  private async apply(p: OpenProject, r: Run, ds: Decision[]): Promise<{ redid: boolean }> {
+    let redid = false;
+    const redoable = (ids: string[]) => {
+      const ok = ids.filter((id) => (r.redos.get(id) ?? 0) < MAX_REDO && p.doc().scenes.some((s) => s.id === id));
+      for (const id of ok) r.redos.set(id, (r.redos.get(id) ?? 0) + 1);
+      return { ok, over: ids.filter((id) => !ok.includes(id)) };
+    };
+    for (const d of ds) {
+      if (d.kind === "brief") {
+        const m = p.say({ from: "pip", to: d.role, kind: "brief", text: d.text, ref: d.ref });
+        const key = `${p.id}:${d.role}`;
+        this.briefs.set(key, [...(this.briefs.get(key) ?? []), m]);
+      } else if (d.kind === "redo" || d.kind === "reboard") {
+        const { ok, over } = redoable(d.scenes);
+        if (over.length)
+          ds.push({ kind: "hold", why: `${over.join(", ")} already had ${MAX_REDO} redo rounds for this request` });
+        if (!ok.length) continue;
+        if (d.kind === "reboard") {
+          const m = p.say({
+            from: "pip",
+            to: "director",
+            kind: "brief",
+            text: `Re-plan ${ok.join(", ")}: ${d.direction}`,
+            ref: ok[0],
+          });
+          this.briefs.set(`${p.id}:director`, [...(this.briefs.get(`${p.id}:director`) ?? []), m]);
+          await this.reboard(p, r, ok);
+        } else {
+          const m = p.say({
+            from: "pip",
+            to: "animator",
+            kind: "brief",
+            text: `Redo ${ok.join(", ")}: ${d.why}`,
+            ref: ok[0],
+          });
+          this.briefs.set(`${p.id}:animator`, [...(this.briefs.get(`${p.id}:animator`) ?? []), m]);
+        }
+        for (const id of ok) if (p.state.sceneStatus[id]) p.setSceneStatus(id, { version: "animatic", state: "stale" });
+        await this.animate(p, r);
+        redid = true;
+      } else if (d.kind === "next") {
+        if (d.why) p.say({ from: "pip", to: "crew", kind: "brief", text: `On track: ${d.why}` });
+      } else if (d.kind === "escalate") {
+        // one question to the person per run: a second trigger about the same trouble doesn't ask again
+        if (r.escalated) continue;
+        r.escalated = true;
+        const opts = (d.options?.length ? d.options : ["Yes", "No"]).slice(0, 6);
+        p.ask(
+          {
+            kind: "single",
+            question: d.question.slice(0, 200),
+            why: "The crew asked Pip, and only you can answer this.",
+            options: opts.map((o, i) => ({ id: `o${i + 1}`, label: o.slice(0, 80), detail: "" })),
+            recommendedId: "o1",
+            from: "pip",
+          },
+          "pip",
+        );
+        p.say({ from: "pip", to: "crew", kind: "brief", text: `Asked the person: ${d.question}` });
+      } else if (d.kind === "hold" && !r.held) {
+        r.held = d.why;
+        p.say({ from: "pip", to: "crew", kind: "brief", text: `Hold: ${d.why}` });
+      }
+    }
+    if (r.held && !r.paused) {
+      // stop and tell the person; the cards that handed work to this run settle now
+      p.setStatus({ line: `Waiting for you: ${r.held}` });
+      try {
+        this.onRunEnd?.(p, this.report(p, r, "waiting"));
+      } catch {}
+      r.paused = true;
+      p.state.paused = true;
+      p.saveState();
+    }
+    return { redid };
+  }
+
+  /** the end of a stage: Pip's triggers, and one "on track?" check only when something needs judgment */
+  private async drain(p: OpenProject, r: Run, stage: Stage) {
+    if (!this.conductor) {
+      r.triggers = [];
+      return;
+    }
+    // a person's note this stage owns that is still open: the stage didn't do it
+    const open = p.state.notes.filter(
+      (n) => n.by === "user" && n.status === "open" && OWNER_STAGE[n.assignee] === stage && n.createdAt >= r.startedAt,
+    );
+    if (!r.triggers.length && open.length) r.triggers.push({ kind: "stage", stage, notes: open.map((n) => n.text) });
+    while (r.triggers.length && !r.held) await this.apply(p, r, await this.think(p, r, r.triggers.shift()!));
+    r.triggers = [];
+  }
   private gateWaiters = new Map<
     string,
     (v: { verdict: string; reasons?: string[]; items?: string[]; by: string }) => void
@@ -305,16 +574,61 @@ export class Crew {
    * When idle, the owner's stage is reopened (its scene marked stale, later gates reopened, the old export marked
    * superseded) and the crew runs from there, unless the person paused it.
    */
-  requestChange(p: OpenProject, note: Note): { queued: boolean; stage: Stage; started: boolean } {
+  requestChange(p: OpenProject, note: Note, extra: Note[] = []): { queued: boolean; stage: Stage; started: boolean } {
     const stage = OWNER_STAGE[note.assignee] ?? "review";
     if (this.runs.has(p.id)) {
       p.emit("log", { level: "info", text: `${note.id} waits for the next review: the crew is working` });
       return { queued: true, stage, started: false };
     }
-    const from = this.reopen(p, [note]);
+    const notes = [note, ...extra];
+    // the change goes to its owner as a brief from Pip (the note itself reaches the owner's prompt)
+    p.say({
+      from: "pip",
+      to: note.assignee,
+      kind: "brief",
+      text: `The person asked: ${note.text}`,
+      ref: note.target.scene ?? note.id,
+    });
+    for (const n of extra)
+      p.say({
+        from: "pip",
+        to: n.assignee,
+        kind: "brief",
+        text: `Also fix: ${n.text.slice(0, 240)}`,
+        ref: n.target.scene ?? n.id,
+      });
+    const from = this.reopen(p, notes);
+    const change = planChange(p, notes);
+    p.state.change = { ...change, startedAt: new Date().toISOString() };
+    p.saveState();
     if (p.state.paused) return { queued: false, stage: from, started: false };
-    this.run(p, { stage: from, scope: changeScope([note]) }).catch(() => {});
+    this.run(p, { stage: from, change }).catch(() => {});
     return { queued: false, stage: from, started: true };
+  }
+
+  /** called when a run ends, or stops at a gate for the person, with what it did (Pip settles its cards) */
+  onRunEnd?: (p: OpenProject, report: RunReport) => void;
+
+  private report(p: OpenProject, r: Run, status: RunReport["status"], error?: string): RunReport {
+    const scope = r.scope;
+    return {
+      status,
+      ...(error ? { error } : {}),
+      notes: r.change?.notes ?? [],
+      redone: [...r.done.redone],
+      reboarded: r.done.reboarded,
+      approximated: r.done.approximated,
+      openBlockers: p.state.notes
+        .filter(
+          (n) =>
+            n.by === "reviewer" &&
+            n.status === "open" &&
+            n.createdAt >= r.startedAt &&
+            (!scope || (n.target.scene && scope.has(n.target.scene))),
+        )
+        .map((n) => ({ scene: n.target.scene ?? "", text: n.text })),
+      exported: r.done.exported,
+    };
   }
 
   /** reopen the earliest stage the open notes need; returns the stage the crew should run from */
@@ -325,8 +639,12 @@ export class Crew {
     // a project that never got this far just carries on; the note is read when the stage comes
     if (order.indexOf(p.state.stage) < order.indexOf(from)) from = p.state.stage;
     for (const n of notes)
-      if (n.target.scene && p.state.sceneStatus[n.target.scene])
-        p.setSceneStatus(n.target.scene, { version: "animatic", state: "stale" });
+      for (const id of n.target.scene
+        ? [n.target.scene]
+        : n.assignee === "animator"
+          ? Object.keys(p.state.sceneStatus)
+          : [])
+        if (p.state.sceneStatus[id]) p.setSceneStatus(id, { version: "animatic", state: "stale" });
     for (const g of GATES.slice(GATES.indexOf(STAGE_GATE[from])))
       if (p.state.gates.find((x) => x.id === g)?.status !== "locked")
         p.setGate(g, { status: "locked", verdict: undefined });
@@ -361,20 +679,25 @@ export class Crew {
         if (!p.state.running || p.state.paused) continue;
         p.emit("log", { level: "info", text: `resuming the crew at ${p.state.stage} after a restart` });
         p.setStatus({ line: "Picking up where the crew left off" });
-        this.run(p, { stage: p.state.stage }).catch(() => {});
+        const { startedAt: _s, ...change } = p.state.change ?? ({} as any);
+        this.run(p, { stage: p.state.stage, ...(p.state.change ? { change } : {}) }).catch(() => {});
         out.push(id);
       } catch {}
     }
     return out;
   }
 
-  async run(p: OpenProject, opts: { stage?: string; scope?: string[] } = {}) {
+  async run(p: OpenProject, opts: { stage?: string; change?: ChangePlan } = {}) {
     if (this.runs.has(p.id)) throw new Error("the crew is already working on this project");
     const r: Run = {
       abort: new AbortController(),
       paused: false,
-      startedAt: new Date().toISOString(),
-      ...(opts.scope ? { scope: new Set(opts.scope) } : {}),
+      startedAt: p.state.change?.startedAt && opts.change ? p.state.change.startedAt : new Date().toISOString(),
+      ...(opts.change ? { change: opts.change } : {}),
+      ...(opts.change?.scope ? { scope: new Set(opts.change.scope) } : {}),
+      done: { redone: new Set(), reboarded: [], approximated: [], exported: false },
+      triggers: [],
+      redos: new Map(),
     };
     this.runs.set(p.id, r);
     p.state.startedAt ??= r.startedAt;
@@ -384,12 +707,18 @@ export class Crew {
     p.setDigest("The crew is working.");
     p.setStatus({ line: "The crew is working", problem: undefined });
     let finished = false;
+    let outcome: { status: RunReport["status"]; error?: string } = { status: "stopped" };
     try {
       await this.pipeline(p, r, (opts.stage as Stage) ?? p.state.stage);
       finished = true;
+      outcome = { status: "done" };
     } catch (e: any) {
       if (e instanceof Paused || r.abort.signal.aborted) p.emit("log", { level: "info", text: "crew stopped" });
       else {
+        outcome = {
+          status: "failed",
+          error: `${String(e?.message ?? e).slice(0, 300)}${e?.fix ? ` Fix: ${e.fix}` : ""}`,
+        };
         p.emit("log", { level: "error", text: String(e?.message ?? e) });
         const failed = [...p.state.tasks].reverse().find((x) => x.status === "failed" && !x.supersededBy);
         const h = humanize(e, failed?.role);
@@ -401,13 +730,20 @@ export class Crew {
       this.runs.delete(p.id);
       // a finished, failed or deliberately stopped run is not resumed; only a crash leaves `running` set
       p.state.running = false;
+      if (outcome.status !== "stopped") delete p.state.change;
       p.saveState();
+      try {
+        this.onRunEnd?.(p, this.report(p, r, outcome.status, outcome.error));
+      } catch {}
       // changes the person asked for while this run worked, and that no review picked up: their stage reopens now
       // (only notes made during this run, so a change no stage can read never loops)
       const left = p.state.notes.filter((n) => n.status === "open" && n.by === "user" && n.createdAt >= r.startedAt);
       if (finished && left.length && !p.state.paused) {
         const from = this.reopen(p, left);
-        setTimeout(() => this.run(p, { stage: from, scope: changeScope(left) }).catch(() => {}), 0);
+        const change = planChange(p, left);
+        p.state.change = { ...change, startedAt: new Date().toISOString() };
+        p.saveState();
+        setTimeout(() => this.run(p, { stage: from, change }).catch(() => {}), 0);
       }
     }
   }
@@ -458,6 +794,24 @@ export class Crew {
   }
   private done(p: OpenProject, t: Task, patch: Partial<Task> = {}) {
     this.grants.delete(t.id);
+    const rep = this.reports.get(t.id);
+    if (rep) {
+      this.reports.delete(t.id);
+      const did = rep.did || patch.summary || t.summary || t.title;
+      const ref = this.taskScenes.get(t.id) ?? t.id;
+      p.say({
+        from: t.role,
+        to: "pip",
+        kind: "report",
+        text: `${rep.status}: ${did.slice(0, 240)}${rep.couldnt ? ` Couldn't: ${rep.couldnt}` : ""}${rep.needs ? ` Needs: ${rep.needs}` : ""}`,
+        ref,
+      });
+      // routine "done" reports are not triggers
+      if (rep.status !== "done")
+        this.runs
+          .get(p.id)
+          ?.triggers.push({ kind: "report", from: t.role as RoleT, task: t.id, report: { ...rep, did }, ref });
+    }
     const m = MILESTONE[t.kind];
     if (m) p.milestone(t.kind, m, patch.lastImage ?? t.lastImage);
     return p.upsertTask({ ...t, status: "done", endedAt: new Date().toISOString(), ...patch });
@@ -518,7 +872,16 @@ export class Crew {
   ): Promise<{ data: T; messages: ChatMessage[] }> {
     const [role, name] = o.prompt.split("/");
     const c = card(role, name);
-    const userText = fill(c.user, o.vars);
+    // Pip's briefs for this role go on this task card, as high priority as the person's notes
+    const key = `${p.id}:${o.role}`;
+    const briefs = this.briefs.get(key) ?? [];
+    this.briefs.delete(key);
+    for (const b of briefs) p.log(t.id, { kind: "step", title: `Brief from Pip: ${b.text.slice(0, 200)}` });
+    const userText =
+      fill(c.user, o.vars) +
+      (briefs.length
+        ? `\n\nDirection from Pip (as important as the person's notes):\n${briefs.map((b) => `- ${b.text}`).join("\n")}`
+        : "");
     const content: ContentPart[] = [{ type: "text", text: userText }];
     for (const im of o.images ?? []) content.push({ type: "text", text: im.caption }, img(im.data));
     content.push(...(o.extra ?? []));
@@ -540,10 +903,10 @@ export class Crew {
         taskKind: o.kind,
         role: o.role,
         promptVersion: c.version,
-        system: fill(c.system, o.vars),
+        system: `${fill(c.system, o.vars)}\n${REPORT_NOTE}`,
         messages,
-        schema: o.schema,
-        jsonSchema: js(o.schema),
+        schema: withReport(o.schema),
+        jsonSchema: js(withReport(o.schema)),
         maxOut: c.maxOut,
         effort: c.effort,
         model: this.deps.gateway.modelFor(o.role, doc.crew.models),
@@ -567,7 +930,13 @@ export class Crew {
     t.model = out.model;
     p.upsertTask(t);
     p.emit("ledger", { usd: out.result.usd, role: o.role, model: out.model, ...this.deps.gateway.spent(p.id) });
-    return { data: out.data, messages: [...messages, { role: "assistant", content: JSON.stringify(out.data) }] };
+    const { report, ...rest } = (out.data ?? {}) as T & { report?: unknown };
+    const rep = TaskReport.safeParse(report ?? {});
+    this.reports.set(t.id, rep.success ? rep.data : { status: "done", did: "" });
+    return {
+      data: (o.schema instanceof z.ZodObject ? rest : out.data) as T,
+      messages: [...messages, { role: "assistant", content: JSON.stringify(out.data) }],
+    };
   }
 
   /** wait at a gate unless the involvement level lets it pass */
@@ -599,7 +968,11 @@ export class Crew {
       p.setStatus({ phase: PHASE[stage] ?? 0, line: STAGE_LINE[stage] ?? "Working" });
       if (stage === "brief") await this.brief(p, r, auto);
       if (stage === "script") await this.script(p, r, auto);
-      if (stage === "storyboard") await this.storyboard(p, r, auto);
+      if (stage === "storyboard") {
+        // a person's change re-plans only its scenes; the rest of the board stays
+        if (r.change?.reboard?.length) await this.reboard(p, r, r.change.reboard);
+        else await this.storyboard(p, r, auto);
+      }
       if (stage === "art") await this.art(p, r);
       if (stage === "animate") {
         await this.animate(p, r);
@@ -609,6 +982,7 @@ export class Crew {
       if (stage === "sound") await this.sound(p);
       if (stage === "review") await this.review(p, r, auto);
       if (stage === "deliver") await this.deliver(p, r, auto);
+      await this.drain(p, r, stage);
     }
     p.setStatus({ phase: 4, line: "Your video is ready" });
     p.setDigest(
@@ -641,6 +1015,12 @@ export class Crew {
       for (const q of data.questions) {
         if (!q.options.some((o) => o.id === q.recommendedId)) q.recommendedId = q.options[0].id;
         if (auto) continue;
+        // members never ask the person directly: Pip answers what it can, and escalates what only the person knows
+        const fromPip = await this.askPip(p, r, "producer", q);
+        if (fromPip) {
+          notes.push({ by: "pip", text: `${q.question} → ${fromPip}` });
+          continue;
+        }
         const asked = p.ask({ ...q, kind: "single", blocks: ["script"], from: "producer" }, "producer");
         p.upsertTask({ ...t, status: "waiting_user", title: "Waiting for your answers" });
         const a = await p.waitAnswer(asked.id, r.abort.signal);
@@ -979,8 +1359,32 @@ export class Crew {
       to: k === n - 1 ? "duration" : `E(${s.cues.at(-1)})+0.1`,
     }));
     await this.tool(p, "director", t.id, "storyboard_set", { scenes: windows, reason: "scenes from the storyboard" });
+    const planned = new Set(b.newAssets.map((a) => a.name));
+    await this.castFor(p, t, b.scenes, planned, async () => {
+      for (const s of b.scenes)
+        await this.tool(p, "director", t.id, "scene_set_recipes", {
+          scene: s.id,
+          recipes: s.recipes,
+          reason: `recipes for ${s.title}`,
+        });
+    });
+    // remember what needs drawing
+    const pending = b.newAssets.filter((a) => !p.doc().assets.some((x) => x.id === a.name));
+    writeFileSync(join(p.dir, "runs", "new-assets.json"), JSON.stringify(pending, null, 1));
+    for (const sc of b.scenes) p.setSceneStatus(sc.id, { version: "board", state: "ready" });
+  }
+
+  /** cast the library assets the recipes name (and the font), set the recipes, then the fixed ids they draw */
+  private async castFor(
+    p: OpenProject,
+    t: Task,
+    scenes: { recipes: { id: string; params: Record<string, unknown> }[] }[],
+    planned: Set<string>,
+    setRecipes: () => Promise<void>,
+  ) {
     // cast library assets the recipes use, and the font
     const d = p.doc();
+    const b = { scenes };
     const want = new Set<string>(["font"]);
     const { RECIPE_MAP } = await import("@pap/engine/recipes");
     for (const s of b.scenes)
@@ -996,23 +1400,138 @@ export class Crew {
         await this.tool(p, "art-director", t.id, "cast_asset", { name: "font", libraryId: "font-5x8" });
       else if (lib.has(name)) await this.tool(p, "art-director", t.id, "cast_asset", { name, libraryId: name });
     }
-    for (const s of b.scenes)
-      await this.tool(p, "director", t.id, "scene_set_recipes", {
-        scene: s.id,
-        recipes: s.recipes,
-        reason: `recipes for ${s.title}`,
-      });
+    await setRecipes();
     // the compiled scenes draw fixed-id assets no param names (flag_raise's castle, the backdrop's moon, skyline and
     // tiles): cast every one the library has, or frame() draws a placeholder box
     const { missingAssets } = await import("@pap/engine/lints");
-    const planned = new Set(b.newAssets.map((a) => a.name));
     for (const m of missingAssets(p.doc(), p.timeline().at, lib))
       if (m.libraryId && !planned.has(m.id) && !p.doc().assets.some((a) => a.id === m.id))
         await this.tool(p, "art-director", t.id, "cast_asset", { name: m.id, libraryId: m.libraryId });
-    // remember what needs drawing
-    const pending = b.newAssets.filter((a) => !p.doc().assets.some((x) => x.id === a.name));
-    writeFileSync(join(p.dir, "runs", "new-assets.json"), JSON.stringify(pending, null, 1));
-    for (const sc of b.scenes) p.setSceneStatus(sc.id, { version: "board", state: "ready" });
+  }
+
+  /**
+   * A person's change that adds beats (characters, actors, a new moment): the Director re-plans only these scenes
+   * from the recipe menu and the library, with the change in its prompt; the rest of the board stays. Missing
+   * library assets are cast. What the menu can only approximate is reported back to the person.
+   */
+  private async reboard(p: OpenProject, r: Run, ids: string[]) {
+    const t = this.task(p, {
+      kind: "director.storyboard",
+      role: "director",
+      title: `Re-planning ${ids.length === 1 ? "a scene" : `${ids.length} scenes`} for your change`,
+    });
+    try {
+      const { recipeCatalog, checkRecipeParams } = await import("@pap/engine/recipes");
+      const d = p.doc();
+      const notes = p.state.notes.filter(
+        (n) => n.assignee === "director" && n.status === "open" && (!n.target.scene || ids.includes(n.target.scene)),
+      );
+      const recipes = recipeCatalog()
+        .map((x: any) => {
+          const ps = Object.entries<any>(x.params.properties).map(
+            ([k, v]) =>
+              `${k}${x.params.required.includes(k) ? "*" : ""}: ${v.type}${v.default !== undefined ? ` = ${JSON.stringify(v.default)}` : ""}`,
+          );
+          return `- ${x.id} (min ${x.minDurationSec}s): ${x.description} Params: ${ps.join("; ")}`;
+        })
+        .join("\n");
+      const board = d.scenes
+        .map(
+          (sc) =>
+            `${sc.id}${ids.includes(sc.id) ? " (re-plan)" : ""}: ${sc.cues.join(", ")}; ${
+              sc.kind === "decl" ? sc.recipes.map((x) => `${x.id} ${JSON.stringify(x.params)}`).join(", ") : "code"
+            }`,
+        )
+        .join("\n");
+      const cueText = d.script.cues.map((c) => `${c.id}: ${c.text}`).join("\n");
+      const lib = this.libraryList();
+      const known = new Set([...lib.map((l) => l.split(":")[0]), ...d.assets.map((a) => a.id), "font"]);
+      const vars = {
+        change: notes.map((n) => n.text).join("\n") || "(see the notes)",
+        targets: ids.join(", "),
+        board: `${board}\n\nCues:\n${cueText}`,
+        recipes,
+        assets: lib.join("\n"),
+      };
+      const tl = p.timeline();
+      const check = (o: z.infer<typeof ReboardOut>) => {
+        const issues: string[] = [];
+        for (const sc of o.scenes) {
+          if (!ids.includes(sc.id)) issues.push(`${sc.id} is not one of the scenes to re-plan (${ids.join(", ")})`);
+          sc.recipes.forEach((rc, k) => {
+            for (const x of checkRecipeParams(rc.id, rc.params, tl.at, `${sc.id}.recipes[${k}]`))
+              issues.push(`${x.path}: ${x.message} (fix: ${x.fix})`);
+            for (const [key, v] of Object.entries(rc.params))
+              if (
+                typeof v === "string" &&
+                /^(asset|actor|hero|who|sprite|item|prop|crowd)/i.test(key) &&
+                /^[a-z][a-z0-9_-]*$/.test(v) &&
+                !known.has(v)
+              )
+                issues.push(
+                  `${sc.id}.recipes[${k}].params.${key}: "${v}" is not in the asset list (fix: use a listed asset)`,
+                );
+          });
+        }
+        for (const id of ids) if (!o.scenes.some((x) => x.id === id)) issues.push(`scene ${id} is missing`);
+        return issues;
+      };
+      let out = await this.ask(p, r, t, {
+        role: "director",
+        kind: "director.storyboard",
+        prompt: "director/reboard",
+        vars,
+        schema: ReboardOut,
+      });
+      let issues = check(out.data);
+      if (issues.length) {
+        out = await this.ask(p, r, t, {
+          role: "director",
+          kind: "director.repair",
+          prompt: "director/reboard",
+          vars: {
+            ...vars,
+            change: `${vars.change}\n\nYour last answer had these problems; fix them:\n- ${issues.join("\n- ")}`,
+          },
+          schema: ReboardOut,
+          history: out.messages,
+        });
+        issues = check(out.data);
+      }
+      // scenes still wrong keep their recipes; the rest are applied
+      const bad = new Set(issues.map((i) => i.split(/[.: ]/)[0]));
+      const good = out.data.scenes.filter((sc) => ids.includes(sc.id) && !bad.has(sc.id));
+      await this.castFor(p, t, good, new Set(), async () => {
+        for (const sc of good)
+          await this.tool(p, "director", t.id, "scene_set_recipes", {
+            scene: sc.id,
+            recipes: sc.recipes,
+            reason: `re-planned for the person's change: ${vars.change.slice(0, 200)}`,
+          });
+      });
+      for (const sc of good) p.setSceneStatus(sc.id, { version: "board", state: "ready" });
+      r.done.reboarded.push(...good.map((x) => x.id));
+      const approx = out.data.approximated.trim();
+      if (approx) r.done.approximated.push(approx);
+      if (good.length < ids.length)
+        r.done.approximated.push(
+          `The Director's plan for ${ids.filter((x) => !good.some((g) => g.id === x)).join(", ")} didn't fit the menu, so those scenes stayed as they were.`,
+        );
+      // a note with no scene is done here; a scene's note goes on to that scene's Animator
+      for (const n of notes)
+        if (!n.target.scene)
+          p.updateNote(n.id, { status: "done", reason: approx || `re-planned ${good.map((x) => x.id).join(", ")}` });
+      p.setGate("g2_animatic", {
+        status: "passed",
+        verdict: { by: "producer", verdict: "approve", note: "a person's change", at: new Date().toISOString() } as any,
+      });
+      this.done(p, t, {
+        summary: `${good.map((x) => `${x.id}: ${p.doc().scenes.find((s) => s.id === x.id)?.kind === "decl" ? x.recipes.map((y) => y.id).join("+") : ""}`).join("; ")}${approx ? `. Approximated: ${approx}` : ""}`,
+      });
+    } catch (e) {
+      this.failTask(p, t, e);
+      throw e;
+    }
   }
 
   private async art(p: OpenProject, r: Run) {
@@ -1301,7 +1820,15 @@ export class Crew {
     const queued = new Map(
       scenes.map((s) => [
         s.id,
-        this.task(p, { kind: "scene.tune", role: "animator", title: `Animating ${s.title || s.id}`, status: "queued" }),
+        this.sceneTask(
+          s.id,
+          this.task(p, {
+            kind: "scene.tune",
+            role: "animator",
+            title: `Animating ${s.title || s.id}`,
+            status: "queued",
+          }),
+        ),
       ]),
     );
     const one = async (s: (typeof scenes)[number]) => {
@@ -1327,6 +1854,10 @@ export class Crew {
           )
           .map((l: any) => `${l.severity}: ${l.message} (fix: ${l.fix})`);
         const notes = p.state.notes.filter((n) => n.target.scene === s.id && n.status === "open");
+        // a change for the whole video (a note with no scene) reaches every scene it re-plans
+        const asks = (r.change?.notes ?? [])
+          .map((id) => p.state.notes.find((n) => n.id === id))
+          .filter((n): n is Note => !!n && !n.target.scene && (!r.scope || r.scope.has(s.id)));
         const { data } = await this.ask(p, r, t, {
           role: "animator",
           kind: "scene.tune",
@@ -1344,7 +1875,10 @@ export class Crew {
             menu: cat
               .filter((c: any) => sc.recipes.some((x) => x.id === c.id))
               .map((c: any) => ({ id: c.id, params: c.params.properties })),
-            notes: notes.length ? notes.map((n) => `${n.id} (${n.category}): ${n.text}`).join("\n") : "(none)",
+            notes:
+              notes.length || asks.length
+                ? [...notes, ...asks].map((n) => `${n.id} (${n.category}): ${n.text}`).join("\n")
+                : "(none)",
             lints: lints.length ? lints.join("\n") : "(none)",
           },
           schema: TuneOut,
@@ -1383,6 +1917,7 @@ export class Crew {
           summary: data.changes.length ? data.changes.map((c) => c.why).join("; ") : "no changes needed",
         });
         p.setSceneStatus(s.id, { version: "render", state: "ready" });
+        r.done.redone.add(s.id);
       } catch (e: any) {
         if (r.abort.signal.aborted) throw e;
         // a weak model failing here costs nothing: the scene keeps its recipes as they are
@@ -1532,10 +2067,42 @@ export class Crew {
       // in a person's change run, only the changed scenes are redone; other blockers wait as notes
       const redo = rev.blockers.filter((b) => !r.scope || r.scope.has(b.scene));
       if (rev.verdict === "ship" || !redo.length || round === 1) break;
+      // a blocker on a scene the person asked to change: Pip decides (redo, re-board, or hold)
+      if (this.conductor && r.change) {
+        const ds = await this.think(p, r, {
+          kind: "blocker",
+          scenes: [...new Set(redo.map((b) => b.scene))],
+          text: redo.map((b) => `${b.scene}: ${b.issue}`),
+          round,
+        });
+        const { redid } = await this.apply(p, r, ds);
+        if (!redid || r.held) break;
+        continue;
+      }
       // the blockers' scenes are redone (animate skips scenes that are ready)
       for (const b of redo)
         if (p.state.sceneStatus[b.scene]) p.setSceneStatus(b.scene, { version: "animatic", state: "stale" });
       await this.animate(p, r);
+    }
+    // a person's change: blockers left on its scenes after the one fix round stop the crew here for the person
+    const left = r.change ? this.report(p, r, "waiting").openBlockers : [];
+    if (left.length) {
+      const g = "g3_rough";
+      p.setGate(g, {
+        status: "open",
+        items: [
+          { label: "Rough cut", ref: "out/contact.png" },
+          ...left.slice(0, 4).map((b) => ({ label: `Still wrong in ${b.scene}: ${b.text.slice(0, 120)}` })),
+        ],
+      });
+      p.setStatus({
+        line: `Waiting for you: the Reviewer still sees ${left.length} problem${left.length === 1 ? "" : "s"} in the scenes you changed`,
+      });
+      try {
+        this.onRunEnd?.(p, this.report(p, r, "waiting"));
+      } catch {}
+      await new Promise<unknown>((res) => this.gateWaiters.set(`${p.id}:${g}`, res));
+      return;
     }
     await this.atGate(p, "g3_rough", [{ label: "Rough cut", ref: "out/contact.png" }], auto);
   }
@@ -1545,6 +2112,7 @@ export class Crew {
     const t = this.task(p, { kind: "deliver.export", role: "editor", title: "Exporting the video" });
     try {
       const res = await this.tool(p, "editor", t.id, "export_video", {});
+      r.done.exported = true;
       this.done(p, t, { summary: `${(res.data as any).file}, ${(res.data as any).seconds.toFixed(1)} s` });
     } catch (e) {
       this.failTask(p, t, e);

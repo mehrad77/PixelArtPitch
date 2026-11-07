@@ -1,6 +1,7 @@
 // Connects the crew (orchestrator, providers, ledger, settings) to the server and registers the crew tools.
 
 import { type ExternalTools, Pip, translator } from "@pap/crew/assistant";
+import { PipConductor } from "@pap/crew/conductor";
 import { ModelGateway } from "@pap/crew/gateway-impl";
 import {
   createProvider,
@@ -159,7 +160,7 @@ export async function wireCrew(deps: {
   // Pip's tools come after the crew tools: one needs the Writer's model, the other the orchestrator
   deps.registry.add(
     subtitlesTranslateTool(translator(gateway)),
-    crewRequestChangeTool((p, note) => crew.requestChange(p, note)),
+    crewRequestChangeTool((p, note, extra) => crew.requestChange(p, note, extra)),
   );
   const pip = new Pip({
     workspace: deps.workspace,
@@ -171,6 +172,45 @@ export async function wireCrew(deps: {
     lend: (p, role, tools) => crew.lend(p, role, tools),
     resolveLend: (ref) => connections.resolve(ref)?.name,
   });
+
+  // Pip directs the crew on its triggers (asks, partial/blocked reports, blockers, stage checks)
+  crew.conductor = new PipConductor({ gateway, modeFor: (m) => pip.modeFor(m) });
+  deps.registry.add(
+    defineTool({
+      name: "ask_pip",
+      title: "Ask Pip",
+      description:
+        "A crew member's question goes to Pip, who answers from the brief and the person's decisions, or asks the person when only they know (names, claims, rights, taste, budget). Give 2-6 options and a recommended one.",
+      input: z.object({
+        question: z.string().min(5).max(200),
+        options: z
+          .array(z.object({ id: z.string().regex(/^[a-z0-9_-]+$/), label: z.string().min(1).max(80) }))
+          .min(2)
+          .max(6),
+        recommendedId: z.string(),
+      }),
+      output: z.object({ answer: z.string().nullable(), askedPerson: z.boolean() }),
+      roles: "*",
+      tier: "basic",
+      effects: "read",
+      project: true,
+      handler: async (i, ctx) => {
+        const role = (ctx.author.role ?? "producer") as any;
+        const a = await crew.askPipNow(ctx.project!, role, i);
+        if (a) return ok({ answer: a, askedPerson: false });
+        const q = ctx.project!.ask({ ...i, kind: "single", from: role }, role);
+        const ans = await ctx.project!.waitAnswer(q.id, ctx.signal);
+        return ok({ answer: ans.answer?.optionId ?? null, askedPerson: true });
+      },
+    }),
+  );
+  // a crew run's end settles the Pip cards that handed it work; cards a dead process left running settle on start
+  crew.onRunEnd = (p, report) => pip.settle(p, report);
+  setTimeout(() => {
+    try {
+      pip.settleStale((p) => crew.status(p).crew.running);
+    } catch {}
+  }, 1500).unref();
 
   const models = async (): Promise<ModelInfo[]> => {
     const s = gateway.publicSettings();

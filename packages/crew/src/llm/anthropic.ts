@@ -21,12 +21,14 @@ import type {
   ChatRequest,
   ChatResult,
   ContentPart,
+  CountInfo,
   ModelInfo,
   Price,
   Provider,
   ProviderConfig,
   StreamEvent,
   Usage,
+  WindowInfo,
 } from "./types.ts";
 
 export const ANTHROPIC_VERSION = "2026-10-21";
@@ -184,6 +186,31 @@ export class AnthropicProvider implements Provider {
     if (Object.keys(oc).length) body.output_config = oc;
     // no temperature/top_p/top_k: API version 2026-10-21 rejects sampling parameters on every model
     return body;
+  }
+
+  /** the free count_tokens endpoint: the exact system + tools + messages this request would send (never billed) */
+  async countTokens(req: ChatRequest, signal?: AbortSignal): Promise<CountInfo | null> {
+    const { stream: _s, max_tokens: _m, output_config: _o, ...body } = this.buildBody(req) as Record<string, unknown>;
+    const res = await postWithRetry(`${this.base()}/v1/messages/count_tokens`, this.headers(), body, {
+      ...this.opts,
+      maxRetries: 1,
+      signal,
+    });
+    const j = (await res.json()) as { input_tokens?: number };
+    return typeof j.input_tokens === "number" ? { tokens: j.input_tokens, source: "anthropic count_tokens" } : null;
+  }
+
+  /** GET /v1/models/{id}: max_input_tokens when the API reports it */
+  async contextWindow(model: string, signal?: AbortSignal): Promise<WindowInfo | null> {
+    const f: FetchLike = this.opts.fetch ?? fetch;
+    const { "content-type": _ct, ...h } = this.headers();
+    const id = splitModelIdFor(this.config.id, model).model;
+    const res = await f(`${this.base()}/v1/models/${encodeURIComponent(id)}`, { method: "GET", headers: h, signal });
+    if (!res.ok) return null;
+    const m = (await res.json()) as { max_input_tokens?: number };
+    return typeof m.max_input_tokens === "number"
+      ? { window: m.max_input_tokens, source: "anthropic /v1/models max_input_tokens" }
+      : null;
   }
 
   async chat(

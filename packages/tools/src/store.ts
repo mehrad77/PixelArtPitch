@@ -82,7 +82,7 @@ export type Gate = {
 export type Note = {
   id: string;
   target: { scene?: string; cue?: string; asset?: string; range?: [number, number]; track?: string };
-  category: "too_fast" | "too_slow" | "unclear" | "art" | "sound" | "text" | "other";
+  category: "too_fast" | "too_slow" | "unclear" | "art" | "sound" | "text" | "other" | "story" | "scene" | "timing";
   text: string;
   assignee: string;
   status: "open" | "picked_up" | "proposed" | "done" | "declined";
@@ -90,6 +90,20 @@ export type Note = {
   createdAt: string;
   by: string;
 };
+/** one message on the crew channel (runs/channel.jsonl), shown to people as "Behind the scenes" */
+export type ChannelMsg = {
+  id: string;
+  at: string;
+  /** "pip" or a role */
+  from: string;
+  to: string;
+  kind: "brief" | "report" | "ask" | "answer";
+  text: string;
+  /** a scene, cue, note or task id */
+  ref?: string;
+  replyTo?: string;
+};
+
 export type RuntimeState = {
   stage: Stage;
   gates: Gate[];
@@ -109,6 +123,8 @@ export type RuntimeState = {
     problem?: { text: string; action: "retry" | "change_model" | "add_budget"; taskId?: string };
   };
   milestones: { id: string; at: string; text: string; image?: string }[];
+  /** a person's change the crew is making (kept across restarts, so a resumed run still reports on it) */
+  change?: { notes: string[]; scope?: string[]; reboard?: string[]; startedAt: string };
   sceneStatus: Record<
     string,
     { version: "slate" | "board" | "animatic" | "render"; state: "planned" | "drafting" | "ready" | "stale" }
@@ -174,6 +190,89 @@ class Mutex {
 
 export type PapEvent = { seq: number; event: string; data: unknown; ts: string };
 
+/** a line in Pip's chat for something that happened, derived from the event log (times are the events' own) */
+export type Marker = {
+  id: string;
+  at: string;
+  kind: "gate" | "answer" | "stage" | "export" | "change";
+  text: string;
+  image?: string;
+};
+const GATE_WORD: Record<string, string> = {
+  g0_brief: "the brief",
+  g1_script: "the script",
+  g2_animatic: "the animatic",
+  g3_rough: "the rough cut",
+  g4_final: "the final cut",
+};
+const READY_WORD: Record<string, string> = {
+  g0_brief: "Brief ready for you",
+  g1_script: "Script angles ready for you",
+  g2_animatic: "Animatic ready",
+  g3_rough: "Rough cut ready",
+  g4_final: "Final cut ready",
+};
+/** one event's marker, if it is one; `prev` is the gate's last status (a repeat of it is no news) */
+export function markerOf(e: PapEvent, prev?: string): Marker | null {
+  const d = e.data as any;
+  if (e.event === "milestone" && d?.text)
+    return {
+      id: String(d.id).includes("@") ? String(d.id) : `${d.id}@${e.seq}`,
+      at: String(d.at ?? e.ts),
+      kind: String(d.id).startsWith("deliver.export") ? "export" : "stage",
+      text: String(d.text),
+      ...(d.image ? { image: d.image } : {}),
+    };
+  if (e.event === "gate" && d?.id && d.status !== prev) {
+    const by = d.verdict?.by;
+    if (d.status === "open")
+      return { id: `${d.id}:open@${e.seq}`, at: e.ts, kind: "gate", text: READY_WORD[d.id] ?? d.id };
+    if (d.status === "passed" && d.id === "g1_script") {
+      const label = String(d.items?.[0]?.label ?? "").replace(/^Script:\s*/, "");
+      return {
+        id: `${d.id}:passed@${e.seq}`,
+        at: e.ts,
+        kind: by === "user" ? "answer" : "gate",
+        text: by === "user" ? `You picked the script: ${label}` : `Script chosen: ${label}`,
+      };
+    }
+    if (d.status === "passed" && by === "user")
+      return { id: `${d.id}:passed@${e.seq}`, at: e.ts, kind: "gate", text: `You approved ${GATE_WORD[d.id] ?? d.id}` };
+    if (d.status === "changes")
+      return {
+        id: `${d.id}:changes@${e.seq}`,
+        at: e.ts,
+        kind: "gate",
+        text: `You asked for changes to ${GATE_WORD[d.id] ?? d.id}`,
+      };
+    return null;
+  }
+  if (e.event === "question" && d?.status === "answered" && d.answer?.by !== "timeout") {
+    const opt = (d.options ?? []).find((o: any) => o.id === d.answer?.optionId);
+    const label = opt?.label ?? d.answer?.optionId ?? "";
+    const script = /which script/i.test(String(d.question));
+    return {
+      id: `${d.id}:answer@${e.seq}`,
+      at: e.ts,
+      kind: "answer",
+      text: script ? `You picked the script: ${label}` : `You answered "${d.question}": ${label}`,
+    };
+  }
+  if (
+    e.event === "pip" &&
+    d?.type === "card" &&
+    d.card?.type === "plan" &&
+    /^Ask the crew: /.test(d.card.title ?? "")
+  ) {
+    const what = String(d.card.title).replace(/^Ask the crew: /, "");
+    if (d.card.status === "done")
+      return { id: `${d.card.id}:done`, at: e.ts, kind: "change", text: `Change done: ${what}` };
+    if (d.card.status === "failed")
+      return { id: `${d.card.id}:failed`, at: e.ts, kind: "change", text: `Change failed: ${what}` };
+  }
+  return null;
+}
+
 export class OpenProject {
   readonly id: string;
   readonly dir: string;
@@ -232,7 +331,30 @@ export class OpenProject {
     if (event !== "log" && event !== "progress")
       appendFileSync(join(this.dir, "runs", "events.jsonl"), `${JSON.stringify(e)}\n`);
     this.events.emit("event", e);
+    // the chat's markers, live: a derived `milestone` event (not stored; GET derives them from the log again)
+    if (event !== "milestone") {
+      const prev = event === "gate" ? this.gateSeen.get((data as any)?.id) : undefined;
+      const m = markerOf(e, prev);
+      if (event === "gate") this.gateSeen.set((data as any)?.id, (data as any)?.status);
+      if (m) this.events.emit("event", { seq: 0, event: "milestone", data: m, ts: e.ts });
+    }
     return e;
+  }
+  private gateSeen = new Map<string, string>();
+  /** every marker in the event log, oldest first */
+  markers(): Marker[] {
+    const out: Marker[] = [];
+    const last = new Map<string, string>();
+    const seen = new Set<string>();
+    for (const e of this.eventsSince(0)) {
+      const m = markerOf(e, e.event === "gate" ? last.get((e.data as any)?.id) : undefined);
+      if (e.event === "gate") last.set((e.data as any)?.id, (e.data as any)?.status);
+      if (m && !seen.has(m.id)) {
+        seen.add(m.id);
+        out.push(m);
+      }
+    }
+    return out;
   }
   eventsSince(seq: number): PapEvent[] {
     const f = join(this.dir, "runs", "events.jsonl");
@@ -511,12 +633,28 @@ export class OpenProject {
     const m = { id, at: new Date().toISOString(), text, ...(image ? { image } : {}) };
     this.state.milestones.push(m);
     this.saveState();
-    this.emit("milestone", m);
+    // each time it is reached is its own marker
+    this.emit("milestone", { ...m, id: `${m.id}@${this.evSeq + 1}` });
   }
   setSceneStatus(id: string, v: RuntimeState["sceneStatus"][string]) {
     this.state.sceneStatus[id] = v;
     this.saveState();
     this.emit("scene", { id, ...v });
+  }
+  /** post on the crew channel: appended to runs/channel.jsonl and sent as a `channel` event */
+  say(m: Omit<ChannelMsg, "id" | "at">): ChannelMsg {
+    const msg: ChannelMsg = { id: `m_${randomUUID().slice(0, 8)}`, at: new Date().toISOString(), ...m };
+    appendFileSync(join(this.dir, "runs", "channel.jsonl"), `${JSON.stringify(msg)}\n`);
+    this.emit("channel", msg);
+    return msg;
+  }
+  channel(): ChannelMsg[] {
+    const f = join(this.dir, "runs", "channel.jsonl");
+    if (!existsSync(f)) return [];
+    return readFileSync(f, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as ChannelMsg);
   }
   setDigest(text: string) {
     this.state.digest = text;

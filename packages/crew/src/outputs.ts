@@ -63,6 +63,23 @@ export const StoryboardOut = z.object({
     .max(4),
 });
 
+/** a change request's re-board: new recipes for some scenes, and what the menu could only approximate */
+export const ReboardOut = z.object({
+  scenes: z
+    .array(
+      z.object({
+        id: z.string(),
+        recipes: z
+          .array(z.object({ id: z.string(), params: z.record(z.string(), z.unknown()).default({}) }))
+          .min(1)
+          .max(6),
+      }),
+    )
+    .min(1)
+    .max(8),
+  approximated: z.string().max(300).default(""),
+});
+
 export const SpecOut = z.object({
   letters: z.string().min(2).max(10),
   description: z.string().min(20).max(1200),

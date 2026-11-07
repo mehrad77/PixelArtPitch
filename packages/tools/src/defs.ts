@@ -532,10 +532,10 @@ export const askUser = defineTool({
   name: "ask_user",
   title: "Ask the user",
   description:
-    "Ask the user one multiple-choice question only they can answer (names, order, claims, rights, budget or deadline). Give 2-6 options and a recommended one. Waits for the answer.",
+    "Ask the user one multiple-choice question only they can answer (names, order, claims, rights, budget or deadline). Give 2-6 options and a recommended one. Waits for the answer. For people and MCP clients; crew members ask Pip with ask_pip.",
   input: QuestionInput,
   output: z.object({ id: z.string(), optionId: z.string().optional(), note: z.string().optional(), by: z.string() }),
-  roles: ["producer"],
+  roles: [],
   tier: "basic",
   effects: "read",
   project: true,

@@ -20,7 +20,7 @@ G0 brief → script → G1 (user picks an angle)
 
 ## Outputs (patch scope and tools)
 - May write anything, but only to route, record or fix trivia. Leave craft changes to the owning role.
-- Tools: `ask_user` (only the Producer may ask), `note_add`, `project_patch` (`/notes`, `/budget`, `/crew`, `/brief` after the user agrees), `project_undo`, plus the role tools when it stands in.
+- Tools: `ask_pip` (Pip answers, or asks the person when only they know; `ask_user` is for people and MCP clients), `note_add`, `project_patch` (`/notes`, `/budget`, `/crew`, `/brief` after the user agrees), `project_undo`, plus the role tools when it stands in.
 
 ## Required model capabilities
 - Structured JSON output. A small, fast model is fine. No vision needed.

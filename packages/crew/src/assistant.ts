@@ -5,10 +5,12 @@
 //   menu mode:  one structured call { intent, params, reply }, then deterministic code builds the cards
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Role, type RoleT } from "@pap/schema";
 import {
+  type ChangeCategory,
+  changeOwner,
   languageName,
   noteOwner,
   type OpenProject,
@@ -25,9 +27,10 @@ import {
 } from "@pap/tools";
 import { z } from "zod";
 import type { Gateway } from "./gateway.ts";
+import { estimateInputTokens } from "./llm/budget.ts";
 import { costUsd, priceFor } from "./llm/prices.ts";
 import { BudgetError, type ChatMessage, type ContentPart, type ToolSpec } from "./llm/types.ts";
-import { STAGE_LINE } from "./orchestrator.ts";
+import { type RunReport, STAGE_LINE } from "./orchestrator.ts";
 import { fill, card as promptCard } from "./prompts.ts";
 
 // ---------------------------------------------------------------- the contract with the UI
@@ -64,9 +67,57 @@ export type PipCard =
   | PlanCard
   | { id: string; type: "cant"; text: string; nearest?: string }
   | FormCard;
+/** how a turn was made, for /why (stored on the item; built from what ran, never by asking the model) */
+export type PipTrace = {
+  tools: { name: string; ok: boolean; ms: number }[];
+  model: string;
+  mode: "agent" | "menu" | "command";
+  usage: { in: number; out: number };
+  /** which cards it made and why */
+  cards?: { title: string; why?: string }[];
+  usd: number;
+  promptVersion: string;
+};
 export type PipItem =
   | { id: string; at: string; kind: "user"; text: string }
-  | { id: string; at: string; kind: "pip"; text: string; cards: PipCard[]; model?: string; usd?: number };
+  | {
+      id: string;
+      at: string;
+      kind: "pip";
+      text: string;
+      cards: PipCard[];
+      model?: string;
+      usd?: number;
+      trace?: PipTrace;
+      /** a /why reply: the trace of the answer it explains */
+      why?: PipTrace & { about: string };
+    }
+  /** a divider: everything up to `upTo` is folded into Pip's summary (`text`); the items stay on disk and in the UI */
+  | { id: string; at: string; kind: "summary"; text: string; upTo: string; freed?: PipFreed };
+/** runs/pip-summary.json: what Pip's model sees in place of the items up to `upTo` */
+/** /context: what Pip's next call would send */
+export type PipContext = {
+  model: string;
+  provider: string;
+  mode: "agent" | "menu";
+  /** the model's context window, and where that number came from */
+  window: number | null;
+  windowSource: "provider" | "table" | "unknown";
+  windowDetail?: string;
+  windowNote?: string;
+  method: "count" | "estimate";
+  /** e.g. "anthropic count_tokens", "llama.cpp /tokenize (no chat template)", "chars/3.5 × 1.12 from 40 calls" */
+  countSource: string;
+  total: number;
+  parts: {
+    id: "system" | "facts" | "tools" | "summary" | "messages" | "reserve";
+    label: string;
+    tokens: number;
+    detail?: string;
+  }[];
+};
+export type PipFreed = { items: number; before: number; after: number; freed: number; method: "count" | "estimate" };
+export type PipSummary = { text: string; upTo: string; at: string; edited?: boolean; freed?: PipFreed };
 
 /** what a plan card does when confirmed; stored on the server, never sent to the client */
 type Action = {
@@ -75,6 +126,8 @@ type Action = {
   projectId?: string;
   /** external tools lent to the crew task this card starts: the role and the model-facing names */
   lend?: { role: RoleT; tools: string[] };
+  /** a card that handed work to the crew: it settles when the crew's run on that note ends */
+  handoff?: { noteId: string };
 };
 /** the cards that hand work to one crew role, and so may lend it external tools */
 const LENDS = new Set(["crew_request_change"]);
@@ -82,6 +135,7 @@ type StoredPlan = PlanCard & { action?: Action };
 type StoredCard = Exclude<PipCard, PlanCard> | StoredPlan;
 type StoredItem =
   | Extract<PipItem, { kind: "user" }>
+  | Extract<PipItem, { kind: "summary" }>
   | (Omit<Extract<PipItem, { kind: "pip" }>, "cards"> & { cards: StoredCard[] });
 
 /** the card as the UI may see it: the action (tool, input, project) stripped */
@@ -215,6 +269,29 @@ const STAGE_WORD: Record<string, string> = {
 };
 /** owners whose stage reads a change note today; others reopen their stage but can't act on the words */
 const NOTE_READERS = new Set(["animator", "writer", "director", "producer"]);
+/**
+ * The budget in plain words, never "$0 cap" or "$0-0": no cap is "No budget cap is set.", nothing spent is "Nothing
+ * spent yet.", and a zero estimate is left out.
+ */
+export function budgetWords(b: {
+  capUsd: number;
+  spentUsd: number;
+  reservedUsd?: number;
+  est?: [number, number] | null;
+}): string {
+  const out: string[] = [];
+  out.push(b.capUsd > 0 ? `The cap is ${money(b.capUsd)}.` : "No budget cap is set.");
+  if (b.spentUsd > 0 || (b.reservedUsd ?? 0) > 0)
+    out.push(
+      `${money(b.spentUsd)} spent${(b.reservedUsd ?? 0) > 0 ? `, ${money(b.reservedUsd!)} reserved` : ""}${b.capUsd > 0 ? `, ${money(Math.max(0, b.capUsd - b.spentUsd - (b.reservedUsd ?? 0)))} left` : ""}.`,
+    );
+  else out.push("Nothing spent yet.");
+  if (b.est && b.est[1] > 0)
+    out.push(
+      `Finishing is estimated at ${b.est[0] === b.est[1] || b.est[0] <= 0 ? money(b.est[1]) : `${money(b.est[0])}-${money(b.est[1])}`} in all.`,
+    );
+  return out.join(" ");
+}
 const list = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 const money = (n: number) => `$${n < 1 ? n.toFixed(2) : n.toFixed(2).replace(/\.00$/, "")}`;
 
@@ -242,8 +319,8 @@ async function facts(p: OpenProject | undefined, budget: { capUsd: number; spent
     "- The crew:",
     ...Role.options.filter((r) => r !== "assistant").map((r) => `  - ${ROLE_LINE[r]}`),
     budget.daily
-      ? `- Budget: Pip's workspace questions are capped at ${money(budget.capUsd)} a day; ${money(budget.spentUsd)} spent today, ${money(left)} left.`
-      : `- Budget: this project's cap is ${money(budget.capUsd)}; ${money(budget.spentUsd)} spent, ${money(left)} left. A card that would pass the cap says so and offers to raise it.`,
+      ? `- Budget: Pip's workspace questions are capped at ${money(budget.capUsd)} a day; ${budget.spentUsd > 0 ? `${money(budget.spentUsd)} spent today, ${money(left)} left` : "nothing spent today"}.`
+      : `- Budget: ${budgetWords({ capUsd: budget.capUsd, spentUsd: budget.spentUsd })}${budget.capUsd > 0 ? " A card that would pass the cap says so and offers to raise it; the crew asks before going over." : ""}`,
     ...(p ? [] : ["- No project is open: list projects, fork one, or draft a brief for a new one."]),
   ].join("\n");
 }
@@ -311,6 +388,7 @@ class PipLog {
 }
 
 // ---------------------------------------------------------------- outputs of the model
+const CompactOut = z.object({ text: z.string().min(1).max(3000) });
 const ReplyIn = z.object({
   text: z.string().max(1200),
   files: z.array(z.string()).max(20).optional(),
@@ -368,6 +446,8 @@ export const MenuOut = z.object({
 export class Pip {
   private deps: PipDeps;
   private busy = new Set<string>();
+  /** cards whose action is running in this process */
+  private inflight = new Set<string>();
   /** the workspace conversation's events (`/api/events`); projects use their own stream */
   readonly events = new EventEmitter();
   private wsSeq = 0;
@@ -384,7 +464,10 @@ export class Pip {
     return id ? this.deps.workspace.get(id) : undefined;
   }
   /** `pip` events: items and cards are kept in the project's event log; "thinking" is transient */
-  private emit(p: OpenProject | undefined, data: { type: "thinking" | "item" | "card"; [k: string]: unknown }) {
+  private emit(
+    p: OpenProject | undefined,
+    data: { type: "thinking" | "item" | "card" | "summary"; [k: string]: unknown },
+  ) {
     if (p) {
       if (data.type === "thinking") p.events.emit("event", { seq: 0, event: "pip", data, ts: now() });
       else p.emit("pip", data);
@@ -424,12 +507,134 @@ export class Pip {
     return { key: WORKSPACE, capUsd: all - today + daily, spentUsd: today, daily: true };
   }
 
-  /** start a turn; 409 (PipBusy) while one runs for the same conversation */
+  // ---------------------------------------------------------------- the summary (Pip's memory of a long thread)
+  private summaryFile(p?: OpenProject) {
+    return p ? join(p.dir, "runs", "pip-summary.json") : join(this.deps.home ?? PAP_HOME, "pip-summary.json");
+  }
+  summary(projectId?: string): PipSummary | null {
+    return this.readSummary(this.project(projectId));
+  }
+  private readSummary(p?: OpenProject): PipSummary | null {
+    try {
+      return JSON.parse(readFileSync(this.summaryFile(p), "utf8"));
+    } catch {
+      return null;
+    }
+  }
+  private writeSummary(p: OpenProject | undefined, v: PipSummary) {
+    const f = this.summaryFile(p);
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, `${JSON.stringify(v, null, 1)}\n`);
+  }
+  /** the person corrected the summary: used from the next turn */
+  editSummary(projectId: string | undefined, text: string): PipSummary {
+    const p = this.project(projectId);
+    const cur = this.readSummary(p);
+    const items = this.log(p)
+      .all()
+      .filter((i) => i.kind !== "summary");
+    const v: PipSummary = {
+      text: text.trim().slice(0, 3000),
+      upTo: cur?.upTo ?? items.at(-1)?.id ?? "",
+      at: now(),
+      edited: true,
+    };
+    this.writeSummary(p, v);
+    this.emit(p, { type: "summary", summary: v });
+    return v;
+  }
+  /** the conversation items after the summary (what the model may see), oldest first */
+  private window(p: OpenProject | undefined, items: StoredItem[]) {
+    const sum = this.readSummary(p);
+    const talk = items.filter((i) => i.kind !== "summary");
+    const k = sum?.upTo ? talk.findIndex((i) => i.id === sum.upTo) : -1;
+    return { sum, after: talk.slice(k + 1) };
+  }
+
+  /**
+   * Fold everything before the last `keep` items into the summary: one call on Pip's own model (with its fallback),
+   * metered as assistant.compact. Adds a divider item. Returns null when there is nothing to fold.
+   */
+  private async compact(p: OpenProject | undefined, keep = 6): Promise<PipSummary | null> {
+    const items = this.log(p).all();
+    const { sum, after } = this.window(p, items);
+    const fold = after.slice(0, Math.max(0, after.length - keep));
+    if (!fold.length) return null;
+    const c = promptCard("assistant", "compact");
+    const b = this.budget(p);
+    const lines = this.historyMessages(fold)
+      .map((m) => `${m.role === "user" ? "Person" : "Pip"}: ${String(m.content).slice(0, 1200)}`)
+      .join("\n");
+    const call = (model: string) =>
+      this.deps.gateway.json({
+        project: b.key,
+        capUsd: b.capUsd,
+        task: `compact-${fold.at(-1)!.id}`,
+        taskKind: "assistant.compact",
+        role: "assistant",
+        promptVersion: c.version,
+        system: c.system,
+        messages: [{ role: "user", content: fill(c.user, { summary: sum?.text || "(none yet)", items: lines }) }],
+        schema: CompactOut,
+        jsonSchema: z.toJSONSchema(CompactOut, { io: "input" }) as Record<string, unknown>,
+        maxOut: c.maxOut,
+        effort: c.effort,
+        model,
+      });
+    const model = this.deps.gateway.modelFor("assistant", p?.doc().crew.models);
+    let out: Awaited<ReturnType<typeof call>>;
+    try {
+      out = await call(model);
+    } catch (e) {
+      const fb = this.deps.gateway.fallbackFor("assistant");
+      if (e instanceof BudgetError || !fb || fb === model) throw e;
+      out = await call(fb);
+    }
+    // at most ~250 words: whole lines while they fit
+    const keptLines: string[] = [];
+    let words = 0;
+    for (const l of out.data.text.split("\n")) {
+      words += l.split(/\s+/).filter(Boolean).length;
+      if (words > 260 && keptLines.length) break;
+      keptLines.push(l);
+    }
+    const text = keptLines.join("\n");
+    // how much of Pip's conversation context this freed (the estimator's ~3.5 chars per token)
+    const kept = after.slice(fold.length);
+    const toks = (memory: string | undefined, its: StoredItem[]) =>
+      estimateInputTokens({
+        model: model,
+        maxOut: 0,
+        messages: [
+          ...(memory ? [{ role: "user" as const, content: memory }] : []),
+          ...this.historyMessages(its).slice(-HISTORY),
+        ],
+      }) - 50;
+    const beforeT = toks(sum?.text, after);
+    const afterT = toks(text.trim(), kept);
+    const freed: PipFreed = {
+      items: fold.length,
+      before: beforeT,
+      after: afterT,
+      freed: Math.max(0, beforeT - afterT),
+      method: "estimate",
+    };
+    const v: PipSummary = { text: text.trim(), upTo: fold.at(-1)!.id, at: now(), freed };
+    this.writeSummary(p, v);
+    // the UI draws the divider from the summary's upTo; the items themselves stay as they are
+    this.emit(p, { type: "summary", summary: v });
+    return v;
+  }
+
+  /** start a turn; 409 (PipBusy) while one runs for the same conversation. Slash commands are parsed here. */
   ask(projectId: string | undefined, text: string): { turnId: string; done: Promise<PipItem> } {
     const key = projectId ?? WORKSPACE;
     const p = this.project(projectId);
-    if (this.busy.has(key)) throw new PipBusy();
     const t = text.trim().slice(0, 4000);
+    // /context leaves nothing in the history: no message, no reply, nothing toward the window
+    if (/^\/context\b/i.test(t))
+      return { turnId: "", done: this.context(projectId).then((c) => ({ kind: "context", ...c }) as any) };
+    if (this.busy.has(key)) throw new PipBusy();
     if (!t) throw new StoreError("empty", "say something to Pip", "send a question or a request", 400);
     this.busy.add(key);
     const log = this.log(p);
@@ -437,38 +642,223 @@ export class Pip {
     const user: StoredItem = { id: rid("u"), at: now(), kind: "user", text: t };
     log.append(user);
     this.emit(p, { type: "item", item: publicItem(user) });
-    const done = this.turn(p, t, history, user.id).finally(() => this.busy.delete(key));
+    const cmd = /^\/(undo|budget|why|compact)\b\s*(.*)$/i.exec(t);
+    const done = (
+      cmd ? this.command(p, cmd[1].toLowerCase(), cmd[2], history) : this.turn(p, t, history, user.id)
+    ).finally(() => this.busy.delete(key));
     return { turnId: user.id, done };
   }
 
-  private async turn(p: OpenProject | undefined, text: string, history: StoredItem[], turnId: string) {
+  private reply(
+    p: OpenProject | undefined,
+    text: string,
+    cards: StoredCard[],
+    trace?: PipTrace,
+    why?: PipTrace & { about: string },
+  ): PipItem {
+    const item: StoredItem = {
+      id: rid("pip"),
+      at: now(),
+      kind: "pip",
+      text,
+      cards,
+      ...(trace ? { model: trace.model, usd: +trace.usd.toFixed(6), trace } : {}),
+      ...(why ? { why } : {}),
+    };
+    this.log(p).append(item);
+    this.emit(p, { type: "item", item: publicItem(item) });
+    return publicItem(item);
+  }
+
+  /** /undo, /budget, /why answer without a model; /compact makes its one call */
+  private async command(
+    p: OpenProject | undefined,
+    name: string,
+    arg: string,
+    history: StoredItem[],
+  ): Promise<PipItem> {
+    const trace: PipTrace = {
+      tools: [],
+      model: "",
+      mode: "command",
+      usage: { in: 0, out: 0 },
+      usd: 0,
+      promptVersion: `command/${name}`,
+    };
+    const say = (text: string, cards: StoredCard[] = []) => this.reply(p, text, cards, trace);
+    if (name === "why") {
+      const last = [...history].reverse().find((i) => i.kind === "pip" && (i as any).trace?.mode !== "command") as
+        | (StoredItem & { kind: "pip" })
+        | undefined;
+      const tr = last?.trace;
+      if (!last || !tr) return say("There's no answer of mine to explain yet.");
+      const tools = tr.tools.length
+        ? tr.tools.map((x) => `${x.name} → ${x.ok ? "ok" : "error"} (${x.ms} ms)`).join(", ")
+        : "none";
+      const cards = last.cards
+        .map((c) =>
+          c.type === "plan"
+            ? `"${c.title}" (${c.status}${c.action ? `: it would run ${c.action.tool}` : ""})`
+            : c.type === "files"
+              ? `a files card (${c.files.length} files)`
+              : c.type === "cant"
+                ? `a can't card (${c.text.slice(0, 80)})`
+                : `a ${c.form} form`,
+        )
+        .join("; ");
+      return this.reply(
+        p,
+        [
+          `My last answer used ${tr.model || "no model"} in ${tr.mode} mode (prompt ${tr.promptVersion}).`,
+          `Tools: ${tools}.`,
+          `Tokens: ${tr.usage.in} in, ${tr.usage.out} out; cost ${money(tr.usd)}.`,
+          `Cards: ${cards || "none"}.`,
+        ].join(" "),
+        [],
+        trace,
+        { ...tr, about: last.id },
+      );
+    }
+    if (name === "budget") {
+      if (!p) return say("The budget is per project: open one first.");
+      const b = this.budget(p);
+      const { reservedUsd } = this.deps.gateway.spent(p.id);
+      const st = this.deps.crewStatus?.(p);
+      const est = st?.budget.estTotalUsd;
+      const want = Number(arg.replace(/^\$/, ""));
+      if (!arg.trim() || !Number.isFinite(want))
+        return say(budgetWords({ capUsd: b.capUsd, spentUsd: b.spentUsd, reservedUsd, est }));
+      if (want < 0 || want > 10000) return say("The cap can be $0 to $10,000.");
+      const left = want - b.spentUsd;
+      const unit = this.deps.gateway.estimate(p.id, [{ kind: "scene.tune", role: "animator" }])?.usd[1] ?? 0;
+      const card: StoredPlan = {
+        id: rid("card"),
+        type: "plan",
+        status: "proposed",
+        title: `${want >= b.capUsd ? "Raise" : "Lower"} the cap to ${money(want)}`,
+        detail: `The project's budget cap goes from ${money(b.capUsd)} to ${money(want)}.`,
+        who: [],
+        usd: [0, 0],
+        sec: null,
+        effects: [
+          left > 0
+            ? `Leaves ${money(left)} for the crew${unit > 0 ? `: roughly ${Math.floor(left / unit)} more scene steps` : ""}.${st?.time.etaSec ? ` The crew's estimate to finish: ${Math.round(st.time.etaSec[0] / 60)}-${Math.round(st.time.etaSec[1] / 60)} min.` : ""}`
+            : "That's at or below what's spent: the crew can't start another model step.",
+          "Nothing is spent until a crew step needs it.",
+        ],
+        confirmLabel: `Set ${money(want)}`,
+        action: {
+          tool: "project_patch",
+          input: {
+            ops: [{ op: "replace", path: "/budget/capUsd", value: want }],
+            reason: `set the cap to ${money(want)} (asked through Pip)`,
+            baseRev: p.rev(),
+          },
+          projectId: p.id,
+        },
+      };
+      return say("Here's the new cap to confirm.", [card]);
+    }
+    if (name === "undo") {
+      if (!p) return say("Undo works inside a project: open one first.");
+      const hist = await p.history();
+      const undone = new Set(hist.filter((h) => h.undoes !== undefined).map((h) => h.undoes));
+      const last = [...hist]
+        .reverse()
+        .find((h) => h.author.via === "pip" && h.undoes === undefined && !undone.has(h.seq));
+      // the last thing Pip did that wasn't a patch (a translation or an export) can't be undone by a patch
+      const lastCard = [...history]
+        .reverse()
+        .flatMap((i) => (i.kind === "pip" ? i.cards : []))
+        .find((c) => c.type === "plan" && c.status === "done" && c.action && c.action.tool !== "project_patch");
+      if (!last)
+        return say(
+          lastCard && lastCard.type === "plan"
+            ? `Nothing to undo in the project. The last thing I did was "${lastCard.title}", which made files, not a change I can undo.`
+            : "There's no change of mine to undo.",
+        );
+      const card: StoredPlan = {
+        id: rid("card"),
+        type: "plan",
+        status: "proposed",
+        title: `Undo: ${last.reason.slice(0, 70)}`,
+        detail: `Change #${last.seq} by ${last.author.role ?? last.author.kind} (via Pip) on ${last.ts.slice(0, 16).replace("T", " ")} goes back: ${last.ops
+          .map((o) => o.path)
+          .slice(0, 4)
+          .join(", ")}.`,
+        who: [],
+        usd: [0, 0],
+        sec: null,
+        effects: [
+          "Adds the inverse change to the history; nothing is deleted.",
+          "Later work on the same paths may need redoing.",
+        ],
+        confirmLabel: "Undo it",
+        action: {
+          tool: "project_undo",
+          input: { seq: last.seq, reason: "undone through Pip (/undo)" },
+          projectId: p.id,
+        },
+      };
+      return say("Here's what goes back.", [card]);
+    }
+    // /compact
     this.emit(p, { type: "thinking" });
-    const { model } = this.pick(p?.id);
-    let out: { text: string; cards: StoredCard[]; usd: number; model: string };
     try {
-      out = await this.runWith(p, text, history, turnId, model);
+      const d = await this.compact(p, 6);
+      const f = d?.freed;
+      const n = (x: number) => x.toLocaleString("en-US");
+      return say(
+        f
+          ? `Folded ${f.items} messages into my summary. That freed about ${n(f.freed)} tokens of my context (${n(f.before)} → ${n(f.after)}).`
+          : "There's nothing old enough to fold yet.",
+      );
+    } catch (e: any) {
+      return say(`I couldn't summarize just now: ${String(e?.message ?? e).slice(0, 160)}.`);
+    }
+  }
+
+  private async turn(p: OpenProject | undefined, text: string, history0: StoredItem[], turnId: string) {
+    this.emit(p, { type: "thinking" });
+    // nothing drops out of the window silently: items about to leave it are folded into the summary first
+    if (this.window(p, history0).after.length + 1 > HISTORY)
+      try {
+        await this.compact(p, 6);
+      } catch {}
+    const { sum, after } = this.window(
+      p,
+      this.log(p)
+        .all()
+        .filter((i) => i.id !== turnId),
+    );
+    const history = after.slice(-(HISTORY - 1));
+    const { model } = this.pick(p?.id);
+    let out: { text: string; cards: StoredCard[]; usd: number; model: string; trace?: PipTrace };
+    try {
+      out = await this.runWith(p, text, history, turnId, model, sum?.text);
     } catch (e: any) {
       const fb = this.deps.gateway.fallbackFor("assistant");
       if (!(e instanceof BudgetError) && fb && fb !== model) {
         try {
-          out = await this.runWith(p, text, history, turnId, fb);
+          out = await this.runWith(p, text, history, turnId, fb, sum?.text);
         } catch (e2) {
           out = this.sorry(e2, fb);
         }
       } else out = this.sorry(e, model);
     }
-    const item: StoredItem = {
-      id: rid("pip"),
-      at: now(),
-      kind: "pip",
-      text: out.text,
-      cards: out.cards,
-      model: out.model,
-      usd: +out.usd.toFixed(6),
-    };
-    this.log(p).append(item);
-    this.emit(p, { type: "item", item: publicItem(item) });
-    return publicItem(item);
+    return this.reply(
+      p,
+      out.text,
+      out.cards,
+      out.trace ?? {
+        tools: [],
+        model: out.model,
+        mode: this.modeFor(out.model),
+        usage: { in: 0, out: 0 },
+        usd: out.usd,
+        promptVersion: "",
+      },
+    );
   }
 
   private sorry(e: any, model: string) {
@@ -483,28 +873,46 @@ export class Pip {
     };
   }
 
-  private runWith(p: OpenProject | undefined, text: string, history: StoredItem[], turnId: string, model: string) {
+  private runWith(
+    p: OpenProject | undefined,
+    text: string,
+    history: StoredItem[],
+    turnId: string,
+    model: string,
+    memory?: string,
+  ) {
     return this.modeFor(model) === "agent"
-      ? this.agent(p, text, history, turnId, model)
-      : this.menu(p, text, history, turnId, model);
+      ? this.agent(p, text, history, turnId, model, memory)
+      : this.menu(p, text, history, turnId, model, memory);
+  }
+
+  /** the project summary for the prompt, with Pip's memory of the earlier conversation */
+  private situation(p: OpenProject | undefined, memory?: string) {
+    const now = summary(p, this.deps, this.deps.workspace);
+    return memory
+      ? `${now}\n\nEarlier in this conversation (your summary; the person may have edited it):\n${memory}`
+      : now;
   }
 
   private historyMessages(history: StoredItem[]): ChatMessage[] {
-    return history.slice(-HISTORY).map((it): ChatMessage => {
-      if (it.kind === "user") return { role: "user", content: it.text };
-      const cards = (it.cards ?? [])
-        .map((c) =>
-          c.type === "plan"
-            ? `[card "${c.title}": ${c.status}${c.result ? ` - ${c.result.text}` : ""}]`
-            : c.type === "files"
-              ? `[files: ${c.files.map((f) => f.name).join(", ")}]`
-              : c.type === "cant"
-                ? `[can't: ${c.text}]`
-                : `[form: ${c.title}, ${c.status}]`,
-        )
-        .join(" ");
-      return { role: "assistant", content: `${it.text}${cards ? ` ${cards}` : ""}` };
-    });
+    return history
+      .filter((it) => it.kind !== "summary")
+      .slice(-HISTORY)
+      .map((it): ChatMessage => {
+        if (it.kind === "user") return { role: "user", content: it.text };
+        const cards = (it.cards ?? [])
+          .map((c) =>
+            c.type === "plan"
+              ? `[card "${c.title}": ${c.status}${c.result ? ` - ${c.result.text}` : ""}]`
+              : c.type === "files"
+                ? `[files: ${c.files.map((f) => f.name).join(", ")}]`
+                : c.type === "cant"
+                  ? `[can't: ${c.text}]`
+                  : `[form: ${c.title}, ${c.status}]`,
+          )
+          .join(" ");
+        return { role: "assistant", content: `${it.text}${cards ? ` ${cards}` : ""}` };
+      });
   }
 
   // ---------------------------------------------------------------- agent mode
@@ -546,21 +954,160 @@ export class Pip {
     return specs;
   }
 
-  private async agent(p: OpenProject | undefined, text: string, history: StoredItem[], turnId: string, model: string) {
+  /** what an agent-mode call sends (the turn and /context build it the same way) */
+  private async agentRequest(p: OpenProject | undefined, text: string, history: StoredItem[], memory?: string) {
     const b = this.budget(p);
     const c = promptCard("assistant", "system");
     const ext = this.deps.external?.catalogue() ?? [];
-    const system =
-      fill(c.system, { facts: await facts(p, b) }) +
-      (ext.length
-        ? `\n\nThe person's MCP connections (call connection_tools to load one):\n${ext.map((x) => `- ${x.server}: ${x.description} (${x.tools} tools, ${x.status})`).join("\n")}`
-        : "");
+    const factsText = await facts(p, b);
+    const extText = ext.length
+      ? `\n\nThe person's MCP connections (call connection_tools to load one):\n${ext.map((x) => `- ${x.server}: ${x.description} (${x.tools} tools, ${x.status})`).join("\n")}`
+      : "";
+    const system = fill(c.system, { facts: factsText }) + extText;
+    const situation = summary(p, this.deps, this.deps.workspace);
     const messages: ChatMessage[] = [
       ...this.historyMessages(history),
-      { role: "user", content: fill(c.user, { summary: summary(p, this.deps, this.deps.workspace), text }) },
+      { role: "user", content: fill(c.user, { summary: this.situation(p, memory), text }) },
     ];
     const names = this.allowed(p);
     const tools = this.toolSpecs(names, p);
+    return { c, system, messages, names, tools, factsText, extText, situation, ext };
+  }
+
+  /** what a menu-mode call sends */
+  private async menuRequest(p: OpenProject | undefined, text: string, history: StoredItem[], memory?: string) {
+    const b = this.budget(p);
+    const c = promptCard("assistant", "menu");
+    const factsText = await facts(p, b);
+    const situation = summary(p, this.deps, this.deps.workspace);
+    return {
+      c,
+      factsText,
+      situation,
+      system: fill(c.system, { facts: factsText }),
+      messages: [
+        ...this.historyMessages(history).slice(-6),
+        { role: "user" as const, content: fill(c.user, { summary: this.situation(p, memory), text }) },
+      ] as ChatMessage[],
+    };
+  }
+
+  /**
+   * /context: what Pip's next call would send, measured on the real request with no model call. Anthropic's free
+   * count_tokens gives the exact total (method "count"); otherwise ~3.5 characters per token (method "estimate").
+   */
+  async context(projectId?: string): Promise<PipContext> {
+    const p = this.project(projectId);
+    const { model, mode } = this.pick(projectId);
+    const { sum, after } = this.window(p, this.log(p).all());
+    const history = after.slice(-(HISTORY - 1));
+    const memory = sum?.text;
+    const est = (chars: number) => Math.ceil(chars / 3.5);
+    const len = (m: ChatMessage[]) =>
+      m.reduce((n, x) => n + (typeof x.content === "string" ? x.content.length : JSON.stringify(x.content).length), 0);
+    let req: import("./llm/types.ts").ChatRequest;
+    let parts: PipContext["parts"];
+    if (mode === "agent") {
+      const r = await this.agentRequest(p, "", history, memory);
+      req = { model, system: r.system, messages: r.messages, tools: r.tools, maxOut: r.c.maxOut };
+      const base = fill(r.c.system, { facts: "" }).length + r.extText.length;
+      const extTools = r.tools.filter((t) => t.name.startsWith("ext_")).length;
+      parts = [
+        { id: "system", label: "System prompt", tokens: est(base), detail: r.c.version },
+        { id: "facts", label: "Project facts", tokens: est(r.factsText.length + r.situation.length) },
+        {
+          id: "tools",
+          label: "Tool definitions",
+          tokens: est(JSON.stringify(r.tools).length),
+          detail: `${r.tools.length} tools, of which ${extTools} from connections`,
+        },
+        { id: "summary", label: "Summary of earlier conversation", tokens: est(memory?.length ?? 0) },
+        {
+          id: "messages",
+          label: "Conversation",
+          tokens: est(len(r.messages.slice(0, -1))),
+          detail: `${r.messages.length - 1} messages kept`,
+        },
+        { id: "reserve", label: "Room for the reply", tokens: r.c.maxOut },
+      ];
+    } else {
+      const r = await this.menuRequest(p, "", history, memory);
+      req = { model, system: r.system, messages: r.messages, maxOut: r.c.maxOut };
+      parts = [
+        {
+          id: "system",
+          label: "System prompt",
+          tokens: est(fill(r.c.system, { facts: "" }).length),
+          detail: r.c.version,
+        },
+        { id: "facts", label: "Project facts", tokens: est(r.factsText.length + r.situation.length) },
+        { id: "tools", label: "Tool definitions", tokens: 0, detail: "none in menu mode" },
+        { id: "summary", label: "Summary of earlier conversation", tokens: est(memory?.length ?? 0) },
+        {
+          id: "messages",
+          label: "Conversation",
+          tokens: est(len(r.messages.slice(0, -1))),
+          detail: `${r.messages.length - 1} messages kept`,
+        },
+        { id: "reserve", label: "Room for the reply", tokens: r.c.maxOut },
+      ];
+    }
+    const input = parts.filter((x) => x.id !== "reserve");
+    const estimated = input.reduce((n, x) => n + x.tokens, 0);
+    const m = await this.deps.gateway.measure?.(req);
+    const counted = m?.count?.tokens ?? null;
+    let countSource: string;
+    let target: number | null = null;
+    if (counted !== null) {
+      target = counted;
+      countSource = m!.count!.source;
+    } else if (m?.calibration) {
+      // our estimate, corrected by how far it was off on this model's real calls
+      target = Math.round(estimated * m.calibration.ratio);
+      countSource = `chars/3.5 × ${m.calibration.ratio.toFixed(2)} from ${m.calibration.n} calls`;
+    } else countSource = "chars/3.5 (no calls to calibrate on yet)";
+    if (target !== null && estimated > 0) {
+      // the total, spread over the parts in proportion to their size
+      let left = target;
+      input.forEach((x, k) => {
+        const v = k === input.length - 1 ? left : Math.round((x.tokens / estimated) * target!);
+        x.tokens = Math.max(0, v);
+        left -= x.tokens;
+      });
+    }
+    return {
+      model,
+      provider: model.slice(0, model.indexOf("/")),
+      mode,
+      window: m?.window?.tokens ?? null,
+      windowSource: m?.window?.source ?? "unknown",
+      ...(m?.window ? { windowDetail: m.window.detail } : {}),
+      ...(m?.window?.note ? { windowNote: m.window.note } : {}),
+      method: counted !== null ? "count" : "estimate",
+      countSource,
+      total: parts.reduce((n, x) => n + x.tokens, 0),
+      parts,
+    };
+  }
+
+  private async agent(
+    p: OpenProject | undefined,
+    text: string,
+    history: StoredItem[],
+    turnId: string,
+    model: string,
+    memory?: string,
+  ) {
+    const b = this.budget(p);
+    const { c, system, messages, names, tools } = await this.agentRequest(p, text, history, memory);
+    const trace: PipTrace = {
+      tools: [],
+      model,
+      mode: "agent",
+      usage: { in: 0, out: 0 },
+      usd: 0,
+      promptVersion: c.version,
+    };
     const cards: StoredCard[] = [];
     const st = { usd: 0, model, files: new Map<string, PipFile>(), ext: new Map<string, ExternalToolT>() };
     let reply: z.infer<typeof ReplyIn> | null = null;
@@ -590,6 +1137,11 @@ export class Pip {
       });
       st.usd += res.result.usd;
       st.model = res.model;
+      trace.usage.in +=
+        res.result.usage.inputTokens +
+        (res.result.usage.cacheReadTokens ?? 0) +
+        (res.result.usage.cacheWriteTokens ?? 0);
+      trace.usage.out += res.result.usage.outputTokens;
       // replayed verbatim next step, thinking blocks included
       messages.push({
         role: "assistant",
@@ -620,7 +1172,9 @@ export class Pip {
             isError = true;
           }
         } else {
+          const t0 = Date.now();
           const out = await this.handleCall(call.name, call.input, p, names, cards, st, vision);
+          trace.tools.push({ name: call.name, ok: !out.isError, ms: Date.now() - t0 });
           content = out.content;
           isError = out.isError;
         }
@@ -641,6 +1195,20 @@ export class Pip {
       cards: out,
       usd: st.usd,
       model: st.model,
+      trace: {
+        ...trace,
+        model: st.model,
+        usd: st.usd,
+        cards: out.map((x) => ({
+          title: x.type === "plan" ? x.title : x.type,
+          why:
+            x.type === "plan"
+              ? x.action
+                ? `the model asked for ${x.action.tool}; it writes or spends, so it waits for you`
+                : undefined
+              : undefined,
+        })),
+      },
     };
   }
 
@@ -834,38 +1402,69 @@ export class Pip {
           scene = hit.id;
           input.scene = hit.id;
         }
-        const owner = noteOwner({ scene, cue: input.cue as string | undefined }, String(input.category ?? "other"));
+        const owner = changeOwner(
+          { scene, cue: input.cue as string | undefined },
+          (input.category as ChangeCategory | undefined) ?? "other",
+          String(input.text ?? ""),
+        );
         const stage = OWNER_STAGE[owner] ?? "review";
         const k = scene ? d.scenes.findIndex((s) => s.id === scene) : -1;
-        const others = d.scenes.map((_, i) => i + 1).filter((i) => i !== k + 1);
+        // which scenes the change redoes: one, or (a whole-video story change) every scene but the end card
+        const touched =
+          k >= 0
+            ? [k + 1]
+            : owner === "director"
+              ? d.scenes
+                  .map((sc, i) => (sc.kind === "decl" && sc.recipes.some((x) => x.id === "end_card_loop") ? 0 : i + 1))
+                  .filter(Boolean)
+              : d.scenes.map((_, i) => i + 1);
+        const others = d.scenes.map((_, i) => i + 1).filter((i) => !touched.includes(i));
+        const n = touched.length;
         const est = this.deps.gateway.estimate(p.id, [
-          ...(owner === "animator" ? [{ kind: "scene.tune", role: "animator" as RoleT, count: 1 }] : []),
+          ...(owner === "director" ? [{ kind: "director.storyboard", role: "director" as RoleT }] : []),
           ...(owner === "writer"
             ? [
                 { kind: "writer.angles", role: "writer" as RoleT },
                 { kind: "director.storyboard", role: "director" as RoleT },
-                { kind: "scene.tune", role: "animator" as RoleT, count: d.scenes.length },
               ]
             : []),
-          ...(owner === "director"
-            ? [
-                { kind: "director.storyboard", role: "director" as RoleT },
-                { kind: "scene.tune", role: "animator" as RoleT, count: d.scenes.length },
-              ]
+          ...(["animator", "director", "writer"].includes(owner)
+            ? // the tune, plus the one fix round a review may ask for
+              [{ kind: "scene.tune", role: "animator" as RoleT, count: 2 * (owner === "writer" ? d.scenes.length : n) }]
             : []),
           { kind: "review.final", role: "reviewer" as RoleT, count: 2 },
         ]);
+        const sceneWord = (xs: number[]) => `${xs.length === 1 ? "scene" : "scenes"} ${list(xs.map(String))}`;
+        // open review notes the model chose to include: each one is shown, never folded in silently
+        const also = ((input.alsoNotes as string[] | undefined) ?? []).map((id) => {
+          const note = p.state.notes.find((x) => x.id === id);
+          return note ? `Also fixes ${note.id}: ${note.text.slice(0, 140)}` : null;
+        });
+        if (also.some((x) => x === null)) return { error: "alsoNotes has an id that isn't a note; use note_list" };
         const effects = running
           ? ["The crew is working now: your note waits for the next review, then that work is redone."]
           : [
-              `Reopens ${STAGE_WORD[stage]}.${k >= 0 && others.length ? ` ${others.length === 1 ? "Scene" : "Scenes"} ${list(others.map(String))} ${others.length === 1 ? "stays" : "stay"} as ${others.length === 1 ? "it is" : "they are"}.` : ""}`,
+              `Reopens ${STAGE_WORD[stage]} for ${sceneWord(touched)}.${others.length ? ` ${others.length === 1 ? "Scene" : "Scenes"} ${list(others.map(String))} ${others.length === 1 ? "stays" : "stay"} as ${others.length === 1 ? "it is" : "they are"}.` : ""}`,
+              ...(also as string[]),
               "The crew checks the cut and exports a new video; the current one is replaced.",
             ];
+        const who: RoleT[] =
+          owner === "director"
+            ? ["director", "animator", "reviewer", "editor"]
+            : owner === "writer"
+              ? ["writer", "director", "animator", "reviewer", "editor"]
+              : [owner, "reviewer", "editor"];
+        const detail =
+          owner === "director"
+            ? `The Director re-plans ${sceneWord(touched)} from the recipe menu and the library cast, the Animator tunes ${n === 1 ? "it" : "them"}, then the Reviewer checks.`
+            : owner === "animator"
+              ? `The Animator redoes ${sceneWord(touched)} with your note, then the Reviewer checks.`
+              : `The ${ROLE_NAME(owner)} gets your note and redoes that part, then the Reviewer checks.`;
         c = {
           ...base,
           title: `Ask the crew: ${String(input.text).slice(0, 60)}`,
-          detail: `The ${ROLE_NAME(owner)} gets your note${scene ? ` for scene ${k + 1}` : ""} and redoes that part.`,
-          who: [owner, "reviewer", "editor"],
+          detail,
+          who,
           usd: est ? [+est.usd[0].toFixed(2), +est.usd[1].toFixed(2)] : null,
           sec: est ? [Math.round(est.sec[0] + 30), Math.round(est.sec[1] + 120)] : null,
           effects,
@@ -1068,9 +1667,17 @@ export class Pip {
   }
 
   // ---------------------------------------------------------------- menu mode
-  private async menu(p: OpenProject | undefined, text: string, history: StoredItem[], turnId: string, model: string) {
+  private async menu(
+    p: OpenProject | undefined,
+    text: string,
+    history: StoredItem[],
+    turnId: string,
+    model: string,
+    memory?: string,
+  ) {
     const b = this.budget(p);
-    const c = promptCard("assistant", "menu");
+    const mr = await this.menuRequest(p, text, history, memory);
+    const c = mr.c;
     const out = await this.deps.gateway.json({
       project: b.key,
       capUsd: b.capUsd,
@@ -1078,11 +1685,8 @@ export class Pip {
       taskKind: "assistant.turn",
       role: "assistant",
       promptVersion: c.version,
-      system: fill(c.system, { facts: await facts(p, b) }),
-      messages: [
-        ...this.historyMessages(history).slice(-6),
-        { role: "user", content: fill(c.user, { summary: summary(p, this.deps, this.deps.workspace), text }) },
-      ],
+      system: mr.system,
+      messages: mr.messages,
       schema: MenuOut,
       jsonSchema: z.toJSONSchema(MenuOut, { io: "input" }) as Record<string, unknown>,
       maxOut: c.maxOut,
@@ -1090,7 +1694,15 @@ export class Pip {
       model,
     });
     const r = await this.menuCards(out.data, p, text);
-    return { text: r.text ?? out.data.reply, cards: r.cards, usd: out.result.usd, model: out.model };
+    const trace: PipTrace = {
+      tools: [],
+      model: out.model,
+      mode: "menu",
+      usage: { in: out.result.usage.inputTokens, out: out.result.usage.outputTokens },
+      usd: out.result.usd,
+      promptVersion: c.version,
+    };
+    return { text: r.text ?? out.data.reply, cards: r.cards, usd: out.result.usd, model: out.model, trace };
   }
 
   /** the cards for a menu-mode answer: closed intents, deterministic */
@@ -1211,6 +1823,7 @@ export class Pip {
     const card = save();
     const action = c.action;
     const tool = action.tool;
+    this.inflight.add(c.id);
     const done = (async () => {
       try {
         if (tool.startsWith("ext_")) {
@@ -1227,6 +1840,17 @@ export class Pip {
           const res = await this.deps.registry.call(tool, input, this.ctx(target));
           if (!res.ok) throw Object.assign(new Error(res.error.message), { fix: res.error.fix });
           c.result = resultFor(tool, res.data as any, target);
+          const data = res.data as { noteId?: string; started?: boolean; queued?: boolean };
+          if (tool === "crew_request_change" && target && data.noteId && (data.started || data.queued)) {
+            // a handoff: the card works until the crew's run on this note ends (or stops at a gate for the person)
+            action.handoff = { noteId: data.noteId };
+            const early = this.reports.get(`${target.id}:${data.noteId}`);
+            if (early) {
+              this.reports.delete(`${target.id}:${data.noteId}`);
+              settleCard(c, early, target);
+            } else c.status = "running";
+            return save();
+          }
         }
         c.status = "done";
       } catch (e: any) {
@@ -1237,8 +1861,78 @@ export class Pip {
         };
       }
       return save();
-    })();
+    })().finally(() => this.inflight.delete(c.id));
     return { card, done };
+  }
+
+  /** run reports that arrived before their card was saved (a fast run) */
+  private reports = new Map<string, RunReport>();
+
+  /**
+   * The crew's run ended (or stopped at a gate for the person): settle every card that handed it work, with what
+   * really happened. A card whose note is still open waits for the run that picks it up.
+   */
+  settle(p: OpenProject, report: RunReport) {
+    const log = this.log(p);
+    const seen = new Set<string>();
+    for (const it of log.all()) {
+      if (it.kind !== "pip") continue;
+      let changed = false;
+      for (const c of it.cards) {
+        if (c.type !== "plan" || c.status !== "running" || !c.action?.handoff) continue;
+        const id = c.action.handoff.noteId;
+        const note = p.state.notes.find((n) => n.id === id);
+        const mine = report.notes.includes(id);
+        if (!mine && note?.status === "open" && report.status !== "failed") continue;
+        seen.add(id);
+        settleCard(c, report, p);
+        changed = true;
+        this.emit(p, { type: "card", itemId: it.id, card: publicCard(c) });
+      }
+      if (changed) log.append(it);
+    }
+    for (const id of report.notes) if (!seen.has(id)) this.reports.set(`${p.id}:${id}`, report);
+  }
+
+  /**
+   * On start: cards left running by a process that died. A crew that will resume keeps its cards; anything else
+   * settles now, so no card says "working" forever.
+   */
+  settleStale(isRunning: (p: OpenProject) => boolean) {
+    for (const { id } of this.deps.workspace.list()) {
+      let p: OpenProject;
+      try {
+        p = this.deps.workspace.get(id);
+      } catch {
+        continue;
+      }
+      const log = this.log(p);
+      for (const it of log.all()) {
+        if (it.kind !== "pip") continue;
+        let changed = false;
+        for (const c of it.cards) {
+          if (c.type !== "plan" || c.status !== "running" || this.inflight.has(c.id)) continue;
+          const h = c.action?.handoff;
+          if (h && (isRunning(p) || p.state.running || p.state.change?.notes.includes(h.noteId))) continue;
+          const note = h ? p.state.notes.find((n) => n.id === h.noteId) : undefined;
+          if (note && note.status !== "open") {
+            c.status = "done";
+            c.result = { text: `The crew finished this while the studio was away: ${note.reason ?? "done"}.` };
+          } else {
+            c.status = "failed";
+            c.result = {
+              text: "The studio stopped before this finished.",
+              error: h
+                ? "the crew's run ended without making the change; ask again, or start the crew"
+                : "interrupted by a restart",
+            };
+          }
+          changed = true;
+          this.emit(p, { type: "card", itemId: it.id, card: publicCard(c) });
+        }
+        if (changed) log.append(it);
+      }
+    }
   }
 
   private submitForm(
@@ -1319,6 +2013,38 @@ function resultFor(tool: string, data: any, p?: OpenProject): NonNullable<PlanCa
     default:
       return { text: "Done." };
   }
+}
+
+/** a handoff card's final state, in plain words: what was redone, what was approximated, what is still wrong */
+function settleCard(c: StoredPlan, r: RunReport, p: OpenProject) {
+  const num = (id: string) => {
+    const k = p.doc().scenes.findIndex((s) => s.id === id);
+    return k >= 0 ? String(k + 1) : id;
+  };
+  const scenes = (ids: string[]) =>
+    `${ids.length === 1 ? "scene" : "scenes"} ${list([...new Set(ids)].map(num).sort((a, b) => Number(a) - Number(b)))}`;
+  if (r.status === "failed") {
+    c.status = "failed";
+    c.result = { text: "The crew stopped before finishing your change.", error: r.error ?? "unknown error" };
+    return;
+  }
+  const parts: string[] = [];
+  if (r.reboarded.length) parts.push(`The Director re-planned ${scenes(r.reboarded)}.`);
+  if (r.redone.length) parts.push(`The Animator redid ${scenes(r.redone)}.`);
+  if (!r.reboarded.length && !r.redone.length) parts.push("No scene changed.");
+  for (const a of r.approximated) parts.push(`Approximated: ${a}`);
+  if (r.openBlockers.length)
+    parts.push(
+      `Still wrong: ${r.openBlockers
+        .slice(0, 3)
+        .map((b) => `${b.scene ? `${scenes([b.scene])}: ` : ""}${b.text.split(/(?<=\.)\s/)[0].slice(0, 140)}`)
+        .join(" ")}`,
+    );
+  if (r.status === "waiting") parts.push("The crew waits for you at the rough cut.");
+  else if (r.status === "stopped") parts.push("The crew was stopped before the end.");
+  else if (r.exported) parts.push("A new video is exported.");
+  c.status = "done";
+  c.result = { text: parts.join(" ").slice(0, 900) };
 }
 
 // ---------------------------------------------------------------- the Writer's translation (subtitles_translate)

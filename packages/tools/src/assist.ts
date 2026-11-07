@@ -7,7 +7,6 @@ import { missingGlyphs } from "@pap/engine/core";
 import { subtitles } from "@pap/render";
 import type { ProjectT, RoleT } from "@pap/schema";
 import { z } from "zod";
-import { noteOwner } from "./defs.ts";
 import { defineTool, fail, ok, type ToolContext } from "./registry.ts";
 import { type Note, type OpenProject, PAP_HOME, type Stage } from "./store.ts";
 
@@ -258,7 +257,36 @@ export function subtitlesTranslateTool(translate: Translator) {
 export type ChangeHandler = (
   p: OpenProject,
   note: Note,
+  /** open review notes the person chose to include (listed on the card) */
+  extra: Note[],
 ) => { queued: boolean; stage: Stage; started: boolean } | Promise<{ queued: boolean; stage: Stage; started: boolean }>;
+
+/** what a production change is about; it picks the owner */
+export const CHANGE_CATEGORIES = ["story", "scene", "art", "timing", "text", "sound", "other"] as const;
+export type ChangeCategory = (typeof CHANGE_CATEGORIES)[number];
+/** words that mean new beats on screen: characters, actors, scenes, props (a storyboard change) */
+const STORY_WORDS =
+  /\b(npcs?|characters?|actors?|cast|people|person|someone|friend|crowd|walk(s|ing)? in|joins?|new (beat|scene|shot)s?|add(ing)? (a |an |two |three |some |more |another )?(new )?\w*\s*(scenes?|characters?|npcs?|people|items?|props?|beats?|shots?))\b/i;
+
+/**
+ * Who owns a person's production change. Never the Producer: a new beat, character or scene is the Director's
+ * (re-board those scenes), how a scene moves or looks is the Animator's, the words of the script the Writer's,
+ * sound the Sound Designer's, a drawn asset the Pixel Artist's.
+ */
+export function changeOwner(
+  target: { scene?: string; cue?: string; asset?: string },
+  category: ChangeCategory,
+  text = "",
+): RoleT {
+  if (target.asset) return "pixel-artist";
+  if (category === "sound") return "sound-designer";
+  if (category === "story" || (category !== "text" && category !== "timing" && STORY_WORDS.test(text)))
+    return "director";
+  if (category === "text") return target.cue || !target.scene ? "writer" : "animator";
+  if (target.cue && category === "other") return "writer";
+  if (target.scene || category === "scene" || category === "art" || category === "timing") return "animator";
+  return "director";
+}
 
 /** the stage whose work a role's note changes */
 export const OWNER_STAGE: Record<string, Stage> = {
@@ -281,7 +309,7 @@ export function crewRequestChangeTool(onChange: ChangeHandler) {
     name: "crew_request_change",
     title: "Ask the crew for a change",
     description:
-      "Turn a person's change request into a note for the role that owns it (a scene to the Animator, a cue to the Writer, sound to the Sound Designer). If the crew is idle it reopens that stage and runs from there, keeping finished work outside the change; if the crew is working, the note waits for the next review.",
+      "Turn a person's change request into a note for the role that owns it: new characters, beats or scenes (category story) to the Director, who re-plans just those scenes; how a scene looks or moves (art, scene, timing) to the Animator; script words (text) to the Writer; sound to the Sound Designer. If the crew is idle it reopens that stage and runs from there, keeping finished work outside the change; if the crew is working, the note waits for the next review. Put only the person's request in text; to include open review notes, pass their ids in alsoNotes.",
     input: z.object({
       text: z.string().min(3).max(1000),
       /** a scene id, or its number ("2" is the second scene) */
@@ -289,7 +317,9 @@ export function crewRequestChangeTool(onChange: ChangeHandler) {
       cue: z.string().optional(),
       /** a time in seconds; picks the scene when none is given */
       at: z.number().min(0).optional(),
-      category: z.enum(["too_fast", "too_slow", "unclear", "art", "sound", "text", "other"]).default("other"),
+      category: z.enum(CHANGE_CATEGORIES).default("other"),
+      /** open review notes to fix in the same run (their ids, from note_list); each is shown on the card */
+      alsoNotes: z.array(z.string()).max(10).default([]),
     }),
     output: z.object({
       noteId: z.string(),
@@ -304,6 +334,7 @@ export function crewRequestChangeTool(onChange: ChangeHandler) {
     project: true,
     examples: [
       { input: { text: "make the hero bigger", scene: "2", category: "art" } },
+      { input: { text: "add a friend who tells the hero about the app", scene: "1", category: "story" } },
       { input: { text: "the music is too loud at the end", category: "sound" } },
     ],
     handler: async (i, ctx) => {
@@ -330,9 +361,15 @@ export function crewRequestChangeTool(onChange: ChangeHandler) {
         ...(i.cue ? { cue: i.cue } : {}),
         ...(i.at !== undefined ? { range: [i.at, i.at] as [number, number] } : {}),
       };
-      const owner: RoleT = noteOwner(target, i.category);
+      const owner: RoleT = changeOwner(target, i.category, i.text);
+      const extra: Note[] = [];
+      for (const id of i.alsoNotes) {
+        const n = p.state.notes.find((x) => x.id === id);
+        if (!n) return fail("not_found", `no note ${id}`, { fix: "use ids from note_list" });
+        extra.push(p.updateNote(id, { status: "open" }));
+      }
       const note = p.addNote({ target, category: i.category, text: i.text, assignee: owner, by: "user" });
-      const r = await onChange(p, note);
+      const r = await onChange(p, note, extra);
       return ok({ noteId: note.id, owner, stage: r.stage, queued: r.queued, started: r.started });
     },
   });

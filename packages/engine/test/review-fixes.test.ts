@@ -138,6 +138,20 @@ test("a prop held over a face is a lint error", () => {
   assert.ok(found && found.severity === "error", JSON.stringify(rules(lint(doc))));
 });
 
+test("a toast drawn over a character's body is a lint error; one above it is fine", () => {
+  const over = oneScene({
+    layers: [{ id: "hero", kind: "actor", props: { asset: "hero", x: 200 } }],
+    recipes: [{ id: "toast", params: { title: "Todo App", at: "S(c01)", dur: 3 } }],
+  });
+  const found = lint(over).find((l) => l.rule === "covers-actor");
+  assert.ok(found && found.severity === "error", JSON.stringify(rules(lint(over))));
+  const clear = oneScene({
+    layers: [{ id: "hero", kind: "actor", props: { asset: "hero", x: 30 } }],
+    recipes: [{ id: "toast", params: { title: "Todo App", at: "S(c01)", dur: 3 } }],
+  });
+  assert.ok(!rules(lint(clear)).includes("covers-actor"));
+});
+
 // ---------------------------------------------------------------- 4. banners, toasts and titles fit
 test("a long banner wraps or shrinks inside the frame instead of running off it", () => {
   const texts = ["QuestDay turns chores into quests.", "Supercalifragilisticexpialidocious-and-then-some-more-words"];

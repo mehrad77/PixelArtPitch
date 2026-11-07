@@ -174,6 +174,80 @@ People can extend the studio with their own MCP servers, for example a stock-mus
 ```
 It is submitted with `POST /api/pip/cards/:cardId` `{decision: "confirm", edit: "<pasted json>"}`. The server parses it, and the UI's preview is only a convenience.
 
+## Slash commands
+
+There are four. All but `/compact` run without a model call (instant, free, the same on any model). Anything else that starts with `/` goes to Pip as plain text.
+
+| Command | Does | Reply |
+|---|---|---|
+| `/undo` | proposes undoing the last change (patch, export, translation or settings change Pip made) | a plan card naming exactly what goes back, with author and reason; confirm runs `project_undo` (or the matching inverse) |
+| `/budget <usd>` | proposes a new cap; with no number, shows spent / reserved / cap and the estimate | a plan card "Raise the cap to $10" with what it allows (ETA, roughly how many more steps); confirming sets `budget.cap` |
+| `/why` | explains Pip's last answer | a text item: which tools ran (name → ok/error), model, mode (agent/menu), tokens, cost, prompt version, and which cards it made and why. It is built from the stored turn trace, never by asking the model |
+| `/compact` | folds everything before the last 6 items into Pip's summary; this is the one command that makes a model call (one call on Pip's own model, so the summary is as good as Pip's judgement) | a divider in the thread, "Earlier conversation, summarized", that expands to show the summary. The full thread stays on disk and in the UI, and only what Pip's model sees shrinks |
+
+- **API:** `POST /api/pip` with `{text: "/undo"}` is parsed on the server. Every Pip turn stores a trace `{tools:[{name, ok, ms}], model, mode, usage, usd, promptVersion}` on its item, for `/why`.
+- **UI:** typing `/` as the first character opens a small menu above the field. It lists the four commands, each with a one-line hint (`/budget 10`: "Change the budget cap"), filters as you type, and works with arrow keys, Enter and Esc.
+  - The menu is a listbox wired to the field (`aria-activedescendant`).
+  - With an unknown command the menu shows "Not a command — Pip will read it as a message".
+- The global `/` shortcut still just focuses the field. Typing `/` inside the field opens the menu.
+
+**Pip's summary (the memory a long conversation needs)**
+- It lives in `runs/pip-summary.json`, as `{text, upTo: itemId, at}`: at most about 250 words of standing decisions, preferences, open requests and anything promised, written as plain lines.
+- Pip's model always sees it, plus the items after `upTo` (still capped at the last 20).
+- **Auto-compact:** whenever items would fall out of that window, they're folded in first, so nothing drops silently. `/compact` just does it now.
+- The person can read the summary under the divider and correct it in place: "Edit" saves the new text, and Pip uses it from the next turn.
+- The summary is per project. The workspace conversation has its own.
+
+## Pip as the orchestrator (the crew channel)
+
+Pip directs the crew. The stage machine stays, as Pip's rails: it runs the default pipeline step by step, so routine work costs no extra model calls. Pip steps in whenever something needs judgment.
+
+**Messages**
+- They live in one channel per project, `runs/channel.jsonl`, shown to people as "Behind the scenes".
+- Every message is `{id, at, from, to, kind, text, ref?, replyTo?}`.
+  - `from`/`to`: `pip` or a role.
+  - `ref`: a scene, cue, note or task.
+- **Pip → member: `brief`.** A direction attached to that member's next task, e.g. "Use cast-founder and cast-developer in s01; the founder walks in, the developer pitches with a toast". It's part of that task card's inputs, as high priority as the person's notes.
+- **Member → Pip: `report`.** Every task ends with one, part of its output schema:
+  `{status: "done"|"partial"|"blocked", did: string, couldnt?: string, needs?: string}`.
+  - "partial" or "blocked" must say why, e.g. "the recipe menu has no dialogue; used a toast".
+- **Member → Pip: `ask`.** Members never ask the person directly any more: `ask_user` becomes `ask_pip`.
+  - Pip answers from the brief, the person's standing decisions, or the project. That is cheap and usually enough.
+  - Pip escalates to the person only for things only they know (names, claims, rights, taste forks, budget), using the existing question cards.
+- **Pip → member: `answer`,** a reply to an `ask`.
+
+**When Pip thinks.** These are the only triggers, so cost stays bounded:
+1. a member `ask`
+2. a `partial` or `blocked` report
+3. a Reviewer blocker on a scene a person asked to change
+4. a request from the person
+5. the end of a stage, as one short check against the plan: "on track?"
+
+Routine "done" reports are not triggers.
+
+**What Pip can do on a trigger.** These are orchestrator calls, exposed as Pip tools, still bounded by the budget guard. A person-visible plan card is required only when it spends beyond the current plan, or changes what the person approved.
+- `crew_brief(role, text, ref)`
+- `crew_answer(askId, text)`
+- `crew_redo(scope: scene ids | stage, why)`
+- `crew_reboard(scenes, direction)`: the Director re-plans only those scenes.
+- `crew_next(stage)`
+- `crew_hold(why)`: stop and tell the person.
+- `crew_escalate(question)`
+
+**Hard limits**
+- Each scene gets at most 2 redo rounds per request. After that, Pip stops and tells the person what's still wrong.
+- Pip can't approve the gates that are always the person's call (brief, script, likeness and brand assets, final).
+- Every Pip decision is a channel message with its reason, so the person can see why.
+
+**On weak or local models**
+- Pip's triggers fall back to fixed rules: answer from defaults, redo once, then hold.
+- Members still write reports, so a person reading "Behind the scenes" sees the same story.
+
+**In the UI**
+- Thought bubbles show messages as they arrive. For example, Pip's bubble says "Asked the Animator to add the founder", and the Animator's says "Can't do dialogue; using a toast".
+- The drawer's Pip pane gets a "Behind the scenes" section with the channel, collapsed by default. A crew member's pane shows its own messages with Pip.
+- Pip's line under the crew summarises in plain words what's happening.
+
 ## Rules the code must enforce
 
 1. **"Propose, don't act" is enforced in code, not in the prompt.**
