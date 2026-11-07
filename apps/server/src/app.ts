@@ -129,13 +129,36 @@ export function createApp(o: ServerOpts) {
     }
     return next();
   });
+  // Opening the studio yourself (typed address, bookmark, reload, or a link inside the studio) signs the window in,
+  // on 127.0.0.1 and localhost alike. Browsers mark such top-level navigations `Sec-Fetch-Site: none|same-origin`;
+  // a page on another site can't (it gets `cross-site`), so other sites still can't reach the API.
+  app.use("*", async (c, next) => {
+    const path = c.req.path;
+    if (
+      c.req.method === "GET" &&
+      !path.startsWith("/api/") &&
+      path !== "/mcp" &&
+      c.req.header("sec-fetch-mode") === "navigate" &&
+      c.req.header("sec-fetch-dest") === "document" &&
+      ["none", "same-origin"].includes(c.req.header("sec-fetch-site") ?? "") &&
+      !same(getCookie(c, "pap_session") ?? "", token)
+    ) {
+      await next();
+      // the page is a raw Response (fileResponse), so the cookie goes on it after it's built
+      const res = new Response(c.res.body, c.res);
+      res.headers.append("set-cookie", `pap_session=${token}; Path=/; HttpOnly; SameSite=Strict`);
+      c.res = res;
+      return;
+    }
+    await next();
+  });
   app.use("/api/*", async (c, next) => {
     const cookie = getCookie(c, "pap_session") ?? "";
     const header = c.req.header("x-pap-token") ?? "";
     const authed = (cookie && same(cookie, token)) || (header && same(header, token));
     if (!authed)
       return c.json(
-        { ok: false, error: { code: "unauthorized", message: "open the launch URL printed by `pap serve`" } },
+        { ok: false, error: { code: "unauthorized", message: "This window isn't signed in to the studio. Reload the page" } },
         401,
       );
     if (c.req.method !== "GET" && c.req.method !== "HEAD" && !(header && same(header, token)))
