@@ -10,6 +10,9 @@ import type {
   ConnectionTrust,
   ConnState,
   CreateProjectInput,
+  Draft,
+  DraftComposer,
+  DraftRef,
   Gate,
   GateId,
   GateVerdict,
@@ -24,14 +27,17 @@ import type {
   PipContext,
   PipConversation,
   PipDecision,
+  PipItem,
   PipSummary,
   ProjectState,
   ProjectSummary,
   QuestionT,
+  RefType,
   ServerEvent,
   Session,
   Settings,
   Stage,
+  WorkspaceLine,
 } from "./types.ts";
 
 export class ApiError extends Error {
@@ -198,11 +204,43 @@ export class HttpClient implements Client {
     return `/api/library/${enc(assetId)}/sheet.png`;
   }
 
-  pip(project?: string) {
-    return this.get<PipConversation>(`/api/pip${project ? `?project=${enc(project)}` : ""}`);
+  pip(project?: string, opts: { draft?: string } = {}) {
+    const q = project ? `?project=${enc(project)}` : opts.draft ? `?draft=${enc(opts.draft)}` : "";
+    return this.get<PipConversation>(`/api/pip${q}`);
   }
-  pipAsk(project: string | undefined, text: string) {
-    return this.post<{ turnId: string }>("/api/pip", project ? { project, text } : { text });
+  pipAsk(project: string | undefined, text: string, opts: { draft?: string; about?: { instance: string } } = {}) {
+    return this.post<{ turnId: string }>("/api/pip", {
+      ...(project ? { project } : {}),
+      ...(opts.draft ? { draft: opts.draft } : {}),
+      ...(opts.about ? { about: opts.about } : {}),
+      text,
+    });
+  }
+
+  // ---- /new as a conversation (PIP-ORCHESTRATION §4.5; the server answers these from P3) ----
+  createDraft(from?: string) {
+    return this.post<{ draft: Draft; items: PipItem[] }>("/api/drafts", from ? { from } : {});
+  }
+  draft(id: string) {
+    return this.get<{ draft: Draft; items: PipItem[] }>(`/api/drafts/${enc(id)}`);
+  }
+  async deleteDraft(id: string) {
+    await this.req("DELETE", `/api/drafts/${enc(id)}`);
+  }
+  draftFile(id: string, name: string, body: Blob) {
+    return this.req<{ ref: DraftRef }>("POST", `/api/drafts/${enc(id)}/files?name=${enc(name)}`, undefined, body);
+  }
+  draftRef(id: string, name: string, patch: { type?: RefType; rights?: DraftRef["rights"] }) {
+    return this.req<DraftRef>("PATCH", `/api/drafts/${enc(id)}/refs/${enc(name)}`, patch);
+  }
+  draftFields(id: string, fields: Draft["fields"]) {
+    return this.req<Draft>("PATCH", `/api/drafts/${enc(id)}`, { fields });
+  }
+  draftComposer(id: string) {
+    return this.get<DraftComposer>(`/api/drafts/${enc(id)}/composer`);
+  }
+  workspaceLine() {
+    return this.get<WorkspaceLine>("/api/workspace/line");
   }
   async pipCard(cardId: string, d: PipDecision) {
     // the server may answer with the card or with nothing; the `card` event settles it either way

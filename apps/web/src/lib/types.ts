@@ -49,6 +49,12 @@ export type ProjectSummary = {
   thumb?: string;
   /** the video, to play in the card (when the server names it) */
   video?: string;
+  /** PIP-ORCHESTRATION §4.1: a draft from /new, listed with the projects (its `status.line` is Pip's last question) */
+  draft?: true;
+  /** "one pick" (as in the Projects line) */
+  needs?: string;
+  /** extension: when it was made ("Started …" on a draft card) */
+  createdAt?: string;
 };
 
 export type TaskStatus =
@@ -80,6 +86,9 @@ export type Task = {
   supersededBy?: string;
   /** extension: 1 for the first try, 2 for the first retry… */
   attempt?: number;
+  /** PIP-ORCHESTRATION §4.1: the plan task this row runs, and the crew instance running it */
+  planTask?: string;
+  instance?: string;
 };
 
 export type GateId = "g0_brief" | "g1_script" | "g2_animatic" | "g3_rough" | "g4_final";
@@ -117,6 +126,8 @@ export type QuestionT = {
   askedAt: string;
   status: "open" | "answered" | "defaulted" | "withdrawn";
   answer?: { optionId?: string; value?: unknown; note?: string; by: string };
+  /** PIP-JOURNEY N15: the plan's `rights` node for a likeness or logo; only the person answers it */
+  rights?: { asset: string; private: true };
 };
 
 /** the resolved timeline as JSON (the server's Timeline without its `at` function) */
@@ -167,7 +178,14 @@ export type ProjectStatus = {
   etaSec?: number;
   problem?: { text: string; action: ProblemAction; taskId: string };
 };
-export type Milestone = { id: string; at: string; text: string; image?: string };
+export type Milestone = {
+  id: string;
+  at: string;
+  text: string;
+  image?: string;
+  /** PIP-ORCHESTRATION §4.1 ("plan" is new); optional: older servers send none */
+  kind?: "gate" | "answer" | "stage" | "export" | "change" | "plan";
+};
 /** one line of a task's transcript (GET …/tasks/:tid/transcript, and live as the `activity` event) */
 export type ActivityKind = "step" | "model" | "tool" | "patch" | "answer" | "error";
 export type ActivityEntry = {
@@ -203,6 +221,9 @@ export type ProjectState = {
   milestones?: Milestone[];
   /** client only: live activity per task id, the newest ~500 each */
   activity?: Record<string, ActivityEntry[]>;
+  /** PIP-ORCHESTRATION §4.1: the production plan and the crew instances (optional until the server sends them) */
+  plan?: PlanView | null;
+  instances?: Instance[];
 };
 
 export type Session = { version: string; token: string; workspace: { roots: string[]; libraryDir: string } };
@@ -278,7 +299,11 @@ export type ServerEvent =
   /** Pip's progress on this project's conversation (or the workspace one on /api/events) */
   | { event: "pip"; data: PipEvent }
   /** one more message between Pip and the crew */
-  | { event: "channel"; data: ChannelMsg };
+  | { event: "channel"; data: ChannelMsg }
+  /** PIP-ORCHESTRATION §4.3: the plan view; `revision` only on a new revision */
+  | { event: "plan"; data: { view: PlanView; revision?: PlanRevisionSummary } }
+  /** PIP-ORCHESTRATION §4.3: one instance changed (derived, transient) */
+  | { event: "instance"; data: { instance: Instance; change: InstanceChange } };
 
 export type ConnState = "connecting" | "open" | "retrying";
 
@@ -303,6 +328,10 @@ export type PipCard =
       lend?: string[];
       status: "proposed" | "running" | "done" | "declined" | "failed";
       result?: { text: string; files?: PipFile[]; projectId?: string; error?: string };
+      /** PIP-JOURNEY N2: the instances, when `who` can't say which ("Animator · scene 2") */
+      whoInstances?: { instance: string; label: string }[];
+      /** PIP-ORCHESTRATION §4.4: a revision over the 20% line, or a change */
+      revision?: { rev: number; ops: PlanRevisionSummary["ops"]; fromUsd: number; toUsd: number };
     }
   | { id: string; type: "cant"; text: string; nearest?: string }
   | {
@@ -313,6 +342,33 @@ export type PipCard =
       detail: string;
       status: "open" | "submitted" | "done" | "failed";
       result?: { added: PipAdded[] };
+    }
+  /** PIP-ORCHESTRATION §4.4: the one question card on /new (3 fields or fewer) */
+  | {
+      id: string;
+      type: "form";
+      form: "brief_fields";
+      title: string;
+      detail?: string;
+      fields: BriefFieldAsk[];
+      status: "open" | "submitted" | "done" | "superseded";
+      values?: Partial<Record<BriefFieldKey, unknown>>;
+    }
+  /** PIP-ORCHESTRATION §4.4: the brief card; its confirm is Start */
+  | {
+      id: string;
+      type: "brief";
+      title: string;
+      fields: { key: BriefFieldKey; label: string; value: string }[];
+      refs: (DraftRef & { label: string })[];
+      estimate: { usd: [number, number]; sec: [number, number]; rough: boolean };
+      eta: { readyAt: string; deadline: string | null; late: boolean };
+      preview: { crew: number; roles: Role[]; tasks: number; newArt: number; fromLibrary: boolean; line: string };
+      /** extension: the picks line ("You'll pick 3 times: …"); the UI builds one from `preview` when missing */
+      picks?: string;
+      warning?: string;
+      status: "open" | "started" | "superseded";
+      result?: { projectId: string };
     };
 /** how a Pip turn ran, stored on its item (for /why) */
 export type PipTrace = {
@@ -326,7 +382,14 @@ export type PipTrace = {
   cards?: { title: string; why?: string }[];
 };
 export type PipItem =
-  | { id: string; at: string; kind: "user"; text: string }
+  | {
+      id: string;
+      at: string;
+      kind: "user";
+      text: string;
+      /** extension: the names of the files sent with it (a draft's first message), shown as chips */
+      files?: string[];
+    }
   | {
       id: string;
       at: string;
@@ -386,7 +449,14 @@ export type PipConversation = {
   /** assumed: the current summary, when the conversation was compacted */
   summary?: PipSummary | null;
 };
-export type PipDecision = { project?: string; decision: "confirm" | "decline"; edit?: string };
+export type PipDecision = {
+  project?: string;
+  decision: "confirm" | "decline";
+  edit?: string;
+  /** PIP-ORCHESTRATION §4.5: a draft's conversation, and a brief_fields card's answers */
+  draft?: string;
+  values?: Partial<Record<BriefFieldKey, unknown>>;
+};
 
 // ---- the crew channel: Pip directing the crew ("Behind the scenes") ----
 export type ChannelKind = "brief" | "report" | "ask" | "answer";
@@ -426,6 +496,8 @@ export type CreateProjectInput = {
   brief: ProjectT["brief"];
   budgetUsd: number;
   dir?: string;
+  /** PIP-ORCHESTRATION §4.5: start this draft (moves its files and conversation) */
+  draft?: string;
 };
 
 export type AnswerInput = { optionId?: string; value?: unknown; note?: string };
@@ -468,9 +540,13 @@ export interface Client {
   library(): Promise<LibraryIndex>;
   sheetUrl(assetId: string): string;
   /** Pip: the conversation for a project, or the workspace one when project is omitted */
-  pip(project?: string): Promise<PipConversation>;
+  pip(project?: string, opts?: { draft?: string }): Promise<PipConversation>;
   /** 202 { turnId }; a busy conversation rejects with an ApiError of status 409 */
-  pipAsk(project: string | undefined, text: string): Promise<{ turnId: string }>;
+  pipAsk(
+    project: string | undefined,
+    text: string,
+    opts?: { draft?: string; about?: { instance: string } },
+  ): Promise<{ turnId: string }>;
   pipCard(cardId: string, d: PipDecision): Promise<PipCard | null>;
   /** the workspace stream (/api/events): Pip's workspace-level events */
   subscribeWorkspace(on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void): () => void;
@@ -487,4 +563,153 @@ export interface Client {
   testConnection(name: string): Promise<Connection | null>;
   /** subscribe to a project's events; returns an unsubscribe */
   subscribe(id: string, on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void): () => void;
+  // ---- /new as a conversation (PIP-ORCHESTRATION §3.1, §4.5; the server has these from P3, the mock now) ----
+  /** POST /api/drafts { from? }: the first item is Pip's "What are we making?" */
+  createDraft(from?: string): Promise<{ draft: Draft; items: PipItem[] }>;
+  /** GET /api/drafts/:id */
+  draft(id: string): Promise<{ draft: Draft; items: PipItem[] }>;
+  /** DELETE /api/drafts/:id: the folder goes too */
+  deleteDraft(id: string): Promise<void>;
+  /** POST /api/drafts/:id/files?name= (raw body) */
+  draftFile(id: string, name: string, body: Blob): Promise<{ ref: DraftRef }>;
+  /** PATCH /api/drafts/:id/refs/:name: the rights chips */
+  draftRef(id: string, name: string, patch: { type?: RefType; rights?: DraftRef["rights"] }): Promise<DraftRef>;
+  /** PATCH /api/drafts/:id { fields } (PIP-JOURNEY N7): the composer's edits, no model call */
+  draftFields(id: string, fields: Draft["fields"]): Promise<Draft>;
+  /** GET /api/drafts/:id/composer: the composer's prefill */
+  draftComposer(id: string): Promise<DraftComposer>;
+  /** GET /api/workspace/line: Pip's line on Projects, built from state */
+  workspaceLine(): Promise<WorkspaceLine>;
 }
+
+// ---- Pip runs the show (PIP-ORCHESTRATION §4.2, the wire contract; PIP-JOURNEY for what the UI does with it) ----
+export type PlanGate = "g0_brief" | "g1_script" | "g2_animatic" | "rights" | "g3_rough" | "g4_final";
+export type Tier = "role" | "strong" | "light";
+export type PlanTaskStatus =
+  | "pending"
+  | "ready"
+  | "running"
+  | "waiting_person"
+  | "done"
+  | "skipped"
+  | "failed"
+  | "dropped";
+export type PlanTaskView = {
+  id: string;
+  kind: string;
+  role: Role | "person";
+  gate?: PlanGate;
+  scene?: string;
+  asset?: string;
+  round?: number;
+  instance: string;
+  label: string;
+  stage: Stage;
+  dependsOn: string[];
+  tier: Tier;
+  /** resolved */
+  model: string | null;
+  estUsd: [number, number];
+  conditional: boolean;
+  status: PlanTaskStatus;
+  taskIds: string[];
+  addedIn: number;
+  reason?: string;
+};
+export type PlanView = {
+  rev: number;
+  at: string;
+  by: "rules" | "pip" | "person" | "code";
+  reason: string;
+  tasks: PlanTaskView[];
+  /** spent + remaining */
+  estimate: { usd: [number, number]; sec: [number, number]; rough: boolean };
+  approvedUsd: number | null;
+  pip: { mode: "on" | "shadow" | "off"; proposals: number; max: 6 };
+  pending?: { rev: number; cardId: string; tasks: string[] };
+};
+export type PlanRevisionSummary = {
+  rev: number;
+  at: string;
+  by: PlanView["by"];
+  trigger: string;
+  reason: string;
+  ops: { op: "add" | "drop" | "retier" | "expand"; task: string; label: string; reason: string }[];
+  deltaUsd: [number, number];
+};
+export type InstanceChange = "spawn" | "ghost" | "live" | "idle" | "end" | "revive";
+export type Instance = {
+  /** the key: "animator:s03" */
+  id: string;
+  role: Role;
+  /** "Animator · scene 3" */
+  label: string;
+  subject?: { scene?: string; asset?: string };
+  model: string | null;
+  state: "planned" | "live" | "idle" | "finished";
+  /** the server's horizon rule (PIP-ORCHESTRATION §2) */
+  ghost: boolean;
+  running: number;
+  spawnedAt: string | null;
+  endedAt: string | null;
+  /** D5: a return opens a new life; `reason` is PIP-JOURNEY N1 (the return's line) */
+  lives: { from: string; to: string | null; reason?: string }[];
+  /** the spawn line, in Pip's words */
+  reason: string;
+  endReason?: string;
+  tasks: string[];
+  usd: number;
+  outcome: "done" | "partial" | "stopped" | "failed" | null;
+  lastReport?: { status: "done" | "partial" | "blocked"; did: string; couldnt?: string };
+};
+export type BriefFieldKey =
+  | "idea"
+  | "title"
+  | "audience"
+  | "lengthSec"
+  | "narration"
+  | "budget"
+  | "deadline"
+  | "involvement"
+  | "profile"
+  | "style"
+  | "references";
+export type BriefFieldAsk = {
+  key: BriefFieldKey;
+  label: string;
+  type: "choice" | "number" | "text" | "date" | "tags" | "files";
+  options?: { id: string; label: string; detail?: string }[];
+  recommended?: string | number;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  /** for `files`: the draft's refs (DraftRef[]) whose rights the card asks */
+  value?: unknown;
+};
+export type RefType = "likeness" | "logo" | "style" | "as-is" | "sound" | "voice";
+export type DraftRef = {
+  name: string;
+  url: string;
+  bytes: number;
+  type: RefType;
+  rights: "mine" | "licensed" | "unsure";
+  private: true;
+};
+export type Draft = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  title: string | null;
+  fields: Partial<Record<BriefFieldKey, unknown>>;
+  source: Partial<Record<BriefFieldKey, "said" | "asked" | "default">>;
+  refs: DraftRef[];
+  from?: string;
+};
+export type DraftComposer = { title: string; brief: Partial<ProjectT["brief"]>; budgetUsd: number; profile: Profile };
+export type WorkspaceLine = {
+  text: string;
+  parts: { projectId: string; kind: "finished" | "working" | "waiting" | "failed"; text: string }[];
+};
+/** a `pip` event on /api/events carries the draft it belongs to (PIP-ORCHESTRATION §4.3) */
+export type PipEventOnWire = PipEvent & { draft?: string };

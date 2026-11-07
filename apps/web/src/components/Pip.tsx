@@ -3,7 +3,7 @@
 // the first tab; the header's crew drawer has it on top, for the workspace when no project is open. Replies are
 // short, in the serif voice; anything actionable is a card. Nothing here opens itself or moves focus on a reply:
 // a dot on Pip's face says there's something new, and one polite live region reads it.
-import { Button, Disclosure, Field, Icon, Kbd, Tag } from "@shabboo/kit/react";
+import { Badge, Button, Disclosure, Field, Icon, Kbd, Tag } from "@shabboo/kit/react";
 import {
   type FormEvent,
   Fragment,
@@ -16,6 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { isSensitive, REF_TYPE_LABEL } from "../lib/brief.ts";
 import { useChannel } from "../lib/channel.ts";
 import { bytes, clock, duration } from "../lib/format.ts";
 import { type Member, memberOf, modelWords, usdPlain } from "../lib/human.ts";
@@ -24,6 +25,7 @@ import {
   COMMANDS,
   type Conv,
   decidePip,
+  fillPip,
   hasNews,
   markSeen,
   pipMood,
@@ -33,7 +35,8 @@ import {
   usePip,
 } from "../lib/pip.ts";
 import { Link } from "../lib/router.tsx";
-import type { PipCard, PipFile, PipItem, PipSummary, ProjectState, RoleT } from "../lib/types.ts";
+import type { PipCard, PipFile, PipItem, PipSummary, ProjectState, RefType, RoleT } from "../lib/types.ts";
+import { BriefCard, BriefFieldsCard, briefLines, settledFields } from "./BriefCards.tsx";
 import { CrewFace } from "./CrewStrip.tsx";
 import { McpForm, McpResult } from "./McpForm.tsx";
 import { ContextDialog } from "./PipContext.tsx";
@@ -73,7 +76,10 @@ function spoken(item: PipItem | undefined): string {
   const cards = item.cards.map((c) => {
     if (c.type === "files") return `${c.files.length} ${c.files.length === 1 ? "file" : "files"} to download.`;
     if (c.type === "cant") return `${c.text}${c.nearest ? ` ${c.nearest}` : ""}`;
+    if (c.type === "form" && c.form === "brief_fields")
+      return c.status === "done" ? settledFields(c) : `${c.title}: ${c.fields.map((f) => f.label).join(" ")}`;
     if (c.type === "form") return c.status === "done" || c.status === "failed" ? `${c.title}: ${c.status}.` : c.title;
+    if (c.type === "brief") return c.status === "started" ? "Started." : `${c.title}. ${briefLines(c).join(" ")}`;
     return c.status === "done" || c.status === "failed"
       ? (c.result?.text ?? c.result?.error ?? c.title)
       : c.status === "running"
@@ -137,6 +143,7 @@ export function PipThread({
           it.kind === "user" ? (
             <li key={it.id} className="pip-user" data-old={old ? "" : undefined}>
               <p dir="auto">{it.text}</p>
+              {it.files && <SentFiles names={it.files} />}
             </li>
           ) : it.kind === "pip" ? (
             <li key={it.id} className="pip-says" data-old={old ? "" : undefined}>
@@ -195,6 +202,7 @@ function ItemRow({
     return (
       <li className="pip-user" data-old={old ? "" : undefined}>
         <p dir="auto">{it.text}</p>
+        {it.files && <SentFiles names={it.files} />}
       </li>
     );
   if (it.kind !== "pip") return null;
@@ -210,6 +218,22 @@ function ItemRow({
         <PipCardView key={c.id} project={project} card={c} onHandoff={onHandoff} />
       ))}
     </li>
+  );
+}
+
+/** the files sent with a message, as chips under it */
+function SentFiles({ names }: { names: string[] }) {
+  return (
+    <ul className="pip-sent-files" aria-label="Files sent">
+      {names.map((n) => (
+        <li key={n}>
+          <Icon name="document" size="sm" />
+          <bdi className="ltr" translate="no">
+            {n}
+          </bdi>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -260,13 +284,19 @@ function NewestThread({
   conv,
   onHandoff,
   markers,
+  emptyNote = "Ask for your files, a translation, a change to the video, or another one like it.",
+  skip,
 }: {
   project: Project;
   conv: Conv;
   onHandoff?: () => void;
   markers?: Marker[];
+  /** the hint while nothing has been said; null shows none */
+  emptyNote?: string | null;
+  /** items said elsewhere (the stage's own first line) */
+  skip?: (it: PipItem) => boolean;
 }) {
-  const items = conv.items.filter((i) => i.kind !== "thinking");
+  const items = conv.items.filter((i) => i.kind !== "thinking" && !skip?.(i));
   const marks = (markers ?? []).filter((m) => Number.isFinite(Date.parse(m.at)));
   const upTo = conv.summary && items.some((i) => i.id === conv.summary?.upTo) ? conv.summary.upTo : null;
   const turns = turnsOf(items, marks, upTo, conv.thinking).reverse();
@@ -286,10 +316,8 @@ function NewestThread({
   return (
     <ol className="pip-thread" data-order="newest" aria-label="Conversation, newest first">
       {conv.unavailable && !items.length && <li className="pip-note small muted">{conv.unavailable}</li>}
-      {conv.loaded && !conv.unavailable && !items.length && !marks.length && !conv.thinking && (
-        <li className="pip-note small muted">
-          Ask for your files, a translation, a change to the video, or another one like it.
-        </li>
+      {emptyNote && conv.loaded && !conv.unavailable && !items.length && !marks.length && !conv.thinking && (
+        <li className="pip-note small muted">{emptyNote}</li>
       )}
       {recent.map(row)}
       {conv.summary && <SummaryDivider project={project} summary={conv.summary} />}
@@ -511,7 +539,10 @@ export function PipCardView({ project, card, onHandoff }: { project: Project; ca
         )}
       </div>
     );
+  if (card.type === "form" && card.form === "brief_fields")
+    return <BriefFieldsCard project={project} card={card} onHandoff={onHandoff} />;
   if (card.type === "form") return <FormCard project={project} card={card} />;
+  if (card.type === "brief") return <BriefCard project={project} card={card} onHandoff={onHandoff} />;
   return <PlanCard project={project} card={card} onHandoff={onHandoff} />;
 }
 
@@ -687,7 +718,7 @@ function PlanResult({ card }: { card: Extract<PipCard, { type: "plan" }> }) {
   );
 }
 
-function FormCard({ project, card }: { project: Project; card: Extract<PipCard, { type: "form" }> }) {
+function FormCard({ project, card }: { project: Project; card: Extract<PipCard, { type: "form"; form: "mcp_add" }> }) {
   const done = card.status === "done" || card.status === "failed";
   return (
     <article className="pip-card" data-type="form" data-status={card.status} aria-label={card.title}>
@@ -719,7 +750,10 @@ function Composer({
   onEscape,
   hint,
   label = "Ask Pip",
+  placeholder,
   menuBelow = false,
+  onSend,
+  attach,
 }: {
   project: Project;
   inputId: string;
@@ -729,8 +763,13 @@ function Composer({
   onEscape?: () => boolean;
   hint?: ReactNode;
   label?: string;
+  placeholder?: string;
   /** the field sits above the thread (the simple view): the command list opens below it */
   menuBelow?: boolean;
+  /** sends instead of asking Pip directly (/new makes the draft first); false keeps the words in the field */
+  onSend?: (text: string) => Promise<boolean>;
+  /** files to send with the message: chips in the field and an Add files button */
+  attach?: Attach;
 }) {
   const [text, setText] = useState("");
   const [active, setActive] = useState(0);
@@ -778,7 +817,7 @@ function Composer({
     onSent?.();
     setText("");
     setDismissed(false);
-    const ok = await askPip(project, body);
+    const ok = onSend ? await onSend(body) : await askPip(project, body);
     if (!ok) setText(body);
   };
   const pick = (i: number) => {
@@ -836,7 +875,7 @@ function Composer({
           aria-controls={listId}
           aria-activedescendant={menu ? optId(cur) : undefined}
           aria-describedby={unknown ? `${inputId}-unknown` : undefined}
-          placeholder={`${label}…`}
+          placeholder={placeholder ?? `${label}…`}
           autoComplete="off"
           enterKeyHint="send"
           value={text}
@@ -850,6 +889,7 @@ function Composer({
           onKeyDown={onKey}
         />
         {hint && !text && <span className="pip-kbd">{hint}</span>}
+        {attach && <AttachButton attach={attach} />}
         <button type="submit" className="pip-send" aria-label="Send to Pip" data-ready={text.trim() ? "" : undefined}>
           <Icon name="arrow-up" size="sm" />
         </button>
@@ -880,6 +920,7 @@ function Composer({
             </div>
           ))}
         </div>
+        {attach && attach.files.length > 0 && <AttachChips attach={attach} />}
         {unknown && (
           <p id={`${inputId}-unknown`} className="pip-bar-note small">
             Not a command — Pip will read it as a message.
@@ -896,6 +937,69 @@ function Composer({
         }}
       />
     </>
+  );
+}
+
+// ---- files in the field (/new) ----
+export type AttachFile = { name: string; type: RefType };
+export type Attach = { files: AttachFile[]; add: (files: File[]) => void; remove: (name: string) => void };
+
+/** the paperclip: picks files from the disk; each becomes a chip in the field */
+function AttachButton({ attach }: { attach: Attach }) {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <button
+        type="button"
+        className="pip-attach"
+        aria-label="Add files"
+        title="Add files"
+        onClick={() => input.current?.click()}
+      >
+        <Icon name="upload" size="sm" />
+      </button>
+      <input
+        ref={input}
+        type="file"
+        multiple
+        hidden
+        accept="image/*,audio/*"
+        onChange={(e) => {
+          const list = e.currentTarget.files;
+          if (list?.length) attach.add([...list]);
+          e.currentTarget.value = "";
+        }}
+      />
+    </>
+  );
+}
+
+/** a dropped file in the field: its name, its guessed type, "Private to this project" for a likeness or logo */
+function AttachChips({ attach }: { attach: Attach }) {
+  return (
+    <ul className="pip-attached" aria-label="Files to send">
+      {attach.files.map((f) => (
+        <li key={f.name} className="pip-attached-file">
+          <bdi className="ltr pip-attached-name" translate="no">
+            {f.name}
+          </bdi>
+          <span className="small muted">{REF_TYPE_LABEL[f.type]}</span>
+          {isSensitive(f.type) && (
+            <Badge tone="info" variant="pill" caps={false} size="sm">
+              Private to this project
+            </Badge>
+          )}
+          <button
+            type="button"
+            className="pip-attached-remove"
+            aria-label={`Remove ${f.name}`}
+            onClick={() => attach.remove(f.name)}
+          >
+            <Icon name="close" size="sm" />
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -962,14 +1066,39 @@ function NewPill({ show, onClick }: { show: boolean; onClick: () => void }) {
 }
 
 // ---- simple view: the field on top, the conversation under it, newest first ----
-export function PipAsk({ project, state }: { project: string; state: ProjectState }) {
+export function PipAsk({
+  project,
+  state,
+  label,
+  placeholder,
+  starters,
+  under,
+  onSend,
+  attach,
+  emptyNote,
+  skip,
+}: {
+  /** the conversation: a project id, a draft id, or NEW_TALK before /new's first send */
+  project: string;
+  state: ProjectState | null;
+  label?: string;
+  placeholder?: string;
+  /** chips that fill the field and never send (/new); without them, Pip's suggestions, which ask */
+  starters?: string[];
+  /** a quiet line under the chips ("Show all options") */
+  under?: ReactNode;
+  onSend?: (text: string) => Promise<boolean>;
+  attach?: Attach;
+  emptyNote?: string | null;
+  skip?: (it: PipItem) => boolean;
+}) {
   const conv = usePip(project);
   const input = useRef<HTMLInputElement>(null);
   const top = useRef<HTMLDivElement>(null);
-  const channel = useChannel(project);
+  const channel = useChannel(state ? project : null);
   const [fresh, setFresh] = useState(false);
   // new things land at the top, next to the field: nothing scrolls; if the reader is further down, a pill says so
-  const n = `${conv.items.length}|${conv.thinking}|${channel.length}|${state.milestones?.length ?? 0}`;
+  const n = `${conv.items.length}|${conv.thinking}|${channel.length}|${state?.milestones?.length ?? 0}`;
   const inView = () => (top.current?.getBoundingClientRect().bottom ?? 0) > 0;
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when something new arrives
   useEffect(() => {
@@ -1018,11 +1147,37 @@ export function PipAsk({ project, state }: { project: string; state: ProjectStat
           conv={conv}
           menuBelow
           hint={<Kbd size="sm">/</Kbd>}
+          label={label}
+          placeholder={placeholder}
+          onSend={onSend}
+          attach={attach}
         />
       </div>
-      <div className="pip-under">{!conv.thinking && <Chips project={project} items={suggestions(state)} />}</div>
+      <div className="pip-under">
+        {starters ? (
+          <ul className="pip-chips" aria-label="Examples">
+            {starters.map((s) => (
+              <li key={s}>
+                <button type="button" className="pip-chip" dir="auto" onClick={() => fillPip(project, s)}>
+                  {s}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          !conv.thinking && <Chips project={project} items={suggestions(state)} />
+        )}
+        {under}
+      </div>
       <div className="pip-sheet" id="pip-sheet">
-        <NewestThread project={project} conv={conv} onHandoff={handoff} markers={state.milestones} />
+        <NewestThread
+          project={project}
+          conv={conv}
+          onHandoff={handoff}
+          markers={state?.milestones}
+          emptyNote={emptyNote}
+          skip={skip}
+        />
       </div>
       {fresh && (
         <button
@@ -1043,7 +1198,7 @@ export function PipAsk({ project, state }: { project: string; state: ProjectStat
 }
 
 /** Pip at the head of the crew row: the host's face; pressing it goes to the field to ask Pip */
-export function PipCrewFace({ project, state }: { project: string; state: ProjectState }) {
+export function PipCrewFace({ project, state }: { project: string; state: ProjectState | null }) {
   const conv = usePip(project);
   const news = hasNews(conv);
   const mood = pipMood(conv, state);

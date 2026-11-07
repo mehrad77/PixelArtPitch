@@ -52,6 +52,10 @@ export function applyEvent(s: ProjectState, e: ServerEvent): ProjectState {
     }
     case "x-state":
       return { ...s, ...e.data };
+    case "plan":
+      return { ...s, plan: e.data.view };
+    case "instance":
+      return { ...s, instances: upsert(s.instances ?? [], e.data.instance) };
     default:
       return s;
   }

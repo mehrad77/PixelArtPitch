@@ -6,9 +6,10 @@
 import { Popover } from "@shabboo/kit/react";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { leadTask } from "../lib/derive.ts";
-import { CREW, type Member, plainTitle, problemOf, visibleTasks } from "../lib/human.ts";
+import { useThrottled } from "../lib/hooks.ts";
+import { CREW, type Member, memberOf, plainTitle, problemOf, visibleTasks } from "../lib/human.ts";
 import { askPipAbout, usePip } from "../lib/pip.ts";
-import type { ProjectState, Task } from "../lib/types.ts";
+import type { Instance, ProjectState, Task } from "../lib/types.ts";
 import { AgentActivity } from "./AgentActivity.tsx";
 import { ThoughtLayer, useThoughts } from "./Thoughts.tsx";
 import "./CrewStrip.css";
@@ -158,19 +159,24 @@ export function CrewFace({
   );
 }
 
-export function CrewStrip({
-  projectId,
-  state,
-  lead,
-  pipProject,
-}: {
+type StripProps = {
   projectId: string;
   state: ProjectState;
   /** first in the row: Pip, the host */
   lead?: ReactNode;
   /** whose conversation Pip's bubbles follow */
   pipProject?: string;
-}) {
+};
+
+/** the server sends instances (P2 fills `instances`; P1's server sends an empty list, so the departments stay) */
+export const hasInstances = (s: ProjectState) => (s.instances?.length ?? 0) > 0;
+
+/** the crew row: crew instances once there are any (PIP-ORCHESTRATION §2), the departments otherwise */
+export function CrewStrip(props: StripProps) {
+  return hasInstances(props.state) ? <InstanceStrip {...props} /> : <DepartmentStrip {...props} />;
+}
+
+function DepartmentStrip({ projectId, state, lead, pipProject }: StripProps) {
   const rows = crewRows(state);
   const step = useStep(rows.some((r) => r.mood === "working"));
   const pip = usePip(pipProject ?? projectId);
@@ -261,5 +267,142 @@ export function CrewHero() {
         </span>
       ))}
     </div>
+  );
+}
+
+// ---- crew instances: the members that come and go (PIP-JOURNEY §3.1) ----
+// P1 draws the row as far as /new and the first steps need: Pip, the live faces in join order, up to 3 ghosts, the
+// finished counter, and one polite sentence per spawn, return or finish. P2 adds the per-role faces, the popover, the
+// stepped enter / fold / return motion, Pip conducting, and the counter opening the drawer on Finished.
+
+/** "Animator · scene 3" → "scene 3" */
+const qualifier = (label: string) => label.split(" · ")[1] ?? "";
+
+/** the sentences the row's region says for what changed between two looks at the instances */
+export function instanceNews(prev: Map<string, Instance>, next: Instance[]): string[] {
+  const spawned: Instance[] = [];
+  const out: string[] = [];
+  for (const i of next) {
+    const was = prev.get(i.id);
+    // a face first seen live was spawned; one first seen as a ghost says nothing
+    if (!was) {
+      if (i.state === "live") spawned.push(i);
+      continue;
+    }
+    const wasFinished = was.state === "finished";
+    if (i.state === "live" && was.state === "planned") spawned.push(i);
+    else if (wasFinished && i.state !== "finished") {
+      const life = i.lives.at(-1);
+      out.push(`${life?.reason ?? i.reason}.`);
+    } else if (i.state === "finished" && !wasFinished)
+      out.push(
+        i.outcome === "partial" && i.lastReport?.couldnt
+          ? `${i.label} is partly done: ${i.lastReport.couldnt}`
+          : i.outcome === "stopped"
+            ? `${i.label} stopped.`
+            : `${i.label} finished.`,
+      );
+  }
+  // a batch of one role over scenes merges: "Pip brought in 3 Animators, one per scene."
+  const byRole = new Map<string, Instance[]>();
+  for (const i of spawned) byRole.set(i.role, [...(byRole.get(i.role) ?? []), i]);
+  const lead: string[] = [];
+  for (const [, list] of byRole)
+    if (list.length > 1 && list.every((i) => i.subject?.scene))
+      lead.push(`Pip brought in ${list.length} ${list[0].label.split(" · ")[0]}s, one per scene.`);
+    else for (const i of list) lead.push(`${i.reason}.`);
+  return [...lead, ...out];
+}
+
+function InstanceStrip({ projectId, state, lead }: StripProps) {
+  const all = state.instances ?? [];
+  const order = (state.plan?.tasks ?? []).map((t) => t.instance);
+  const pos = (i: Instance) => {
+    const k = order.indexOf(i.id);
+    return k < 0 ? order.length : k;
+  };
+  const live = all
+    .filter((i) => i.state === "live")
+    .sort((a, b) => (a.spawnedAt ?? "").localeCompare(b.spawnedAt ?? "") || pos(a) - pos(b));
+  // the server caps the ghosts at 3, nearest first; the row keeps that cap whatever arrives
+  const ghosts = all.filter((i) => i.ghost && i.state !== "live").slice(0, 3);
+  const finished = all.filter((i) => i.state === "finished").length;
+  const ready = new Set((state.plan?.tasks ?? []).filter((t) => t.status === "ready").map((t) => t.instance));
+  const step = useStep(live.length > 0);
+  const p = problemOf(state);
+  const stuck = new Set(state.tasks.filter((t) => t.id === p?.taskId).map((t) => t.instance));
+  const waiting = new Set(state.tasks.filter((t) => t.status === "waiting_user").map((t) => t.instance));
+
+  // one polite sentence per spawn, return or finish; only what changed live, never what loaded
+  const prev = useRef<Map<string, Instance> | null>(null);
+  const [said, setSaid] = useState<string[]>([]);
+  useEffect(() => {
+    const now = new Map(all.map((i) => [i.id, i]));
+    if (prev.current) {
+      const news = instanceNews(prev.current, all);
+      if (news.length) setSaid((xs) => [...xs, ...news].slice(-3));
+    }
+    prev.current = now;
+  }, [all]);
+  const live5 = useThrottled(said.join(" "), 5000);
+
+  const face = (i: Instance, ghost: boolean, k: number) => {
+    const mood: Mood = ghost ? "later" : stuck.has(i.id) ? "stuck" : waiting.has(i.id) ? "needs" : "working";
+    const word = ghost
+      ? ready.has(i.id)
+        ? "waiting for a free slot"
+        : "up next"
+      : mood === "stuck"
+        ? "stuck"
+        : mood === "needs"
+          ? "waiting for you"
+          : "working";
+    const cap = qualifier(i.label);
+    return (
+      <li
+        key={i.id}
+        className="crew-inst"
+        data-ghost={ghost ? "" : undefined}
+        data-instance={i.id}
+        title={`${i.label}, ${word}`}
+      >
+        <CrewFace member={memberOf(i.role)} mood={mood} step={step + k} size={ghost ? "md" : "lg"} />
+        {cap && (
+          <span className="crew-inst-cap" aria-hidden="true">
+            {cap}
+          </span>
+        )}
+        <span className="visually-hidden">
+          {i.label}, {word}
+        </span>
+      </li>
+    );
+  };
+  return (
+    <section className="crew-strip" data-instances="" aria-labelledby="crew-strip-h">
+      <h2 id="crew-strip-h" className="visually-hidden">
+        The crew
+      </h2>
+      <ul className="crew-faces">
+        {lead && (
+          <li className="crew-lead" data-thought-anchor="pip">
+            {lead}
+          </li>
+        )}
+        {live.map((i, k) => face(i, false, k))}
+        {ghosts.map((i, k) => face(i, true, k))}
+        {finished > 0 && (
+          <li className="crew-finished" data-project={projectId}>
+            <span aria-hidden="true" dir="auto">
+              +<bdi>{finished}</bdi> finished
+            </span>
+            <span className="visually-hidden">{finished} finished</span>
+          </li>
+        )}
+      </ul>
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {live5}
+      </p>
+    </section>
   );
 }

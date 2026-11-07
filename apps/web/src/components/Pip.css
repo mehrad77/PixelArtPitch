@@ -661,5 +661,71 @@ a.pip-file:hover {
 .pip-new-up {
   position: fixed;
   inset-block-start: calc(var(--topbar-h, 2.75rem) + var(--space-3));
+  /* .pip-new pins the bottom too: a fixed pill with both edges set stretched the full height */
+  inset-block-end: auto;
   z-index: var(--z-sticky);
+}
+
+/* ---- files in the field (/new) ---- */
+.pip-attach,
+.pip-attached-remove {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: var(--target-min);
+  min-block-size: var(--target-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.pip-attach:hover,
+.pip-attached-remove:hover {
+  background-image: linear-gradient(var(--state-hover), var(--state-hover));
+  color: var(--text);
+}
+.pip-attach:focus-visible,
+.pip-attached-remove:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.pip-attached {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  list-style: none;
+}
+.pip-attached-file {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  max-inline-size: 100%;
+  padding-inline: var(--space-3) 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+}
+.pip-attached-name,
+.pip-sent-files bdi {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  overflow-wrap: anywhere;
+}
+.pip-sent-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.pip-sent-files li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
 }

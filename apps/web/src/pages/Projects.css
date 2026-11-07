@@ -258,3 +258,31 @@
 .pfaces .crew-face + .crew-face {
   margin-inline-start: calc(var(--space-2) * -1);
 }
+
+/* the head: the title, Pip's line from state, and New video */
+.projects-head {
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+}
+.projects-pip {
+  display: flex;
+  flex: 1 1 18rem;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+.projects-pip-line {
+  margin: 0;
+  font-family: var(--font-serif);
+}
+@media (max-width: 40rem) {
+  .projects-head > h1 {
+    flex-basis: 100%;
+  }
+}
+.pcard[data-kind="draft"] {
+  border-style: dashed;
+}
+.pmark[data-kind="draft"] .pmark-icon {
+  color: var(--text-muted);
+}

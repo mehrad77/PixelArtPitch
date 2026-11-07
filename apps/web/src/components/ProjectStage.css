@@ -1,0 +1,20 @@
+/* the empty stage (/new): the film's box before there is a film; it is also the drop zone */
+.stage-empty {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.stage-empty p {
+  margin: 0;
+}
+.stage-empty[data-drag] {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+  color: var(--text);
+}
+.stage-options {
+  white-space: nowrap;
+}

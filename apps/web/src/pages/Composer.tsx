@@ -10,10 +10,10 @@ import {
   Radio,
   type RadioProps,
 } from "@shabboo/kit/react";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { client } from "../lib/client.ts";
 import { clock, duration, usd } from "../lib/format.ts";
-import { navigate } from "../lib/router.tsx";
+import { Link, navigate } from "../lib/router.tsx";
 import type { Involvement, Profile, ProjectT } from "../lib/types.ts";
 
 type Brief = ProjectT["brief"];
@@ -61,7 +61,7 @@ function guessType(file: File): RefType {
   return "style";
 }
 
-export function ComposerPage({ first = false }: { first?: boolean }) {
+export function ComposerPage({ first = false, draftId }: { first?: boolean; draftId?: string }) {
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
   const [purpose, setPurpose] = useState<Brief["purpose"]>("pitch");
@@ -80,6 +80,45 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ message: string; fix?: string } | null>(null);
+  // "Show all options" from /new: filled from the draft's fields (no model call), and it starts that draft
+  const [draftRefs, setDraftRefs] = useState<Brief["references"]>([]);
+  useEffect(() => {
+    if (!draftId) return;
+    let live = true;
+    client.draftComposer(draftId).then(
+      (c) => {
+        if (!live) return;
+        if (c.title) setTitle(c.title);
+        if (c.brief.idea) setIdea(c.brief.idea);
+        if (c.brief.purpose) setPurpose(c.brief.purpose);
+        if (c.brief.lengthSec) setLength(c.brief.lengthSec);
+        if (c.brief.narration) setNarration(c.brief.narration);
+        if (c.brief.involvement) setInvolvement(c.brief.involvement);
+        if (c.budgetUsd) setCap(String(c.budgetUsd));
+        if (c.profile !== "custom") setProfile(c.profile);
+        setDraftRefs(c.brief.references ?? []);
+      },
+      (e: Error) => live && setFailure({ message: `The draft didn't load: ${e.message}` }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [draftId]);
+  /** "‹ Back to the conversation": the edits go to the draft, with no model call */
+  const back = async () => {
+    if (draftId)
+      await client
+        .draftFields(draftId, {
+          idea: idea.trim(),
+          ...(title.trim() ? { title: title.trim() } : {}),
+          lengthSec: length,
+          narration: narration === "tts" ? "none" : narration,
+          involvement,
+          budget: Number(cap) || undefined,
+        })
+        .catch(() => {});
+    navigate(draftId ? `/new/${encodeURIComponent(draftId)}` : "/new");
+  };
 
   const est = useMemo(() => {
     const r = RATE[profile];
@@ -145,7 +184,10 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
       narration,
       involvement,
       deadline: deadlineMs ? new Date(deadlineMs).toISOString() : undefined,
-      references: refs.map((r) => ({ file: r.file.name, type: r.type, rights: r.rights, note: r.note })),
+      references: [
+        ...draftRefs,
+        ...refs.map((r) => ({ file: r.file.name, type: r.type, rights: r.rights, note: r.note })),
+      ],
     };
     try {
       const name =
@@ -154,7 +196,12 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
           .trim()
           .split(/[.!?\n]/)[0]
           .slice(0, 60);
-      const { id } = await client.createProject({ title: name, brief, budgetUsd: capNum });
+      const { id } = await client.createProject({
+        title: name,
+        brief,
+        budgetUsd: capNum,
+        ...(draftId ? { draft: draftId } : {}),
+      });
       // POST /api/projects takes no profile or ask-at; set them with one patch before the crew starts
       const st = await client.project(id).catch(() => null);
       if (st)
@@ -181,7 +228,28 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
 
   return (
     <main id="main" className="page-narrow composer">
+      {draftId && (
+        <Link
+          href={`/new/${encodeURIComponent(draftId)}`}
+          className="small"
+          onClick={(e) => {
+            e.preventDefault();
+            back();
+          }}
+        >
+          ‹ Back to the conversation
+        </Link>
+      )}
       <h1>{first ? "Make your first pitch video" : "New video"}</h1>
+      {draftRefs.length > 0 && (
+        <p className="small muted">
+          From the conversation:{" "}
+          <bdi className="ltr" translate="no">
+            {draftRefs.map((r) => r.file).join(", ")}
+          </bdi>
+          . They come with it when you start.
+        </p>
+      )}
       <p className="muted">Say what it's about. The crew writes, draws and scores it, and checks in when you want.</p>
       <Form
         noValidate

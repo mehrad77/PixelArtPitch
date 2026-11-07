@@ -15,18 +15,20 @@ const subscribe = (cb: () => void) => {
   return () => listeners.delete(cb);
 };
 
-/** a project page calls this with its state; it also becomes the most recently opened project */
-export function usePublishProject(id: string, state: ProjectState) {
+/** a project page calls this with its state; it also becomes the most recently opened project. The /new stage calls
+ * it with no id or no state yet, which publishes nothing */
+export function usePublishProject(id: string, state: ProjectState | null) {
   useEffect(() => {
-    setLastProject(id);
+    if (id) setLastProject(id);
   }, [id]);
   useEffect(() => {
+    if (!id || !state) return;
     shown = { id, state };
     notify();
   }, [id, state]);
   useEffect(
     () => () => {
-      if (shown?.id === id) {
+      if (id && shown?.id === id) {
         shown = null;
         notify();
       }

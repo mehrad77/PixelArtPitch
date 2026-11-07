@@ -199,3 +199,37 @@ export function drawSheet(id: string, w: number, h: number, frames: number): str
   sheetCache.set(key, url);
   return url;
 }
+
+/** the journey's logo fixture: a fictional "Q" badge (QuestDay), 16×16, drawn in whole cells; never a real mark */
+const Q_BADGE = [
+  "....######......",
+  "..##########....",
+  ".####....####...",
+  "####......####..",
+  "###........###..",
+  "###........###..",
+  "###........###..",
+  "###........###..",
+  "###....##..###..",
+  "####....#####...",
+  ".####....####...",
+  "..###########...",
+  "....######.###..",
+  "............###.",
+  ".............##.",
+  "................",
+];
+let logoCache: string | null = null;
+export function drawLogo(scale = 1): string {
+  if (logoCache && scale === 1) return logoCache;
+  const c = ctx2d(16 * scale, 16 * scale);
+  const k = ink();
+  c.clearRect(0, 0, 16 * scale, 16 * scale);
+  c.fillStyle = k.signal;
+  Q_BADGE.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) if (row[x] === "#") c.fillRect(x * scale, y * scale, scale, scale);
+  });
+  const url = c.canvas.toDataURL("image/png");
+  if (scale === 1) logoCache = url;
+  return url;
+}

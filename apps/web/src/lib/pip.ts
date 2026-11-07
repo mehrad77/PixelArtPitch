@@ -5,10 +5,26 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ApiError } from "./api.ts";
 import { client } from "./client.ts";
 import { hasVideo, humanStatus, PHASES, phaseOf } from "./human.ts";
-import type { PipCard, PipEvent, PipItem, PipSummary, ProjectState, ServerEvent } from "./types.ts";
+import type {
+  BriefFieldKey,
+  PipCard,
+  PipEvent,
+  PipEventOnWire,
+  PipItem,
+  PipSummary,
+  ProjectState,
+  ServerEvent,
+} from "./types.ts";
 
 export const WORKSPACE = "_workspace";
+/** /new before its first send: a conversation that lives only here (the draft is made on the first send or drop) */
+export const NEW_TALK = "_new";
 export const keyOf = (project?: string | null) => project || WORKSPACE;
+/** a draft's conversation is keyed by the draft id (PIP-ORCHESTRATION §3.1: "draft_…") */
+export const isDraftKey = (key: string) => key.startsWith("draft_");
+/** what the client needs to address a conversation */
+const target = (key: string): { project?: string; draft?: string } =>
+  key === WORKSPACE || key === NEW_TALK ? {} : isDraftKey(key) ? { draft: key } : { project: key };
 
 export type Conv = {
   items: PipItem[];
@@ -53,7 +69,12 @@ const pipCount = (items: PipItem[]) => items.filter((i) => i.kind === "pip").len
 function load(key: string) {
   if (asked.has(key)) return;
   asked.add(key);
-  client.pip(key === WORKSPACE ? undefined : key).then(
+  if (key === NEW_TALK) {
+    set(key, (s) => ({ ...s, loaded: true }));
+    return;
+  }
+  const t = target(key);
+  client.pip(t.project, t.draft ? { draft: t.draft } : undefined).then(
     (c) => {
       const items = (c.items ?? []).filter((i) => i.kind !== "thinking");
       set(key, (s) => {
@@ -157,7 +178,8 @@ let wsOff: (() => void) | null = null;
 function holdWorkspace() {
   if (wsRefs++ === 0)
     wsOff = client.subscribeWorkspace((e) => {
-      if (e.event === "pip") pipEvent(WORKSPACE, e.data);
+      // a draft's turns stream here too, each event naming its draft
+      if (e.event === "pip") pipEvent((e.data as PipEventOnWire).draft || WORKSPACE, e.data);
     });
   return () => {
     if (--wsRefs === 0) {
@@ -184,9 +206,29 @@ export function usePip(project?: string | null): Conv {
   );
   useEffect(() => {
     load(key);
-    if (key === WORKSPACE) return holdWorkspace();
+    if (key === WORKSPACE || isDraftKey(key)) return holdWorkspace();
   }, [key]);
   return conv;
+}
+
+/** Start moved a draft's conversation to its project: show it there at once, before the project's GET lands */
+export function adoptConv(from: string, to: string) {
+  const c = convs.get(from);
+  if (!c || from === to) return;
+  set(to, (s) => {
+    const items = [...c.items, ...s.items.filter((x) => !c.items.some((y) => y.id === x.id))];
+    return { ...s, ...c, items, seen: Math.max(s.seen, c.seen), draft: s.draft };
+  });
+}
+/** seed a conversation with what the server already returned (POST /api/drafts gives Pip's first item) */
+export function seedConv(key: string, items: PipItem[]) {
+  asked.add(key);
+  set(key, (s) => ({
+    ...s,
+    loaded: true,
+    items: [...items, ...s.items.filter((x) => !items.some((y) => y.id === x.id))],
+    seen: Math.max(s.seen, pipCount(items)),
+  }));
 }
 
 export const hasNews = (c: Conv) => pipCount(c.items) > c.seen;
@@ -200,13 +242,27 @@ export const setListening = (project: string | null | undefined, on: boolean) =>
 };
 
 /** ask Pip; resolves false when nothing was sent (busy, or failed), with the reason in `note` */
-export async function askPip(project: string | null | undefined, text: string): Promise<boolean> {
+export async function askPip(
+  project: string | null | undefined,
+  text: string,
+  opts: { files?: string[]; about?: { instance: string } } = {},
+): Promise<boolean> {
   const key = keyOf(project);
-  const local: PipItem = { id: `local-${Date.now().toString(36)}`, at: new Date().toISOString(), kind: "user", text };
+  const local: PipItem = {
+    id: `local-${Date.now().toString(36)}`,
+    at: new Date().toISOString(),
+    kind: "user",
+    text,
+    ...(opts.files?.length ? { files: opts.files } : {}),
+  };
   set(key, (s) => ({ ...s, items: [...s.items, local], thinking: true, note: null }));
   quiet(key, true);
   try {
-    await client.pipAsk(project || undefined, text);
+    const t = target(key);
+    await client.pipAsk(t.project, text, {
+      ...(t.draft ? { draft: t.draft } : {}),
+      ...(opts.about ? { about: opts.about } : {}),
+    });
     return true;
   } catch (e) {
     const busy = e instanceof ApiError && e.status === 409;
@@ -230,6 +286,7 @@ export async function decidePip(
   card: PipCard,
   decision: "confirm" | "decline",
   edit?: string,
+  values?: Partial<Record<BriefFieldKey, unknown>>,
 ) {
   const key = keyOf(project);
   const optimistic: PipCard | null =
@@ -241,9 +298,10 @@ export async function decidePip(
   if (optimistic) set(key, (s) => ({ ...s, items: replaceCard(s.items, optimistic) }));
   try {
     const next = await client.pipCard(card.id, {
-      ...(project ? { project } : {}),
+      ...target(key),
       decision,
       ...(edit != null ? { edit } : {}),
+      ...(values ? { values } : {}),
     });
     if (next) set(key, (s) => ({ ...s, items: replaceCard(s.items, next) }));
   } catch (e) {
@@ -259,6 +317,11 @@ export function askPipAbout(project: string | null | undefined, text: string) {
   const key = keyOf(project);
   set(key, (s) => ({ ...s, draft: { text, n: (s.draft?.n ?? 0) + 1 } }));
   window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { key } }));
+}
+/** put words in a conversation's field without opening anything (the /new examples: they fill, never send) */
+export function fillPip(project: string | null | undefined, text: string) {
+  const key = keyOf(project);
+  set(key, (s) => ({ ...s, draft: { text, n: (s.draft?.n ?? 0) + 1 } }));
 }
 /** run `fn` when someone asks to open this conversation */
 export function usePipOpenRequest(project: string | null | undefined, fn: () => void) {

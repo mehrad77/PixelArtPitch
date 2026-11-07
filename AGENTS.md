@@ -15,7 +15,8 @@ These are the instructions for **coding agents working on this repo**. Crew-memb
 | `packages/crew` | The model gateway and providers over plain HTTP (`llm/`), prices, the orchestrator (`orchestrator.ts`: one handler per plan task kind), the production plan (`plan/`: catalogue, schemas, rules planner, validator, estimates, executor, logo import, storage; `docs/PIP-ORCHESTRATION.md`), and Pip, the assistant (`assistant.ts`, `docs/ASSISTANT.md`) |
 | `packages/mcp-client` | A plain MCP client (stdio + Streamable HTTP) for the person's own MCP servers ("connections") |
 | `apps/server` | Hono on 127.0.0.1: the studio API (`docs/API.md`), MCP over stdio and HTTP (`mcp.ts`), the CLI (`cli.ts`) |
-| `apps/web` | The studio UI (Vite) |
+| `apps/web` | The studio UI (Vite). `src/components/ProjectStage.tsx` is the one shell from `/new` to the project page; `src/mock/` is the in-browser backend (`?mock=1`): `journey.ts` plays "Pip runs the show" (docs/PIP-JOURNEY.md §6), `drafts.ts` is `/new`'s drafts and cards |
+| `apps/web/test` | Node tests over the web's pure code: `journey.test.ts` plays the journey through the reducer and checks PIP-JOURNEY §2's checkpoint table |
 | `library/` | The public asset library: `<id>/asset.json` + `sheet.png`, `index.json`, `palettes/pap-night.json`. Public assets only. |
 | `docs/` | Ground-truth guides, served over MCP as `pap://docs/<file>.md` (top level only) |
 | `docs/roles/` | One guide per crew role (12) |
@@ -30,6 +31,8 @@ These are the instructions for **coding agents working on this repo**. Crew-memb
 | `pnpm check` | **The gate**: Biome, `tsc`, every test. Run it before calling work done. |
 | `pnpm format` | Biome autofix |
 | `node --test packages/engine/test/standard.test.ts` | One test file (`pnpm test` runs them all) |
+| `pnpm exec tsc -p apps/web/tsconfig.json` | Type-check the web app (`pnpm check`'s `tsc` covers `packages/` and `apps/server` only) |
+| `pnpm --filter @pap/web dev`, then `/?mock=1&journey=todo` | The studio on the mock; add `&auto=1&speed=4` to watch the journey run with no clicks |
 | `node apps/server/src/cli.ts serve [--port 5141] [--dev]` | The studio (UI + API + MCP over HTTP); prints a one-time launch URL |
 | `node apps/server/src/cli.ts mcp` | MCP over stdio (proxies to a running `serve`, or runs in-process) |
 | `node apps/server/src/cli.ts render <dir> [--delivery id]` | Export a project's video |

@@ -1,0 +1,91 @@
+/* /new's question card and brief card. Tokens only, logical properties; the dl turns into label-above-value pairs
+   in a narrow card. */
+.brief-fields {
+  gap: var(--space-3);
+}
+.brief-fields fieldset {
+  margin: 0;
+}
+.brief-files {
+  display: grid;
+  gap: var(--space-3);
+}
+.brief-file {
+  display: grid;
+  gap: var(--space-2);
+}
+.brief-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.brief-file-name {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  overflow-wrap: anywhere;
+}
+.brief-type,
+.brief-number input {
+  min-block-size: var(--target-min);
+  padding-inline: var(--space-2);
+  border: 1px solid var(--stroke-control);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--step--1);
+}
+.brief-number input {
+  inline-size: 6em;
+}
+.brief-type:focus-visible,
+.brief-number input:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.brief-settled {
+  padding-block: var(--space-2);
+}
+
+.brief-card {
+  container-type: inline-size;
+}
+.brief-dl {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+.brief-row {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+.brief-row dt {
+  color: var(--text-muted);
+}
+.brief-row dd {
+  margin: 0;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+@container (max-width: 26rem) {
+  .brief-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+.brief-refs {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brief-line {
+  font-size: var(--step--1);
+}
+.pip-card.brief-settled {
+  display: block;
+}

@@ -1,7 +1,7 @@
 // The in-browser mock backend (?mock=1 or VITE_PAP_MOCK=1). One singleton holds every project; a simulated crew
 // runs a project only while something subscribes to it (ref-counted, so React's StrictMode double effects are safe).
 // The simulation never seeks, scrolls or opens anything: it only emits events, like the server would.
-import { humanStatus, PHASES, phaseOf, problemOf } from "../lib/human.ts";
+import { humanStatus, PHASES, phaseOf, problemOf, STAGE_WORD } from "../lib/human.ts";
 import { applyEvent } from "../lib/reducer.ts";
 import type {
   ActivityEntry,
@@ -12,6 +12,8 @@ import type {
   ConnectionTrust,
   ConnState,
   CreateProjectInput,
+  Draft,
+  DraftRef,
   FileRow,
   Finding,
   Gate,
@@ -25,11 +27,13 @@ import type {
   PatchEntryT,
   PatchOpT,
   PipDecision,
+  PipItem,
   ProjectState,
   ProjectStatus,
   ProjectSummary,
   ProjectT,
   QuestionT,
+  RefType,
   Role,
   SceneStatus,
   ServerEvent,
@@ -38,9 +42,11 @@ import type {
   Stage,
   Task,
   TimelineJSON,
+  WorkspaceLine,
 } from "../lib/types.ts";
 import { type Beat, closing, failure, middle, opening, wholeRun } from "./activity.ts";
-import { drawFrame, drawSheet } from "./art.ts";
+import { drawFrame, drawLogo, drawSheet } from "./art.ts";
+import { MockDrafts } from "./drafts.ts";
 import {
   CUES_ANGLE,
   estimateCues,
@@ -52,7 +58,20 @@ import {
   SETTINGS,
   scenesFor,
 } from "./fixtures.ts";
+import { JOURNEY, Journey, type JourneyFlags, journeyFlags } from "./journey.ts";
 import { blobUrl, MockPip, srtOf } from "./pip.ts";
+
+/** the journey flags (PIP-JOURNEY §6), read once at boot and kept for the tab: journey=todo, speed, slots, auto */
+function bootFlags(): JourneyFlags & { journey: string | null } {
+  let search = location.search;
+  try {
+    const q = new URLSearchParams(search);
+    if (["journey", "speed", "slots", "auto"].some((k) => q.has(k))) sessionStorage.setItem("pap-journey", search);
+    else search = sessionStorage.getItem("pap-journey") ?? search;
+  } catch {}
+  return { ...journeyFlags(search), journey: new URLSearchParams(search).get("journey") };
+}
+export const FLAGS = typeof location !== "undefined" ? bootFlags() : { speed: 1, slots: 3, auto: false, journey: null };
 
 const TICK_MS = 1000;
 const iso = (offsetSec = 0) => new Date(Date.now() + offsetSec * 1000).toISOString();
@@ -78,6 +97,8 @@ type MockProject = {
   /** the script waits while a problem only the person can fix is open */
   hold: boolean;
   lastStatus: string;
+  /** a project started from /new: the journey runs it instead of the script above */
+  journey?: Journey;
 };
 
 /** the orchestrator's task kinds, by mock task id */
@@ -391,7 +412,57 @@ class MockBackend {
   models: ModelRow[] = clone(MODELS);
   library: LibraryIndex = clone(LIBRARY);
 
+  drafts: MockDrafts = new MockDrafts({
+    push: (draft, item) => this.pip.push(draft, item),
+    update: (draft, card) => this.pip.update(draft, card),
+    card: (draft, card, run) => {
+      const kept = this.pip.card(draft, card, run);
+      // `auto=1`: the recommended answers, Mine for the rights, and Start, 3 ticks after each card opens
+      if (FLAGS.auto)
+        setTimeout(
+          () => {
+            const values =
+              card.type === "form" && card.form === "brief_fields"
+                ? Object.fromEntries(
+                    card.fields.map((f) => [
+                      f.key,
+                      f.type === "files"
+                        ? (f.value as DraftRef[]).map((r) => ({ name: r.name, type: r.type, rights: "mine" }))
+                        : f.type === "number"
+                          ? Number(f.recommended)
+                          : String(f.recommended),
+                    ]),
+                  )
+                : undefined;
+            this.pip.decide(card.id, { draft, decision: "confirm", ...(values ? { values } : {}) }).catch(() => {});
+          },
+          (3 * TICK_MS) / FLAGS.speed,
+        );
+      return kept;
+    },
+    thinking: (draft) => this.pip.send(draft, { type: "thinking" }),
+    start: (d) => this.startDraft(d),
+    started: (draft, id) => {
+      const p = this.projects.get(id);
+      this.pip.move(draft, id);
+      this.drafts.drafts.delete(draft);
+      if (p?.journey) this.play(p, p.journey.start());
+    },
+  });
+
   constructor() {
+    this.pip.drafts = {
+      reply: (key, text) => this.drafts.reply(key, text),
+      answer: (key, card, values) => {
+        if (card.type === "form" && card.form === "brief_fields") this.drafts.answer(key, card, values);
+      },
+      brief: (key) => this.drafts.brief(key),
+      files: (key) => this.drafts.announce(key),
+    };
+    if (FLAGS.journey === "todo") {
+      this.journeyFixtures();
+      return;
+    }
     this.projects.set("lantern", newProject("lantern", "Lantern · demo night", {}, 6, true));
     // a few more, still, for the Projects overview: one stopped mid-run, one not started, the finished example
     const done = (id: string, role: Role, title: string, at: number): Task =>
@@ -447,6 +518,150 @@ class MockBackend {
     const p = this.projects.get(id);
     if (!p) throw Object.assign(new Error(`No project ${id}`), { status: 404 });
     return p;
+  }
+
+  // ---- the journey "todo" (PIP-JOURNEY §6) ----
+  /** `journey=todo`: two projects to come back to, a finished one and one waiting on a pick */
+  journeyFixtures() {
+    const teaser = newProject("questday_teaser", "QuestDay teaser", { idea: "A 15 s teaser for QuestDay." }, 3, false);
+    const doneAt = -2 * 3600;
+    Object.assign(teaser.state, {
+      stage: "deliver",
+      tasks: [
+        task("t_export", "editor", "Exported your video", "done", {
+          usd: 0,
+          startedAt: iso(doneAt - 60),
+          endedAt: iso(doneAt),
+        }),
+      ],
+      crew: { state: "idle" },
+      budget: { ...teaser.state.budget, spentUsd: 1.12 },
+      time: { ...teaser.state.time, etaSec: null },
+      files: mockFiles("questday-teaser.mp4", teaser.state.timeline.cues, 1_200_000),
+      milestones: [{ id: "m_video", at: iso(doneAt), text: "Your video is ready" }],
+    });
+    for (const sc of teaser.state.timeline.scenes)
+      teaser.state.sceneStatus = {
+        ...teaser.state.sceneStatus,
+        [sc.id]: { version: "render", stale: false, state: "locked" },
+      };
+    teaser.phase = 99;
+    this.projects.set(teaser.state.doc.id, teaser);
+    const lantern = newProject("lantern", "Lantern · demo night", {}, 6, true);
+    const q: QuestionT = {
+      id: "q_angle",
+      kind: "single",
+      question: "Which angle should the script take?",
+      why: "All three fit 30 s. The angle sets the hero, the scenes and most of the art bill.",
+      options: [
+        { id: "walker", label: "The walker", detail: "A night owl finds the good stalls. Closest to the brief." },
+        { id: "vendor", label: "The vendor", detail: "A stall owner lights her lantern from her phone." },
+        { id: "numbers", label: "The numbers", detail: "Nine hundred walkers a week, for the investors." },
+      ],
+      recommendedId: "walker",
+      blocks: ["storyboard"],
+      timeoutSec: null,
+      from: "writer",
+      askedAt: iso(-1200),
+      status: "open",
+    };
+    Object.assign(lantern.state, {
+      questions: [q],
+      tasks: [
+        ...lantern.state.tasks,
+        task("t_writer", "writer", "Waiting for you to pick an angle", "waiting_user", {
+          usd: 0.21,
+          startedAt: iso(-1500),
+        }),
+      ],
+      crew: { state: "idle" },
+      digest: "The Writer has three angles. Pick one and the Director boards the scenes.",
+    });
+    lantern.phase = 99;
+    this.projects.set("lantern", lantern);
+  }
+  /** Start on the brief card: the project, its conversation moved over, the draft gone, and rev 1 */
+  startDraft(d: Draft): string {
+    const title = d.title || String(d.fields.title ?? "") || JOURNEY.title;
+    let id =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_|_$/g, "")
+        .slice(0, 30) || "pitch";
+    if (!/^[a-z]/.test(id)) id = `p_${id}`;
+    while (this.projects.has(id)) id = `${id}_2`;
+    const f = d.fields;
+    const p = newProject(
+      id,
+      title,
+      {
+        idea: String(f.idea ?? ""),
+        lengthSec: typeof f.lengthSec === "number" ? f.lengthSec : 30,
+        narration: f.narration === "user" ? "user" : "none",
+        involvement: "key",
+        references: d.refs.map((r) => ({ file: r.name, type: r.type, rights: r.rights, note: "" })),
+      },
+      typeof f.budget === "number" ? f.budget : JOURNEY.capUsd,
+      false,
+    );
+    Object.assign(p.state, {
+      tasks: [],
+      crew: { state: "running" },
+      digest: "",
+      instances: [],
+      plan: null,
+      budget: { ...p.state.budget, estTotalUsd: [...JOURNEY.estUsd] },
+      time: { ...p.state.time, etaSec: [...JOURNEY.estSec] },
+    });
+    for (const g of p.state.gates) g.status = g.id === "g0_brief" ? "open" : "locked";
+    p.phase = 99;
+    this.projects.set(id, p);
+    const cues = p.state.timeline.cues;
+    p.journey = new Journey({
+      ...FLAGS,
+      base: Date.now(),
+      sceneIds: p.state.timeline.scenes.map((sc) => sc.id),
+      logoIcon: d.refs.some((r) => r.type === "logo") ? drawLogo() : undefined,
+      files: () => {
+        const rows = mockFiles("questday-pitch.mp4", cues, 2_400_000);
+        return { rows, pip: rows.map((r) => ({ name: r.name, kind: r.kind, sizeBytes: r.bytes, url: r.url })) };
+      },
+    });
+    return id;
+  }
+  /** one journey tick, and the ETA counting down while the crew works (the run's minutes, compressed) */
+  journeyTick(p: MockProject, j: Journey) {
+    this.play(p, j.step());
+    const eta = p.state.time.etaSec;
+    if (eta && !j.waits.size && !j.ended)
+      this.x(p, { time: { ...p.state.time, etaSec: [Math.max(30, eta[0] - 10), Math.max(30, eta[1] - 12)] } });
+  }
+  /** the journey's events, as the server would send them: Pip's into the conversation, the crew's onto the channel */
+  play(p: MockProject, events: ServerEvent[]) {
+    const id = p.state.doc.id;
+    for (const e of events) {
+      if (e.event === "pip") {
+        if (e.data.type === "item") {
+          for (const c of e.data.item.kind === "pip" ? e.data.item.cards : [])
+            if (c.type === "plan" && c.status === "proposed")
+              this.pip.card(id, c, async () => {
+                this.play(p, p.journey?.act({ type: "card", cardId: c.id, decision: "confirm" }) ?? []);
+              });
+          this.pip.push(id, e.data.item);
+        } else if (e.data.type === "card") this.pip.update(id, e.data.card);
+        continue;
+      }
+      if (e.event === "channel") {
+        this.channels.set(id, [...(this.channels.get(id) ?? []), e.data]);
+        this.emit(p, e);
+        continue;
+      }
+      this.emit(p, e);
+    }
+    if (events.length) this.pushStatus(p);
+    if (p.journey?.nodes.find((n) => n.id === "g4")?.status === "done" && p.state.crew?.state !== "idle")
+      this.x(p, { crew: { state: "idle" } });
   }
 
   emit(p: MockProject, e: ServerEvent) {
@@ -604,7 +819,10 @@ class MockBackend {
 
   start(p: MockProject) {
     if (p.timer) return;
-    p.timer = setInterval(() => this.tick(p), TICK_MS);
+    const j = p.journey;
+    p.timer = j
+      ? setInterval(() => this.journeyTick(p, j), TICK_MS / FLAGS.speed)
+      : setInterval(() => this.tick(p), TICK_MS);
   }
   stop(p: MockProject) {
     if (p.timer) clearInterval(p.timer);
@@ -1282,7 +1500,7 @@ export class MockClient implements Client {
   }
   async projects(): Promise<ProjectSummary[]> {
     await wait();
-    return [...be().projects.values()].map(({ state: s }) => {
+    const list = [...be().projects.values()].map(({ state: s }): ProjectSummary => {
       const crew = s.crew?.state ?? "running";
       const running = crew === "running" || crew === "pausing";
       const times = s.tasks.flatMap((t) => [t.startedAt, t.endedAt]).filter((x): x is string => !!x);
@@ -1313,6 +1531,24 @@ export class MockClient implements Client {
         thumb: mid ? this.frameUrl(s.doc.id, (mid.from + mid.to) / 2, 1) : undefined,
       };
     });
+    // drafts from /new are listed too (PIP-ORCHESTRATION §4.5), with zeroed fields; status.line is Pip's last words
+    const drafts: ProjectSummary[] = [...be().drafts.drafts.values()].map(({ draft: d }) => ({
+      id: d.id,
+      title: d.title || "New video",
+      dir: "",
+      rev: 0,
+      stage: "brief",
+      spentUsd: 0,
+      capUsd: 0,
+      etaSec: null,
+      deadline: null,
+      needsYou: 0,
+      updatedAt: d.updatedAt,
+      createdAt: d.createdAt,
+      draft: true,
+      status: { line: be().drafts.lastLine(be().pip.conv(d.id).items), phase: 0 },
+    }));
+    return [...list, ...drafts];
   }
   async createProject(input: CreateProjectInput) {
     await wait(300);
@@ -1325,6 +1561,11 @@ export class MockClient implements Client {
     let id = /^[a-z]/.test(base) ? base : `p_${base}`;
     while (be().projects.has(id)) id = `${id}_2`;
     be().projects.set(id, newProject(id, input.title, input.brief, input.budgetUsd, false));
+    // "Show all options" started a draft: its conversation moves to the project, and the draft goes (no model call)
+    if (input.draft && be().drafts.drafts.has(input.draft)) {
+      be().pip.move(input.draft, id);
+      be().drafts.drafts.delete(input.draft);
+    }
     return { id };
   }
   async project(id: string) {
@@ -1373,6 +1614,12 @@ export class MockClient implements Client {
     await wait();
     const b = be();
     const p = b.get(id);
+    if (p.journey) {
+      b.play(p, p.journey.act({ type: "answer", qid, optionId: a.optionId }));
+      const q = p.state.questions.find((x) => x.id === qid);
+      if (!q) throw new Error("That question is gone.");
+      return clone(q);
+    }
     const q = p.state.questions.find((x) => x.id === qid);
     if (!q) throw new Error("That question is gone.");
     const next: QuestionT = {
@@ -1422,6 +1669,11 @@ export class MockClient implements Client {
     await wait();
     const b = be();
     const p = b.get(id);
+    if (p.journey) {
+      // "Change something" goes through Pip's field in the journey: the gate stays open
+      if (v.verdict !== "changes") b.play(p, p.journey.act({ type: "gate", gate, verdict: "approve" }));
+      return clone(p.state.gates.find((g) => g.id === gate) as Gate);
+    }
     if (v.verdict === "changes") {
       b.gateSet(p, gate, "changes");
       b.digest(
@@ -1567,14 +1819,31 @@ export class MockClient implements Client {
     const a = be().library.assets.find((x) => x.id === assetId);
     return drawSheet(assetId, a?.w ?? 16, a?.h ?? 16, a?.frames ?? 1);
   }
-  async pip(project?: string) {
+  async pip(project?: string, opts: { draft?: string } = {}) {
     await wait(80);
+    if (opts.draft) {
+      be().drafts.get(opts.draft);
+      return be().pip.get(opts.draft);
+    }
     if (project) be().get(project);
     return be().pip.get(project);
   }
-  pipAsk(project: string | undefined, text: string) {
-    if (project) be().get(project);
-    return be().pip.ask(project, text);
+  async pipAsk(project: string | undefined, text: string, opts: { draft?: string; about?: { instance: string } } = {}) {
+    const b = be();
+    if (opts.draft) {
+      b.drafts.get(opts.draft);
+      return b.pip.ask(opts.draft, text);
+    }
+    const p = project ? b.get(project) : null;
+    // the journey answers its own two messages (steps 10 and 12); anything else is Pip's usual menu
+    if (p?.journey && Journey.handles(text)) {
+      const key = p.state.doc.id;
+      b.pip.push(key, { id: `pu_${Date.now().toString(36)}`, at: new Date().toISOString(), kind: "user", text });
+      b.pip.send(key, { type: "thinking" });
+      b.play(p, p.journey.act({ type: "ask", text, ...(opts.about ? { about: opts.about } : {}) }));
+      return { turnId: `turn_${Date.now().toString(36)}` };
+    }
+    return b.pip.ask(project, text);
   }
   async pipCard(cardId: string, d: PipDecision) {
     await wait(80);
@@ -1612,6 +1881,57 @@ export class MockClient implements Client {
   testConnection(name: string) {
     return be().pip.testConnection(name);
   }
+  // ---- /new (mock/drafts.ts) ----
+  async createDraft(from?: string) {
+    await wait(120);
+    return be().drafts.create(from);
+  }
+  async draft(id: string) {
+    await wait(80);
+    const d = be().drafts.get(id).draft;
+    return { draft: clone(d), items: clone(be().pip.conv(id).items) as PipItem[] };
+  }
+  async deleteDraft(id: string) {
+    await wait();
+    be().drafts.remove(id);
+    be().pip.convs.delete(id);
+  }
+  async draftFile(id: string, name: string, body: Blob): Promise<{ ref: DraftRef }> {
+    await wait(200);
+    return { ref: be().drafts.addFile(id, name, body) };
+  }
+  async draftRef(id: string, name: string, patch: { type?: RefType; rights?: DraftRef["rights"] }) {
+    await wait(60);
+    return be().drafts.patchRef(id, name, patch);
+  }
+  async draftFields(id: string, fields: Draft["fields"]) {
+    await wait(60);
+    return be().drafts.setFields(id, fields);
+  }
+  async draftComposer(id: string) {
+    await wait(60);
+    return be().drafts.composer(id);
+  }
+  async workspaceLine(): Promise<WorkspaceLine> {
+    await wait(60);
+    const rows = [...be().projects.values()].map(({ state: s }) => {
+      const video = s.files.some((f) => f.kind === "video");
+      const ready = s.milestones?.find((m) => m.text === "Your video is ready");
+      const needs =
+        s.questions.filter((q) => q.status === "open").length + s.gates.filter((g) => g.status === "open").length;
+      const crew = s.crew?.state ?? "idle";
+      return {
+        id: s.doc.id,
+        title: s.doc.title,
+        finishedAt: video ? Date.parse(ready?.at ?? "") || Date.now() : undefined,
+        working:
+          !video && !needs && (crew === "running" || crew === "pausing") ? `at ${STAGE_WORD[s.stage]}` : undefined,
+        waiting: needs || undefined,
+      };
+    });
+    return MockDrafts.line(rows);
+  }
+
   subscribe(id: string, on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void) {
     const b = be();
     const p = b.projects.get(id);

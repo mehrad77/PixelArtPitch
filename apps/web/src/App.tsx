@@ -1,11 +1,14 @@
 import { Badge, EmptyState, SkipLink } from "@shabboo/kit/react";
+import { useEffect } from "react";
 import { CrewButton, ModeSwitch } from "./components/AppHeader.tsx";
+import { ProjectStage } from "./components/ProjectStage.tsx";
 import { SimpleProjectPage } from "./components/SimpleProject.tsx";
 import { client } from "./lib/client.ts";
 import { isStage } from "./lib/derive.ts";
 import { useView } from "./lib/hooks.ts";
 import type { View } from "./lib/human.ts";
 import { Link, match, navigate, usePath } from "./lib/router.tsx";
+import { type Adopted, freshStage, useAdopted } from "./lib/stage.ts";
 import { ComposerPage } from "./pages/Composer.tsx";
 import { LibraryPage } from "./pages/Library.tsx";
 import { ProjectsPage } from "./pages/Projects.tsx";
@@ -21,9 +24,19 @@ function projectRoute(path: string, view: View): { id: string; mode: View | null
   return m ? { id: m.id, mode: view } : null;
 }
 
-function Route({ path, view }: { path: string; view: View }) {
+/** /new is a conversation with Pip where the backend has drafts (the mock now; the server from P3); elsewhere the
+ * composer, as before */
+const NEW_IS_TALK = client.mock;
+
+function Route({ path, view, adopted }: { path: string; view: View; adopted: Adopted }) {
+  // one shell, kept mounted: /new, /new/:draftId and the project it became (PIP-JOURNEY §3.5)
+  const stageKey = `stage:new:${adopted.n}`;
   if (path === "/" || path === "") return <ProjectsPage />;
-  if (path === "/new") return <ComposerPage />;
+  if (path === "/new") return NEW_IS_TALK ? <ProjectStage key={stageKey} /> : <ComposerPage />;
+  let n = match("/new/:draftId/options", path);
+  if (n) return <ComposerPage draftId={n.draftId} />;
+  n = match("/new/:draftId", path);
+  if (n) return NEW_IS_TALK ? <ProjectStage key={stageKey} draftId={n.draftId} /> : <ComposerPage />;
   if (path === "/library") return <LibraryPage />;
   if (path === "/settings") {
     navigate("/settings/setup", { replace: true });
@@ -37,6 +50,8 @@ function Route({ path, view }: { path: string; view: View }) {
   if (m && isStage(m.stage)) return <WorkspacePage key={m.id} id={m.id} stage={m.stage} />;
   // the project's own address opens the simple view, or Studio when the person last chose it; a stage is Studio
   m = match("/p/:id", path);
+  if (m && m.id === adopted.projectId)
+    return <ProjectStage key={stageKey} draftId={adopted.draftId} projectId={m.id} />;
   if (m)
     return view === "studio" ? (
       <WorkspacePage key={`studio-${m.id}`} id={m.id} />
@@ -56,6 +71,11 @@ export function App() {
   const path = usePath();
   const view = useView();
   const proj = projectRoute(path, view);
+  const adopted = useAdopted();
+  // a fresh /new (New video, or back to it) is a new stage; one the stage itself just left is not
+  useEffect(() => {
+    if (path === "/new") freshStage();
+  }, [path]);
   const section = path.startsWith("/library") ? "library" : path.startsWith("/settings") ? "settings" : "projects";
   return (
     <div className="app">
@@ -85,7 +105,7 @@ export function App() {
           <CrewButton routeId={proj?.id ?? null} />
         </div>
       </header>
-      <Route path={path} view={view} />
+      <Route path={path} view={view} adopted={adopted} />
     </div>
   );
 }

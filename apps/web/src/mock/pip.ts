@@ -96,9 +96,26 @@ export class MockPip {
     return c;
   }
   send(key: string, data: PipEvent) {
-    const e: ServerEvent = { event: "pip", data: structuredClone(data) };
-    if (key === WS) for (const l of this.conv(WS).listeners) l(e);
+    // a draft's turns go out on the workspace stream, each event naming its draft (PIP-ORCHESTRATION §4.3)
+    const draft = key.startsWith("draft_");
+    const e: ServerEvent = { event: "pip", data: structuredClone(draft ? { ...data, draft: key } : data) };
+    if (key === WS || draft) for (const l of this.conv(WS).listeners) l(e);
     else this.host.emit(key, e);
+  }
+  /** /new (mock/drafts.ts): Pip's side of a draft conversation, the card answers and the brief */
+  drafts: {
+    reply(key: string, text: string): { reply: string; cards: PipCard[] };
+    answer(key: string, card: PipCard, values: Record<string, unknown>): void;
+    brief(key: string): PipCard;
+    files(key: string): string[];
+  } | null = null;
+  /** Start moved a draft's conversation to its project */
+  move(from: string, to: string) {
+    const c = this.convs.get(from);
+    if (!c) return;
+    this.convs.set(to, { ...c, listeners: this.conv(to).listeners });
+    this.convs.delete(from);
+    for (const p of this.pending.values()) if (p.key === from) p.key = to;
   }
   push(key: string, item: PipItem) {
     this.conv(key).items.push(item);
@@ -193,8 +210,9 @@ export class MockPip {
     if (c.busy) throw new ApiError(409, { code: "pip_busy", message: "Pip is still answering" });
     c.busy = true;
     const turnId = uid("turn");
+    const files = key.startsWith("draft_") ? (this.drafts?.files(key) ?? []) : [];
     queueMicrotask(async () => {
-      this.push(key, { id: uid("pu"), at: iso(), kind: "user", text });
+      this.push(key, { id: uid("pu"), at: iso(), kind: "user", text, ...(files.length ? { files } : {}) });
       await later(150);
       this.send(key, { type: "thinking" });
       await later(900 + Math.min(900, text.length * 12));
@@ -204,7 +222,9 @@ export class MockPip {
         if (name === "compact") await later(700);
         const out: { reply: string; cards: PipCard[]; why?: PipTrace & { about?: string } } = cmd
           ? this.command(key, project, name ?? "", cmd[2])
-          : this.reply(key, project, text);
+          : key.startsWith("draft_") && this.drafts
+            ? this.drafts.reply(key, text)
+            : this.reply(key, project, text);
         const trace: PipTrace = cmd
           ? { tools: [], mode: "command", usd: 0, promptVersion: "pip@3" }
           : {
@@ -242,7 +262,36 @@ export class MockPip {
     if (!p) throw new ApiError(404, { code: "no_card", message: "That card is gone" });
     if (d.decision === "decline") {
       if (p.card.type === "plan") this.update(p.key, { ...p.card, status: "declined" });
-      if (p.card.type === "form") this.update(p.key, { ...p.card, status: "failed", result: { added: [] } });
+      if (p.card.type === "form" && p.card.form === "mcp_add")
+        this.update(p.key, { ...p.card, status: "failed", result: { added: [] } });
+      this.pending.delete(cardId);
+      return structuredClone(p.card);
+    }
+    if (p.card.type === "form" && p.card.form === "brief_fields") {
+      // "Use these": a bad value is a 400 with a fix, and the card stays open
+      this.drafts?.answer(p.key, p.card, d.values ?? {});
+      const done: PipCard = { ...p.card, status: "done", values: d.values ?? {} };
+      this.update(p.key, done);
+      this.pending.delete(cardId);
+      const key = p.key;
+      queueMicrotask(async () => {
+        this.send(key, { type: "thinking" });
+        await later(700);
+        const brief = this.drafts?.brief(key);
+        this.push(key, {
+          id: uid("pi"),
+          at: iso(),
+          kind: "pip",
+          text: "Here's the brief.",
+          cards: brief ? [brief] : [],
+        });
+      });
+      return structuredClone(done);
+    }
+    if (p.card.type === "brief") {
+      // Start: the project is made before the answer, so the page can go there at once
+      if (p.card.status !== "open") throw new ApiError(409, { code: "card_done", message: "Already started" });
+      await p.run(d.edit);
       this.pending.delete(cardId);
       return structuredClone(p.card);
     }
@@ -465,7 +514,7 @@ export class MockPip {
               try {
                 const res = await this.addConnections(edit ?? "");
                 const ok = res.added.filter((a) => a.status === "connected");
-                if (card?.type === "form")
+                if (card?.type === "form" && card.form === "mcp_add")
                   this.update(key, { ...card, status: ok.length ? "done" : "failed", result: res });
                 const tools = ok.reduce((a, x) => a + x.tools.length, 0);
                 this.push(key, {
@@ -478,7 +527,7 @@ export class MockPip {
                     : "That didn't connect. The card says why and what to try.",
                 });
               } catch (e) {
-                if (card?.type === "form")
+                if (card?.type === "form" && card.form === "mcp_add")
                   this.update(key, {
                     ...card,
                     status: "failed",

@@ -21,6 +21,8 @@ The person approved both specs (this one and its sibling) with these answers to 
 5. **The $1.50 e2e uses a Sonnet Reviewer with one review round** (`reviewRounds: 1`).
 6. The C1–C8 (backend) and C1–C16 (journey) departures are accepted as written, except where 1–2 above change them. The journey's §7.2 needs (N1–N11) are to be met by the backend as part of the phase that uses them.
 
+This file now matches those answers: the roster (§2), C7–C12, the brief card (§3.5), the journey (§4), the strings (§5) and the mock (§6) have no sign and three picks. §9 says what the UI's P1 built, in mock.
+
 ## 1. Departures from the brief, for the OK
 
 | # | Changed from the brief | Why |
@@ -31,69 +33,85 @@ The person approved both specs (this one and its sibling) with these answers to 
 | C4 | `/new` asks one question card with 3 fields or fewer, then the brief card (D6) | The brief had two cards in a row. |
 | C5 | The Projects line is built from state, with no model call (D7): `GET /api/workspace/line` | Free, instant, and the same on any model. |
 | C6 | An unstarted `/new` leaves a draft, listed on Projects and removable (D8) | Nothing is lost. Only the conversation is on disk. |
-| C7 | "about 11 crew members", not "about 7 people" | 11 is the count of rev 1 instances (§2). People see faces, so we count faces. |
-| C8 | "+12 finished", not "+11 finished" | Rev 2 adds Pixel artist · founder: 11 + 1. The redos add none (C3). |
-| C9 | Milestone "Plan ready · 11 tasks to start", not "6 tasks to start" | N is the non-gate tasks of rev 1 (§2), counted as the backend does. The 5 picks are on the brief card. |
-| C10 | Steps 7 and 11 add three picks: the pacing (G2), the logo on the sign (the `rights` node), the final (G4) | `atGate` treats `key` as G0–G4. RIGHTS.md §3: using a brand asset "is always the user's call". **Open question Q1.** |
-| C11 | The four Animators: three start, the fourth is a ghost "waiting for a free slot" | `defaults.concurrency` is 3, and D4. With 4 slots all four start together. |
-| C12 | Step 10: the card settles with "Scene 2 redone; the hero is 2× now." The rough cut (G3) comes back, and "A new video is exported" moves to step 11 | The export runs after G3 (`deliver` → `deliver.export` → G4). Pip can't pass G3 for the person. |
+| C7 | "about 11 crew members", not "about 7 people" | 10 rev 1 instances plus the new drawing's placeholder (§2). People see faces, so we count faces. |
+| C8 | "+11 finished", the brief's count | Rev 2 turns the placeholder into Pixel artist · founder: 10 + 1. The redos add none (C3). (With the sign, before Decision 1, it was +12.) |
+| C9 | Milestone "Plan ready · 11 tasks to start", not "6 tasks to start" | N is the non-gate tasks of rev 1 (§2), counted as the backend does. The picks are on the brief card. |
+| C10 | One pick is added: the logo (the `rights` node), right after the import at step 5 | RIGHTS.md §3: using a brand asset "is always the user's call". Decision 2 settles the rest: under "Only the key picks" G2 passes in code and the G3 press passes G4, so the person picks 3 times (the script, the logo, the rough cut). |
+| C11 | Scene 4 animates beside the founder's drawing; when it is drawn, two of scenes 1–3 start and the third is a ghost "waiting for a free slot" | `defaults.concurrency` is 3, and D4. Scene 4 (the end card, with the logo toast) needs no new art, so it doesn't wait for the drawing (ORCHESTRATION §1.3, expansion). |
+| C12 | Step 10: the card settles with "Scene 2 redone; the hero is 2× now." The rough cut (G3) comes back, and "A new video is exported" moves to step 11 | The export runs after G3 (`deliver` → `deliver.export` → G4). Pip can't pass G3 for the person. Its "Looks good" also passes G4 (Decision 2). |
 | C13 | "Only the key picks", not "Just the key picks" | The kit's writing rule: cut "just". |
 | C14 | Role names follow `ROLE_LABEL`: "Pixel artist · founder", "Art director" | Sentence case, as in the kit and the existing UI. ORCHESTRATION §2 writes "Pixel Artist" (`ROLE_WORD`): to reconcile (§7). |
 | C15 | "Who's it for?" needs an `audience` field in the brief field registry | `Brief.audience` exists in the schema. The brief's registry left it out. |
-| C16 | The estimate line says "plus the time your picks take" | 14 minutes is crew time. The five picks are the person's. |
+| C16 | The estimate line says "plus the time your picks take" | 10 minutes is crew time. The three picks are the person's. |
 
 ## 2. The roster (the source of every number)
 
-Plan rev 1 comes from the rules skeleton. Pip's revision adds nothing at G0 (D1). Rev 2 adds the founder drawing (step 7b). Rev 3 sends scene 1 back for the headline (step 9). Rev 4 is the person's change (step 10). A retry inside a task (step 8, `attempt: 2`) is not a revision. Gates are code-inserted, not instances.
+`apps/web/src/mock/journey.ts` plays this roster, and `apps/web/test/journey.test.ts` reads the checkpoint table below from this file, so the two can't drift. After the Decisions above there is no sign: the logo is imported as is (`asset.import`, the Art director, code, $0), and the `rights` pick for it sits in the plan before scene 4, whose achievement toast shows it as a 16 px icon.
+
+- Plan rev 1 comes from the rules skeleton, with the 4 scenes expected for 30 s. The new drawing is a placeholder (priced, with no face) until the cast says what it is.
+- Pip's revision adds nothing at G0 (D1).
+- Rev 2 (by code, the expansion) turns the placeholder into Pixel artist · founder, when the Art director's cast finds no founder sprite (step 7b). It was priced in rev 1, so it needs no 20% card.
+- Rev 3 (by code) sends scene 1 back for the headline (step 9). Rev 4 is the person's change (step 10).
+- A retry inside a task (step 8, `attempt: 2`) is not a revision. Gates are code-inserted, not instances.
+- The mock folds an asset chain (spec → draw ×2 → judge) into one `asset.draw` task on the Pixel artist; the backend runs the whole chain.
 
 | # | Instance (label) | Role | Task kinds | Joins | Leaves | Returns | $ |
 |---|---|---|---|---|---|---|---|
 | 1 | Writer | writer | `writer.angles` | 5 | 6 | – | 0.22 |
-| 2 | Director | director | `director.storyboard` | 7a (ghost from 5) | 7a | – | 0.18 |
-| 3 | Art director | art-director | `asset.judge` (casting) | 7b (ghost from 5) | 7b | – | 0.09 |
-| 4 | Pixel artist · sign | pixel-artist | `asset.draw` | 7b | 7b | – | 0.28 |
-| 5 | Pixel artist · founder | pixel-artist | `asset.draw` (rev 2) | 7b | 7b | – | 0.31 |
+| 2 | Art director | art-director | `asset.import` (the logo), then `art.cast` | 5 (idle, a ghost, from the import's end) | 7b | – | 0.00 |
+| 3 | Director | director | `director.storyboard` | 7a (ghost from 5) | 7a | – | 0.18 |
+| 4 | Pixel artist · founder | pixel-artist | `asset.draw` (rev 2) | 7b (ghost after rev 2) | 7c | – | 0.31 |
+| 5 | Animator · scene 4 | animator | `scene.tune` (the end card, with the logo toast) | 7b, beside the founder | 7c | – | 0.12 |
 | 6 | Animator · scene 1 | animator | `scene.tune` | 7c | 7c | 9 (headline fix, +0.05) | 0.19 |
-| 7 | Animator · scene 2 | animator | `scene.tune` | 7c | 7c | 10 (rev 3, +0.08) | 0.20 |
-| 8 | Animator · scene 3 | animator | `scene.tune` ×2 tries | 7c | 8 | – | 0.19 |
-| 9 | Animator · scene 4 | animator | `scene.tune` | 7c (ghost, then live) | 7c | – | 0.12 |
-| 10 | Mixer | mixer | `sound.mix` | 8 (ghost from 7c) | 8 | – | 0.10 |
-| 11 | Reviewer | reviewer | `review.final` r1, r2, r3 | 9 (ghost from 7c) | 9 (r2 ran while it was idle, +0.03) | 10 (r3, +0.03) | 0.14 |
-| 12 | Editor | editor | `deliver.export` | 11 | 11 | – | 0.00 |
+| 7 | Animator · scene 2 | animator | `scene.tune` | 7c | 7c | 10 (rev 4, +0.08) | 0.20 |
+| 8 | Animator · scene 3 | animator | `scene.tune` ×2 tries | 7c (ghost, "waiting for a free slot") | 8 | – | 0.19 |
+| 9 | Mixer | mixer | `sound.mix` | 8 (ghost from 7c) | 8 | – | 0.10 |
+| 10 | Reviewer | reviewer | `review.final` r1, r2, r3 | 9 (ghost from 7c) | 9 (r2 ran while it was idle, +0.03) | 10 (r3, +0.03) | 0.14 |
+| 11 | Editor | editor | `deliver.export` | 11 | 11 | – | 0.00 |
 
-- Rev 1 has 11 instances and 11 tasks. The gates after G0 are G1 script, G2 pacing, the `rights` pick for the sign, G3 rough and G4 final: 5 picks.
-- The crew spends $2.02 and Pip's own calls $0.12, so the run costs $2.14. That is inside $1.80–2.60, under the $3 cap. The change is $0.11 (Animator $0.08, Reviewer $0.03, plus Pip), which rounds to "about $0.12".
-- Rev 2 adds $0.31, 17% over rev 1's p50 ($1.80). That is under the 20% bound, so it needs no card.
-- **The final counter is "+12 finished".**
+- Rev 1 has 10 instances and 11 tasks ("Plan ready · 11 tasks to start"). The brief card counts the new drawing's placeholder as one more crew member: "about 11 crew members".
+- Under "Only the key picks" (Decision 2) the person picks 3 times: the script (G1), the logo (`rights`) and the rough cut (G3). G2 passes in code, and "Looks good" at G3 also passes G4. Start (G0) is the brief card's button.
+- The crew spends $1.65 and Pip's own six metered turns $0.12 (the revision after Start, the answer to scene 3, the rough cut, the change card, the export, the why), so the run costs **$1.77**. That is inside the brief card's $1.40–2.20, under the $3 cap. The change is $0.11 (Animator $0.08, Reviewer $0.03) plus Pip's card, "about $0.12".
+- **The final counter is "+11 finished".**
 
 **Dependencies** (they decide the ghosts; gates are written `[G1]`):
-- `writer.angles`
-- → [G1] → `director.storyboard`
-- → [G2] → `asset.judge` (Art director)
-- → `asset.draw` sign, and `asset.draw` founder (rev 2)
-- → `scene.tune` s1–s3, which need the founder, and s4, which needs the sign and [rights]
+- `writer.angles` and `asset.import` (the logo), both right after G0
+- `asset.import` → [rights]
+- `writer.angles` → [G1] → `director.storyboard` (which also waits on the import, so the Director sees the logo in its list)
+- → `art.cast` → [G2]
+- → `asset.draw` founder (rev 2), and `scene.tune` s4, which needs [G2] and [rights] only
+- → `scene.tune` s1–s3, which need the founder
 - → `sound.mix`, which needs all four scenes
 - → `review.final` → [G3] → `deliver.export` → [G4]
 
-**The row at each checkpoint**, by the horizon rule (C2). The node test asserts this table exactly (§6).
+**The row at each checkpoint**, by the horizon rule (C2), with `slots=3`. The node test asserts these rows, in this order.
 
 | Checkpoint | Live | Ghosts | Counter |
 |---|---|---|---|
-| 5: Writer working | Writer | Director, Art director | – |
+| 5: the crew comes in | Writer, Art director | Director, Animator · scene 4, Mixer | – |
+| 5: Writer working, the logo pick open | Writer | Art director, Director | – |
 | 6: G1 open | – | – | +1 |
-| 7a: Director working | Director | Art director, Pixel artist · sign, Animator · scene 1 | +1 |
-| 7a: G2 open | – | – | +2 |
-| 7b: Art director working, after rev 2 | Art director | Pixel artist · sign, Pixel artist · founder, Animator · scene 1 | +2 |
-| 7b: both drawing | Pixel artist · sign, Pixel artist · founder | Animator · scene 1, 2, 3 | +3 |
-| 7c: three animating | Animator · scene 1, 2, 3 | Animator · scene 4 (free slot), Mixer, Reviewer | +5 |
-| 7c: scene 1 done | Animator · scene 2, 3, 4 | Mixer, Reviewer | +6 |
-| 8: Mixer working | Mixer | Reviewer, Editor | +9 |
-| 9: Reviewer working | Reviewer | Editor | +10 |
-| 9: scene 1 back | Animator · scene 1 | Reviewer (idle, round 2 pending), Editor | +9 |
-| 9: G3 open | – | – | +11 |
-| 10: scene 2 back | Animator · scene 2 | Reviewer, Editor | +9 |
-| 11: Editor working | Editor | – | +11 |
-| 11: G4 open, and after | – | – | +12 |
+| 7a: Director working | Director | Art director, Animator · scene 1, 2 | +1 |
+| 7b: Art director casting | Art director | Animator · scene 1, 2, 3 | +2 |
+| 7b: after rev 2 | Art director | Pixel artist · founder, Animator · scene 1, 2 | +2 |
+| 7b: the founder drawn, scene 4 animated | Pixel artist · founder, Animator · scene 4 | Animator · scene 1, 2, 3 | +3 |
+| 7c: the founder done | Animator · scene 4, 1, 2 | Animator · scene 3 (free slot), Mixer, Reviewer | +4 |
+| 7c: scene 4 done | Animator · scene 1, 2, 3 | Mixer, Reviewer | +5 |
+| 7c: scene 1 done | Animator · scene 2, 3 | Mixer, Reviewer | +6 |
+| 7c: scene 2 done | Animator · scene 3 | Mixer, Reviewer | +7 |
+| 8: Mixer working | Mixer | Reviewer, Editor | +8 |
+| 9: Reviewer working | Reviewer | Editor | +9 |
+| 9: scene 1 back | Animator · scene 1 | Reviewer (idle, round 2 pending), Editor | +8 |
+| 9: round 2 | Reviewer | Editor | +9 |
+| 9: G3 open | – | – | +10 |
+| 10: scene 2 back | Animator · scene 2 | Reviewer, Editor | +8 |
+| 10: round 3 | Reviewer | Editor | +9 |
+| 10: G3 open again | – | – | +10 |
+| 11: Editor working | Editor | – | +10 |
+| 11: the final passed, and after | – | – | +11 |
+
+- The first row lasts one tick (the import). Animator · scene 4 and the Mixer are ghosts there because the horizon walks `asset.import` → [rights] → s4 → mix, though s4 also waits on G2, far off. That is the rule as ORCHESTRATION §2 states it; §7.2 N12 asks whether a pending task should need all its dependencies within reach.
+- With `slots=1` the Animators run one at a time: when the founder is done, one Animator is live and the other three are ghosts (§6, test 4).
 
 ## 3. Screens and components
 
@@ -108,10 +126,10 @@ The order is Pip first, then live faces in join order, then ghosts, then the fin
 | **needs** | its task is `waiting_user` | `' '`, looking up | "…, waiting for you" | the caption |
 | **ghost** | `instance.ghost` is true and nothing is running for it (the server's horizon rule, C2) | `· ·`, a dashed `--stroke-control` edge, `--text-muted` ink, no hue fill | "Director, up next", or "Animator · scene 4, waiting for a free slot" (its task is ready) | the caption, muted |
 | **finishing** | for `FINISH_HOLD_MS = 2000` after its last task ends | done: `^ ^` with a ✓ mark. stopped (dropped or cancelled): `– –` with a ■ mark | "Writer, done", or "…, stopped" | the caption plus the word "done" or "stopped" |
-| **finished counter** | at least one instance has ended | none: a chip | "12 finished. Show who worked" | `+<bdi>12</bdi> finished` |
+| **finished counter** | at least one instance has ended | none: a chip | "11 finished. Show who worked" | `+<bdi>11</bdi> finished` |
 
 - **Ghost cap.** At most 3, nearest first, as the server sends them. The rest show only in the drawer's "Up next". A finished instance whose new task is pending (D5) leaves Finished and shows as a ghost if it is on the horizon.
-- **Caption.** The qualifier after " · " ("scene 1", "founder", "sign"), in `--step--2` mono, `max-inline-size: 8ch`, with an ellipsis. The full label is in the name and the popover. An instance without a qualifier has no caption.
+- **Caption.** The qualifier after " · " ("scene 1", "founder"), in `--step--2` mono, `max-inline-size: 8ch`, with an ellipsis. The full label is in the name and the popover. An instance without a qualifier has no caption.
 - **Face identity, per role.** The hue comes from the role's department (`memberOf`). The calm glyphs are per role, so a Writer and a Director never look alike:
 
   | Role | Glyphs | Hue |
@@ -253,12 +271,12 @@ A few things the idea leaves open
 | Files | questday-logo.png · Logo · Mine · `Private to this project` |
 
 Then three lines:
-1. "About <bdi>$1.80–2.60</bdi>, ready in roughly <bdi>14 minutes</bdi>, plus the time your picks take."
-2. "About 11 crew members over the run; most art comes from the library, and one new drawing: your logo on a sign."
-3. "You'll pick 5 times: the script, the pacing, the logo on the sign, the rough cut and the final."
+1. "About <bdi>$1.40–$2.20</bdi>, ready in roughly <bdi>10 minutes</bdi>, plus the time your picks take."
+2. "About 11 crew members over the run; most art comes from the library, one new drawing and your logo in an achievement toast." (`preview.line`)
+3. "You'll pick 3 times: the script, your logo and the rough cut." (`picks`, a UI extension on the card; "Every step" says "5 times: the script, the pacing, your logo, the rough cut and the final"; "Let the crew run" says "The crew runs on its own; you'll only say yes to your logo.")
 
 Buttons: **Start** (primary) · **Show all options** (quiet).
-- If the estimate's p90 passes the cap, a warning: "This may pass your $3 cap. Raise it to $4, or ask me for a shorter video." Start stays pressable, and the card says the guard holds at the cap.
+- If the estimate's p90 passes the cap, a warning: "This may pass your $3 cap. Raise it to $4, or ask me for a shorter video. The guard holds at the cap." Start stays pressable.
 - **Show all options** opens `/new/:id/options`: the old `ComposerPage`, filled from the draft's fields.
   - Its submit starts the draft as the brief card's Start does.
   - "‹ Back to the conversation" saves its fields to the draft, with no model call.
@@ -266,14 +284,14 @@ Buttons: **Start** (primary) · **Show all options** (quiet).
 
 ### 3.6 Projects
 
-- **The head**: `<h1>Projects</h1>`, Pip's line with Pip's face, and one primary button, **"New video"**, which goes to `/new`.
+- **The head**: `<h1>Projects</h1>`, Pip's line with Pip's face, and one primary button, **"New video"**, which goes to `/new`. With no projects at all, Projects goes straight to `/new` (replaceState).
 - **Pip's line** is `WorkspaceLine.text` from `GET /api/workspace/line`, built on the server from state.
   - At most 3 clauses, ordered finished → working → waiting, so it ends on what needs the person: "QuestDay teaser is finished. Lantern is waiting on one pick from you."
   - Each `part` makes its project's title a link to that project.
   - "Nothing needs you right now." when no clause applies.
   - It refreshes when the projects list does. The page's polite region gives it once per change.
 - **Drafts.** A group, "Drafts · N", is shown last.
-  - Each card has no thumbnail (an empty-stage box), the title (from the idea: "QuestDay pitch"), the mark "✎ Draft", Pip's last question as the line, and "Started <time>".
+  - Each card has no thumbnail (an empty-stage box), the title (from the idea: "QuestDay pitch"), the mark "✎ Draft", Pip's last question as the line (the summary's `status.line`), and "Started <time>" (the summary's `createdAt`, N14).
   - The card links to `/new/:id`.
   - Its ⋯ menu has "Remove draft". That opens a Dialog: "Remove this draft? Only the conversation is saved, and it goes too." with **Remove draft** (danger) and **Keep it**.
 - **"Make another like this".**
@@ -359,14 +377,18 @@ Each step lists:
 
 - **Screen**:
   - The person presses Start. That passes G0 as the person. The brief card settles to "✓ Started".
-  - Pip's face conducts. The Writer slides out from Pip, and then two ghosts enter after it: Director and Art director ("up next").
-  - The URL becomes `/p/<projectId>` with nothing remounted, and the money line appears: "$0.04 of $3".
+  - Pip's face conducts (P2). The Writer and the Art director slide out from Pip together: the Writer for the script, the Art director to bring in the logo.
+  - For the one tick of the import, three ghosts show: Director, Animator · scene 4 and Mixer (the horizon walks import → [rights] → scene 4, §2). The import ends, the Art director goes idle and shows as a ghost, and the ghosts are Art director and Director ("up next").
+  - The `rights` pick opens under Pip's line, with the 16 px icon as its picture and "Private to this project":
+    - "Your logo in an achievement toast. Use it in the video?", the recommended "Use it" shown.
+    - Buttons: "Looks good" · "Change something" (Use it, Leave it out). No "Let the crew decide": the question carries `rights` (N15), and the crew never decides it.
+  - The URL becomes `/p/<projectId>` with nothing remounted, and the money line appears: "$0.02 of $3".
 - **Text**:
   - Milestone: "Plan ready · 11 tasks to start".
-  - Bubble over Pip: "Brought in the Writer for three script angles".
-  - Pip's line: "The Writer is drafting three angles for the script."
-- **Changed from the brief**: the milestone text (C9).
-- **SR**: "Pip brought in the Writer for three script angles."
+  - Bubble over Pip (P2): "Brought in the Writer for three script angles".
+  - Pip's line: the status sentence, "Writing your script", then "The artist has a question for you." while the logo pick is open.
+- **Changed from the brief**: the milestone text (C9); the logo pick comes here, right after the import (C10).
+- **SR**: "Pip brought in the Writer for three script angles. Pip brought in the Art director to bring in your logo."
 - **Focus**: Start unmounts, so focus goes to the Pip field.
 - **RM**: the faces appear without the slide, and the baton is still for 1.2 s.
 
@@ -374,11 +396,10 @@ Each step lists:
 
 - **Screen**:
   - The Writer's face shows `^ ^ ✓` for 2 s, then folds into "+1 finished".
-  - Nothing is running now, so the two ghosts fade (C2). The row is Pip and "+1 finished".
-  - The G1 pick (NeedsYou, the Pip variant) sits under Pip's line.
+  - Nothing is running now, so the ghosts fade (C2). The row is Pip and "+1 finished".
+  - The G1 pick (NeedsYou, the Pip variant) sits under Pip's line, after the logo pick if that is still open.
 - **Text**:
-  - Pip's line: "The Writer has three angles. The walker is closest to your brief."
-  - The pick: "Which script should the crew make?", with ◉ The walker (Recommended), ○ The quest board, ○ The numbers, and the button "Use this script".
+  - The pick: "Which script should the crew make?", with ◉ The walker (Recommended), ○ The quest board, ○ The numbers.
 - **SR**: "Writer finished." Then the status region (10 s throttle) gives Pip's line.
 - **Focus**: unchanged. `Q` jumps to the pick, as today.
 - **RM**: the ✓ holds for 2 s, then the face is gone and the counter reads +1.
@@ -388,39 +409,32 @@ Each step lists:
 The faces at each moment are the §2 checkpoint table.
 
 **7a. Story.**
-- The person picks The walker. The Director slides out from Pip, followed by three ghosts: Art director, Pixel artist · sign, Animator · scene 1.
+- The person picks The walker. The Director slides out from Pip, followed by three ghosts: Art director, Animator · scene 1 and 2.
 - Bubble over Pip: "Brought in the Director to board 4 scenes".
-- The Director finishes and folds (+2), and the ghosts fade while the pick is open.
-- The G2 pick: "Happy with the pacing?", with the buttons "Looks good" · "Change something".
-- Pip's line: "The Director boarded 4 scenes. Have a look at the pacing."
-- **Changed from the brief**: the pacing pick is added (C10).
+- The Director finishes and folds (+2).
 - SR: "Director finished."
 
 **7b. Art.**
-- "Looks good" passes G2. The Art director slides out, with ghosts for Pixel artist · sign and Animator · scene 1 (and 2).
+- The Art director (idle since the import) turns live to cast from the library. The ghosts are Animator · scene 1, 2 and 3.
 - The Art director reports `partial`: "No founder sprite in the library."
-- Plan rev 2, a milestone in the thread: "Plan changed: added a Pixel artist for the founder".
+- Plan rev 2 (by code, the expansion), a milestone in the thread: "Plan changed: added a Pixel artist for the founder: the library had no founder sprite."
 - Pixel artist · founder enters as a ghost.
-- The Art director finishes and folds (+3). Both Pixel artists turn live together, and Pip conducts.
-  - Bubble over Pip: "Brought in a Pixel artist for the sign. Brought in a Pixel artist for the founder" (merged).
-  - The ghosts are now Animator · scene 1, 2 and 3.
-- Pixel artist · sign finishes (+4). The `rights` pick sits under Pip's line:
-  - "Your logo on the sign. Use it in the video?"
-  - Under it, the still of the sign and the info Badge "Private to this project".
-  - Buttons: "Use it" · "Redraw".
-- The person presses "Use it". Pixel artist · founder finishes: +5.
-- **Changed from the brief**: the `rights` pick is added (C10, RIGHTS.md §3).
-- SR, merged: "Pip brought in the Art director to cast from the library." then "Art director finished. Pip brought in a Pixel artist for the sign. Pip brought in a Pixel artist for the founder." then "Pixel artist · sign finished." and so on.
+- The cast ends (+3) and G2 passes in code (Decision 2). Two faces turn live together, and Pip conducts:
+  - Pixel artist · founder, drawing;
+  - Animator · scene 4, the end card with the logo toast, which needs no new art.
+  - Bubble over Pip: "Brought in a Pixel artist for the founder. Brought in an Animator for scene 4" (merged).
+  - The ghosts are Animator · scene 1, 2 and 3, which wait on the founder.
+- **Changed from the brief**: no pacing pick; G2 passes in code under "Only the key picks" (Decision 2).
+- SR, merged: "Art director finished." then "Pip brought in a Pixel artist for the founder. Pip brought in an Animator for scene 4."
 
 **7c. Motion.**
-- Pip conducts. The three Animator ghosts turn live together.
-- Animator · scene 4 enters as a ghost, "waiting for a free slot". After it come the Mixer and the Reviewer ("up next").
-- Scene 1 finishes and folds (+6), and Animator · scene 4 turns live.
-- Scene 2 finishes and folds (+7).
+- The founder is drawn (+4). Pip conducts: Animator · scene 1 and 2 turn live beside scene 4.
+- Animator · scene 3 stays a ghost, "waiting for a free slot". The Mixer and the Reviewer are ghosts too ("up next").
+- Scene 4 finishes and folds (+5), and Animator · scene 3 turns live.
+- Scene 1 finishes and folds (+6), then scene 2 (+7).
 - The row never holds more faces than there are running tasks. The ghosts are labelled as ghosts.
-- Pip's line: "Three Animators are putting the scenes in motion; scene 4 starts when one is free."
-- **Changed from the brief**: 3 live and 1 ghost (C11).
-- SR: "Pip brought in 3 Animators, one per scene." "Animator · scene 1 finished." …
+- **Changed from the brief**: scene 4 runs beside the drawing, and the third of scenes 1–3 waits for a slot (C11).
+- SR: "Pip brought in 2 Animators, one per scene." "Pixel artist · founder finished." "Animator · scene 4 finished." …
 
 **Focus** in 7a to 7c: unchanged throughout. The picks are reached by Tab or `Q`.
 
@@ -433,10 +447,9 @@ The faces at each moment are the §2 checkpoint table.
   - In Behind the scenes, Pip answers with an `answer` message: "Use a toast for the line and keep both characters left of the box."
   - Bubble over Pip: "Told the Animator · scene 3: use a toast for the line".
   - The Animator stays live, tries again (`attempt: 2`, the same task), finishes and folds: +8.
-  - Animator · scene 4 folds (+9).
-  - The Mixer turns live; the Reviewer and the Editor are ghosts. Then the Mixer folds (+10).
-- **Text**: Pip's line: "Scene 3 needed a workaround; the Animator used a toast for the line." There is no question to the person.
-- **SR**: "Animator · scene 3 is partly done: no recipe for two people talking." Then "Animator · scene 3 finished."
+  - The Mixer turns live; the Reviewer and the Editor are ghosts. Then the Mixer folds (+9).
+- **Text**: Pip's line: the status sentence ("Adding music and sound"). There is no question to the person.
+- **SR**: "Animator · scene 3 is partly done: No recipe for two people talking." Then "Mixer finished."
 - **Focus**: unchanged.
 - **RM**: the bubbles appear and leave without the fade; the faces as above.
 
@@ -445,9 +458,9 @@ The faces at each moment are the §2 checkpoint table.
 - **Screen**:
   - The Reviewer ghost turns live, with the Editor as a ghost. It finds one blocker: "The headline is clipped in scene 1".
   - Code adds review round 2 (rev 3). The Reviewer goes idle and shows as a ghost; it isn't finished, so the counter doesn't move.
-  - Animator · scene 1 **returns from Finished**: it enters from the counter's side, and the counter goes to +9.
+  - Animator · scene 1 **returns from Finished**: it enters from the counter's side, and the counter goes to +8.
     - Bubble over Pip: "Brought the Animator back to fix the scene 1 headline".
-  - It finishes and folds (+10). The Reviewer turns live for round 2, finds it clean, and folds (+11).
+  - It finishes and folds (+9). The Reviewer turns live for round 2, finds it clean, and folds (+10).
 - **Text**:
   - Milestone: "Plan changed: scene 1 goes back to the Animator for the headline" (rev 3).
   - Pip: "The rough cut is ready. One fix was made on scene 1."
@@ -460,12 +473,12 @@ The faces at each moment are the §2 checkpoint table.
 
 - **Screen**:
   - The person types "make the hero bigger in scene 2".
-  - Pip's plan card: title "Make the hero bigger in scene 2". Who: the Animator · scene 2 and Reviewer faces with their labels. Detail: "Animator · scene 2 tunes the size, then the Reviewer checks." "About $0.12 · about 2 minutes". Effects: "Reopens scene 2. Scenes 1, 3 and 4 stay as they are." Confirm label "Ask the crew".
-  - On confirm: plan rev 4 (milestone "Plan changed: scene 2 goes back to the Animator for a bigger hero").
-    - Animator · scene 2 returns from the counter's side. The Reviewer and the Editor show as ghosts, and the Reviewer leaves Finished with its new pending task (+9).
-    - Scene 2 finishes (+10). The Reviewer turns live, checks, and folds (+11).
+  - Pip's plan card: title "Make the hero bigger in scene 2". Who: the Animator · scene 2 and Reviewer faces with their labels (`whoInstances`, N2). Detail: "Animator · scene 2 tunes the size, then the Reviewer checks." "About $0.12 · about 2 minutes". Effects: "Reopens scene 2. Scenes 1, 3 and 4 stay as they are." Confirm label "Ask the crew".
+  - On confirm: plan rev 4 (milestone "Plan changed: scene 2 goes back to the Animator for a bigger hero"). G3 locks again.
+    - Animator · scene 2 returns from the counter's side. The Reviewer leaves Finished with its new pending task, and it and the Editor show as ghosts (+8).
+    - Scene 2 finishes (+9). The Reviewer turns live, checks, and folds (+10).
   - The card settles: "✓ Scene 2 redone; the hero is 2× now."
-  - G3 comes back under Pip's line: "The rough cut is ready again, with your change."
+  - G3 comes back under Pip's line, and Pip says: "The rough cut is ready again, with your change."
 - **Changed from the brief**: C12.
 - **SR**: `PipLive` announces the card. The crew region: "Pip brought the Animator back for a bigger hero in scene 2." "Animator · scene 2 finished." "Reviewer finished."
 - **Focus**: "Ask the crew" unmounts, so focus goes to the Pip field.
@@ -474,25 +487,25 @@ The faces at each moment are the §2 checkpoint table.
 ### Step 11. Done
 
 - **Screen**:
-  - "Looks good" passes G3. The Editor slides out from Pip (no ghost: the pick had emptied the horizon), exports, and folds: **+12**.
-  - The G4 card under Pip's line, with the files card: Download (`questday-pitch.mp4`), Subtitles (`questday-pitch.srt`), Open (plays it in the stage).
-  - Then "Approve the final" (primary) · "Change something".
-  - Approving settles it to "✓ Final approved". The crew row is Pip and "+12 finished".
+  - "Looks good" passes G3, and with it G4 (Decision 2). The Editor slides out from Pip (no ghost: the pick had emptied the horizon), exports, and folds: **+11**.
+  - G4 passes as the export ends; no "Approve the final" card under "Only the key picks". ("Every step" keeps it.)
+  - The files card: Download (`questday-pitch.mp4`), Subtitles (`questday-pitch.srt`, `.vtt`).
+  - The crew row is Pip and "+11 finished".
 - **Text**:
   - Pip: "Your video is ready. A new video is exported, with scene 2's change."
-  - Pip's line after the approval: "Your video is ready."
+  - Pip's line: "Your video is ready."
   - The milestone: "Your video is ready".
-- **Changed from the brief**: C8 and C12 (the G4 approve).
+- **Changed from the brief**: C8 and C12; the G3 press passes G4 (Decision 2).
 - **SR**: "Editor finished." Then the status region gives Pip's line.
-- **Focus**: unchanged. "Approve the final" unmounts on press, so focus goes to the Pip field.
+- **Focus**: "Looks good" unmounts on press, so focus goes to the Pip field.
 - **RM**: the same, with no motion.
 
 ### Step 12. Looking back
 
 - **Screen**:
-  - The person presses "+12 finished". The crew drawer opens with Finished selected, newest first: Editor, Reviewer, Animator · scene 2, …
-  - The Pixel artist · founder row reads: "Pixel artist · founder · Sonnet 5.5 · 3 min · $0.31 · ✓ done".
-  - Opening it shows the kept log (§3.3), with Joined "The library had no founder sprite."
+  - The person presses "+11 finished". The crew drawer opens with Finished selected, newest first: Editor, Reviewer, Animator · scene 2, …
+  - The Pixel artist · founder row reads: "Pixel artist · founder · Opus 5 · 4 s · $0.31 · ✓ done" (in mock, the compressed time).
+  - Opening it shows the kept log (§3.3), with Joined "Pip brought in a Pixel artist for the founder" and Left "Drawn and approved."
   - "Ask Pip about this" puts the person in Pip's field. They ask "why did you add a Pixel artist?".
 - **Text**: Pip: "The library had no founder sprite, so I added one drawing. It was $0.31 of your $3."
 - **SR**: `PipLive` announces the reply.
@@ -516,83 +529,80 @@ The faces at each moment are the §2 checkpoint table.
 | Milestones (server, `kind: "plan"`) | "Plan ready · {n} tasks to start" · "Plan changed: {revision.reason}", the reason verbatim with its first letter lowered |
 | `/new` | "What are we making?" · "Your idea" · "Add files" · "Drop to add to this video" · "Your video shows here" · "Show all options" |
 | Question card | "A few things the idea leaves open" · "Recommended" · "Use these" · "Pick one: Mine, Licensed or Not sure." |
-| Brief card | "Here's the brief." · "Start" · "✓ Started" · the estimate, crew and picks lines (§3.5) |
+| Brief card | "Here's the brief." · "Start" · "✓ Started" · the estimate, crew and picks lines (§3.5) · "Show all options" |
+| Question card, settled | "✓ Investors · only the key picks · logo: mine" (the choices' labels, then each file's type and rights) |
+| Logo pick (`rights`) | "Your logo in an achievement toast. Use it in the video?" · "Use it" · "Leave it out" · "Private to this project" |
 | Drafts | "Drafts" · "✎ Draft" · "Remove draft" · "Remove this draft? Only the conversation is saved, and it goes too." · "Keep it" |
 | Too many revisions | "I've changed the plan 6 times on this run. The next change is yours to approve." (Pip, with a plan card) |
 | Over 20% | "Adding the {label} raises the estimate by {p}%. Add it?", with "Add it" · "Not now" (a plan card) |
 
 ## 6. The mock script (`?mock=1`, journey `todo`)
 
-- **Where.** The journey lives in `apps/web/src/mock/journey.ts` as pure data: a list of beats, `{at: tick, when?: waitFor, emit: ServerEvent | PipEvent}`. `MockClient` plays it. The same list drives a node test with no DOM.
-- **Turning it on.** `?mock=1&journey=todo` seeds two fixture projects: "QuestDay teaser" (finished) and "Lantern · demo night" (one open pick).
-- **Flags**, read once at boot:
+- **Where.** The journey lives in `apps/web/src/mock/journey.ts`. It is data (the plan's tasks, how many ticks each runs, what each reports and the revisions it triggers) played by a small deterministic executor in the same file: slots, the horizon rule and the instance fold. A list of hand-written beats couldn't stay true with `slots=1`, so the beats below are what the executor emits, not a list it reads. `MockClient` plays it with timers and the person's presses; the same class drives the node test with no DOM.
+- **/new** in mock is `apps/web/src/mock/drafts.ts`: the draft store, the rules parse (ORCHESTRATION §3.3, step 4), the question card and the brief card. Start makes the project, moves the conversation and starts the journey.
+- **Turning it on.** `?mock=1&journey=todo` seeds two fixture projects: "QuestDay teaser" (finished two hours ago) and "Lantern · demo night" (one open pick). Without `journey=todo` the older fixtures stay, and `/new` still works; a project started from a draft always plays this journey.
+- **Flags**, read once at boot and kept for the tab (`sessionStorage`), so a reload keeps them:
 
   | Flag | Effect |
   |---|---|
-  | `speed=N` | divides every delay (default 1; `speed=20` for tests) |
-  | `slots=N` | concurrency (default 3); `slots=1` gives 1 live + 3 ghosts in 7c |
-  | `auto=1` | answers every pick with its recommended option, Mine for the rights, and types the step 2 and 10 messages, so the run goes end to end with no clicks |
+  | `speed=N` | divides every delay (default 1) |
+  | `slots=N` | concurrency (default 3); `slots=1` gives 1 live + 3 Animator ghosts in 7c |
+  | `auto=1` | types the step 2 message and drops the logo 3 ticks after an empty `/new` opens, answers each card and pick with its recommended option (Mine for the rights) and presses Start, types the step 10 message at the first G3, confirms its card, approves G3 the second time and asks the step 12 question, each 3 ticks after it opens; the run goes end to end with no clicks |
 
 - **Determinism.**
-  - The ids come from a counter (`inst_1`, `t_1`, `pip_1`), never from `Date.now()`. `mock/pip.ts`'s `uid` stays for the other intents.
-  - No `Math.random`. The pictures come from `drawFrame` with fixed inputs, and the logo fixture is a drawn, fictional "Q" badge.
-- **Time.** One tick is 1 s ÷ `speed`. The displayed durations are the compressed real ones: the Finished list says "9 s", not "3 min". Tests match patterns, not durations.
-- **Waits.** A beat with `when` waits for a person's action: `card:<id>`, `answer:<qid>`, `gate:<id>`, `ask:<text>`. With `auto=1`, each one resolves 3 ticks after it opens.
+  - The ids come from counters (`t_1`, `pip_1`, `ch_1`, `m_1`, `draft_1`, `c_q1`, `c_b2`), never from `Date.now()`. `mock/pip.ts`'s `uid` stays for the other intents.
+  - No `Math.random`. Every timestamp is the run's start + tick × 1 s ÷ `speed`.
+  - The logo fixture is a drawn, fictional "Q" badge (`drawLogo` in `mock/art.ts`).
+- **Time.** One tick is 1 s ÷ `speed`. The displayed durations are the compressed ones: the Finished list says "4 s", not "3 min". Tests match patterns, not durations.
+- **Waits.** The run waits for a person's action: `card:<id>`, `answer:<qid>`, `gate:<id>`, `ask:<text>`. With `auto=1`, each one resolves 3 ticks after it opens.
 
-The Tick column counts from that row's trigger. A row with no trigger keeps counting from the last trigger above it.
-
-The ids are the server's instance keys (`writer`, `animator:s01`, `pixel-artist:founder`). Every `instance` event is `{instance, change}` (ORCHESTRATION §4.3). The mock computes `ghost` with the same horizon rule, in `mock/journey.ts`, and emits `change: "ghost"` when a face enters the horizon.
+The Tick column counts from that row's trigger. A row with no trigger keeps counting from the last trigger above it. The ids are the server's instance keys (`writer`, `animator:s01`, `pixel-artist:founder`). Every `instance` event is `{instance, change}` (ORCHESTRATION §4.3), and a status-only `plan` view follows every change of a task's status (the UI reads `ready` from it for "waiting for a free slot").
 
 | Step | Trigger | Tick | Emits |
 |---|---|---|---|
-| 2 | send | +0 | `POST /api/drafts` → `draft_1` (listed with `draft: true`); `pip` (with `draft`) item user; `pip thinking` |
-| 3 | | +2 | `pip item` Pip text + `brief_fields` card `c_q` (3 fields) |
-| 4 | `card:c_q` | +0 | `pip card` c_q done; `pip thinking` |
-| | | +1 | `pip item` "Here's the brief." + `brief` card `c_b` |
-| 5 | `card:c_b` (Start) | +0 | `pip card` c_b started, `result.projectId: "questday-pitch"`; `gate` g0 passed (`by: "user"`) |
-| | | +1 | `plan` rev 1 (11 tasks) with `revision`; `milestone` (`kind: "plan"`) "Plan ready · 11 tasks to start" |
-| | | +1 | `instance` writer `spawn`; `task` t_1 working; `instance` director, art-director `ghost` |
-| | | +2…+5 | `activity` beats for t_1 (the existing `opening`/`middle`) |
-| 6 | | +6 | `channel` report done; `task` t_1 done; `instance` writer `end` (done); director and art-director drop off the horizon (`ghost: false`); `question` q_angle open; `status` |
-| 7a | `answer:q_angle` | +0 | `gate` g1 passed; `instance` director `spawn`; `task` t_2 working; art-director, pixel-artist:sign, animator:s01 `ghost` |
-| | | +5 | `task` t_2 done; director `end`; the ghosts go; `gate` g2 open |
-| 7b | `gate:g2_animatic` | +0 | art-director `spawn`; `task` t_3 working; pixel-artist:sign, animator:s01, animator:s02 `ghost` |
-| | | +3 | `channel` art-director report partial "No founder sprite in the library."; `plan` rev 2 (+t_5) with `revision`; `milestone` "Plan changed: added a Pixel artist for the founder"; pixel-artist:founder `ghost` |
-| | | +4 | `task` t_3 done; art-director `end`; pixel-artist:sign and pixel-artist:founder `spawn`; t_4, t_5 working; animator:s01–s03 `ghost` |
-| | | +6 | `task` t_4 done; pixel-artist:sign `end`; `question` q_rights open (the `rights` plan node for the sign) |
-| | | +8 | `task` t_5 done; pixel-artist:founder `end` |
-| 7c | `answer:q_rights` and t_5 done | +0 | animator:s01–s03 `spawn`; t_6–t_8 working; t_9 (s4) ready → animator:s04 `ghost`; mixer, reviewer `ghost` |
-| | | +4 | t_6 done; animator:s01 `end`; animator:s04 `spawn` (t_9 working) |
-| | | +5 | t_7 done; animator:s02 `end` |
-| 8 | | +6 | `channel` animator:s03 report partial "No recipe for two people talking."; `channel` Pip answer "Use a toast for the line and keep both characters left of the box." |
-| | | +7 | t_8 working again, `attempt: 2` (the same instance stays live) |
-| | | +9 | t_8 done; animator:s03 `end`; t_9 done; animator:s04 `end`; mixer `spawn`; t_10 working; editor `ghost` |
-| | | +12 | t_10 done; mixer `end` |
-| 9 | | +12 | reviewer `spawn`; t_11 working |
-| | | +15 | `x-state` findings: a blocker on s1, "The headline is clipped in scene 1"; t_11 done (blockers); `plan` rev 3 (`by: "code"`, +t_12 `scene.tune` s1 r2, +t_13 `review.final` r2); `milestone` "Plan changed: scene 1 goes back to the Animator for the headline"; reviewer `idle` (and `ghost`); animator:s01 `revive`; t_12 working |
-| | | +18 | t_12 done; animator:s01 `end`; reviewer `live`; t_13 working |
-| | | +20 | t_13 done clean; reviewer `end`; `gate` g3 open; `pip item` "The rough cut is ready. One fix was made on scene 1." |
+| 2 | send (or the first drop) | +0 | `POST /api/drafts` → `draft_1` (listed with `draft: true`); the files upload; `pip` (with `draft`) item user, with its file names; `pip thinking` |
+| 3 | | +1 | `pip item` "30 seconds, no voice, under $3. Three quick picks, then I'll sum it up." + `brief_fields` card `c_q1` (audience, involvement, the logo's rights) |
+| 4 | `card:c_q1` | +0 | `pip card` c_q1 done with its `values`; `pip thinking` |
+| | | +1 | `pip item` "Here's the brief." + `brief` card `c_b2` |
+| 5 | `card:c_b2` (Start) | +0 | `pip card` c_b2 started, `result.projectId: "questday_pitch"`; the conversation moves to the project; `gate` g0 passed; `plan` rev 1 (11 tasks) with `revision`; `milestone` (`kind: "plan"`) "Plan ready · 11 tasks to start"; `ledger` Pip's revision ($0.02) |
+| | | +0 | the first tasks start with the plan: `instance` writer `spawn`; `task` t_1 working; `instance` art-director `spawn`; `task` t_2 (`asset.import`) working; director, animator:s04, mixer `ghost` |
+| | | +1 | t_2 done (its `lastImage` is the 16 px icon); `question` q_rights open (`rights: {asset: "logo"}`); art-director `idle` (a ghost); s04 and mixer drop off the horizon |
+| 6 | | +5 | t_1 done; writer `end`; the ghosts go; `question` q_angle open |
+| 7a | `answer:q_angle` | +0 | `gate` g1 passed; director `spawn`; t_3 working; art-director, animator:s01, s02 `ghost` |
+| | | +5 | t_3 done; director `end`; `x-state` sceneStatus (boards) |
+| 7b | | +5 | art-director `live`; t_4 (`art.cast`) working; s01–s03 `ghost` |
+| | | +7 | `channel` art-director report partial "No founder sprite in the library."; `plan` rev 2 (`by: "code"`, `expand`, +t_draw_founder); `milestone` "Plan changed: added a Pixel artist for the founder: the library had no founder sprite."; pixel-artist:founder `ghost` |
+| | | +8 | t_4 done; art-director `end`; `gate` g2 passed (code, Decision 2); founder `spawn` + t_5 working; with q_rights answered, animator:s04 `spawn` + t_6 working; s01–s03 `ghost` |
+| 7c | | +12 | t_5 done; founder `end`; s01, s02 `spawn` (t_7, t_8 working); s03 `ghost` (ready, waiting for a free slot); mixer, reviewer `ghost` |
+| | | +14 | t_6 done; s04 `end`; s03 `spawn` (t_9 working) |
+| | | +16 | t_7 done; s01 `end` |
+| | | +17 | t_8 done; s02 `end` |
+| 8 | | +17 | `channel` animator report partial "No recipe for two people talking." (`ref: s03`); `channel` Pip answer "Use a toast for the line and keep both characters left of the box."; `ledger` Pip ($0.02); t_9 working again, `attempt: 2` |
+| | | +20 | t_9 done; s03 `end`; mixer `spawn`; t_10 working; reviewer, editor `ghost` |
+| | | +23 | t_10 done; mixer `end`; reviewer `spawn`; t_11 working |
+| 9 | | +26 | t_11 done; `x-state` findings: a blocker on scene 1, "The headline is clipped in scene 1"; `plan` rev 3 (`by: "code"`, +t_tune_s01_r2, +t_review_r2); `milestone` "Plan changed: scene 1 goes back to the Animator for the headline"; animator:s01 `revive` + t_12 working; reviewer `idle` (a ghost) |
+| | | +29 | t_12 done; s01 `end`; reviewer `live`; t_13 working |
+| | | +31 | t_13 done clean; reviewer `end`; `gate` g3 open; `pip item` "The rough cut is ready. One fix was made on scene 1." |
 | 10 | `ask:make the hero bigger in scene 2` | +2 | `pip item` + plan card `c_ch` (`who: ["animator", "reviewer"]`, `whoInstances` animator:s02 and reviewer; usd [0.10, 0.14]) |
-| | `card:c_ch` | +0 | `plan` rev 4 (`by: "person"`); `milestone` "Plan changed: scene 2 goes back to the Animator for a bigger hero"; animator:s02 `revive`; t_14 working; reviewer and editor `ghost` |
-| | | +4 | t_14 done; animator:s02 `end`; reviewer `spawn`; t_15 working |
-| | | +6 | t_15 done; reviewer `end`; `pip card` c_ch done "Scene 2 redone; the hero is 2× now."; `gate` g3 open |
-| 11 | `gate:g3_rough` | +0 | editor `spawn`; t_16 working |
-| | | +4 | t_16 done; editor `end`; `x-state` files; `gate` g4 open; `pip item` "Your video is ready…" |
-| | `gate:g4_final` | +0 | `gate` g4 passed; `milestone` "Your video is ready" |
+| | `card:c_ch` | +0 | `pip card` c_ch running; `gate` g3 locked; `plan` rev 4 (`by: "person"`); `milestone` "Plan changed: scene 2 goes back to the Animator for a bigger hero"; animator:s02 `revive` + t_14 working; reviewer `revive` (idle, a ghost); editor `ghost` |
+| | | +4 | t_14 done; s02 `end`; reviewer `live`; t_15 working |
+| | | +6 | t_15 done; reviewer `end`; `pip item` "The rough cut is ready again, with your change."; `pip card` c_ch done "Scene 2 redone; the hero is 2× now."; `gate` g3 open |
+| 11 | `gate:g3_rough` | +0 | `gate` g3 passed (and G4 approved with it); editor `spawn`; t_16 working |
+| | | +4 | t_16 done; editor `end`; `x-state` files; `gate` g4 passed; `milestone` "Your video is ready"; `pip item` "Your video is ready. A new video is exported, with scene 2's change." with the files card |
 | 12 | `ask:why did you add a Pixel artist?` (with `about: {instance: "pixel-artist:founder"}`) | +2 | `pip item` "The library had no founder sprite, so I added one drawing. It was $0.31 of your $3." |
 
-The `ledger` events follow each task's `usd` from §2. Pip's turns are metered at $0.01–0.02 each, for a total of $0.12.
+The `ledger` events follow each task's `usd` from §2 as it ends. Pip's six metered turns are $0.02 each, $0.12 in all.
 
-**The node test** (`apps/web/test/journey.test.ts`) plays the beats through `applyEvent` with `auto=1`. It checks:
-1. at every §2 checkpoint, the live set, the ghost set and the counter equal the checkpoint table exactly;
-2. at every tick, live faces = instances with a `working` task, plus stuck ones, and never more than 3 ghosts;
-3. every `spawn` or `revive` comes before its task's `working`, and every `end` after its last task's end;
-4. with `slots=1`, never more than one `working`, and in 7c one live Animator with three ghosts;
-5. animator:s01 and animator:s02 keep their ids through their returns, and no second instance with their label ever exists;
-6. the final counter is 12;
-7. spend is $2.14 ± 0.01;
-8. no gate or `rights` pick passes except on a person's action (`by: "user"`);
-9. every bubble, announcement and milestone the run emits matches its §5 template.
+**The node test** (`apps/web/test/journey.test.ts`) plays the run through `applyEvent`, with `auto=1` unless it says otherwise. It checks:
+1. the row passes every §2 checkpoint, in order: live set, ghost set and counter, read from the table in this file;
+2. at every tick, live faces = instances with a `working` task, never more than 3 ghosts, and no face both live and a ghost;
+3. every `spawn` or `revive` comes before its task's `working`, and no `end` comes while one of its tasks works (N3);
+4. with `slots=1`, never more than one `working`, and once one live Animator with three Animator ghosts;
+5. animator:s01 and animator:s02 keep their ids through their returns (each ends with two lives), and no label is ever on two instances;
+6. the final counter is 11, the run reaches step 12, and G4 is passed;
+7. spend is $1.77 ± 0.01 (the crew $1.65);
+8. with `auto` off and nobody answering, the run waits on the script pick and the logo: G1 never passes and q_rights stays open; scene 4 never starts before the logo pick; G2 passes in code; G4 passes only with the G3 press; every answer is `by: "user"`;
+9. every milestone and every reason (spawn and return) matches its §5 template, and every label is in sentence case (N5).
 
 ## 7. Needs from the backend
 
@@ -606,7 +616,7 @@ Checked against `docs/PIP-ORCHESTRATION.md` as it stands today. The first list i
   - Each `change` maps to the motion in §3.1: `ghost` = enter as a ghost, `spawn` = enter live (or ghost → live), `live` and `idle` = solidify or go dashed, `end` = the finish hold and fold, `revive` = enter from the counter.
 - `Task.instance`, `Task.planTask`.
 - The `kind: "plan"` milestones: "Plan ready · N tasks to start" and "Plan changed: <reason>".
-- The `rights` plan node as a person question, never auto-passed (their C2). The UI shows it with NeedsYou as "Your logo on the sign. Use it in the video?", with "Use it" · "Redraw".
+- The `rights` plan node as a person question, never auto-passed (their C2). The UI shows it with NeedsYou as "Your logo in an achievement toast. Use it in the video?", with "Use it" · "Leave it out", the 16 px icon as its picture, and no "Let the crew decide" (N15).
 - `GET /api/p/:id/instances/:iid/log` for the kept log, and `POST /api/pip {about: {instance}}` for "Ask Pip about this".
 - Drafts:
   - `POST /api/drafts {from?}`, `GET`/`DELETE /api/drafts/:id`, `POST /api/drafts/:id/files`, and `PATCH /api/drafts/:id/refs/:name` for the rights chips;
@@ -632,10 +642,34 @@ Checked against `docs/PIP-ORCHESTRATION.md` as it stands today. The first list i
 | N9 | Per-field labels in the card may be Pip's wording: "Investors", "Users", "A launch post" | the brief's step 3 copy | allowed ("only the label wording is Pip's"); the mock uses these |
 | N10 | `ChannelMsg.ref` set to the instance's subject or task id on every brief, ask, answer and report | the kept log and the drawer filter by instance | the log endpoint filters this way |
 | N11 | A note on the ghost horizon: no ghosts while only a person's pick is open | §2's checkpoints rely on it (C2); if the backend instead counts an open gate as a horizon source, steps 6, 7a, 9 and 10 change | follows from "running or ready" |
+| N12 | A ruling on a pending task whose other dependencies are far off: should it need all of them within 2 hops to be a ghost? | as written, the logo import (step 5) puts Animator · scene 4 and the Mixer on the horizon for one tick, though scene 4 also waits on G2 | the rule counts any one path; the mock follows it as written |
+| N13 | The draft's address: `/new/:draftId` (this file, §3.5), not `/new?draft=<id>` (ORCHESTRATION §4.1) | `usePath` ignores the query, and the shell must stay mounted through the replaceStates | ORCHESTRATION §4.1 says `?draft=`; the UI uses the path |
+| N14 | A draft's summary row carries `createdAt` ("Started …") and `status.line` (Pip's last question) | the Drafts card on Projects | §4.5 lists `{id, title, draft, updatedAt}`; the web type adds `createdAt?` |
+| N15 | The `rights` question says so: `QuestionT.rights: {asset, private: true}` | NeedsYou hides "Let the crew decide" and shows "Private to this project"; nobody but the person answers it | §1.7 describes it (`from: pip`, `blocks: ["animate"]`), with no marker the UI can read |
+| N16 | The brief card's picks line, `picks` (a string), or the gate list it is built from | line 3 of the card ("You'll pick 3 times: …") depends on involvement and the rights nodes | `preview` has crew, roles, tasks and newArt, not the picks |
+| N17 | A user item may carry the names of the files sent with it: `PipItem.files?: string[]` (kind `user`) | the thread shows the message "with its file chip" (step 2) | no field |
+| N18 | Draft ids start with `draft_` | the UI keys a draft's conversation by its id and tells drafts from projects by the prefix | §4.1 lists drafts as `draft_<id>`; the mock's ids are `draft_1` |
 
 ## 8. Open questions for the person
 
-- **Q1. What "Only the key picks" covers.**
-  - Today `key` stops at all five gates (G0–G4), and a brand asset is always the person's call.
-  - The journey above shows all of them (C10): 6 picks including Start.
-  - Should `key` skip the pacing (G2), or fold the final (G4) into the rough cut's "Looks good"? Either one would bring the run back to the brief's three picks.
+- **Q1. What "Only the key picks" covers.** Resolved by Decision 2: G1, the `rights` pick and G3; G2 passes in code, and the G3 press passes G4.
+- **Q2.** N12 above: whether the horizon should need all of a pending task's dependencies within reach.
+
+## 9. What P1 built (UI, mock)
+
+The UI half of P1 runs in mock only (`?mock=1`); `/new` stays the composer against the real server until P3 serves `/api/drafts` (`NEW_IS_TALK` in `App.tsx` and `pages/Projects.tsx`).
+
+| Part | Where | State |
+|---|---|---|
+| The shell kept mounted: `/new` → `/new/:draftId` → `/p/:projectId` | `components/ProjectStage.tsx`, `lib/stage.ts`, `App.tsx` | built; the field, its words and the focus survive both replaceStates |
+| The empty stage: film box and drop zone, Pip alone, "What are we making?", the field with "Add files", the examples, "Show all options" | `ProjectStage.tsx`, `Pip.tsx` (`PipAsk`, `Composer` attach) | built |
+| File chips in the field, with the type and "Private to this project" | `Pip.tsx`, `lib/brief.ts` | built |
+| The question card (≤ 3 fields, recommended picked, rights never) and its settled line | `components/BriefCards.tsx` | built |
+| The brief card, Start, "Show all options" | `BriefCards.tsx` | built |
+| The composer filled from a draft, "‹ Back to the conversation", its submit starting the draft | `pages/Composer.tsx` | built |
+| Projects: Pip's line from state, "New video", Drafts · N with Remove draft | `pages/Projects.tsx` | built |
+| The draft API and the line in mock | `mock/drafts.ts`, `mock/client.ts` | built (P3 builds the server side) |
+| The journey and its node test | `mock/journey.ts`, `test/journey.test.ts` | built |
+| The crew row: live faces in join order, up to 3 ghosts (dashed, muted, "up next" or "waiting for a free slot"), captions, "+N finished", one polite sentence per spawn, return or finish | `components/CrewStrip.tsx` (`InstanceStrip`, chosen when `state.instances` is present) | the seam; P2 finishes it |
+| Per-role glyphs, the face popover, the stepped enter, fold and return motion, Pip conducting, spawn bubbles, the counter opening the drawer, the drawer's Working / Up next / Finished groups and the kept log, Studio's instance rows and the Plan disclosure | | P2 |
+| "Make another like this", the server's drafts, the brief read by a model | | P3 |

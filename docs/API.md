@@ -110,3 +110,24 @@ type Cap = "passed" | "claimed" | "failed" | "unknown";
 ## SSE events (`GET /api/p/:id/events`)
 Each event has `id` (event-log seq), `event` name and JSON `data`:
 `patch` (PatchEntry), `task` (Task), `question` (QuestionT), `note` (Note), `gate` (Gate), `ledger` ({ usd, spentUsd, reservedUsd, model, role }), `digest` ({ text }), `render` ({ kind: "proxy" | "still" | "final", url }), `log` ({ level, text, role? }), `stage` ({ stage }), `pip` ({ type: "thinking" } (transient, id 0) | { type: "item", item: PipItem } | { type: "card", itemId, card: PipCard } | { type: "summary", summary: PipSummary }), `channel` (ChannelMsg), `plan` ({ view: PlanView; revision?: PlanRevisionSummary }: stored when it carries a revision; a status-only change is transient, id 0), `milestone` ({ id, at, kind: "gate" \| "answer" \| "stage" \| "export" \| "change" \| "plan", text }; the ones derived from other events are sent live with id 0, and `ProjectState.milestones` derives them all from the log). The `plan` milestones are "Plan ready · N tasks to start" (when G0 passes) and "Plan changed: <reason>" (each revision with ops). The Producer's own milestone is now "Brief read".
+
+## `/new` as a conversation (the mock answers these now; the server from P3)
+
+`apps/web` calls these from `HttpClient` and the mock (`apps/web/src/mock/drafts.ts`) answers them in `?mock=1`. Until the server serves `/api/drafts`, the studio keeps the composer at `/new`. The shapes are PIP-ORCHESTRATION §4.2; the UI's needs that differ are PIP-JOURNEY §7.2 (N7, N13–N18).
+
+| Method + path | Body / query | Returns |
+|---|---|---|
+| `POST /api/drafts` | `{ from?: projectId }` | `{ draft: Draft, items: PipItem[] }`; the first item is Pip's "What are we making?". Called on the first send or the first file drop, never on opening `/new` |
+| `GET /api/drafts/:id` | | `{ draft, items }` (404 once it is started or removed) |
+| `DELETE /api/drafts/:id` | | `{ ok }` |
+| `POST /api/drafts/:id/files` | raw body, `?name=` | `{ ref: DraftRef }` (rights start `unsure`; the type is guessed from the name) |
+| `PATCH /api/drafts/:id/refs/:name` | `{ type?, rights? }` | `DraftRef` |
+| `PATCH /api/drafts/:id` | `{ fields }` | `Draft` (the composer's "‹ Back to the conversation", no model call) |
+| `GET /api/drafts/:id/composer` | | `{ title, brief, budgetUsd, profile }` |
+| `POST /api/projects` | `+ draft?` | `{ id }`; the draft's conversation and files move to the project |
+| `GET /api/workspace/line` | | `{ text, parts: { projectId, kind, text }[] }`, at most 3 clauses, finished → working → waiting |
+| `GET /api/pip` | `?draft=` | a draft's conversation |
+| `POST /api/pip` | `{ draft?, about?: { instance } }` | as above; a draft's turns stream on `/api/events` as `pip` events with `draft` |
+| `POST /api/pip/cards/:cardId` | `{ draft?, values? }` | a `brief_fields` card's `values` are checked against the field registry (400 with a `fix` keeps it open); the `brief` card's confirm is Start and answers `{ card }` with `status: "started"` and `result.projectId` |
+
+`GET /api/projects` lists drafts too: `{ id: "draft_…", title, draft: true, createdAt, updatedAt, status: { line /* Pip's last question */ } }` with the other fields zeroed.

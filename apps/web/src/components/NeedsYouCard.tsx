@@ -1,7 +1,7 @@
 // The one thing that needs the person, under the film: open gates first, then open questions (oldest first), then
 // narration to record. One at a time, with "1 of 3" when there are more. A picture on the start side, the
 // recommended answer preselected, and "Looks good" as the primary button. Nothing here takes the focus; Q does.
-import { Button, Checkbox, Field, Fieldset, Radio } from "@shabboo/kit/react";
+import { Badge, Button, Checkbox, Field, Fieldset, Radio } from "@shabboo/kit/react";
 import { type FormEvent, useState } from "react";
 import { client } from "../lib/client.ts";
 import { GATE_STAGE } from "../lib/derive.ts";
@@ -258,13 +258,20 @@ function QuestionItem({ projectId, q }: { projectId: string; q: QuestionT }) {
             Change something
           </Button>
         )}
-        <button
-          type="button"
-          className="linkish small"
-          onClick={() => send({ optionId: q.recommendedId, note: "Let Producer decide" })}
-        >
-          Let the crew decide
-        </button>
+        {/* a likeness or a logo is the person's call (docs/RIGHTS.md §3): the crew never decides it */}
+        {q.rights ? (
+          <Badge tone="info" variant="pill" caps={false} size="sm">
+            Private to this project
+          </Badge>
+        ) : (
+          <button
+            type="button"
+            className="linkish small"
+            onClick={() => send({ optionId: q.recommendedId, note: "Let Producer decide" })}
+          >
+            Let the crew decide
+          </button>
+        )}
       </div>
     </form>
   );
