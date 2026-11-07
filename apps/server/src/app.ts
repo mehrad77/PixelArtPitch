@@ -7,7 +7,7 @@ import { extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { Pip } from "@pap/crew/assistant";
 import type { DraftConversations } from "@pap/crew/brief/drafts";
-import { lineOf, lineRows, needsWords } from "@pap/crew/brief/line";
+import { lineOf, lineRows, needsWords, openNeeds } from "@pap/crew/brief/line";
 import { PHASE } from "@pap/crew/orchestrator";
 import { InstanceKey } from "@pap/crew/plan/instances";
 import type { Registry, ToolContext } from "@pap/tools";
@@ -16,7 +16,7 @@ import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import type { Connections } from "./connections.ts";
+import { type Connections, redact } from "./connections.ts";
 import { listDocs, REPO_ROOT, readDoc, toolDocs } from "./docs.ts";
 import { McpSession } from "./mcp.ts";
 
@@ -280,15 +280,10 @@ export function createApp(o: ServerOpts) {
             spentUsd: st?.budget.spentUsd ?? 0,
             etaSec: st?.time.etaSec?.[0] ?? null,
             deadline: p.doc().brief.deadline ?? null,
-            needsYou:
-              p.state.questions.filter((q) => q.status === "open").length +
-              p.state.gates.filter((g) => g.status === "open").length,
-            // what it waits on, in the Projects line's words ("one pick", "your OK on the rough cut")
-            needs:
-              needsWords(
-                p.state.questions.filter((q) => q.status === "open").length,
-                p.state.gates.filter((g) => g.status === "open").map((g) => g.id),
-              ) ?? undefined,
+            // what it waits on, each pick once (the script pick is a question and a gate)
+            needsYou: openNeeds(p).questions + openNeeds(p).gates.length,
+            // in the Projects line's words ("one pick", "your OK on the rough cut")
+            needs: needsWords(openNeeds(p).questions, openNeeds(p).gates) ?? undefined,
             updatedAt: statSync(join(p.dir, "pitch.json")).mtime.toISOString(),
             // a glanceable card: is a crew working, what it says, where it is, and a frame to show
             running: st?.crew?.running ?? false,
@@ -665,7 +660,7 @@ export function createApp(o: ServerOpts) {
     c.json({ ok: false, error: { code: "no_connections", message: "connections are not configured" } }, 503);
   const connErr = (c: any, e: any) =>
     c.json(
-      { ok: false, error: { code: e?.code ?? "error", message: String(e?.message ?? e), fix: e?.fix } },
+      { ok: false, error: { code: e?.code ?? "error", message: redact(String(e?.message ?? e)), fix: e?.fix } },
       (e?.status ?? 400) as any,
     );
   app.get("/api/connections", (c) => (o.connections ? c.json(o.connections.list()) : noConn(c)));

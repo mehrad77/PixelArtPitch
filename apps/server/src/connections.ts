@@ -41,6 +41,26 @@ const slug = (s: string) =>
 const toolSlug = (s: string) => s.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 40);
 export const extName = (server: string, tool: string) => `ext_${server.replace(/-/g, "_")}__${toolSlug(tool)}`;
 
+/**
+ * a URL the browser may see: no login, no query, no fragment (a pasted `?key=` or `user:pass@` is a secret, and the
+ * browser can write a key but never read one)
+ */
+export function safeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const hidden = u.search || u.hash ? " (query hidden)" : "";
+    return `${u.protocol}//${u.host}${u.pathname}${hidden}`;
+  } catch {
+    return "(a URL)";
+  }
+}
+/** an error message with every URL in it cut down to safeUrl, and any of the connection's secret values masked */
+export function redact(message: string, secrets: string[] = []): string {
+  let out = message.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>)]+/gi, (m) => safeUrl(m));
+  for (const s of secrets) if (s && s.length >= 4) out = out.split(s).join("•••");
+  return out;
+}
+
 /** parse pasted JSON into named servers, or throw with a fix */
 export function parseServers(json: string): { name: string; server: z.infer<typeof PastedServer> }[] {
   let raw: any;
@@ -117,6 +137,12 @@ export class Connections implements ExternalTools {
     if (!c) throw Object.assign(new Error(`no connection ${name}`), { code: "not_found", status: 404 });
     return c;
   }
+  /** the connection's own secret values, so an error that echoes one can mask it */
+  private secretValues(c: ConnectionT): string[] {
+    const get = (kind: "env" | "header", k: string) =>
+      this.secrets.getKey({ id: this.secretId(c.name, kind, k), kind: "custom" }) ?? "";
+    return [...c.envKeys.map((k) => get("env", k)), ...c.headerKeys.map((k) => get("header", k))].filter(Boolean);
+  }
   private spec(c: ConnectionT): ServerSpec {
     const val = (kind: "env" | "header", k: string) =>
       this.secrets.getKey({ id: this.secretId(c.name, kind, k), kind: "custom" }) ?? "";
@@ -137,6 +163,7 @@ export class Connections implements ExternalTools {
       const l = this.live.get(c.name);
       return {
         ...c,
+        ...(c.url ? { url: safeUrl(c.url) } : {}),
         status: !c.enabled ? "off" : l?.error ? "failed" : l?.client ? "connected" : "idle",
         tools: l?.tools?.length ?? c.tools,
         toolNames: (l?.tools ?? []).map((t) => t.name),
@@ -207,7 +234,9 @@ export class Connections implements ExternalTools {
       const tools = await this.toolsRaw(name);
       return { name, status: "connected", tools: tools.map((t) => t.name) };
     } catch (e: any) {
-      return { name, status: "failed", tools: [], error: String(e?.message ?? e), ...(e?.fix ? { fix: e.fix } : {}) };
+      const c = this.load().find((x) => x.name === name);
+      const error = redact(String(e?.message ?? e), c ? this.secretValues(c) : []);
+      return { name, status: "failed", tools: [], error, ...(e?.fix ? { fix: e.fix } : {}) };
     }
   }
 
@@ -229,7 +258,7 @@ export class Connections implements ExternalTools {
       try {
         await client.connect();
       } catch (e: any) {
-        l.error = String(e?.message ?? e);
+        l.error = redact(String(e?.message ?? e), this.secretValues(c));
         l.fix = e?.fix;
         throw e;
       }

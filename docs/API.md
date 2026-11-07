@@ -103,8 +103,8 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `GET /api/p/:id/channel` | | `ChannelMsg[]`: the crew channel ("Behind the scenes") |
 | `POST /api/pip/cards/:cardId` | `{ project?, decision: "confirm" \| "decline", edit? }` | `{ card }` (status `running`/`submitted` at once; the final state comes as a `pip` `card` event); `409` if already decided. A plan card the crew asked for carries `revision?: { rev, ops, fromUsd, toUsd }` and `whoInstances?: { instance, label }[]` (a revision past the 20% line: confirm runs its tasks, decline drops them), or is the overrun's "Raise the cap" card (decline: the crew goes on only with steps that fit) |
 | `GET /api/events` | SSE | the workspace stream: `pip` events for the conversation with no project |
-| `GET /api/connections` | | the person's MCP servers: `{ name, transport, command?, args, url?, envKeys, headerKeys, enabled, trust, status, tools, toolNames, error?, fix? }[]` (secret values never) |
-| `POST /api/connections` | `{ json }` (pasted `mcpServers` JSON) | `{ added: { name, status, tools: string[], error?, fix? }[] }` |
+| `GET /api/connections` | | the person's MCP servers: `{ name, transport, command?, args, url?, envKeys, headerKeys, enabled, trust, status, tools, toolNames, error?, fix? }[]` (secret values never; `url` has no login, query or fragment, shown as `… (query hidden)`; `error` has every URL cut the same way and the connection's secret values masked) |
+| `POST /api/connections` | `{ json }` (pasted `mcpServers` JSON) | `{ added: { name, status, tools: string[], error?, fix? }[] }` (`error` redacted as above) |
 | `PATCH /api/connections/:name` | `{ enabled?, trust?: "ask" \| "read" }` | the connection |
 | `DELETE /api/connections/:name` | | `{ ok }` (its secrets are deleted too) |
 | `POST /api/connections/:name/test` | | `{ name, status, tools, error?, fix? }` |

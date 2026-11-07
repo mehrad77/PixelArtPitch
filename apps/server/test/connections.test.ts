@@ -217,3 +217,31 @@ test("pasted JSON is checked before anything is saved", async () => {
   assert.equal(r.added[0].name, "gone");
   assert.match(r.added[0].fix ?? "", /full path/);
 });
+
+test("a URL's key never comes back: not in a failed add, not in the list, not in an error", async () => {
+  const { safeUrl, redact } = await import("../src/connections.ts");
+  assert.equal(
+    safeUrl("https://bob:pw@mcp.example.test/v1/sse?key=sk-zzz#x"),
+    "https://mcp.example.test/v1/sse (query hidden)",
+  );
+  assert.equal(safeUrl("http://127.0.0.1:9/mcp"), "http://127.0.0.1:9/mcp");
+  assert.equal(
+    redact("fetch http://127.0.0.1:9/mcp?api_key=sk-abc failed; token sk-abc", ["sk-abc"]),
+    "fetch http://127.0.0.1:9/mcp (query hidden) failed; token •••",
+  );
+  const w = await setup();
+  const r = await w.connections.add(
+    JSON.stringify({
+      mcpServers: {
+        Far: {
+          url: "http://user:pw@127.0.0.1:9/mcp?key=sk-leaky-999",
+          headers: { Authorization: "Bearer sk-hdr-777" },
+        },
+      },
+    }),
+  );
+  assert.equal(r.added[0].status, "failed");
+  const seen = JSON.stringify([r, w.connections.list()]);
+  for (const s of ["sk-leaky-999", "user:pw", "sk-hdr-777", "?key="]) assert.ok(!seen.includes(s), `leaked ${s}`);
+  assert.match(seen, /127\.0\.0\.1:9\/mcp \(query hidden\)/);
+});

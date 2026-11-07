@@ -167,7 +167,7 @@ People can extend the studio with their own MCP servers, for example a stock-mus
 
 **Safety**
 - **A stdio server runs a command on this computer.** The form always shows the exact command and arguments, and the submit button says what it does: "Run `npx foo-mcp` and connect". Nothing is spawned before you confirm.
-- **Secrets** (env values, Authorization headers) go to the existing `SecretStore` (env → Keychain → 0600 file). Only references are stored in `~/.pixelartpitch/settings.json`. They are never echoed back to the UI or written to logs or transcripts.
+- **Secrets** (env values, Authorization headers) go to the existing `SecretStore` (env → Keychain → 0600 file). Only references are stored in `~/.pixelartpitch/settings.json`. They are never echoed back to the UI or written to logs or transcripts. A URL is a secret too when it carries a login or a query (`?key=`): the UI and every error get it cut down to its origin and path (`https://host/path (query hidden)`), and an error that echoes one of the connection's secret values shows `•••` instead.
 - **Trust per connection:**
   - **Ask every time** (the default): every call to the server is a plan card.
   - **Allow read-only tools:** tools marked with the MCP annotation `readOnlyHint: true` run directly. Everything else is still a card.
