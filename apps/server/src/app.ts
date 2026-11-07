@@ -206,7 +206,17 @@ export function createApp(o: ServerOpts) {
               p.state.questions.filter((q) => q.status === "open").length +
               p.state.gates.filter((g) => g.status === "open").length,
             updatedAt: statSync(join(p.dir, "pitch.json")).mtime.toISOString(),
+            // a glanceable card: is a crew working, what it says, where it is, and a frame to show
+            running: st?.crew?.running ?? false,
+            paused: p.state.paused,
+            status: p.state.status,
+            phase: p.state.status?.phase ?? 0,
+            milestones: p.state.milestones.length,
+            finished: p.files().some((f) => f.kind === "video"),
+            working: p.state.tasks.filter((t) => t.status === "working").map((t) => t.role),
+            thumb: `/api/p/${p.id}/frame?t=${Math.max(0.5, Math.min(p.timeline().duration - 0.5, p.timeline().duration * 0.4)).toFixed(2)}&scale=1`,
           };
+          if (!extra.running) extra.etaSec = null;
         } catch {}
         return { ...x, ...extra };
       }),
