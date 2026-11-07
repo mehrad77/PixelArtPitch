@@ -52,6 +52,19 @@ export function needsWords(questions: number, gates: string[]): string | null {
   return `${n} things`;
 }
 
+/**
+ * what waits on the person: open questions, and open gates that aren't just one of those questions. The G1 script
+ * pick is a question and a gate that points at it (`items[].ref`): it counts once.
+ */
+export function openNeeds(p: Pick<OpenProject, "state">): { questions: number; gates: string[] } {
+  const open = new Set(p.state.questions.filter((q) => q.status === "open").map((q) => q.id));
+  const gates = p.state.gates
+    .filter((g) => g.status === "open")
+    .filter((g) => !(g.items ?? []).some((it: { ref?: string }) => it.ref && open.has(it.ref)))
+    .map((g) => g.id);
+  return { questions: open.size, gates };
+}
+
 export function lineOf(rows: LineRow[], nowMs = Date.now()): WorkspaceLine {
   const parts: LinePart[] = [];
   const day = nowMs - 24 * 3600 * 1000;
@@ -94,14 +107,15 @@ export function lineRows(ws: Workspace, running: (p: OpenProject) => boolean): L
         finishedAt = Math.max(finishedAt ?? 0, statSync(join(p.dir, "out", f.name)).mtimeMs);
       } catch {}
     const run = running(p);
+    const { questions, gates } = openNeeds(p);
     out.push({
       id: p.id,
       title: p.doc().title,
       ...(finishedAt ? { finishedAt } : {}),
       running: run,
       stage: p.state.stage,
-      questions: p.state.questions.filter((q) => q.status === "open").length,
-      gates: p.state.gates.filter((g) => g.status === "open").map((g) => g.id),
+      questions,
+      gates,
       ...(p.state.status.problem && !run ? { problem: p.state.status.problem.text } : {}),
     });
   }

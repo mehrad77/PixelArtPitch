@@ -22,7 +22,7 @@ const { FakeProvider, FAKE_CAPS, Ledger, SecretStore, defaultSettings, setPriceO
 );
 const R = await import("../src/brief/registry.ts");
 const { checkReading, openFields } = await import("../src/brief/read.ts");
-const { lineOf } = await import("../src/brief/line.ts");
+const { lineOf, openNeeds } = await import("../src/brief/line.ts");
 const { wireCrew } = await import("../../../apps/server/src/wire.ts");
 const { createApp } = await import("../../../apps/server/src/app.ts");
 
@@ -278,6 +278,26 @@ test("the Projects line (D7): finished → working → waiting, at most 3 clause
   );
   assert.equal(two.text, "QuestDay teaser is finished. X is waiting on 3 things from you.");
   assert.equal(lineOf([], t).text, "Nothing needs you right now.");
+});
+
+test("a gate opened for an open question counts once (the script pick)", () => {
+  const state = {
+    questions: [
+      { id: "q1", status: "open" },
+      { id: "q0", status: "answered" },
+    ],
+    gates: [
+      { id: "g1_script", status: "open", items: [{ label: "Pick a script angle", ref: "q1" }] },
+      { id: "g3_rough", status: "open", items: [{ label: "Watch the rough cut" }] },
+      { id: "g0_brief", status: "passed", items: [] },
+    ],
+  } as any;
+  assert.deepEqual(openNeeds({ state }), { questions: 1, gates: ["g3_rough"] });
+  const n = openNeeds({ state: { ...state, gates: [state.gates[0]] } });
+  assert.equal(
+    lineOf([{ id: "l", title: "Lumenbook pitch", ...n }]).text,
+    "Lumenbook pitch is waiting on one pick from you.",
+  );
 });
 
 // ---------------------------------------------------------------- the draft over the API
