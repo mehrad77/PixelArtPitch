@@ -128,15 +128,19 @@ export function plainTitle(t: Task, s: ProjectState): string {
 }
 
 // ---- problems the person can act on ----
-export type Problem = { text: string; action: ProblemAction; taskId: string };
+export type Problem = { text: string; action: ProblemAction; taskId: string; provider?: string };
 export const PROBLEM_BUTTON: Record<ProblemAction, string> = {
   retry: "Try again",
   change_model: "Use a different model",
   add_budget: "Add budget",
+  fix_key: "Fix the key",
 };
 function actionFor(t: Task): ProblemAction {
   // the message says what happened; the fix often names Settings as a last resort, so it doesn't pick the button
   const m = (t.error?.message ?? "").toLowerCase();
+  // a key or credit problem before the budget words: a provider's "insufficient credit" is not the project's cap
+  if (/\b40[13]\b|authentication|permission_error|invalid api key|no api key|credit|billing|quota/.test(m))
+    return "fix_key";
   if (/budget|cap\b|spend|out of money|insufficient/.test(m)) return "add_budget";
   if (/did not answer|didn't answer|not answer|unreachable|model|provider|connect|refused|key\b/.test(m))
     return "change_model";
@@ -146,11 +150,24 @@ const REASON: Record<ProblemAction, string> = {
   retry: "something went wrong",
   change_model: "the AI it uses isn't answering",
   add_budget: "the budget is used up",
+  fix_key: "its model provider turned the key down",
 };
-export const unrecoveredFailures = (s: ProjectState) =>
-  s.tasks.filter((t) => t.status === "failed" && !isRecovered(t, s.tasks));
-/** the server's problem when it sends one, else the newest failure no later try recovered */
+/** failures no later try recovered and no later run superseded (a run that started after the failure) */
+export const unrecoveredFailures = (s: ProjectState) => {
+  const since = Date.parse(s.crew?.runStartedAt ?? "") || 0;
+  return s.tasks.filter(
+    (t) =>
+      t.status === "failed" &&
+      !isRecovered(t, s.tasks) &&
+      (!since || (Date.parse(t.endedAt ?? t.startedAt ?? "") || 0) >= since),
+  );
+};
+/**
+ * The server's problem when it sends one, else the newest failure no later try recovered. While the crew is
+ * running nothing is a problem: a held run is paused, so its own problem still shows.
+ */
 export function problemOf(s: ProjectState): Problem | undefined {
+  if (crewRunning(s) && !s.crew?.held) return undefined;
   if (s.status?.problem) return s.status.problem;
   const f = unrecoveredFailures(s).at(-1);
   if (!f) return undefined;
@@ -234,6 +251,8 @@ export function humanStatus(s: ProjectState): HumanStatus {
     return { text: "The pictures are done. Record your narration when you're ready.", tone: "needs" };
   const problem = problemOf(s);
   if (problem) return { text: problem.text, tone: "problem", problem };
+  // the crew waits on a card in Pip's thread (a plan change, the budget): a wait for you, not a problem
+  if (s.status?.line && /^Waiting for you/.test(s.status.line)) return { text: s.status.line, tone: "needs" };
   const crew = crewStateOf(s);
   // the main line follows the reason: "Waiting to start" only before anything ran, "Stopped" once a run broke off
   const why = waitReason(s);
@@ -481,6 +500,7 @@ export type EffectAction =
   | { kind: "continue"; stage: Stage }
   | { kind: "retry"; taskId: string }
   | { kind: "change_model"; taskId: string }
+  | { kind: "fix_key"; provider?: string }
   | { kind: "add_budget"; amount: number }
   | { kind: "resume" }
   | { kind: "gate_changes"; stage: Stage; items: string[] };
@@ -550,6 +570,12 @@ export function effectOf(a: EffectAction, s: ProjectState): Effect {
         href: "/settings/roles",
       };
     }
+    case "fix_key":
+      return {
+        text: `Opens Settings › Providers${a.provider ? ` at ${PROVIDER_WORD[a.provider] ?? LOCAL_WORD[a.provider] ?? a.provider}` : ""}. Once the key is saved or its test passes, the crew picks up where it stopped.`,
+        confirm: false,
+        href: "/settings/providers",
+      };
     case "add_budget": {
       const cap = s.budget.capUsd + a.amount;
       const need = s.budget.estTotalUsd?.[1];

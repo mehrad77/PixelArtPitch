@@ -1,4 +1,4 @@
-// The one action for a problem the crew can't fix alone: Try again, Use a different model, or Add budget. Each says
+// The one action for a problem the crew can't fix alone: Try again, Fix the key, Use a different model, or Add budget. Each says
 // what it causes before it runs (effectOf); adding budget is a small inline form with the new cap.
 import { Button, Field } from "@shabboo/kit/react";
 import { type FormEvent, useState } from "react";
@@ -20,6 +20,20 @@ export function ProblemButton({
   className?: string;
 }) {
   if (problem.action === "add_budget") return <AddBudget projectId={projectId} state={state} className={className} />;
+  if (problem.action === "fix_key")
+    return (
+      <EffectButton
+        className={className}
+        label={PROBLEM_BUTTON.fix_key}
+        effect={effectOf({ kind: "fix_key", provider: problem.provider }, state)}
+        onRun={() => {
+          navigate("/settings/providers");
+          // the provider's own section, once the page is drawn
+          if (problem.provider)
+            setTimeout(() => document.getElementById(`prov-${problem.provider}-t`)?.scrollIntoView(), 200);
+        }}
+      />
+    );
   if (problem.action === "change_model")
     return (
       <EffectButton

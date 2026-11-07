@@ -8,7 +8,9 @@ type ProjectSummary = { id: string; title: string; dir: string; rev: number; sta
   etaSec: number | null; deadline: string | null; needsYou: number; updatedAt: string };
 type Stage = "brief" | "script" | "storyboard" | "art" | "animate" | "narrate" | "sound" | "review" | "deliver";
 type Task = { id: string; kind: string; role: Role; title: string;            // "Drawing hero, variant 2 of 3, critique 1"
-  status: "upcoming" | "queued" | "working" | "waiting_user" | "waiting" | "done" | "failed" | "cancelled";
+  status: "upcoming" | "queued" | "working" | "waiting_user" | "waiting" | "done"
+    | "partial" /* ended on a stand-in (kept as built, lints only, a library asset); crew/retry redoes it */
+    | "failed" | "cancelled";
   model?: string; usd: number; estUsd?: number; etaSec?: number; startedAt?: string; endedAt?: string;
   summary?: string; error?: { message: string; fix?: string }; lastImage?: string /* URL */; parent?: string;
   planTask?: string /* the plan task this row is an attempt at */; instance?: string /* "animator:s03" */ };
@@ -26,7 +28,14 @@ type ProjectState = { doc: Project; rev: number; timeline: Timeline /* cues, sce
   digest: string /* Producer's latest 2-3 sentence summary */;
   crew: { running: boolean; paused: boolean; stage: Stage; lastActiveAt: string | null;
     queued: number /* plan tasks ready but waiting for a slot or the budget */;
-    slots: Record<string, { size: number; used: number }> /* per endpoint, plus "render" */ };
+    slots: Record<string, { size: number; used: number }> /* per endpoint, plus "render" */;
+    runStartedAt: string | null /* the current or last run's start: older failures belong to an older run */;
+    held: string | null /* the run is held for the person, and why (a rejected key, Pip's hold) */ };
+  status: { line: string; phase: number;
+    problem?: { text: string; action: "retry" | "change_model" | "add_budget" | "fix_key"; taskId?: string;
+      provider?: string /* fix_key: the provider to fix in Settings → Providers */ } };
+  needs: { count: number; words: string | null } /* "Needs you": questions, gates, the crew's open Pip cards (a plan
+    change, the budget) and the plan's other waits, each once; also ProjectSummary.needsYou */;
   plan: PlanView | null /* the production plan; null until a crew first runs (GET never writes one) */;
   instances: Instance[] /* the crew members that come and go (docs/PIP-ORCHESTRATION.md §2), join order */ };
 // A crew member, derived from the event log (never stored). `id` is its key: "writer", "animator:s03", "pixel-artist:founder".
@@ -79,7 +88,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/p/:id/notes` | `{ target, category, text?, assignee? }` | `Note` |
 | `POST /api/p/:id/gates/:gate` | `{ verdict: "approve" \| "approve_notes" \| "changes", items?: string[], reasons?: string[] }` | `Gate` |
 | `POST /api/p/:id/crew/run` | `{ stage? }` | `{ ok }`: continues the plan; `stage` reruns it from that stage (finished work from there on runs again as fresh plan tasks) |
-| `POST /api/p/:id/crew/retry` | | `{ ok }`: the failed plan task goes back to pending (a `retry` revision); with none failed, the current stage reruns |
+| `POST /api/p/:id/crew/retry` | `{ taskId? }` (a plan task id or a `state.tasks` row id) | `{ ok, started, resumed }`. A held run (PIP-ORCHESTRATION §1.8) goes on (`resumed`). Else a `by: "person"`, `trigger: "retry"` revision: failed plan tasks go back to pending, and `fallback` ones run again as fresh copies with the finished work after them (gates included, never publish); `taskId` limits it to that one task when it is failed or a fallback. With nothing to redo, the current stage reruns. `409 busy` while a run works and isn't held |
 | `GET /api/p/:id/plan/revisions` | | `PlanRevisionSummary[]` from `runs/plan.jsonl`, oldest first |
 | `GET /api/p/:id/instances/:iid/log` | | `InstanceLog`: the kept log of one crew member (read-only): every attempt row's transcript (thread, tool calls, patches, errors) and its channel messages (briefs, asks, answers, reports from or to its role whose `ref` is its subject, a plan task or a row of it; a singleton also gets its role's messages with no `ref`), merged by time. `404` with a `fix` for an unknown id |
 | `POST /api/p/:id/crew/pause` | `{ mode: "after_step" \| "now" }` | `{ ok }` |
@@ -91,8 +100,8 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/p/:id/vo/align` | `{ file }` | `{ proposal: { cue: string; start: number; end: number }[] }` then a patch to approve |
 | `GET /api/settings` | | `Settings` (keys never included: `hasKey: boolean`) |
 | `PUT /api/settings` | partial `Settings` | `Settings` |
-| `PUT /api/settings/providers/:id/key` | `{ key }` | `{ hasKey: true }` |
-| `POST /api/settings/providers/:id/test` | | `{ ok, models: string[], error? }` |
+| `PUT /api/settings/providers/:id/key` | `{ key }` | `{ hasKey: true }`; a non-empty key lifts every run held on this provider (`Crew.providerFixed`, PIP-ORCHESTRATION §1.8) |
+| `POST /api/settings/providers/:id/test` | | `{ ok, models: string[], error? }`; `ok` lifts every run held on this provider |
 | `GET /api/models` | | `ModelRow[]` (capability matrix) |
 | `GET /api/ledger` | `?project=&limit=` | ledger rows |
 | `GET /api/library` | | `library/index.json` |

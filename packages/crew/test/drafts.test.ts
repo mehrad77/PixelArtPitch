@@ -292,7 +292,7 @@ test("a gate opened for an open question counts once (the script pick)", () => {
       { id: "g0_brief", status: "passed", items: [] },
     ],
   } as any;
-  assert.deepEqual(openNeeds({ state }), { questions: 1, gates: ["g3_rough"] });
+  assert.deepEqual(openNeeds({ state }), { questions: 1, gates: ["g3_rough"], cards: [], waiting: 0 });
   const n = openNeeds({ state: { ...state, gates: [state.gates[0]] } });
   assert.equal(
     lineOf([{ id: "l", title: "Lumenbook pitch", ...n }]).text,

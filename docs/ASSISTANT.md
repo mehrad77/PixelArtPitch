@@ -22,7 +22,7 @@ Pip sits above the orchestrator but never competes with it:
 | **agent** | the model passed `tools` and is not local-small (default: Sonnet 5.5) | a tool loop of at most 8 steps over the allowed tools, then a final `reply` with text and cards |
 | **menu** | weak or local models, or tools failed | one structured call: `{ intent, params, reply }` with `intent` from a closed set (below), then deterministic code builds the cards |
 
-Menu intents: `files`, `translate_subtitles`, `change`, `new_from_this`, `export`, `status`, `explain`, `other`.
+Menu intents: `files`, `translate_subtitles`, `change`, `retry` (the "Redo what failed" card), `new_from_this`, `export`, `status`, `explain`, `other`.
 
 The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-5-5` with the Producer's model as the fallback. Under the Local profile it is the local text model, in menu mode. `GET /api/settings` names it in `roles.assistant` even when it was never saved (`effective.assistant.source: "default"`).
 
@@ -41,6 +41,7 @@ The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-
   - `crew_request_change` (new)
   - `draft_create` ("Make another like this": it opens a draft on `/new`; `project_fork` stays in the registry for MCP clients but is no longer Pip's)
   - `crew_run`, `crew_pause`
+  - `crew_retry` ("Redo what failed", registered by the server): it lifts a held run, or reruns the failed and fallback steps (PIP-ORCHESTRATION §1.8). When something failed, fell back or is held, a `crew_run` card without a stage becomes this card, never a fresh "Start the crew"
   - `note_add`
   - `question_answer` and `gate_decide`: only when the person asked in words, and the card states the decision
 - **Always available:** `feature_request` (new; it runs directly, since it only appends a line).
@@ -77,7 +78,9 @@ The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-
 - **Per project:** `<project>/runs/pip.jsonl`, one JSON line per turn item.
 - **Workspace-level** (asked from the Projects page, no project): `~/.pixelartpitch/pip.jsonl`. From there Pip can list projects, fork one, or start a new one: it drafts a brief and opens the composer prefilled with it.
 - **Per draft** (`/new`, PIP-ORCHESTRATION §3): `$PAP_HOME/drafts/<id>/pip.jsonl`, in the same format. Start appends it to the new project's `runs/pip.jsonl`, so the project's Pip has the whole thread.
-- The model sees the last 20 items plus a fresh project summary, never the whole log.
+- The model sees the last 20 items plus a fresh project summary, never the whole log. The summary carries a "Crew now:" line from `Crew.snapshot` each turn (running, idle or held and why, open and passed gates, open questions, a plan-change card, what failed or fell back, whether a review is still to come, the last export), so Pip never says "the crew is still working" after the export from an old message.
+- A crew change card says "your note waits for the next review" only while a review is still to come in the run; otherwise "your change starts when this run ends".
+- A held run (PIP-ORCHESTRATION §1.8) posts one Pip message with no card: what happened, what was kept, what waits, and where to fix it (`Pip.holdNotice`).
 
 ## `/new`: the draft conversation (`packages/crew/src/brief/`)
 

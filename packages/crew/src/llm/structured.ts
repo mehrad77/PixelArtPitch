@@ -7,7 +7,7 @@
 // Keep schemas generic: an array of `{ name, rows }` items, not an object with one property per item. Big
 // one-property-per-item schemas break grammar compilers (native output and strict tools).
 import type { z } from "zod";
-import { ProviderError } from "./http.ts";
+import { errorKind, ProviderError } from "./http.ts";
 import { sanitizeSchema, toJsonSchema } from "./schema.ts";
 import type { Caps, ChatMessage, ChatRequest, ChatResult, Provider, StreamEvent, ToolSpec, Usage } from "./types.ts";
 
@@ -41,9 +41,11 @@ export class StructuredError extends Error {
   }
 }
 
-/** Errors that mean "this rung isn't supported here", so the next rung is worth a try. */
+/** Errors that mean "this rung isn't supported here", so the next rung is worth a try (never a credit 400). */
 const unsupported = (e: unknown) =>
-  e instanceof ProviderError && (e.status === 400 || e.status === 404 || e.status === 422 || e.status === 501);
+  e instanceof ProviderError &&
+  (e.status === 400 || e.status === 404 || e.status === 422 || e.status === 501) &&
+  errorKind(e) !== "credit";
 
 export function rungsFor(caps: Partial<Caps> | undefined, nativeOk: boolean): Rung[] {
   return RUNGS.filter((r) => {

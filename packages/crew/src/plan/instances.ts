@@ -316,14 +316,15 @@ export class InstanceFold {
           if (s) t.status = s;
         }
         // the report a model task says comes just before its row's `done`; a code task's row is its report
-        if (r.status === "done" || r.status === "failed") {
+        if (r.status === "done" || r.status === "failed" || r.status === "partial") {
           const key = this.rowInstance(r.id);
           const m = key ? this.meta(key) : null;
+          const bad = r.status !== "done";
           if (m && !(m.report && m.report.seq > (had?.seq ?? e.seq)))
             m.report = {
-              status: r.status === "failed" ? "partial" : "done",
+              status: bad ? "partial" : "done",
               did: r.summary || r.title,
-              ...(r.status === "failed" && r.error ? { couldnt: r.error.message.slice(0, 200) } : {}),
+              ...(bad && r.error ? { couldnt: r.error.message.slice(0, 200) } : {}),
               seq: e.seq,
             };
         }
@@ -833,6 +834,7 @@ function rowToPlan(status: string): PlanTaskView["status"] | null {
     case "waiting_user":
       return "waiting_person";
     case "done":
+    case "partial":
       return "done";
     case "failed":
       return "failed";

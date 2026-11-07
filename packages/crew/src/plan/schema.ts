@@ -63,6 +63,8 @@ export const PlanTask = z.object({
   reason: z.string().max(200).optional(),
   /** why it ended the way it did (skipped, dropped, partial) */
   note: z.string().max(200).optional(),
+  /** done on a stand-in (kept as built, lints only, a library asset): `POST /crew/retry` redoes it */
+  outcome: z.enum(["fallback"]).optional(),
 });
 export type PlanTaskT = z.infer<typeof PlanTask>;
 
@@ -161,6 +163,8 @@ export type PlanTaskView = {
   taskIds: string[];
   addedIn: number;
   reason?: string;
+  outcome?: "fallback";
+  note?: string;
 };
 export type PlanView = {
   rev: number;

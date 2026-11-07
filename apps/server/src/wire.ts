@@ -94,6 +94,26 @@ export async function wireCrew(deps: {
       },
     }),
     defineTool({
+      name: "crew_retry",
+      title: "Redo what failed",
+      description:
+        "Lift a held crew run (after a key or provider fix), or run a project's failed and fallback steps again, with the work after them. Pass taskId for one step. Returns at once; follow crew_status.",
+      input: z.object({ taskId: z.string().max(80).optional() }),
+      output: z.object({ started: z.boolean(), resumed: z.boolean() }),
+      roles: [],
+      tier: "basic",
+      effects: "spend",
+      project: true,
+      handler: async (i, ctx) => {
+        const r = crew.retry(ctx.project!, { taskId: i.taskId });
+        if (r.busy)
+          return fail("busy", "the crew is working on this project", {
+            fix: "wait for the run to end, or pause it first",
+          });
+        return ok({ started: r.started, resumed: r.resumed });
+      },
+    }),
+    defineTool({
       name: "crew_status",
       title: "Crew status",
       description: "Stage, gates, tasks, open questions, budget and ETA of a project's crew.",
@@ -182,7 +202,12 @@ export async function wireCrew(deps: {
       if (what === "pending") decision === "confirm" ? crew.confirmPending(p) : crew.declinePending(p);
       else if (decision === "decline") crew.declineOverrun(p);
     },
+    crewSnapshot: (p) => crew.snapshot(p),
   });
+  // a held run (a rejected key, no credit, no connection): Pip says so once in the thread
+  crew.onHold = (p, h) => {
+    pip.holdNotice(p, h);
+  };
 
   // Pip directs the crew on its triggers (asks, partial/blocked reports, blockers, stage checks)
   const conductor = new PipConductor({ gateway, modeFor: (m) => pip.modeFor(m) });
@@ -398,6 +423,8 @@ export async function wireCrew(deps: {
         const cfg = gateway.publicSettings().providers.find((p) => p.id === id);
         if (cfg) gateway.secrets.setKey(cfg.id, key);
         gateway.reload();
+        // a new key lifts the runs held on this provider (§1.8)
+        if (cfg && key) crew.providerFixed(cfg.id);
       },
       test: async (id) => {
         const cfg = gateway.publicSettings().providers.find((p) => p.id === id);
@@ -406,6 +433,8 @@ export async function wireCrew(deps: {
           const list = await createProvider({ ...cfg, enabled: true }, gateway.secrets).listModels(
             AbortSignal.timeout(8000),
           );
+          // the provider answers again: runs held on it go on
+          crew.providerFixed(cfg.id);
           return { ok: true, models: list.map((m) => m.id) };
         } catch (e: any) {
           return { ok: false, models: [], error: String(e?.message ?? e) };

@@ -27,6 +27,7 @@ import {
 } from "@pap/tools";
 import { z } from "zod";
 import type { Gateway } from "./gateway.ts";
+import { errorKind, holdsRun } from "./llm/http.ts";
 import type { ChatMessage, ContentPart } from "./llm/types.ts";
 import {
   AnglesOut,
@@ -103,12 +104,39 @@ const ROLE_WORD: Record<string, string> = {
   librarian: "librarian",
   assistant: "assistant",
 };
+const PROVIDER_WORD: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  lmstudio: "LM Studio",
+  ollama: "Ollama",
+  llamacpp: "llama.cpp",
+};
+/** "anthropic" → "Anthropic"; an unknown id stays as it is */
+export const providerWord = (id?: string) => (id ? (PROVIDER_WORD[id] ?? id) : "the model provider");
+export type ProblemAction = "retry" | "change_model" | "add_budget" | "fix_key";
+/** the provider an error is about: the gateway tags it, else the id in "provider "x" is turned off" */
+const providerOf = (e: any): string | undefined =>
+  typeof e?.provider === "string"
+    ? e.provider
+    : (/provider "([^"]+)"/.exec(String(e?.message ?? ""))?.[1] ?? undefined);
 /** a failure in plain words, and the one thing the person can do about it */
-export function humanize(e: any, role = "crew"): { text: string; action: "retry" | "change_model" | "add_budget" } {
+export function humanize(e: any, role = "crew"): { text: string; action: ProblemAction; provider?: string } {
   const who = `The ${ROLE_WORD[role] ?? role}`;
   const msg = String(e?.message ?? e);
-  if (e?.code === "budget" || /budget:/.test(msg))
-    return { text: "The crew reached your budget.", action: "add_budget" };
+  const kind = errorKind(e);
+  const provider = providerOf(e);
+  const named = provider ? { provider } : {};
+  const P = providerWord(provider);
+  // a provider problem first: a 401 never reads "isn't answering · Use a different model"
+  if (kind === "auth") return { text: `Your ${P} key was rejected.`, action: "fix_key", ...named };
+  if (kind === "credit") return { text: `Out of credit on ${P}.`, action: "fix_key", ...named };
+  if (kind === "unreachable")
+    return /turned off|no provider "/.test(msg)
+      ? { text: `${P} is turned off in Settings.`, action: "fix_key", ...named }
+      : { text: `Can't reach ${P}. Is it running?`, action: "retry", ...named };
+  if (kind === "budget") return { text: "The crew reached your budget.", action: "add_budget" };
+  if (kind === "rate") return { text: `${P} is busy right now (rate limited).`, action: "retry", ...named };
   if (/schema-valid|max_tokens|garbled|JSON/i.test(msg))
     return { text: `${who}'s answer came back garbled.`, action: "change_model" };
   if (/ECONNREFUSED|fetch failed|unreachable|no provider|turned off/i.test(msg))
@@ -244,8 +272,10 @@ type Run = {
   triggers: Trigger[];
   /** redo rounds per scene in this run (the request) */
   redos: Map<string, number>;
-  /** Pip put the crew on hold */
+  /** Pip put the crew on hold (or a provider failure did: `hold`) */
   held?: string;
+  /** a provider failure holds the run until the key is fixed (§1.8): the first one's kind, provider and words */
+  hold?: { kind: string; provider?: string; text: string; action: ProblemAction };
   /** Pip decision rounds in this run */
   thinks?: number;
   /** Pip already asked the person something in this run */
@@ -275,6 +305,26 @@ type ArtSpec = {
 type Variant = { frames: DrawOutT; std: any; model: string; judge?: string } | null;
 /** a change run: its notes, the scenes it may redo, the scenes the Director re-plans, and asks no scene carries */
 export type ChangePlan = { notes: string[]; scope?: string[]; reboard?: string[] };
+/** the crew right now, for Pip's turn context and its card copy (Crew.snapshot) */
+export type CrewSnapshot = {
+  running: boolean;
+  paused: boolean;
+  /** why the run is held (a provider failure, Pip's hold) */
+  held?: string;
+  stage: string;
+  line: string;
+  gates: string[];
+  passed: string[];
+  questions: number;
+  /** a plan-change card holds some tasks */
+  pendingCard: boolean;
+  /** plan task labels */
+  failed: string[];
+  fallbacks: string[];
+  /** a review is still to come in this run (a note made now is read by it) */
+  reviewPending: boolean;
+  exportedAt?: string;
+};
 /** what a run did, reported when it ends or stops at a gate for the person */
 export type RunReport = {
   status: "done" | "failed" | "stopped" | "waiting";
@@ -313,6 +363,47 @@ function planChange(p: OpenProject, notes: Note[]): ChangePlan {
     ...(everywhere ? {} : { scope: [...scope] }),
     ...(reboard.size ? { reboard: all.filter((id) => reboard.has(id)) } : {}),
   };
+}
+
+/**
+ * A retry's revision (§1.8): failed tasks go back to pending in place (their dependents still wait on them), and
+ * fallback tasks run again as fresh copies, with the finished work after them (gates included, so the export waits
+ * for the redo; never publish), so a redone scene is reviewed and exported again. The originals stay done, no longer
+ * marked fallback.
+ */
+export function retryRevision(
+  tasks: PlanTaskT[],
+  targets: PlanTaskT[],
+  rev: number,
+): { tasks: PlanTaskT[]; ops: PlanOpT[] } {
+  const failed = new Set(targets.filter((t) => t.status === "failed").map((t) => t.id));
+  const fallback = targets.filter((t) => t.status === "done" && t.outcome === "fallback").map((t) => t.id);
+  let out = tasks.map((t) => (failed.has(t.id) ? { ...t, status: "pending" as const, note: undefined } : t));
+  const ops: PlanOpT[] = [...failed].map((task) => ({ op: "add" as const, task, reason: "retry" }));
+  if (fallback.length) {
+    // the finished work downstream of a fallback runs again after it
+    const ids = new Set(fallback);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const t of out)
+        if (!ids.has(t.id) && t.status === "done" && t.kind !== "lib.publish" && t.dependsOn.some((d) => ids.has(d))) {
+          ids.add(t.id);
+          grew = true;
+        }
+    }
+    const order = out.filter((t) => ids.has(t.id)).map((t) => t.id);
+    const again = rerun(out, order, rev, { reason: "retry: redo what fell back" });
+    const copies = new Set(again.map.values());
+    out = again.tasks.map((t) =>
+      copies.has(t.id)
+        ? { ...t, outcome: undefined }
+        : fallback.includes(t.id)
+          ? { ...t, outcome: undefined, note: `redone as ${again.map.get(t.id)}` }
+          : t,
+    );
+    ops.push(...again.ops);
+  }
+  return { tasks: out, ops };
 }
 
 /** the gate a stage's work passes through first: reopening a stage reopens this gate and every later one */
@@ -481,6 +572,8 @@ export class Crew {
       const replan = !!run && run.pipProposals < MAX_PIP_PROPOSALS;
       return await this.conductor.think(p, tr, { change: r.change, redos: r.redos, replan });
     } catch (e: any) {
+      // Pip's own key or provider failing holds the run the same way a crew member's does
+      if (holdsRun(e) && this.holdRun(p, r, e, null)) return [];
       p.emit("log", { level: "warn", text: `Pip couldn't decide (${String(e?.message ?? e).slice(0, 120)}); holding` });
       return [{ kind: "hold", why: "Pip couldn't reach its model to decide what to do next" }];
     }
@@ -850,8 +943,23 @@ export class Crew {
     delete plan.pending;
     touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
     const r = this.runs.get(p.id);
+    this.unwait(p, r);
+    // the run that held the card already ended: confirming it starts the crew again
+    if (!r) this.restartIdle(p);
     r?.resume?.();
     r?.exec?.wake();
+  }
+  /** a person's answer settles what the crew waited on: the problem and the "Waiting for you" line go */
+  private unwait(p: OpenProject, r: Run | undefined) {
+    if (r?.held) return;
+    const line = /^Waiting for you/.test(p.state.status.line) ? { line: STAGE_LINE[p.state.stage] ?? "Working" } : {};
+    p.setStatus({ ...line, problem: undefined });
+  }
+  /** start the crew again on a project whose plan still has work, when nothing runs and the person didn't pause it */
+  private restartIdle(p: OpenProject) {
+    if (this.runs.has(p.id) || p.state.paused || !this.planNow(p)?.tasks.some(isLive)) return false;
+    this.run(p).catch(() => {});
+    return true;
   }
   /** the person declined it: a `decline` revision drops those tasks, and Pip hears so at the next stage check */
   declinePending(p: OpenProject) {
@@ -871,6 +979,8 @@ export class Crew {
       stage: p.state.stage,
       notes: ["The person declined the plan change; carry on without it."],
     });
+    this.unwait(p, r ?? undefined);
+    if (!r) this.restartIdle(p);
     r?.resume?.();
     r?.exec?.wake();
   }
@@ -992,12 +1102,14 @@ export class Crew {
   }
 
   /** a status-only change: saved, sent as a transient `plan` event */
-  private setPlanStatus(p: OpenProject, id: string, status: PlanTaskT["status"], note?: string) {
+  private setPlanStatus(p: OpenProject, id: string, status: PlanTaskT["status"], note?: string, outcome?: "fallback") {
     const plan = this.planNow(p);
     const t = plan?.tasks.find((x) => x.id === id);
     if (!plan || !t) return;
     t.status = status;
     if (note !== undefined) t.note = note.slice(0, 200);
+    if (outcome) t.outcome = outcome;
+    else if (status !== "done") delete t.outcome;
     t.taskIds = [...new Set([...t.taskIds, ...p.state.tasks.filter((x) => x.planTask === id).map((x) => x.id)])];
     touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
   }
@@ -1040,7 +1152,41 @@ export class Crew {
         queued: plan ? plan.tasks.filter((t) => t.status === "ready").length : 0,
         /** what is running now, per endpoint (N6): `{ fake: { size: 4, used: 3 }, render: { size: 1, used: 0 } }` */
         slots: run?.exec?.slots() ?? {},
+        /** when the current (or last) run started: failures before it belong to an older run */
+        runStartedAt: run?.startedAt ?? plan?.runs.at(-1)?.startedAt ?? null,
+        /** the run is held for the person (a provider failure, Pip's hold), and why */
+        held: run?.held ?? null,
       },
+    };
+  }
+  /**
+   * The crew right now, for Pip's turn (§1.8): running or idle, held and why, open gates and questions, cards the plan
+   * waits on, what failed or fell back, whether a review is still to come, and the last export.
+   */
+  snapshot(p: OpenProject): CrewSnapshot {
+    const run = this.runs.get(p.id);
+    const plan = this.planNow(p);
+    const ids = p.doc().scenes.map((s) => s.id);
+    const label = (t: PlanTaskT) => taskLabel(t, ids);
+    const tasks = plan?.tasks ?? [];
+    const exp = p.state.tasks
+      .filter((t) => t.kind === "deliver.export" && t.status === "done" && !t.supersededBy)
+      .at(-1);
+    return {
+      running: !!run,
+      paused: p.state.paused,
+      ...(run?.held ? { held: run.held } : {}),
+      stage: p.state.stage,
+      line: p.state.status.line,
+      gates: p.state.gates.filter((g) => g.status === "open").map((g) => g.id),
+      passed: p.state.gates.filter((g) => g.status === "passed").map((g) => g.id),
+      questions: p.state.questions.filter((q) => q.status === "open").length,
+      pendingCard: !!plan?.pending,
+      failed: tasks.filter((t) => t.status === "failed").map(label),
+      fallbacks: tasks.filter((t) => t.status === "done" && t.outcome === "fallback").map(label),
+      reviewPending:
+        !!run && tasks.some((t) => t.kind === "review.final" && (t.status === "pending" || t.status === "ready")),
+      ...(exp?.endedAt ? { exportedAt: exp.endedAt } : {}),
     };
   }
   pause(p: OpenProject, mode: "after_step" | "now") {
@@ -1059,10 +1205,133 @@ export class Crew {
     p.saveState();
     const r = this.runs.get(p.id);
     if (r) {
-      r.paused = false;
-      r.resume?.();
-      r.exec?.wake();
+      // resume lifts a hold too: the tasks try again (and hold again if the key is still wrong)
+      if (r.hold || r.held) this.liftHold(p, r);
+      else {
+        r.paused = false;
+        this.unwait(p, r);
+        r.resume?.();
+        r.exec?.wake();
+      }
     }
+  }
+
+  /**
+   * A provider failure (a rejected key, no credit, no connection: `holdsRun`) holds the whole run instead of failing
+   * it or falling back (§1.8). Tasks already running finish or hold too; nothing else starts. The first one sets the
+   * problem, tells the person in Pip's thread once, and settles the cards that handed work to the run.
+   */
+  private holdRun(p: OpenProject, r: Run, e: unknown, t: PlanTaskT | null): boolean {
+    if (!holdsRun(e) || r.abort.signal.aborted) return false;
+    // the attempt's rows end cancelled: the try after the fix supersedes them, and no failure is left behind
+    if (t)
+      for (const row of p.state.tasks.filter((x) => x.planTask === t.id && x.status === "failed" && !x.supersededBy))
+        p.upsertTask({ ...row, status: "cancelled", endedAt: row.endedAt ?? new Date().toISOString() });
+    if (r.hold) return true;
+    const h = humanize(e, t?.role);
+    r.hold = { kind: errorKind(e), text: h.text, action: h.action, ...(h.provider ? { provider: h.provider } : {}) };
+    r.held = h.text.replace(/\.$/, "");
+    r.paused = true;
+    p.state.paused = true;
+    p.saveState();
+    const row = t ? p.state.tasks.filter((x) => x.planTask === t.id).at(-1) : undefined;
+    p.setStatus({
+      line: `Waiting for you: ${r.held}`,
+      problem: {
+        text: h.text,
+        action: h.action,
+        taskId: row?.id ?? t?.id ?? "",
+        ...(h.provider ? { provider: h.provider } : {}),
+      },
+    });
+    p.emit("log", { level: "error", text: `crew held: ${String((e as any)?.message ?? e).slice(0, 200)}` });
+    p.say({ from: "pip", to: "crew", kind: "brief", text: `Hold: ${h.text}`, ...(t ? { ref: t.id } : {}) });
+    const tasks = this.planNow(p)?.tasks ?? [];
+    try {
+      this.onHold?.(p, {
+        text: h.text,
+        action: h.action,
+        ...(h.provider ? { provider: h.provider } : {}),
+        kept: tasks.filter((x) => x.status === "done").length,
+        waiting: tasks.filter(isLive).length,
+      });
+    } catch {}
+    try {
+      this.onRunEnd?.(p, this.report(p, r, "waiting"));
+    } catch {}
+    return true;
+  }
+  /** Pip tells the person once that the run is held on a provider, what was kept and what waits */
+  onHold?: (
+    p: OpenProject,
+    h: { text: string; action: ProblemAction; provider?: string; kept: number; waiting: number },
+  ) => void;
+  /** lift a hold: the run goes on from where it stopped */
+  private liftHold(p: OpenProject, r: Run) {
+    r.hold = undefined;
+    r.held = undefined;
+    r.paused = false;
+    p.state.paused = false;
+    p.saveState();
+    p.setStatus({ line: STAGE_LINE[p.state.stage] ?? "The crew is working", problem: undefined });
+    p.say({ from: "pip", to: "crew", kind: "brief", text: "Back to work: the hold is lifted." });
+    r.resume?.();
+    r.exec?.wake();
+  }
+  /**
+   * A provider's key was saved, or its test passed (`PUT /api/settings/providers/:id/key`, `POST …/test`): runs held
+   * on it go on, and a project held on it whose run ended (a restart) starts again. Without an id, every hold lifts.
+   */
+  providerFixed(provider?: string): string[] {
+    const out: string[] = [];
+    const mine = (x?: string) => !provider || !x || x === provider;
+    for (const [id, r] of this.runs)
+      if (r.hold && mine(r.hold.provider))
+        try {
+          this.liftHold(this.deps.workspace.get(id), r);
+          out.push(id);
+        } catch {}
+    for (const { id } of this.deps.workspace.list()) {
+      if (this.runs.has(id) || out.includes(id)) continue;
+      try {
+        const p = this.deps.workspace.get(id);
+        const pr = p.state.status.problem;
+        if (!pr || !(pr.action === "fix_key" || (pr.action === "retry" && pr.provider)) || !mine(pr.provider)) continue;
+        p.state.paused = false;
+        p.saveState();
+        p.setStatus({ line: "Picking up where the crew left off", problem: undefined });
+        this.run(p, {}).catch(() => {});
+        out.push(id);
+      } catch {}
+    }
+    return out;
+  }
+  /**
+   * "Try again" and Pip's "Redo what failed" (POST /crew/retry): a held run goes on; an idle crew runs the failed and
+   * fallback tasks again (only `taskId`'s plan task when given: a plan task id or a state.tasks row id).
+   */
+  retry(p: OpenProject, o: { taskId?: string } = {}): { started: boolean; resumed: boolean; busy?: boolean } {
+    const r = this.runs.get(p.id);
+    if (r) {
+      if (!r.hold && !r.held) return { started: false, resumed: false, busy: true };
+      this.liftHold(p, r);
+      return { started: false, resumed: true };
+    }
+    p.state.paused = false;
+    p.saveState();
+    this.run(p, { retry: true, ...(o.taskId ? { taskId: o.taskId } : {}) }).catch(() => {});
+    return { started: true, resumed: false };
+  }
+  /** what a retry redoes: the failed and fallback plan tasks, or the one `taskId` names when it is one of them */
+  retryTargets(p: OpenProject, taskId?: string): PlanTaskT[] {
+    const tasks = this.planNow(p)?.tasks ?? [];
+    const redo = (t: PlanTaskT) => t.status === "failed" || (t.status === "done" && t.outcome === "fallback");
+    if (taskId) {
+      const id = tasks.some((t) => t.id === taskId) ? taskId : p.state.tasks.find((x) => x.id === taskId)?.planTask;
+      const one = tasks.find((t) => t.id === id);
+      if (one && redo(one)) return [one];
+    }
+    return tasks.filter(redo);
   }
   gate(p: OpenProject, gate: string, v: { verdict: string; items?: string[]; reasons?: string[]; by: string }) {
     const g = p.setGate(gate as GateId, {
@@ -1214,7 +1483,10 @@ export class Crew {
    * (running and waiting tasks go back to pending); `retry` puts failed tasks back. With none of them the plan just
    * continues, or reruns from the current stage when nothing is left.
    */
-  async run(p: OpenProject, opts: { stage?: string; change?: ChangePlan; resume?: boolean; retry?: boolean } = {}) {
+  async run(
+    p: OpenProject,
+    opts: { stage?: string; change?: ChangePlan; resume?: boolean; retry?: boolean; taskId?: string } = {},
+  ) {
     if (this.runs.has(p.id)) throw new Error("the crew is already working on this project");
     const r: Run = {
       abort: new AbortController(),
@@ -1244,6 +1516,8 @@ export class Crew {
     // a raised cap: the executor looks again
     const onPatch = (e: { event: string; data: any }) => {
       if (e.event === "patch" && (e.data?.ops ?? []).some((o: any) => String(o.path).startsWith("/budget"))) {
+        // a raised cap answers the overrun wait
+        if (!r.held) this.unwait(p, r);
         r.resume?.();
         r.exec?.wake();
       }
@@ -1262,9 +1536,16 @@ export class Crew {
           error: `${String(e?.message ?? e).slice(0, 300)}${e?.fix ? ` Fix: ${e.fix}` : ""}`,
         };
         p.emit("log", { level: "error", text: String(e?.message ?? e) });
-        const failed = [...p.state.tasks].reverse().find((x) => x.status === "failed" && !x.supersededBy);
-        const h = humanize(e, failed?.role);
-        p.setStatus({ line: h.text, problem: { ...h, taskId: failed?.id } });
+        // blame the task the run really stopped on: a stuck plan names it; else this run's newest failure
+        const rows = [...p.state.tasks].reverse();
+        const blocking = typeof e?.blocking === "string" ? (e.blocking as string) : undefined;
+        const failed =
+          (blocking ? rows.find((x) => x.planTask === blocking) : undefined) ??
+          rows.find((x) => x.status === "failed" && !x.supersededBy && (x.endedAt ?? "") >= r.startedAt) ??
+          rows.find((x) => x.status === "failed" && !x.supersededBy);
+        const blockRole = blocking ? this.planNow(p)?.tasks.find((t) => t.id === blocking)?.role : undefined;
+        const h = humanize(e, failed?.role ?? blockRole);
+        p.setStatus({ line: h.text, problem: { ...h, taskId: failed?.id ?? blocking } });
         p.setDigest(`The crew stopped: ${String(e?.message ?? e).slice(0, 200)}${e?.fix ? ` Fix: ${e.fix}` : ""}`);
         // the person's waits (a gate, a pick) end with the run
         r.abort.abort(new Paused("failed"));
@@ -1301,7 +1582,7 @@ export class Crew {
   private async execute(
     p: OpenProject,
     r: Run,
-    opts: { stage?: string; change?: ChangePlan; resume?: boolean; retry?: boolean },
+    opts: { stage?: string; change?: ChangePlan; resume?: boolean; retry?: boolean; taskId?: string },
   ) {
     const had = !!this.planNow(p);
     let plan = this.ensurePlan(p, r);
@@ -1315,11 +1596,19 @@ export class Crew {
       for (const t of plan.tasks)
         if (t.status === "running" || t.status === "ready" || t.status === "waiting_person") t.status = "pending";
       touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
-    } else if (opts.retry && plan.tasks.some((t) => t.status === "failed")) {
-      this.planRevise(p, r, { by: "code", trigger: "retry", reason: "Trying the failed step again." }, (ts) => ({
-        tasks: ts.map((t) => (t.status === "failed" ? { ...t, status: "pending" as const, note: undefined } : t)),
-        ops: ts.filter((t) => t.status === "failed").map((t) => ({ op: "add" as const, task: t.id, reason: "retry" })),
-      }));
+    } else if (opts.retry && this.retryTargets(p, opts.taskId).length) {
+      const targets = this.retryTargets(p, opts.taskId);
+      // the person asked for it, so the 20% rule doesn't hold it (by: "person")
+      this.planRevise(
+        p,
+        r,
+        {
+          by: "person",
+          trigger: "retry",
+          reason: targets.length === 1 ? "Trying the step that failed again." : "Redoing what failed.",
+        },
+        (ts, ctx) => retryRevision(ts, targets, ctx.rev),
+      );
     } else if (!opts.change) {
       const from = (opts.stage as Stage | undefined) ?? (plan.tasks.some(isLive) ? null : p.state.stage);
       if (from || (opts.resume && !had))
@@ -1340,11 +1629,12 @@ export class Crew {
     }
     plan = this.planNow(p)!;
     const env = this.planEnv(p);
+    let waitedOn = "";
     const exec = new Executor({
       tasks: () => this.planNow(p)?.tasks ?? [],
       held: (id) => !!this.planNow(p)?.pending?.tasks.includes(id),
       handle: (t) => this.handle(p, r, t),
-      setStatus: (t, status, note) => this.setPlanStatus(p, t.id, status, note),
+      setStatus: (t, status, note, outcome) => this.setPlanStatus(p, t.id, status, note, outcome),
       endpoint: (t) => {
         const row = CATALOGUE[t.kind];
         if (t.role === "person" || !row.calls[1]) return null;
@@ -1378,12 +1668,21 @@ export class Crew {
           p.milestone("scenes.animated", "Scenes animated");
         await this.drain(p, r, s);
       },
-      fatal: (t) => t.kind === "gate" || CATALOGUE[t.kind].fatal,
+      // a provider failure is never a stand-in, whatever the task kind (§1.8); `hold` catches it first
+      fatal: (t, e) => t.kind === "gate" || CATALOGUE[t.kind].fatal || holdsRun(e),
+      hold: (t, e) => this.holdRun(p, r, e, t),
+      waiting: (held) => {
+        // only a card holds work now: say what the crew waits on
+        const key = held.map((t) => t.id).join(",");
+        if (r.held || key === waitedOn) return;
+        waitedOn = key;
+        p.setStatus({ line: "Waiting for you: the plan change in Pip's thread" });
+      },
     });
     r.exec = exec;
     await exec.run();
     if (r.abort.signal.aborted) return;
-    p.setStatus({ phase: 4, line: "Your video is ready" });
+    p.setStatus({ phase: 4, line: "Your video is ready", problem: undefined });
     p.setDigest(
       `Done: ${
         p
@@ -1418,7 +1717,8 @@ export class Crew {
     const line = fits
       ? `Waiting for you: ${Math.round(b.askAtFraction * 100)}% of the $${b.capUsd} cap is spent. Raise it to $${suggestUsd.toFixed(2)} to finish?`
       : `Waiting for you: the next step could cost $${t.estUsd[1].toFixed(2)} and $${Math.max(0, b.capUsd - spentUsd).toFixed(2)} is left`;
-    p.setStatus({ line, problem: { text: line.replace(/^Waiting for you: /, ""), action: "add_budget" } });
+    // a wait for the person, not a problem: the budget card is in Pip's thread (the status line names it)
+    p.setStatus({ line });
     p.say({
       from: "pip",
       to: "crew",
@@ -1436,6 +1736,7 @@ export class Crew {
     const r = this.runs.get(p.id);
     if (!r) return;
     r.overrun = { cap: p.doc().budget.capUsd, declined: true };
+    this.unwait(p, r);
     r.resume?.();
     r.exec?.wake();
   }
@@ -1529,14 +1830,28 @@ export class Crew {
     if (m) p.milestone(t.kind, m, patch.lastImage ?? t.lastImage);
     return p.upsertTask({ ...t, status: "done", endedAt: new Date().toISOString(), ...patch });
   }
-  private failTask(p: OpenProject, t: Task, e: any) {
+  /** the row ends failed, or `partial` when its task goes on with a stand-in (a retry redoes it) */
+  private failTask(p: OpenProject, t: Task, e: any, partial = false) {
     this.grants.delete(t.id);
     return p.upsertTask({
       ...t,
-      status: "failed",
+      status: partial ? "partial" : "failed",
       endedAt: new Date().toISOString(),
       error: { message: String(e?.message ?? e).slice(0, 400), fix: e?.fix },
     });
+  }
+
+  /**
+   * A handler's stand-in (§1.8): a stop or a provider failure (`holdsRun`) rethrows, so the run holds instead of
+   * carrying on with stand-ins; anything else ends the task done on its fallback, its row `partial`.
+   */
+  private fallbackOr(p: OpenProject, r: Run, row: Task | null, e: unknown, note: string): Outcome {
+    if (r.abort.signal.aborted || holdsRun(e)) {
+      if (row) this.failTask(p, row, e);
+      throw e;
+    }
+    if (row) this.failTask(p, row, e, true);
+    return { status: "done", note: `partial: ${note}`.slice(0, 200), outcome: "fallback" };
   }
 
   /** the model a plan task's tier resolves to; undefined keeps the role's own (and its fallback) */
@@ -2544,7 +2859,6 @@ export class Crew {
     const { palette, table } = this.palette();
     const tpl = KIND_TEMPLATES[st.kind] ?? KIND_TEMPLATES.icon;
     let res: Variant = null;
-    let note: string | undefined;
     try {
       res = await this.drawVariant(
         p,
@@ -2559,12 +2873,13 @@ export class Crew {
         pt,
       );
     } catch (e: any) {
-      if (r.abort.signal.aborted) throw e;
+      const fb = this.fallbackOr(p, r, null, e, String(e?.message ?? e).slice(0, 180));
       p.emit("log", { level: "warn", role: "pixel-artist", text: `${name} v${v} failed: ${e.message}` });
-      note = `partial: ${String(e?.message ?? e).slice(0, 180)}`;
+      writeFileSync(this.artFile(p, name, `v${v}`), JSON.stringify(res));
+      return fb;
     }
     writeFileSync(this.artFile(p, name, `v${v}`), JSON.stringify(res));
-    return { status: "done", ...(note ? { note } : {}) };
+    return { status: "done" };
   }
 
   /** asset.judge: the better variant (the library stands in when neither passed), written and cast */
@@ -2587,7 +2902,7 @@ export class Crew {
         text: `no variant of ${name} passed the standard; casting the library's ${stand} instead`,
       });
       await this.tool(p, "art-director", st.row, "cast_asset", { name, libraryId: stand });
-      return { status: "done", note: `partial: the library's ${stand} stands in` };
+      return { status: "done", note: `partial: the library's ${stand} stands in`, outcome: "fallback" };
     }
     let best = ok[0];
     if (ok.length > 1) {
@@ -3011,15 +3326,14 @@ export class Crew {
       p.setSceneStatus(s.id, { version: "render", state: "ready" });
       r.done.redone.add(s.id);
     } catch (e: any) {
-      if (r.abort.signal.aborted) throw e;
-      // a weak model failing here costs nothing: the scene keeps its recipes as they are
-      this.failTask(p, t, e);
+      // a weak model failing here costs nothing: the scene keeps its recipes as they are (a provider failure holds)
+      const fb = this.fallbackOr(p, r, t, e, `kept as built (${String(e?.message ?? e).slice(0, 140)})`);
       p.emit("log", {
         level: "warn",
         role: "animator",
         text: `${s.id}: kept as built (${String(e?.message ?? e).slice(0, 120)})`,
       });
-      return { status: "done", note: `partial: kept as built (${String(e?.message ?? e).slice(0, 140)})` };
+      return fb;
     }
     return { status: "done" };
   }
@@ -3055,7 +3369,7 @@ export class Crew {
       : [];
     if (!takes.length) {
       p.emit("log", { level: "warn", text: "no narration take found in private/vo/" });
-      return { status: "done", note: "partial: no take found in private/vo/" };
+      return { status: "done", note: "partial: no take found in private/vo/", outcome: "fallback" };
     }
     const t = this.task(p, { kind: "vo.align", role: "editor", title: "Aligning your narration", ...this.ptOf(pt) });
     await this.tool(p, "editor", t.id, "vo_align", { file: `private/vo/${takes[0].f}`, apply: true });
@@ -3175,15 +3489,14 @@ export class Crew {
       ).data;
       this.done(p, t, { summary: `${rev.verdict}: ${rev.summary}` });
     } catch (e: any) {
-      if (r.abort.signal.aborted) throw e;
       // no usable review from this model: the lints already passed, so the cut goes on to the gate as it is
-      this.failTask(p, t, e);
+      const fb = this.fallbackOr(p, r, t, e, "review unavailable; continuing on lints only");
       p.emit("log", {
         level: "warn",
         role: "reviewer",
         text: `review unavailable (${String(e?.message ?? e).slice(0, 120)}); continuing on lints only`,
       });
-      return { status: "done", note: "partial: review unavailable; continuing on lints only" };
+      return fb;
     }
     for (const b of rev.blockers)
       p.addNote({

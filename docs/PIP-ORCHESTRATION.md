@@ -387,7 +387,7 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
   - The executor stops starting tasks.
   - Pip posts the existing `/budget` plan card ("Raise the cap to $X", X = spent + remaining p90 rounded up to $0.50), and the status line says why.
   - Confirm sets `budget.capUsd` and continues.
-  - Decline continues only with tasks whose p90 fits; then the run holds with the existing `add_budget` problem.
+  - Decline continues only with tasks whose p90 fits; then the run waits on the status line ("Waiting for you: …"). The overrun is a wait, never a `problem` (§1.8).
   - **Changed from the brief:** overrun is a guard on spend, not a plan node. It fires on spend, not at a position in the DAG.
 
 ### 1.7 Executor (`plan/executor.ts`, replacing `pipeline()`)
@@ -400,10 +400,11 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
   - Only once it holds a slot does the task become `running`, and its `state.tasks` row `working`. Until then it is `ready`, so it shows as a ghost.
   - Today's `animate()` marks a task `working` while it still waits in the lane. That goes away.
 - **Budget guard.** A task starts only if `guard.availableUsd ≥ estUsd[1]`. Otherwise the overrun flow runs. The gateway's `reserve()` still holds the hard line.
-- **Failures.**
-  - Handlers that today swallow a failure end `done`, with a `partial` report: `scene.tune` keeps its recipes, and a missing review continues on the lints alone.
-  - Fatal handlers (writer, director, export) end `failed`. The run fails as today (`humanize`, the status problem, the retry button).
-  - `/crew/retry` sets the failed task back to `pending` (`attempt + 1`), and code writes a revision with `trigger: "retry"`.
+- **Failures** (in full: §1.8).
+  - Handlers that swallow a failure end `done` with `outcome: "fallback"` and a `partial:` note, and their row ends `partial`: `scene.tune` keeps its recipes, a missing review continues on the lints alone, a draw that failed leaves its variant out, the library stands in when no variant passed, no narration take.
+  - A provider failure (a rejected key, no credit, no connection) is never a fallback: the run holds.
+  - Fatal handlers (writer, director, export) end `failed`. The run fails (`humanize`, the status problem, the retry button).
+  - `/crew/retry` sets failed tasks back to `pending` and reruns fallbacks; the revision is `by: "person"`, `trigger: "retry"`.
 - **Gates.** A gate task is `waiting_person` while `atGate` waits. `rights` is a single `QuestionT` from `pip`, with `blocks: ["animate"]`, the asset's sheet, and "Private to this project".
 - **Pause.**
   - `after_step` stops new starts.
@@ -430,7 +431,50 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
   - `crew_reboard` becomes a storyboard over those scenes, then cast, then tune for each.
   - The new `crew_replan` takes `PlanDiffOut`'s ops.
   - `crew_brief`, `crew_answer`, `crew_hold` and `crew_escalate` are unchanged.
+- **Held tasks pass it down.** A task whose unfinished dependencies reach a held task (in `plan.pending.tasks`) waits with it: when everything left is held, the run waits for the person ("Waiting for you: the plan change in Pip's thread") instead of throwing "the plan is stuck". A plan that really is stuck names the task at the root of the wait (`stuckError`, `blocking`), and `run()` blames that task, never an older failed row.
 - **The regression bar.** `packages/crew/test/assistant.test.ts` must pass unchanged. That covers the change reopen, scope-only redo, blockers stopping at the rough cut, the 2-redo hold and done reports costing no Pip call. Any assertion that has to change is named in the P1 commit with the reason.
+
+### 1.8 Failures, holds and retry (v0.2, after the P4 run)
+
+The P4 run's key went 401 mid-run and every step fell back to a stand-in without a word. Now a failure the person must fix stops the run and says so.
+
+- **Failure kinds.** `errorKind(e)` (`llm/http.ts`) reads `ProviderError.status/type`:
+
+  | Kind | From | What the run does |
+  |---|---|---|
+  | `auth` | 401, 403, `authentication_error`, `permission_error`, "no API key" | holds; problem "Your Anthropic key was rejected.", action `fix_key` |
+  | `credit` | 402, OpenAI `insufficient_quota` (429, never retried), a 400 that mentions credit, billing, balance or quota | holds; "Out of credit on Anthropic.", `fix_key` |
+  | `unreachable` | status 0 / `network_error`, ECONNREFUSED, fetch failed, a provider turned off or missing | holds; "Can't reach LM Studio. Is it running?", `retry` (turned off: `fix_key`) |
+  | `rate` | 429, `rate_limit_error` (after the retries) | as `other` |
+  | `budget` | `BudgetError` (`code: "budget"`) | the overrun flow (§1.6) |
+  | `other` | anything else (a garbled answer, a 5xx after its retries) | the handler's fallback, or a fatal failure |
+
+  `holdsRun(e)` is true for `auth`, `credit` and `unreachable`. The gateway tags every error with its `provider`, so the problem can name it.
+- **No stand-ins for a provider failure.**
+  - The gateway never falls back to a role's fallback model on `auth` or `credit`, and the structured ladder never takes a credit 400 for "rung unsupported".
+  - The handlers that catch a model failure (`scene.tune`, `review.final`, `asset.draw`) go through `fallbackOr(e, …)`, which rethrows the holding kinds. `asset.judge` (the library stands in when no variant passed) and `vo.align` (no take) catch nothing; they only mark their stand-in as a fallback, and a judge's own call rethrows to the executor.
+  - The executor's `fatal` is true for them whatever the task kind, and its `hold` hook runs first.
+- **Hold, don't fail.** The first holding error in a run:
+  - puts its task back to `pending`, and its attempt's row ends `cancelled`, not `failed`;
+  - sets `r.held`, `paused` (so the web shows the problem, not "running"), the status line "Waiting for you: <cause>" and `status.problem` `{ text, action, taskId, provider }`;
+  - posts one Pip message in the thread (`Crew.onHold` → `Pip.holdNotice`): what happened, how many finished steps are kept, how many wait, where to fix it;
+  - settles the cards that handed work to the run (`onRunEnd` with `waiting`).
+
+  Tasks already running finish, or hold the same way (only the first one speaks). Nothing new starts. The run stays alive.
+- **The hold lifts** when that provider's key is saved (`PUT /api/settings/providers/:id/key`), its test passes (`POST …/test`), the person presses Try again (`/crew/retry`) or Resume. `Crew.providerFixed(id)` lifts every run held on it, and starts again a project held on it whose run ended (a restart). The problem and the "Waiting for you" line clear, and the run goes on from where it stopped.
+- **Partial is a status of its own.** A fallback task ends `done` with `outcome: "fallback"` (its note says which stand-in); its `state.tasks` row is `partial`. Neither counts as a failure in the web's `problemOf`.
+- **Retry** (`POST /crew/retry { taskId? }`, Pip's "Redo what failed" card, the `crew_retry` tool):
+  - a held run: the hold lifts;
+  - else one `by: "person"`, `trigger: "retry"` revision (`retryRevision`): failed tasks go back to `pending` in place (their dependents still wait on them), and fallback tasks run again as fresh `rerun` copies with the finished work after them (gates included, so the export waits for the redo; never `lib.publish`). The originals stay `done`, no longer marked fallback;
+  - `taskId` (a plan task id, or a row id mapped through `planTask`) limits it to that task when it is failed or a fallback;
+  - **Known gap (Phase 2):** a redone `asset.draw` or `asset.judge` whose stand-in is already cast is skipped by its handler's "already in the project" guard.
+- **Pip never offers "Start the crew" over a failure.** A `crew_run` card without a stage becomes the "Redo what failed" card when something failed, fell back or is held; the menu has a `retry` intent.
+- **Status hygiene.**
+  - `problem` clears on "Your video is ready", a raised cap, a declined overrun, a confirmed or declined plan card, a resume and a lifted hold.
+  - The overrun and a card's hold are waits ("Waiting for you: …", tone `needs` in the web), not problems.
+  - The web's `problemOf` ignores a problem while the crew is running (a held run is paused, so its own problem still shows) and drops failed rows that ended before the current run started (`crew.runStartedAt`).
+- **Needs you counts cards.** `openNeeds(p, { cards, plan })` adds the crew's open Pip cards (a revision card while `plan.pending.cardId` is it, the budget card while a run waits on it) and plan tasks in `waiting_person` that no open gate or question already stands for. `GET /api/projects`' `needsYou`, `state.needs` and the Projects line use it. Confirming a held card after its run ended starts the crew again.
+- **Pip reads live state.** Each turn's summary carries a "Crew now:" line from `Crew.snapshot` (running, idle or held and why, open and passed gates, open questions, a plan-change card, failed and fallback tasks, whether a review is still to come, the last export). A change card says "your note waits for the next review" only while a review is still to come.
 
 ---
 

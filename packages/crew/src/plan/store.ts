@@ -86,6 +86,8 @@ export function viewOf(
       taskIds: t.taskIds,
       addedIn: t.addedIn,
       ...(t.reason ? { reason: t.reason } : {}),
+      ...(t.outcome ? { outcome: t.outcome } : {}),
+      ...(t.note ? { note: t.note } : {}),
     })),
     estimate: plan.estimate,
     approvedUsd: plan.approvedUsd,

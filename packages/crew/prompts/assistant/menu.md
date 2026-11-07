@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 maxOut: 1500
 effort: low
 ---
@@ -16,6 +16,7 @@ Intents:
 - new_from_this: another video like this one for something else. params.brief is a draft brief (2-4 sentences)
   and params.title a short title
 - export: export or re-render the video
+- retry: try again, redo what failed, or carry on after the crew stopped or was held (never "start the crew" over)
 - status: how the video is going, what the crew is doing
 - explain: a question about how the studio works
 - other: anything else, or something the studio can't do

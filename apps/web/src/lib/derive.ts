@@ -88,6 +88,7 @@ export const TASK_STATUS: Record<
   waiting_user: { word: "Needs you", tone: "signal" },
   waiting: { word: "Waiting", tone: "muted" },
   done: { word: "Done", tone: "success" },
+  partial: { word: "Stand-in", tone: "warning" },
   failed: { word: "Failed", tone: "error" },
   cancelled: { word: "Cancelled", tone: "muted" },
 };
@@ -98,6 +99,7 @@ const ACTIVE_ORDER: TaskStatus[] = [
   "queued",
   "waiting",
   "upcoming",
+  "partial",
   "done",
   "cancelled",
 ];
@@ -135,7 +137,9 @@ export const STAGE_STATE_WORD: Record<StageState, string> = {
   needs: "Needs you",
 };
 
+/** the server's count when it sends one (it counts the crew's cards too), else open questions and gates */
 export const needsYouCount = (s: ProjectState) =>
+  s.needs?.count ??
   s.questions.filter((q) => q.status === "open").length + s.gates.filter((g) => g.status === "open").length;
 
 export const NOTE_CATEGORY: Record<NoteCategory, string> = {

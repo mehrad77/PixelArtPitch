@@ -9,6 +9,7 @@ import {
   type Caps,
   chatJson,
   createProvider,
+  errorKind,
   estimatePlan,
   Ledger,
   loadSettings,
@@ -155,7 +156,8 @@ export class ModelGateway implements Gateway {
   }
 
   async json<T>(spec: CallSpec<T>): Promise<CallOut<T>> {
-    const tryModel = async (model: string): Promise<CallOut<T>> => {
+    const tryModel = (model: string): Promise<CallOut<T>> => callModel(model).catch((e) => throw_(e, model));
+    const callModel = async (model: string): Promise<CallOut<T>> => {
       const providerId = model.slice(0, model.indexOf("/"));
       const guard = this.guard(spec.project, spec.capUsd);
       const prov = metered(this.provider(providerId), {
@@ -197,15 +199,28 @@ export class ModelGateway implements Gateway {
     try {
       return await tryModel(model);
     } catch (e: any) {
-      // escalate once to the role's fallback on a model failure (never on budget or a cancel)
+      // escalate once to the role's fallback on a model failure (never on budget, a cancel, a rejected key or no credit)
       const fb = this.fallbackFor(spec.role);
-      if (e instanceof BudgetError || spec.signal?.aborted || spec.noFallback || !fb || fb === model) throw e;
+      const kind = errorKind(e);
+      if (
+        e instanceof BudgetError ||
+        kind === "auth" ||
+        kind === "credit" ||
+        spec.signal?.aborted ||
+        spec.noFallback ||
+        !fb ||
+        fb === model
+      )
+        throw e;
       return tryModel(fb);
     }
   }
 
   async chat(spec: ChatSpec) {
     const model = spec.model ?? this.modelFor(spec.role);
+    return this.chatOn(spec, model).catch((e) => throw_(e, model));
+  }
+  private async chatOn(spec: ChatSpec, model: string) {
     const providerId = model.slice(0, model.indexOf("/"));
     const prov = metered(this.provider(providerId), {
       guard: this.guard(spec.project, spec.capUsd),
@@ -293,4 +308,13 @@ export class ModelGateway implements Gateway {
   publicSettings() {
     return this.settings;
   }
+}
+
+/** rethrow a model call's error tagged with its provider, so a held run can name the key to fix */
+function throw_(e: unknown, model: string): never {
+  if (e && typeof e === "object" && !(e as { provider?: string }).provider)
+    try {
+      (e as { provider?: string }).provider = model.slice(0, model.indexOf("/"));
+    } catch {}
+  throw e;
 }

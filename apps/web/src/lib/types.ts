@@ -64,6 +64,8 @@ export type TaskStatus =
   | "waiting_user"
   | "waiting"
   | "done"
+  /** ended on a stand-in (kept as built, lints only, a library asset): "Redo what failed" redoes it */
+  | "partial"
   | "failed"
   | "cancelled";
 export type Task = {
@@ -170,15 +172,20 @@ export type CrewInfo = {
   queued?: number;
   /** docs/API.md: the slots per endpoint, plus "render" (PIP-JOURNEY N6: the ghost popover's "3 are working") */
   slots?: Record<string, { size: number; used: number }>;
+  /** when the current (or last) run started: failures before it belong to an older run */
+  runStartedAt?: string | null;
+  /** the run is held for the person, and why (a rejected key, Pip's hold) */
+  held?: string | null;
 };
-export type ProblemAction = "retry" | "change_model" | "add_budget";
+/** fix_key: open Settings → Providers on `provider` (a rejected key, no credit, a provider turned off) */
+export type ProblemAction = "retry" | "change_model" | "add_budget" | "fix_key";
 /** extension: the one sentence the person sees, and the one problem the crew can't fix alone */
 export type ProjectStatus = {
   line: string;
   /** 0..4: Idea, Story, Pictures, Sound, Finished */
   phase: number;
   etaSec?: number;
-  problem?: { text: string; action: ProblemAction; taskId: string };
+  problem?: { text: string; action: ProblemAction; taskId: string; provider?: string };
 };
 export type Milestone = {
   id: string;
@@ -226,6 +233,8 @@ export type ProjectState = {
   /** PIP-ORCHESTRATION §4.1: the production plan and the crew instances (optional until the server sends them) */
   plan?: PlanView | null;
   instances?: Instance[];
+  /** what waits on the person, cards included (the server's count; older servers send none) */
+  needs?: { count: number; words: string | null };
 };
 
 export type Session = { version: string; token: string; workspace: { roots: string[]; libraryDir: string } };

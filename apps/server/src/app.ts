@@ -7,7 +7,7 @@ import { extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { Pip } from "@pap/crew/assistant";
 import type { DraftConversations } from "@pap/crew/brief/drafts";
-import { lineOf, lineRows, needsWords, openNeeds } from "@pap/crew/brief/line";
+import { lineOf, lineRows, needsCount, needsWords, openNeeds } from "@pap/crew/brief/line";
 import { PHASE } from "@pap/crew/orchestrator";
 import { InstanceKey } from "@pap/crew/plan/instances";
 import type { Registry, ToolContext } from "@pap/tools";
@@ -28,6 +28,8 @@ const PipAbout = z.object({ instance: InstanceKey }).strict().optional();
 
 export interface CrewApi {
   run(p: OpenProject, opts: { stage?: string; retry?: boolean }): Promise<void>;
+  /** "Try again" / "Redo what failed": lifts a hold, or reruns the failed and fallback tasks (one with `taskId`) */
+  retry?(p: OpenProject, o: { taskId?: string }): { started: boolean; resumed: boolean; busy?: boolean };
   pause(p: OpenProject, mode: "after_step" | "now"): void;
   resume(p: OpenProject): void;
   status(p: OpenProject): {
@@ -228,9 +230,23 @@ export function createApp(o: ServerOpts) {
     workspace: o.workspace,
     emit: (e) => p?.emit(e.type, e),
   });
+  /** what waits on the person: questions, gates, the crew's open Pip cards and the plan's other waits (§1.8) */
+  const needsOpts = (p: OpenProject) => {
+    const plan = (o.crew?.planView?.(p) ?? null) as {
+      tasks: { kind: string; status: string; gate?: string }[];
+      pending?: { cardId: string };
+    } | null;
+    const running = o.crew?.status(p).crew?.running ?? false;
+    return {
+      cards: o.pip?.crewCards(p, { pendingCardId: plan?.pending?.cardId, running }) ?? [],
+      plan: plan?.tasks ?? null,
+    };
+  };
+  const needsOf = (p: OpenProject) => openNeeds(p, needsOpts(p));
   const stateOf = (p: OpenProject) => {
     const { at: _at, ...timeline } = p.timeline();
     const st = o.crew?.status(p);
+    const needs = needsOf(p);
     return {
       doc: p.doc(),
       rev: p.rev(),
@@ -253,6 +269,8 @@ export function createApp(o: ServerOpts) {
       // the production plan (null until a crew first runs) and the crew members that come and go (N4)
       plan: o.crew?.planView?.(p) ?? null,
       instances: o.crew?.instances?.(p) ?? [],
+      // "Needs you": the count and its words, cards included
+      needs: { count: needsCount(needs), words: needsWords(needs.questions, needs.gates, needs.cards, needs.waiting) },
     };
   };
 
@@ -275,15 +293,16 @@ export function createApp(o: ServerOpts) {
         try {
           const p = proj(x.id);
           const st = o.crew?.status(p);
+          const needs = needsOf(p);
           extra = {
             stage: p.state.stage,
             spentUsd: st?.budget.spentUsd ?? 0,
             etaSec: st?.time.etaSec?.[0] ?? null,
             deadline: p.doc().brief.deadline ?? null,
-            // what it waits on, each pick once (the script pick is a question and a gate)
-            needsYou: openNeeds(p).questions + openNeeds(p).gates.length,
+            // what it waits on, each pick once (the script pick is a question and a gate), cards included
+            needsYou: needsCount(needs),
             // in the Projects line's words ("one pick", "your OK on the rough cut")
-            needs: needsWords(openNeeds(p).questions, openNeeds(p).gates) ?? undefined,
+            needs: needsWords(needs.questions, needs.gates, needs.cards, needs.waiting) ?? undefined,
             updatedAt: statSync(join(p.dir, "pitch.json")).mtime.toISOString(),
             // a glanceable card: is a crew working, what it says, where it is, and a frame to show
             running: st?.crew?.running ?? false,
@@ -446,9 +465,28 @@ export function createApp(o: ServerOpts) {
   app.post("/api/p/:id/crew/retry", async (c) => {
     if (!o.crew) return c.json({ ok: false, error: { code: "no_crew", message: "the crew is not configured" } }, 503);
     const p = proj(c.req.param("id"));
-    // the failed task goes back to pending (a `retry` plan revision); with none failed, the current stage reruns
+    const b = (await c.req.json().catch(() => ({}))) as { taskId?: unknown };
+    const taskId = typeof b?.taskId === "string" && b.taskId ? b.taskId.slice(0, 80) : undefined;
+    // a held run goes on; else the failed and fallback tasks run again (only taskId's when given); with none, the
+    // current stage reruns
+    if (o.crew.retry) {
+      const r = o.crew.retry(p, { taskId });
+      if (r.busy)
+        return c.json(
+          {
+            ok: false,
+            error: {
+              code: "busy",
+              message: "the crew is working on this project",
+              fix: "wait for the run to end, or pause it first",
+            },
+          },
+          409,
+        );
+      return c.json({ ok: true, started: r.started, resumed: r.resumed });
+    }
     o.crew.run(p, { retry: true }).catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
-    return c.json({ ok: true });
+    return c.json({ ok: true, started: true, resumed: false });
   });
   app.post("/api/p/:id/crew/pause", async (c) => {
     const b = await c.req.json().catch(() => ({}));
@@ -664,7 +702,7 @@ export function createApp(o: ServerOpts) {
   });
   // Pip's line over the Projects page, from state (D7): no model call
   app.get("/api/workspace/line", (c) =>
-    c.json(lineOf(lineRows(o.workspace, (p) => o.crew?.status(p).crew?.running ?? false))),
+    c.json(lineOf(lineRows(o.workspace, (p) => o.crew?.status(p).crew?.running ?? false, needsOpts))),
   );
 
   // ---- connections (the person's MCP servers); secrets are never echoed ----

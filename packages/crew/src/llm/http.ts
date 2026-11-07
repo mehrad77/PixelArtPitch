@@ -17,6 +17,8 @@ export class ProviderError extends Error {
   readonly type: string;
   readonly retryable: boolean;
   readonly retryAfterMs: number | null;
+  /** the provider id the call went to (set by the gateway) */
+  provider?: string;
   constructor(message: string, status: number, type: string, retryable: boolean, retryAfterMs: number | null = null) {
     super(message);
     this.status = status;
@@ -25,6 +27,32 @@ export class ProviderError extends Error {
     this.retryAfterMs = retryAfterMs;
   }
 }
+
+/** what a failure means for the run (docs/PIP-ORCHESTRATION.md §1.8): auth, credit and unreachable hold it */
+export type ErrorKind = "auth" | "credit" | "unreachable" | "rate" | "budget" | "other";
+const CREDIT = /credit|billing|balance|quota|payment|insufficient_funds/i;
+/** classify a failure: a key problem, no credit, no connection, a rate limit, the project's budget, or anything else */
+export function errorKind(e: unknown): ErrorKind {
+  const x = e as { code?: unknown; status?: unknown; type?: unknown; message?: unknown } | null;
+  if (!x || typeof x !== "object") return "other";
+  const msg = String(x.message ?? "");
+  if (x.code === "budget" || /^budget:/.test(msg)) return "budget";
+  if (e instanceof ProviderError) {
+    const type = e.type;
+    if (e.status === 401 || e.status === 403 || /authentication|permission/.test(type)) return "auth";
+    if (e.status === 402 || type === "insufficient_quota" || (e.status === 400 && CREDIT.test(msg))) return "credit";
+    if (e.status === 0 || type === "network_error") return "unreachable";
+    if (e.status === 429 || type === "rate_limit_error") return "rate";
+    return "other";
+  }
+  if (/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|fetch failed|is turned off|no provider "/.test(msg)) return "unreachable";
+  return "other";
+}
+/** the kinds that pause the whole run: no stand-in, no fallback model, nothing else starts */
+export const holdsRun = (e: unknown): boolean => {
+  const k = errorKind(e);
+  return k === "auth" || k === "credit" || k === "unreachable";
+};
 
 export const isAbort = (e: unknown): boolean =>
   e instanceof Error && (e.name === "AbortError" || (e as { code?: string }).code === "ABORT_ERR");
@@ -90,7 +118,8 @@ export async function errorFromResponse(res: Response): Promise<ProviderError> {
     `${res.status} ${type}: ${message}`,
     res.status,
     type,
-    retryableStatus(res.status),
+    // a quota error comes back as a 429, but waiting never fixes it
+    retryableStatus(res.status) && type !== "insufficient_quota",
     retryAfterMs(res.headers),
   );
 }

@@ -49,6 +49,8 @@ export type TaskStatus =
   | "waiting_user"
   | "waiting"
   | "done"
+  /** it ended on a stand-in (kept as built, lints only, a library asset): a retry redoes it */
+  | "partial"
   | "failed"
   | "cancelled";
 export type Task = {
@@ -124,7 +126,14 @@ export type RuntimeState = {
   status: {
     line: string;
     phase: number;
-    problem?: { text: string; action: "retry" | "change_model" | "add_budget"; taskId?: string };
+    problem?: {
+      text: string;
+      /** fix_key: Settings → Providers on `provider` (a rejected key, no credit, a provider turned off) */
+      action: "retry" | "change_model" | "add_budget" | "fix_key";
+      taskId?: string;
+      /** the provider the problem is with ("anthropic", "lmstudio") */
+      provider?: string;
+    };
   };
   milestones: { id: string; at: string; text: string; image?: string }[];
   /** a person's change the crew is making (kept across restarts, so a resumed run still reports on it) */
@@ -606,7 +615,7 @@ export class OpenProject {
       );
       t.attempt = prev.length + 1;
       for (const x of prev)
-        if ((x.status === "failed" || x.status === "cancelled") && !x.supersededBy) {
+        if ((x.status === "failed" || x.status === "cancelled" || x.status === "partial") && !x.supersededBy) {
           x.supersededBy = t.id;
           this.emit("task", x);
         }

@@ -9,7 +9,8 @@ import { CATALOGUE, stageOf } from "./catalogue.ts";
 import { isLive } from "./estimate.ts";
 import type { PlanTaskT } from "./schema.ts";
 
-export type Outcome = { status: "done" | "skipped"; note?: string };
+/** `fallback`: the task ended done on a stand-in (kept as built, lints only, a library asset); a retry redoes it */
+export type Outcome = { status: "done" | "skipped"; note?: string; outcome?: "fallback" };
 
 export interface ExecHost {
   /** the live plan (a revision replaces the object) */
@@ -19,7 +20,7 @@ export interface ExecHost {
   /** run the task's handler; throws on failure */
   handle(t: PlanTaskT): Promise<Outcome>;
   /** a task's status changed (save + transient event) */
-  setStatus(t: PlanTaskT, status: PlanTaskT["status"], note?: string): void;
+  setStatus(t: PlanTaskT, status: PlanTaskT["status"], note?: string, outcome?: "fallback"): void;
   /** the endpoint a task's model calls go to, or null for tool-only kinds */
   endpoint(t: PlanTaskT): string | null;
   laneSize(endpoint: string): number;
@@ -38,12 +39,70 @@ export interface ExecHost {
   drain(stage: Stage): Promise<void>;
   /** the handler failed: ends the run (writer, director, export) or ends the task done with a partial report */
   fatal(t: PlanTaskT, e: unknown): boolean;
+  /**
+   * the handler failed in a way the person must fix (a rejected key, no credit, no connection): the run holds. True
+   * puts the task back to pending and records no failure; `stopped()` is then true until the hold lifts.
+   */
+  hold?(t: PlanTaskT, e: unknown): boolean;
+  /** nothing runs and everything left waits on held tasks (a card): the run waits for the person */
+  waiting?(held: PlanTaskT[]): void;
 }
+
+/** a stuck plan names the task it waits on, so the run's failure blames that task (not an older failed row) */
+export type StuckError = Error & { fix: string; blocking: string; waiting: string };
 
 const SATISFIED = new Set(["done", "skipped", "dropped"]);
 const at = (s: Stage) => STAGES.indexOf(s);
 
 /** the stage view: the catalogue stage of the earliest unfinished required task (gates included), else the last */
+/** the held tasks and every live task whose unfinished dependencies reach one */
+export function heldClosure(
+  live: PlanTaskT[],
+  byId: Map<string, PlanTaskT>,
+  isHeld: (id: string) => boolean,
+): Set<string> {
+  const memo = new Map<string, boolean>();
+  const visit = (t: PlanTaskT, seen: Set<string>): boolean => {
+    const hit = memo.get(t.id);
+    if (hit !== undefined) return hit;
+    if (seen.has(t.id)) return false;
+    seen.add(t.id);
+    const v =
+      isHeld(t.id) ||
+      t.dependsOn.some((d) => {
+        const x = byId.get(d);
+        return !!x && isLive(x) && visit(x, seen);
+      });
+    memo.set(t.id, v);
+    return v;
+  };
+  return new Set(live.filter((t) => visit(t, new Set())).map((t) => t.id));
+}
+
+/** "the plan is stuck": names the task at the root of the wait (a failed one, when there is one) */
+export function stuckError(t: PlanTaskT, byId: Map<string, PlanTaskT>): StuckError {
+  const open = (x: PlanTaskT) =>
+    x.dependsOn.map((d) => byId.get(d)).filter((d): d is PlanTaskT => !!d && !SATISFIED.has(d.status));
+  // walk down the unfinished dependencies to the one that waits on nothing (prefer a failed one)
+  let root = t;
+  const seen = new Set<string>();
+  for (;;) {
+    seen.add(root.id);
+    const deps = open(root).filter((d) => !seen.has(d.id));
+    if (!deps.length) break;
+    root = deps.find((d) => d.status === "failed") ?? deps[0];
+  }
+  const why = root === t ? "nothing it can get" : `${root.id}${root.status === "failed" ? ", which failed" : ""}`;
+  return Object.assign(new Error(`the plan is stuck: ${t.id} waits on ${why}`), {
+    fix:
+      root.status === "failed"
+        ? `retry ${root.id}, or ask Pip to change the plan`
+        : "retry the failed task, or ask Pip to change the plan",
+    blocking: root.id,
+    waiting: t.id,
+  });
+}
+
 export function viewStage(tasks: PlanTaskT[]): Stage {
   let best: Stage | null = null;
   for (const t of tasks)
@@ -106,13 +165,14 @@ export class Executor {
     const job = (async () => {
       try {
         const o = await this.host.handle(t);
-        this.host.setStatus(t, o.status, o.note);
+        this.host.setStatus(t, o.status, o.note, o.outcome);
       } catch (e) {
         if (this.host.aborted()) this.host.setStatus(t, "pending");
+        else if (this.host.hold?.(t, e)) this.host.setStatus(t, "pending");
         else if (this.host.fatal(t, e)) {
           this.host.setStatus(t, "failed", String((e as any)?.message ?? e).slice(0, 200));
           this.failure ??= { task: t, error: e };
-        } else this.host.setStatus(t, "done", `partial: ${String((e as any)?.message ?? e).slice(0, 180)}`);
+        } else this.host.setStatus(t, "done", `partial: ${String((e as any)?.message ?? e).slice(0, 180)}`, "fallback");
       } finally {
         this.running.delete(t.id);
         this.wake();
@@ -197,20 +257,16 @@ export class Executor {
           continue;
         }
         const byId = new Map(tasks.map((t) => [t.id, t]));
-        const stuck = live.filter((t) => (t.status === "pending" || t.status === "ready") && !this.host.held(t.id));
+        // held is passed down: a task whose unfinished dependencies reach a held task waits with it
+        const held = heldClosure(live, byId, (id) => this.host.held(id));
+        const stuck = live.filter((t) => (t.status === "pending" || t.status === "ready") && !held.has(t.id));
         if (!stuck.length || stuck.every((t) => !this.ready(t, byId))) {
-          if (live.every((t) => this.host.held(t.id))) {
+          if (live.every((t) => held.has(t.id))) {
+            this.host.waiting?.(live.filter((t) => this.host.held(t.id)));
             await this.host.waitResume();
             continue;
           }
-          const t = stuck[0] ?? live[0];
-          const deps = t.dependsOn.filter((d) => !SATISFIED.has(byId.get(d)?.status ?? "done"));
-          throw Object.assign(
-            new Error(`the plan is stuck: ${t.id} waits on ${deps.join(", ") || "nothing it can get"}`),
-            {
-              fix: "retry the failed task, or ask Pip to change the plan",
-            },
-          );
+          throw stuckError(stuck[0] ?? live.find((t) => !held.has(t.id)) ?? live[0], byId);
         }
         continue;
       }

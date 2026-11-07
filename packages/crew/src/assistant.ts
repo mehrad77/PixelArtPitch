@@ -26,11 +26,12 @@ import {
   type Workspace,
 } from "@pap/tools";
 import { z } from "zod";
+import type { CrewCardNeed } from "./brief/line.ts";
 import type { Gateway } from "./gateway.ts";
 import { estimateInputTokens } from "./llm/budget.ts";
 import { costUsd, priceFor } from "./llm/prices.ts";
 import { BudgetError, type ChatMessage, type ContentPart, type ToolSpec } from "./llm/types.ts";
-import { type RunReport, STAGE_LINE } from "./orchestrator.ts";
+import { type CrewSnapshot, type RunReport, STAGE_LINE } from "./orchestrator.ts";
 import { fill, card as promptCard } from "./prompts.ts";
 
 // ---------------------------------------------------------------- the contract with the UI
@@ -188,6 +189,7 @@ export const PIP_PROPOSE = [
   // "Make another like this" opens a draft on /new (§3.4); project_fork stays a registry tool for MCP clients
   "draft_create",
   "crew_run",
+  "crew_retry",
   "crew_pause",
   "note_add",
   "question_answer",
@@ -257,6 +259,8 @@ export type PipDeps = {
   instanceAbout?: (p: OpenProject, instance: string) => { text: string; label: string } | null;
   /** a crew card was decided: a plan revision past the 20% line, or the budget overrun */
   crewDecide?: (p: OpenProject, what: "pending" | "overrun", decision: "confirm" | "decline") => void;
+  /** the crew right now (Crew.snapshot): read fresh each turn, so Pip never answers from a stale picture */
+  crewSnapshot?: (p: OpenProject) => CrewSnapshot;
 };
 
 const now = () => new Date().toISOString();
@@ -364,6 +368,7 @@ function summary(p: OpenProject | undefined, deps: PipDeps, ws: Workspace): stri
     `Project ${p.id}: "${d.title}". Idea: ${d.brief.idea.slice(0, 300)}`,
     `Length ${tl.duration.toFixed(1)} s; narration: ${d.brief.narration}; involvement: ${d.brief.involvement}.`,
     `Status: ${st.status.line}. Stage: ${st.stage}. Crew ${running ? "working now" : st.paused ? "paused" : "idle"}.`,
+    crewNow(deps.crewSnapshot?.(p)),
     `Scenes: ${tl.scenes
       .map((s, k) => {
         const sc = d.scenes[k];
@@ -384,6 +389,31 @@ function summary(p: OpenProject | undefined, deps: PipDeps, ws: Workspace): stri
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** the crew right now, as one line of the turn's context (true at this turn, whatever the history says) */
+export function crewNow(s: CrewSnapshot | undefined): string {
+  if (!s) return "";
+  const out: string[] = [];
+  out.push(
+    s.held
+      ? `held: ${s.held} (nothing runs until the person fixes it)`
+      : s.running
+        ? "running"
+        : s.paused
+          ? "paused by the person"
+          : "idle (not working)",
+  );
+  out.push(s.gates.length ? `open gates: ${s.gates.join(", ")}` : "no open gates");
+  if (s.passed.length) out.push(`passed gates: ${s.passed.join(", ")}`);
+  out.push(s.questions ? `${s.questions} open question${s.questions === 1 ? "" : "s"}` : "no open questions");
+  if (s.pendingCard) out.push("a plan-change card waits for the person");
+  if (s.failed.length) out.push(`failed: ${s.failed.slice(0, 6).join("; ")}`);
+  if (s.fallbacks.length)
+    out.push(`fell back (a stand-in; "redo what failed" redoes it): ${s.fallbacks.slice(0, 6).join("; ")}`);
+  out.push(s.reviewPending ? "a review is still to come in this run" : "no review left in this run");
+  if (s.exportedAt) out.push(`last export ${s.exportedAt}`);
+  return `Crew now: ${out.join("; ")}.`;
 }
 
 // ---------------------------------------------------------------- storage
@@ -445,6 +475,7 @@ export const MENU_INTENTS = [
   "files",
   "translate_subtitles",
   "change",
+  "retry",
   "new_from_this",
   "export",
   "status",
@@ -1512,8 +1543,14 @@ export class Pip {
           return note ? `Also fixes ${note.id}: ${note.text.slice(0, 140)}` : null;
         });
         if (also.some((x) => x === null)) return { error: "alsoNotes has an id that isn't a note; use note_list" };
+        // a review still to come reads the note; with none left, the change runs once this run ends
+        const snap = running ? this.deps.crewSnapshot?.(p) : undefined;
         const effects = running
-          ? ["The crew is working now: your note waits for the next review, then that work is redone."]
+          ? [
+              snap && !snap.reviewPending
+                ? "The crew is working now: your change starts when this run ends, then that work is redone."
+                : "The crew is working now: your note waits for the next review, then that work is redone.",
+            ]
           : [
               `Reopens ${STAGE_WORD[stage]} for ${sceneWord(touched)}.${others.length ? ` ${others.length === 1 ? "Scene" : "Scenes"} ${list(others.map(String))} ${others.length === 1 ? "stays" : "stay"} as ${others.length === 1 ? "it is" : "they are"}.` : ""}`,
               ...(also as string[]),
@@ -1605,8 +1642,40 @@ export class Pip {
           action,
         };
         break;
+      case "crew_retry": {
+        if (!p) return { error: "crew_retry needs a project" };
+        const snap = this.deps.crewSnapshot?.(p);
+        const what = [...(snap?.failed ?? []), ...(snap?.fallbacks ?? [])];
+        const est = this.deps.gateway.estimate(p.id, [
+          { kind: "scene.tune", role: "animator", count: Math.max(1, what.length) },
+        ]);
+        c = {
+          ...base,
+          title: snap?.held ? "Try again" : "Redo what failed",
+          detail: snap?.held
+            ? `The crew is held: ${snap.held}. It goes on from where it stopped.`
+            : what.length
+              ? `The crew redoes ${list(what.slice(0, 4))}${what.length > 4 ? ` and ${what.length - 4} more` : ""}, then checks and exports again.`
+              : "Nothing failed: the crew runs the current stage again.",
+          who: ["producer"],
+          usd: est ? [+est.usd[0].toFixed(2), +est.usd[1].toFixed(2)] : null,
+          sec: est ? [Math.round(est.sec[0]), Math.round(est.sec[1])] : null,
+          effects: ["Finished work and your answers at the gates are kept."],
+          confirmLabel: snap?.held ? "Try again" : "Redo it",
+          action,
+        };
+        break;
+      }
       case "crew_run": {
         if (!p) return { error: "crew_run needs a project" };
+        // something failed or fell back: the card is "Redo what failed", never a fresh "Start the crew"
+        const snap0 = this.deps.crewSnapshot?.(p);
+        if (
+          !input.stage &&
+          this.deps.registry.get("crew_retry") &&
+          (snap0?.held || snap0?.failed.length || snap0?.fallbacks.length)
+        )
+          return this.planCards("crew_retry", {}, p);
         const s = this.deps.crewStatus?.(p);
         const left = s?.budget.estTotalUsd
           ? ([
@@ -1809,7 +1878,7 @@ export class Pip {
       text: t,
       ...(nearest ? { nearest } : {}),
     });
-    const needP = ["files", "translate_subtitles", "change", "export"].includes(m.intent);
+    const needP = ["files", "translate_subtitles", "change", "export", "retry"].includes(m.intent);
     if (needP && !p) return { cards: [cant("Open a project first.", "Pick one on the Projects page.")] };
     const plan = (tool: string, input: Record<string, unknown>) => {
       const r = this.planCards(tool, input, p);
@@ -1849,6 +1918,10 @@ export class Pip {
         };
       case "export":
         return { cards: plan("export_video", {}) };
+      case "retry":
+        if (!p) return { cards: [cant("Open the project first.")] };
+        if (!this.deps.registry.get("crew_retry")) return { cards: [cant("Retrying isn't set up in this studio.")] };
+        return { cards: plan("crew_retry", {}) };
       case "connect":
         if (!this.deps.external?.add) return { cards: [cant("Connections aren't set up in this studio.")] };
         return {
@@ -1969,6 +2042,40 @@ export class Pip {
       return save();
     })().finally(() => this.inflight.delete(c.id));
     return { card, done };
+  }
+
+  /**
+   * The crew cards still waiting on the person (§1.8, "Needs you"): a revision card while the plan still holds its
+   * tasks, and the budget card while a run waits on it. Older proposed cards don't count.
+   */
+  crewCards(p: OpenProject, o: { pendingCardId?: string; running: boolean }): CrewCardNeed[] {
+    const out: CrewCardNeed[] = [];
+    for (const it of this.log(p).all()) {
+      if (it.kind !== "pip") continue;
+      for (const c of it.cards) {
+        if (c.type !== "plan" || c.status !== "proposed" || !c.action?.crew) continue;
+        if (c.action.crew === "pending" && c.id === o.pendingCardId) out.push("plan");
+        else if (c.action.crew === "overrun" && o.running) out.push("budget");
+      }
+    }
+    return out;
+  }
+  /** a message from Pip in the project's thread, with no card (a held run: what happened and what to do) */
+  notice(p: OpenProject, text: string): string {
+    const item: StoredItem = { id: rid("pip"), at: now(), kind: "pip", text: text.slice(0, 1200), cards: [] };
+    this.log(p).append(item);
+    this.emit(p, { type: "item", item: publicItem(item) });
+    return item.id;
+  }
+  /** the crew held its run on a provider failure: say so once, with what was kept and what waits */
+  holdNotice(p: OpenProject, h: { text: string; action: string; provider?: string; kept: number; waiting: number }) {
+    const fix =
+      h.action === "fix_key"
+        ? "Fix it in Settings → Providers: once the key is saved or its test passes, the crew picks up where it stopped."
+        : "Once it's running again, press Try again and the crew picks up where it stopped.";
+    const kept = h.kept ? `${h.kept} finished step${h.kept === 1 ? " is" : "s are"} kept` : "nothing was lost";
+    const waits = h.waiting ? `; ${h.waiting} wait${h.waiting === 1 ? "s" : ""} for the fix` : "";
+    return this.notice(p, `${h.text} I paused the crew instead of using stand-ins: ${kept}${waits}. ${fix}`);
   }
 
   /** a card the crew asks for (a revision past the 20% line, the budget overrun), posted in the project's chat */
@@ -2176,6 +2283,8 @@ function resultFor(tool: string, data: any, p?: OpenProject): NonNullable<PlanCa
     }
     case "crew_run":
       return { text: "The crew started." };
+    case "crew_retry":
+      return { text: data.resumed ? "The crew goes on from where it stopped." : "The crew is redoing what failed." };
     case "crew_pause":
       return { text: "The crew pauses." };
     case "note_add":
