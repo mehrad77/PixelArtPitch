@@ -1061,8 +1061,8 @@ test("/context measures the next call without a model call and leaves nothing in
     ctx.total,
     ctx.parts.reduce((n, x) => n + x.tokens, 0),
   );
-  assert.match(ctx.parts[0].detail ?? "", /^assistant\/system@/);
-  assert.match(ctx.parts[2].detail ?? "", /^\d+ tools, of which 0 from connections$/);
+  assert.equal(ctx.parts[0].detail, undefined);
+  assert.match(ctx.parts[2].detail ?? "", /^\d+ tools$/);
   assert.equal(ctx.parts[4].detail, "2 messages kept");
   assert.equal(ctx.parts[5].tokens, 4000);
   // the API: GET and a /context POST, neither stored

@@ -10,9 +10,16 @@ import type { PipContext, PipContextPart } from "../lib/types.ts";
 import "./PipContext.css";
 
 /** 1.2k, 161.3k; under a thousand as is */
-export const tok = (n: number) => (n < 1000 ? String(Math.round(n)) : `${(n / 1000).toFixed(1)}k`);
-const tokRound = (n: number) => (n < 1000 ? String(Math.round(n)) : `${Math.round(n / 1000)}k`);
-const pct = (n: number, of: number) => (of > 0 ? Math.round((n / of) * 100) : 0);
+export const tok = (n: number) =>
+  n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${(n / 1000).toFixed(1)}k` : `${+(n / 1e6).toFixed(2)}M`;
+const tokRound = (n: number) =>
+  n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${Math.round(n / 1000)}k` : `${+(n / 1e6).toFixed(1)}M`;
+/** whole percent; a small non-zero share shows one decimal (0.3), never a misleading 0 */
+const pct = (n: number, of: number) => {
+  if (of <= 0 || n <= 0) return 0;
+  const p = (n / of) * 100;
+  return p >= 1 ? Math.round(p) : Math.max(0.1, +p.toFixed(1));
+};
 
 const ORDER: PipContextPart["id"][] = ["system", "facts", "tools", "summary", "messages", "reserve"];
 const LABEL: Record<PipContextPart["id"], string> = {

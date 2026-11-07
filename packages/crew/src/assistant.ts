@@ -1013,13 +1013,13 @@ export class Pip {
       const base = fill(r.c.system, { facts: "" }).length + r.extText.length;
       const extTools = r.tools.filter((t) => t.name.startsWith("ext_")).length;
       parts = [
-        { id: "system", label: "System prompt", tokens: est(base), detail: r.c.version },
+        { id: "system", label: "System prompt", tokens: est(base) },
         { id: "facts", label: "Project facts", tokens: est(r.factsText.length + r.situation.length) },
         {
           id: "tools",
           label: "Tool definitions",
           tokens: est(JSON.stringify(r.tools).length),
-          detail: `${r.tools.length} tools, of which ${extTools} from connections`,
+          detail: extTools ? `${r.tools.length} tools, ${extTools} from your connections` : `${r.tools.length} tools`,
         },
         { id: "summary", label: "Summary of earlier conversation", tokens: est(memory?.length ?? 0) },
         {
@@ -1038,7 +1038,6 @@ export class Pip {
           id: "system",
           label: "System prompt",
           tokens: est(fill(r.c.system, { facts: "" }).length),
-          detail: r.c.version,
         },
         { id: "facts", label: "Project facts", tokens: est(r.factsText.length + r.situation.length) },
         { id: "tools", label: "Tool definitions", tokens: 0, detail: "none in menu mode" },
