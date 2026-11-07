@@ -1,0 +1,65 @@
+{
+ "id": "moon",
+ "version": 1,
+ "kind": "decor",
+ "w": 24,
+ "h": 24,
+ "frames": [
+  "moon"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "sky",
+  "night",
+  "moon"
+ ],
+ "description": "A pixel crescent/full moon for a night sky: pale (P p) with a few soft craters (q), transparent background.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "generated",
+  "role": "pixel-artist",
+  "model": "claude-opus-5-5",
+  "provider": "anthropic",
+  "origin": "the first PixelArtPitch video (2026-11-06)",
+  "sourceAssets": [
+   "moon"
+  ],
+  "judgeReason": null
+ },
+ "hash": "da098563e9595432",
+ "standard": null,
+ "grid": {
+  "moon": [
+   "........................",
+   ".........PPPPPp.........",
+   ".......PPPPPPPPPp.......",
+   ".....PPPPPPPPPPPPpp.....",
+   "....PPPPPPPPPPPPPPpp....",
+   "...PPPPqqPPPPPPPPPPpp...",
+   "...PPPqqqpPPPPPqqPPpp...",
+   "..PPPPPppPPPPPPppPPPpp..",
+   "..PPPPPPPPPPPPPPPPPppp..",
+   ".PPPqqPPPPPPPPPPPPPPppp.",
+   ".PPPppPPPPPPPqqPPPPPppp.",
+   ".PPPPPPPPPPPqqqqPPPPppp.",
+   ".PPPPPPPPPPPqqqpPPPPppp.",
+   ".PPPPPPPPPPPPppPPPPpppq.",
+   ".PPPPPPPPPPPPPPPPPPpppq.",
+   "..PPPqqPPPPPPPPPPPpppq..",
+   "..PPPqpPPPPPPPPPPpppqq..",
+   "...PPPPPPPPPPqqppppqq...",
+   "...pPPPPPPPPPPqppppqq...",
+   "....pPPPPPPPPpppppqq....",
+   ".....pPPPPPppppppqq.....",
+   ".......ppPPpppqqq.......",
+   ".........pppqqq.........",
+   "........................"
+  ]
+ }
+}

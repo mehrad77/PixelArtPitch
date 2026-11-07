@@ -1,0 +1,132 @@
+{
+ "id": "items",
+ "version": 1,
+ "kind": "icon",
+ "w": 12,
+ "h": 12,
+ "frames": [
+  "pc",
+  "gamepad",
+  "handheld",
+  "phone",
+  "heart",
+  "star"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "pickup",
+  "pc",
+  "gamepad",
+  "handheld",
+  "phone",
+  "heart",
+  "star"
+ ],
+ "description": "Collectible pickup icons for a platformer, each centred in its 12x12 frame with a 1 px dark outline (k): pc = a small tower PC with a glowing green light (Y e T); gamepad = a generic two-handed game controller (no brand) with a d-pad and two buttons (p q k O T); handheld = a generic handheld console with a screen (E C) and buttons; phone = a smartphone with a glowing screen (C E); heart = a red pixel heart (r R P highlight); star = a 5-point gold star (B O P). No brand logos.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "generated",
+  "role": "pixel-artist",
+  "model": "claude-opus-5-5",
+  "provider": "anthropic",
+  "origin": "the first PixelArtPitch video (2026-11-06)",
+  "sourceAssets": [
+   "items"
+  ],
+  "judgeReason": "Variant 1 has the most readable set. Its gamepad is the clearest, with a proper body, grips, a d-pad and coloured buttons. The server tower, handheld, phone and heart all have clean outlines and upper-left lighting. Variant 2's controller is smaller and less distinct, and Variant 3's controller looks squashed and noisy."
+ },
+ "hash": "b27d82d163388153",
+ "standard": null,
+ "grid": {
+  "pc": [
+   "..kkkkkkkk..",
+   "..kpYYYYek..",
+   "..kYllllek..",
+   "..kYYYYYek..",
+   "..kYllllek..",
+   "..kYYYYYek..",
+   "..kYYYYYek..",
+   "..kYYYTTek..",
+   "..kYYYYYek..",
+   "..kYYYYYek..",
+   "..keeeeeek..",
+   "..kkkkkkkk.."
+  ],
+  "gamepad": [
+   "............",
+   "............",
+   "............",
+   "..kkkkkkkk..",
+   ".kppppppppk.",
+   "kppkpppppTqk",
+   "kpkkkpppOpqk",
+   "kppkppppppqk",
+   "kpqqkkkkqqqk",
+   "kqqk....kqqk",
+   ".kk......kk.",
+   "............"
+  ],
+  "handheld": [
+   ".kkkkkkkkkk.",
+   ".kpppppppqk.",
+   ".kpkkkkkkqk.",
+   ".kpkEEECkqk.",
+   ".kpkEECCkqk.",
+   ".kpkECCCkqk.",
+   ".kpkkkkkkqk.",
+   ".kpppppppqk.",
+   ".kppkpppTqk.",
+   ".kpkkkpOpqk.",
+   ".kqqkqqqqqk.",
+   ".kkkkkkkkkk."
+  ],
+  "phone": [
+   "..kkkkkkkk..",
+   "..klllllek..",
+   "..klPEECek..",
+   "..klEECCek..",
+   "..klECCCek..",
+   "..klCCCCek..",
+   "..klCCCCek..",
+   "..klCCCCek..",
+   "..klCCCCek..",
+   "..klllllek..",
+   "..kllqqlek..",
+   "..kkkkkkkk.."
+  ],
+  "heart": [
+   "............",
+   "..kkk..kkk..",
+   ".krPrkkrrrk.",
+   "krPrrrrrrrRk",
+   "krrrrrrrrrRk",
+   "krrrrrrrrRRk",
+   ".krrrrrrrRk.",
+   "..krrrrrRk..",
+   "...krrrRk...",
+   "....krRk....",
+   ".....kk.....",
+   "............"
+  ],
+  "star": [
+   ".....kk.....",
+   "....kBBk....",
+   "....kPBk....",
+   "...kBPBBk...",
+   "kkkkBBBBkkkk",
+   "kPPBBBBBBBBk",
+   ".kBBBBBBBOk.",
+   "..kBBBBBOk..",
+   "..kBBBBOOk..",
+   ".kBBOkkBOOk.",
+   ".kBk....kOk.",
+   ".kk......kk."
+  ]
+ }
+}

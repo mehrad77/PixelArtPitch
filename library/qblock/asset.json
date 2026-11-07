@@ -1,0 +1,95 @@
+{
+ "id": "qblock",
+ "version": 1,
+ "kind": "block",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "normal",
+  "glow",
+  "used"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "question",
+  "mystery",
+  "platformer"
+ ],
+ "description": "The classic platformer \"?\" block: a 16x16 block with a 1 px dark outline (k), riveted corners and a big question mark. normal = green (G g T) with a pale question mark (P); glow = the same, brighter with an orange (O) inner rim; used = an empty grey-brown spent block (e q n) without the question mark.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "generated",
+  "role": "pixel-artist",
+  "model": "claude-opus-5-5",
+  "provider": "anthropic",
+  "origin": "the first PixelArtPitch video (2026-11-06)",
+  "sourceAssets": [
+   "qblock"
+  ],
+  "judgeReason": "Variant 2 has the cleanest, most readable block: a bold off-white '?' with a tidy dark-green drop shadow, crisp corner rivets, and consistent upper-left lighting. Its hit frame adds a nice touch with the orange border and brass corner accents. Variant 1 is close but slightly less polished. Variant 3's black-outlined, grey-shaded '?' looks noisier, even though its brown used block reads well. All three used blocks share the odd brown edge."
+ },
+ "hash": "290ff209576f68d1",
+ "standard": null,
+ "grid": {
+  "normal": [
+   ".kkkkkkkkkkkkkk.",
+   "kTTTTTTTTTTTTTgk",
+   "kTkGGGGGGGGGGkgk",
+   "kTGGGGPPPPGGGGgk",
+   "kTGGGPPPPPPGGGgk",
+   "kTGGGPPggPPgGGgk",
+   "kTGGGGggGPPgGGgk",
+   "kTGGGGGGPPggGGgk",
+   "kTGGGGGPPggGGGgk",
+   "kTGGGGGPPgGGGGgk",
+   "kTGGGGGGggGGGGgk",
+   "kTGGGGGPPGGGGGgk",
+   "kTGGGGGPPgGGGGgk",
+   "kTkGGGGGggGGGkgk",
+   "kggggggggggggggk",
+   ".kkkkkkkkkkkkkk."
+  ],
+  "glow": [
+   ".kkkkkkkkkkkkkk.",
+   "kOOOOOOOOOOOOOOk",
+   "kOBTTTTTTTTTTBOk",
+   "kOTGGGPPPPGGGgOk",
+   "kOTGGPPPPPPGGgOk",
+   "kOTGGPPggPPgGgOk",
+   "kOTGGGggGPPgGgOk",
+   "kOTGGGGGPPggGgOk",
+   "kOTGGGGPPggGGgOk",
+   "kOTGGGGPPgGGGgOk",
+   "kOTGGGGGggGGGgOk",
+   "kOTGGGGPPGGGGgOk",
+   "kOTGGGGPPgGGGgOk",
+   "kOBggggggggggBOk",
+   "kOOOOOOOOOOOOOOk",
+   ".kkkkkkkkkkkkkk."
+  ],
+  "used": [
+   ".kkkkkkkkkkkkkk.",
+   "kqqqqqqqqqqqqqnk",
+   "kqkeeeeeeeeeeknk",
+   "kqeeeeeeeeeeelnk",
+   "kqeeeeeeeeeeelnk",
+   "kqeeeeeeeeeeelnk",
+   "kqeeeeeeeeeeelnk",
+   "kqeeeeeeeeeeelnk",
+   "kqeeeeeeeeeeelnk",
+   "kqeeeeeeeeeeelnk",
+   "kqeeeeeeeeeeelnk",
+   "kqeeeeeeeeeeelnk",
+   "kqeeeeeeeeeeelnk",
+   "kqkllllllllllknk",
+   "knnnnnnnnnnnnnnk",
+   ".kkkkkkkkkkkkkk."
+  ]
+ }
+}

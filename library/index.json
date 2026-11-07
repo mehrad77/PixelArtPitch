@@ -1,0 +1,187 @@
+{
+ "palette": "pap-night@1",
+ "assets": [
+  {
+   "id": "castle",
+   "kind": "building",
+   "w": 64,
+   "h": 56,
+   "frames": 1,
+   "tags": [
+    "castle",
+    "goal",
+    "night",
+    "stone"
+   ]
+  },
+  {
+   "id": "moon",
+   "kind": "decor",
+   "w": 24,
+   "h": 24,
+   "frames": 1,
+   "tags": [
+    "sky",
+    "night",
+    "moon"
+   ]
+  },
+  {
+   "id": "skyline",
+   "kind": "backdrop",
+   "w": 96,
+   "h": 40,
+   "frames": 2,
+   "tags": [
+    "city",
+    "parallax",
+    "tileable",
+    "night"
+   ]
+  },
+  {
+   "id": "tiles",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 8,
+   "tags": [
+    "terrain",
+    "ground",
+    "pipe",
+    "bridge",
+    "tileable"
+   ]
+  },
+  {
+   "id": "qblock",
+   "kind": "block",
+   "w": 16,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "question",
+    "mystery",
+    "platformer"
+   ]
+  },
+  {
+   "id": "powerups",
+   "kind": "icon",
+   "w": 16,
+   "h": 16,
+   "frames": 5,
+   "tags": [
+    "powerup",
+    "profile",
+    "focus",
+    "trophy"
+   ]
+  },
+  {
+   "id": "props",
+   "kind": "prop",
+   "w": 24,
+   "h": 32,
+   "frames": 6,
+   "tags": [
+    "signpost",
+    "flag",
+    "flagpole",
+    "lamp",
+    "bush"
+   ]
+  },
+  {
+   "id": "items",
+   "kind": "icon",
+   "w": 12,
+   "h": 12,
+   "frames": 6,
+   "tags": [
+    "pickup",
+    "pc",
+    "gamepad",
+    "handheld",
+    "phone",
+    "heart",
+    "star"
+   ]
+  },
+  {
+   "id": "map",
+   "kind": "map-tile",
+   "w": 16,
+   "h": 16,
+   "frames": 8,
+   "tags": [
+    "overworld",
+    "node",
+    "path",
+    "tree",
+    "water"
+   ]
+  },
+  {
+   "id": "gamers",
+   "kind": "crowd",
+   "w": 48,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "npc",
+    "audience",
+    "cheer",
+    "gamers"
+   ]
+  },
+  {
+   "id": "mentor-validate",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "tags": [
+    "npc",
+    "mentor",
+    "clipboard"
+   ]
+  },
+  {
+   "id": "mentor-gtm",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "tags": [
+    "npc",
+    "mentor",
+    "megaphone"
+   ]
+  },
+  {
+   "id": "mentor-ai",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "tags": [
+    "npc",
+    "mentor",
+    "robot"
+   ]
+  },
+  {
+   "id": "font-5x8",
+   "kind": "font",
+   "w": 5,
+   "h": 8,
+   "frames": 82,
+   "tags": [
+    "font",
+    "text",
+    "bitmap"
+   ]
+  }
+ ]
+}

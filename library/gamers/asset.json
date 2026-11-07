@@ -1,0 +1,77 @@
+{
+ "id": "gamers",
+ "version": 1,
+ "kind": "crowd",
+ "w": 48,
+ "h": 16,
+ "frames": [
+  "cheer0",
+  "cheer1"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "npc",
+  "audience",
+  "cheer",
+  "gamers"
+ ],
+ "description": "A tiny crowd of four gamer NPCs standing side by side, each about 8-10 px wide and 14 px tall, varied hair and shirt colours (one holds a gamepad, one wears a headset). cheer0: arms down; cheer1: arms raised cheering, jumped up 1 px. Feet on the bottom row in cheer0.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "generated",
+  "role": "pixel-artist",
+  "model": "claude-opus-5-5",
+  "provider": "anthropic",
+  "origin": "the first PixelArtPitch video (2026-11-06)",
+  "sourceAssets": [
+   "gamers"
+  ],
+  "judgeReason": "Variant 2 has the cleanest, most readable silhouettes. All four gamers face right as the brief asks, with outlines, shoes and four clearly distinct hair and shirt combos (blond, brown, purple headband, cyan). The cheer frames keep the same proportions and baseline, with tidy raised arms. The controller accent uses orange sparingly. Other variants have muddier details, such as the noisy grey hair or headsets in 3, 4 and 5, or front-facing heads in 1 and 7."
+ },
+ "hash": "d2c8d4c6887d2cce",
+ "standard": null,
+ "grid": {
+  "cheer0": [
+   "................................................",
+   "................................................",
+   "...kkkkk.......kkkkk.......kUUUk.......kkkkk....",
+   "..kHHHHHk.....kccccck.....kUaaaak.....kEEEEEk...",
+   "..kHHHHHhk....kcccccnk....kUaaaaAk....kEEEEECk..",
+   "..khHSSkSk....knSSSkSk....kUSSSkSk....kCEssksk..",
+   "..khSSSSsk....knSSSSsk....kISSSSsk....kCsssszk..",
+   "...kSSSSsk.....kSSSSsk.....kSSSSsk.....ksssszk..",
+   "..kMMMMMMk....kXXXXXXk....kGGGGGGk....kVVVVVVk..",
+   ".kMmMMMmkmk..kXxXXXxkxk..kGgGGGgkgk..kVUVVVUkUk.",
+   ".kMmMMMmkmk..kXxXXXxkxkk.kGgGGGgkgk..kVUVVVUkUk.",
+   ".kSkMMMmksk..kSkXXXxksYOkkSkGGGgksk..kskVVVUkzk.",
+   "..kDDDDdkk....kYYYYlkkkk..kFFFFfkk....kDDDDdkk..",
+   "..kDDkDdk.....kYYkYlk.....kFFkFfk.....kDDkDdk...",
+   "..kDdkDdk.....kYlkYlk.....kFfkFfk.....kDdkDdk...",
+   "..kPpkPPpk....krRkrrRk....kPpkPPpk....kPpkPPpk.."
+  ],
+  "cheer1": [
+   ".k........k..k.......kkk.k........k..k........k.",
+   "kSkkkkkk.kskkSkkkkkkkYYOkSkkUUUk.kskkskkkkkk.kzk",
+   "kSkHHHHHkkskkSkccccckkskkSkUaaaakkskkskEEEEEkkzk",
+   "kSkHHHHHhkskkSkcccccnkskkSkUaaaaAkskkskEEEEECkzk",
+   "kMkhHSSkSkmkkXknSSSkSkxkkGkUSSSkSkgkkVkCEsskskUk",
+   "kMkhSSSSskmkkXknSSSSskxkkGkISSSSskgkkVkCsssszkUk",
+   "kMkkSSSSskmkkXkkSSSSskxkkGkkSSSSskgkkVkksssszkUk",
+   "kMMMMMMMMmmkkXXXXXXXXxxkkGGGGGGGGggkkVVVVVVVVUUk",
+   ".kkMMMMmkkk..kkXXXXxkkk..kkGGGGgkkk..kkVVVVUkkk.",
+   "..kMMMMmk.....kXXXXxk.....kGGGGgk.....kVVVVUk...",
+   "..kMMMMmk.....kXXXXxk.....kGGGGgk.....kVVVVUk...",
+   "..kDDDDdk.....kYYYYlk.....kFFFFfk.....kDDDDdk...",
+   "..kDDkDdk.....kYYkYlk.....kFFkFfk.....kDDkDdk...",
+   "..kDdkDdk.....kYlkYlk.....kFfkFfk.....kDdkDdk...",
+   "..kPpkPPpk....krRkrrRk....kPpkPPpk....kPpkPPpk..",
+   "................................................"
+  ]
+ }
+}
