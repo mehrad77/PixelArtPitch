@@ -209,6 +209,18 @@ export class Crew {
         estTotalUsd: est ? ([spentUsd + est.usd[0], spentUsd + est.usd[1]] as [number, number]) : null,
       },
       time: { startedAt: p.state.startedAt, etaSec: est ? est.sec : null, deadline: doc.brief.deadline ?? null },
+      /** whether a crew is working on this project in this process right now, and what it waits on */
+      crew: {
+        running: this.runs.has(p.id),
+        paused: p.state.paused,
+        stage: p.state.stage,
+        lastActiveAt:
+          p.state.tasks
+            .map((t) => t.endedAt ?? t.startedAt ?? "")
+            .sort()
+            .at(-1) || null,
+        queued: p.state.tasks.filter((t) => t.status === "queued").length,
+      },
     };
   }
   pause(p: OpenProject, mode: "after_step" | "now") {

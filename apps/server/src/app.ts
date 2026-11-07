@@ -22,6 +22,7 @@ export interface CrewApi {
   status(p: OpenProject): {
     budget: { capUsd: number; spentUsd: number; reservedUsd: number; estTotalUsd: [number, number] | null };
     time: { startedAt: string | null; etaSec: [number, number] | null; deadline: string | null };
+    crew?: { running: boolean; paused: boolean; stage: string; lastActiveAt: string | null; queued: number };
   };
   gate(
     p: OpenProject,
@@ -173,6 +174,7 @@ export function createApp(o: ServerOpts) {
       digest: p.state.digest,
       paused: p.state.paused,
       status: p.state.status,
+      crew: st?.crew ?? { running: false, paused: p.state.paused, stage: p.state.stage, lastActiveAt: null, queued: 0 },
       milestones: p.state.milestones,
       sceneStatus: p.state.sceneStatus,
     };
