@@ -7,8 +7,8 @@
     "node": ">=24.21"
   },
   "scripts": {
-    "check": "biome check . && tsc -p tsconfig.json && node --test --test-reporter=dot \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\"",
-    "test": "node --test \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\"",
+    "check": "biome check . && tsc -p tsconfig.json && PAP_HOME=\"$(mktemp -d)\" node --test --test-reporter=dot \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\"",
+    "test": "PAP_HOME=\"$(mktemp -d)\" node --test \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\"",
     "format": "biome check --write .",
     "typecheck": "tsc -p tsconfig.json",
     "pap": "node apps/server/src/cli.ts"
