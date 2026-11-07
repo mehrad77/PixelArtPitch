@@ -13,7 +13,7 @@ const Match = z.object({
   /** the reference type the task comes from (logo, likeness) */
   fromRef: z.string().optional(),
   tier: z.enum(["role", "strong", "light"]).optional(),
-  variant: z.union([z.literal(1), z.literal(2)]).optional(),
+  variant: z.number().int().min(1).max(3).optional(),
   status: z.string().optional(),
   /** added by Pip's revision (not by the rules) */
   added: z.boolean().optional(),

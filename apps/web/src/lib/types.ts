@@ -258,11 +258,25 @@ export type Provider = {
 };
 export type Profile = "best" | "balanced" | "local" | "custom";
 export type Involvement = "every" | "key" | "auto";
+export type Effort = "low" | "medium" | "high";
 export type Settings = {
   providers: Provider[];
   profile: Profile;
   roles: Record<Role, { model: string; fallback?: string }>;
-  defaults: { capUsd: number; askAtFraction: number; involvement: Involvement; concurrency: number };
+  defaults: {
+    capUsd: number;
+    askAtFraction: number;
+    involvement: Involvement;
+    concurrency: number;
+    /** Pip's revision of the rules plan: applied, logged only, or not called */
+    pipPlan?: "on" | "shadow" | "off";
+    /** review rounds per crew run: 2 = one review plus one round that checks the fixes */
+    reviewRounds?: 1 | 2;
+    /** the highest thinking effort any call may send (a prompt card picks its own, up to this); default medium */
+    effortCeiling?: Effort;
+    /** drawings per new asset: 1 = no judge (the drawing is cast), 2-3 = the Art Director picks; default 2 */
+    variants?: number;
+  };
   paths: { roots: string[]; library: string; ffmpeg: string };
 };
 export type Cap = "passed" | "claimed" | "failed" | "unknown";
@@ -659,7 +673,7 @@ export type PlanRevisionSummary = {
   by: PlanView["by"];
   trigger: string;
   reason: string;
-  ops: { op: "add" | "drop" | "retier" | "expand"; task: string; label: string; reason: string }[];
+  ops: { op: "add" | "drop" | "retier" | "expand" | "trim"; task: string; label: string; reason: string }[];
   deltaUsd: [number, number];
 };
 export type InstanceChange = "spawn" | "ghost" | "live" | "idle" | "end" | "revive";

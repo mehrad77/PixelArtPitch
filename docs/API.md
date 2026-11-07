@@ -101,7 +101,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/p/:id/vo` | `audio/wav` or `audio/webm` body, `?take=name` | `{ file }` |
 | `POST /api/p/:id/vo/align` | `{ file }` | `{ proposal: { cue: string; start: number; end: number }[] }` then a patch to approve |
 | `GET /api/settings` | | `Settings` (keys never included: `hasKey: boolean`) |
-| `PUT /api/settings` | partial `Settings` | `Settings` |
+| `PUT /api/settings` | partial `Settings` | `Settings`; `defaults` and `paths` merge field by field (the Defaults form sends only its own fields, and `pipPlan`, `reviewRounds`, `effortCeiling` and `variants` it leaves out are kept); `roles`, `prices` and `providers` are replaced whole |
 | `PUT /api/settings/providers/:id/key` | `{ key }` | `{ hasKey: true }`; a non-empty key lifts every run held on this provider (`Crew.providerFixed`, PIP-ORCHESTRATION §1.8) |
 | `POST /api/settings/providers/:id/test` | | `{ ok, models: string[], error? }`; `ok` lifts every run held on this provider |
 | `GET /api/models` | | `ModelRow[]` (capability matrix) |
@@ -131,7 +131,10 @@ type Settings = { providers: { id: string; kind: "anthropic" | "openai" | "openr
   profile: "best" | "balanced" | "local" | "custom"; roles: Record<Role, { model: string; fallback?: string }>;
   defaults: { capUsd: number; askAtFraction: number; involvement: "every" | "key" | "auto"; concurrency: number;
     pipPlan: "on" | "shadow" | "off" /* Pip's plan revision; default "shadow" */;
-    reviewRounds: 1 | 2 /* review rounds per crew run; default 2 */ };
+    reviewRounds: 1 | 2 /* review rounds per crew run; default 2 */;
+    effortCeiling: "low" | "medium" | "high" /* the highest thinking effort any call sends; a prompt card picks its own up
+      to it; default "medium" */;
+    variants: 1 | 2 | 3 /* drawings per new asset; 1 = no judge, the drawing is cast; default 2 */ };
   paths: { roots: string[]; library: string; ffmpeg: string } };
 type ModelRow = { id: string /* provider/model */; provider: string; label: string; local: boolean;
   caps: { vision: Cap; structured: Cap; tools: Cap; longOutput: Cap }; ctx: number; maxOut: number;

@@ -32,10 +32,11 @@ import { errorKind, holdsRun } from "./llm/http.ts";
 import type { ChatMessage, ContentPart } from "./llm/types.ts";
 import {
   AnglesOut,
+  type AssetKindT,
+  artistIssues,
   DrawOut,
   type DrawOutT,
   JudgeOut,
-  KIND_TEMPLATES,
   PlanOut,
   ReboardOut,
   ReviewOut,
@@ -43,6 +44,7 @@ import {
   SpecOut,
   StoryboardOut,
   TuneOut,
+  templateFor,
 } from "./outputs.ts";
 import { CATALOGUE, stageOf, taskLabel } from "./plan/catalogue.ts";
 import { envOf, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
@@ -56,12 +58,18 @@ import {
   addReviewRound,
   changeRevision,
   expandPlan,
+  finishWithin,
   hasArt,
   type NewAsset,
   type RulesCtx,
+  realRemaining,
   reopenFrom,
   rerun,
   startPlan,
+  suggestCap,
+  type TrimT,
+  trimWords,
+  variantsOf,
 } from "./plan/rules.ts";
 import type { PlanDiffOutT, PlanOpT, PlanRevisionT, PlanTaskT, PlanView, ProductionPlanT } from "./plan/schema.ts";
 import {
@@ -220,7 +228,7 @@ export function baselineBoard(cueIds: string[], card: { title: string; url?: str
     scenes.push({ id: "end", title: "End card", cues: take(n - 1, n), recipes: [endCard] });
   }
   // walk_in and block_bump default to an actor named "hero", which the art stage draws
-  const newAssets: { name: string; kind: "character" | "prop" | "icon" | "decor"; description: string }[] =
+  const newAssets: { name: string; kind: AssetKindT; description: string }[] =
     n > 1
       ? [
           {
@@ -290,7 +298,9 @@ type Run = {
   /** the Writer's angles, waiting for the pick at G1 */
   angles?: AnglesState;
   /** the cap the overrun question was asked at, and whether the person declined it */
-  overrun?: { cap: number; declined?: boolean };
+  overrun?: { cap: number; declined?: boolean; finish?: boolean };
+  /** "Finish within" took the second review round: this run reviews once */
+  oneReview?: boolean;
   /** the person pressed "Looks good" at the rough cut in this run (D2: that passes the final too) */
   roughByUser?: boolean;
   /** the person asked for changes at this gate: the run ends there and its end starts the change (§1.9) */
@@ -306,6 +316,9 @@ type ArtSpec = {
   name: string;
   kind: string;
   description: string;
+  /** a creature's size and motion: the same template for the spec, the draws and the cast */
+  size?: string;
+  motion?: string;
   spec: z.infer<typeof SpecOut>;
   letters: string;
   row: string;
@@ -854,8 +867,12 @@ export class Crew {
   planEnv(p: OpenProject): PlanEnv {
     return envOf(this.deps.gateway, p.doc().crew.models);
   }
+  /** drawings per new asset: the project's `crew.variants`, else Settings' `defaults.variants`, else 2 */
+  variants(p: OpenProject): number {
+    return variantsOf({ variants: p.doc().crew.variants }, { variants: this.deps.gateway.defaults?.().variants });
+  }
   private rulesCtx(p: OpenProject, rev: number): RulesCtx {
-    return { env: this.planEnv(p), rev, assetsOf: (id) => this.sceneAssets(p, id) };
+    return { env: this.planEnv(p), rev, assetsOf: (id) => this.sceneAssets(p, id), variants: this.variants(p) };
   }
   /** the asset ids a decl scene's recipes draw: their asset params, or the params' defaults */
   private sceneAssets(p: OpenProject, sceneId: string): string[] {
@@ -1638,7 +1655,17 @@ export class Crew {
    * The budget can't cover the next task, or spend crossed the ask-at line (§1.6 "Overrun"): the executor starts
    * nothing new. Pip turns this into the /budget card (P1b); without it the status line asks.
    */
-  onOverrun?: (p: OpenProject, o: { needUsd: number; capUsd: number; spentUsd: number; suggestUsd: number }) => void;
+  onOverrun?: (
+    p: OpenProject,
+    o: {
+      needUsd: number;
+      capUsd: number;
+      spentUsd: number;
+      suggestUsd: number;
+      /** what "Finish within" would leave out, in the person's words, and whether the rest then fits */
+      finish?: { trims: string[]; fits: boolean; restUsd: number };
+    },
+  ) => void;
 
   private report(p: OpenProject, r: Run, status: RunReport["status"], error?: string): RunReport {
     const scope = r.scope;
@@ -1965,16 +1992,32 @@ export class Crew {
   private overrun(p: OpenProject, r: Run, t: PlanTaskT) {
     const b = p.doc().budget;
     const { spentUsd } = this.deps.gateway.spent(p.id);
-    const plan = this.planNow(p);
-    const rest = plan ? plan.tasks.filter(isLive).reduce((s, x) => s + x.estUsd[1], 0) : t.estUsd[1];
-    const suggestUsd = Math.ceil((spentUsd + rest) * 2) / 2;
     const fits = b.capUsd - spentUsd >= t.estUsd[1];
     const asked = r.overrun?.cap === b.capUsd;
     if (asked && fits) return;
-    // the card once per cap; after that (or after a decline) the status line says why the crew waits
-    if (!asked) r.overrun = { cap: b.capUsd };
+    if (!asked) {
+      r.overrun = { cap: b.capUsd };
+      // at `auto` the crew wraps up within the cap by itself, and says so in Pip's thread
+      if (p.doc().brief.involvement === "auto" && this.finishPlan(p)?.trims.length) {
+        const done = this.finishWithinBudget(p, { auto: true });
+        if (done.fits) return;
+      }
+      const now = this.finishPlan(p);
+      const words = now ? now.trims.map((x) => trimWords(x, this.planNow(p)?.tasks ?? [])) : [];
+      try {
+        this.onOverrun?.(p, {
+          needUsd: t.estUsd[1],
+          capUsd: b.capUsd,
+          spentUsd,
+          suggestUsd: this.suggestUsd(p, spentUsd),
+          ...(words.length ? { finish: { trims: words, fits: !!now?.fits, restUsd: now?.restUsd ?? 0 } } : {}),
+        });
+      } catch {}
+    }
+    // only real remaining work: nothing the project already has, nothing a run-time guard would skip (§1.6)
+    const want = Math.max(this.suggestUsd(p, spentUsd), b.capUsd + 0.5);
     const line = fits
-      ? `Waiting for you: ${Math.round(b.askAtFraction * 100)}% of the $${b.capUsd} cap is spent. Raise it to $${suggestUsd.toFixed(2)} to finish?`
+      ? `Waiting for you: ${Math.round(b.askAtFraction * 100)}% of the $${b.capUsd} cap is spent. Finish within it, or raise it to $${want.toFixed(2)}?`
       : `Waiting for you: the next step could cost $${t.estUsd[1].toFixed(2)} and $${Math.max(0, b.capUsd - spentUsd).toFixed(2)} is left`;
     // a wait for the person, not a problem: the budget card is in Pip's thread (the status line names it)
     p.setStatus({ line, waiting: "budget" });
@@ -1985,11 +2028,79 @@ export class Crew {
       text: `Hold: ${line.replace(/^Waiting for you: /, "")}`,
       ref: t.id,
     });
-    if (!asked)
-      try {
-        this.onOverrun?.(p, { needUsd: t.estUsd[1], capUsd: b.capUsd, spentUsd, suggestUsd });
-      } catch {}
   }
+  /** the cap that finishes the real remaining work (none the project already satisfies), rounded up to $0.50 */
+  suggestUsd(p: OpenProject, spentUsd = this.deps.gateway.spent(p.id).spentUsd) {
+    return suggestCap(spentUsd, realRemaining(this.planNow(p)?.tasks ?? [], this.satisfied(p)));
+  }
+  /** live work the project already satisfies: the run-time guards skip it, so it costs nothing (§1.6) */
+  private satisfied(p: OpenProject): (t: PlanTaskT) => boolean {
+    const keep = this.keepOf(p, p.state.change?.assets ?? []);
+    const st = p.state.sceneStatus;
+    return (t) =>
+      keep(t) ||
+      (t.kind === "scene.tune" && !!t.scene && st[t.scene]?.version === "render" && st[t.scene]?.state === "ready");
+  }
+  /** what "Finish within" would trim now, on a copy (nothing written) */
+  finishPlan(p: OpenProject) {
+    const plan = this.planNow(p);
+    if (!plan) return null;
+    const { spentUsd } = this.deps.gateway.spent(p.id);
+    return finishWithin(plan.tasks, {
+      leftUsd: p.doc().budget.capUsd - spentUsd,
+      satisfied: this.satisfied(p),
+      ctx: this.rulesCtx(p, plan.rev + 1),
+      reviewRounds: this.reviewRounds(),
+    });
+  }
+  /**
+   * "Finish within $X" (§1.6): a rules-made revision (`by: "code"`, trigger `budget`) trims droppable work in a fixed
+   * order until the rest fits the cap. The overrun is answered for this cap and the crew goes on. At `auto` it runs
+   * without asking, and Pip says what went in the thread.
+   */
+  finishWithinBudget(p: OpenProject, o: { auto?: boolean } = {}) {
+    const r = this.runs.get(p.id) ?? null;
+    const cap = p.doc().budget.capUsd;
+    let trims: TrimT[] = [];
+    let fits = false;
+    let before: PlanTaskT[] = [];
+    this.planRevise(p, r, { by: "code", trigger: "budget", reason: `Finishing within the $${cap} cap.` }, (ts, ctx) => {
+      before = ts;
+      const { spentUsd } = this.deps.gateway.spent(p.id);
+      const out = finishWithin(ts, {
+        leftUsd: cap - spentUsd,
+        satisfied: this.satisfied(p),
+        ctx,
+        reviewRounds: this.reviewRounds(),
+      });
+      trims = out.trims;
+      fits = out.fits;
+      const words = out.trims.map((x) => trimWords(x, ts)).join("; ");
+      return { tasks: out.tasks, ops: out.ops, reason: `Finishing within the $${cap} cap: ${words}.`.slice(0, 200) };
+    });
+    const words = trims.map((x) => trimWords(x, before));
+    if (r) {
+      r.overrun = { cap, finish: true };
+      if (trims.some((x) => x.what === "review_round")) r.oneReview = true;
+    }
+    const text = words.length
+      ? `To finish within the $${cap} cap I left out ${words.join(", ")}.${fits ? "" : " The rest may still need more; I'll ask if it does."}`
+      : `Finishing within the $${cap} cap: there was nothing left to trim.`;
+    p.say({ from: "pip", to: "crew", kind: "brief", text: text.slice(0, 300) });
+    if (o.auto)
+      try {
+        this.onFinish?.(p, { capUsd: cap, trims: words, fits });
+      } catch {}
+    this.unwait(p, r ?? undefined);
+    // the executor waits for a resume after an overrun: wake it once it does
+    setTimeout(() => {
+      r?.resume?.();
+      r?.exec?.wake();
+    }, 0);
+    return { trims, fits };
+  }
+  /** at `auto` the crew trimmed to finish within the cap by itself: Pip says what went (a visible assumption) */
+  onFinish?: (p: OpenProject, o: { capUsd: number; trims: string[]; fits: boolean }) => void;
   /** the person declined the overrun card: go on with what fits (P1b) */
   declineOverrun(p: OpenProject) {
     const r = this.runs.get(p.id);
@@ -2554,7 +2665,7 @@ export class Crew {
       .map((t) =>
         t.kind === "asset.import"
           ? `${t.asset}: icon 16x16, the person's logo (use it as toast iconAsset or item_collect itemAsset)`
-          : `${t.asset}: ${t.assetKind ?? "character"} ${t.fromRef ? "drawn from the person's reference" : "being drawn for this video"} (add it to newAssets as "${t.asset}")`,
+          : `${t.asset}: ${t.assetKind ?? "character"}${t.assetKind === "creature" ? ` ${t.assetSize ?? "16x16"} ${t.motion ?? "walk"}` : ""} ${t.fromRef ? "drawn from the person's reference" : "being drawn for this video"} (add it to newAssets as "${t.asset}")`,
       );
   }
 
@@ -3009,16 +3120,21 @@ export class Crew {
     ];
   }
   /** the asset a chain is for, from the storyboard's list or the plan task itself */
-  private assetOf(p: OpenProject, pt: PlanTaskT): { name: string; kind: string; description: string } {
+  private assetOf(
+    p: OpenProject,
+    pt: PlanTaskT,
+  ): { name: string; kind: string; description: string; size?: string; motion?: string } {
     const f = join(p.dir, "runs", "new-assets.json");
-    const listed: { name: string; kind: string; description: string }[] = existsSync(f)
-      ? JSON.parse(readFileSync(f, "utf8"))
-      : [];
+    const listed: NewAsset[] = existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : [];
     const a = listed.find((x) => x.name === pt.asset);
+    const size = a?.size ?? pt.assetSize;
+    const motion = a?.motion ?? pt.motion;
     return {
       name: pt.asset!,
       kind: a?.kind ?? pt.assetKind ?? "character",
       description: a?.description ?? pt.description ?? `${pt.asset}`,
+      ...(size ? { size } : {}),
+      ...(motion ? { motion } : {}),
     };
   }
 
@@ -3086,7 +3202,7 @@ export class Crew {
     const a = this.assetOf(p, pt);
     if (this.drawn(p, a.name)) return { status: "skipped", note: "already in the project" };
     const { palette, table } = this.palette();
-    const tpl = KIND_TEMPLATES[a.kind] ?? KIND_TEMPLATES.icon;
+    const tpl = templateFor(a.kind, a);
     const ts = this.task(p, {
       kind: "asset.spec",
       role: "art-director",
@@ -3102,7 +3218,7 @@ export class Crew {
           vars: {
             name: a.name,
             description: a.description,
-            kind: a.kind,
+            kind: a.kind === "creature" ? `creature (${a.motion ?? "walk"})` : a.kind,
             template: `${tpl.w}x${tpl.h}, frames ${tpl.frames.join(", ")}. ${tpl.note}`,
             palette: table,
           },
@@ -3128,7 +3244,10 @@ export class Crew {
     return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
   }
 
-  /** asset.draw: one variant; a failure costs nothing more (the judge works with what passed) */
+  /**
+   * asset.draw: one variant; a failure costs nothing more (the judge works with what passed). With one drawing per
+   * asset there is no judge: the drawing is the pick, written and cast here (and the library stands in when it failed).
+   */
   private async assetDraw(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const name = pt.asset!;
     const v = pt.variant ?? 1;
@@ -3137,7 +3256,9 @@ export class Crew {
     const st = this.specOf(p, name);
     if (!st) return { status: "skipped", note: "no spec to draw from" };
     const { palette, table } = this.palette();
-    const tpl = KIND_TEMPLATES[st.kind] ?? KIND_TEMPLATES.icon;
+    const tpl = templateFor(st.kind, st);
+    // one drawing per asset (the chain's `variants: 1`): no judge follows, this draw is the pick
+    const solo = pt.variants === 1;
     let res: Variant = null;
     try {
       res = await this.drawVariant(
@@ -3156,42 +3277,34 @@ export class Crew {
       const fb = this.fallbackOr(p, r, null, e, String(e?.message ?? e).slice(0, 180));
       p.emit("log", { level: "warn", role: "pixel-artist", text: `${name} v${v} failed: ${e.message}` });
       writeFileSync(this.artFile(p, name, `v${v}`), JSON.stringify(res));
-      return fb;
+      // the only drawing failed: the library stands in, as the judge would
+      return solo ? this.standIn(p, st, name) : fb;
     }
     writeFileSync(this.artFile(p, name, `v${v}`), JSON.stringify(res));
+    if (solo && res) await this.castDrawing(p, st, tpl, { v, x: res });
     return { status: "done" };
   }
-
-  /** asset.judge: the better variant (the library stands in when neither passed), written and cast */
+  /** asset.judge: the better variant (the library stands in when none passed), written and cast */
   private async assetJudge(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const name = pt.asset!;
     // a stand-in from an earlier judge is not the drawing: a retry draws it (§1.8)
     if (this.drawn(p, name)) return { status: "skipped", note: "already in the project" };
     const st = this.specOf(p, name);
     if (!st) return { status: "skipped", note: "no spec" };
-    const tpl = KIND_TEMPLATES[st.kind] ?? KIND_TEMPLATES.icon;
+    const tpl = templateFor(st.kind, st);
     const read = (v: number): Variant => {
       const f = this.artFile(p, name, `v${v}`);
       return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
     };
-    const ok = [1, 2].map((v) => ({ v, x: read(v) })).filter((x): x is { v: number; x: NonNullable<Variant> } => !!x.x);
-    if (!ok.length) {
-      const stand = st.kind === "character" ? "mentor-ai" : "items";
-      p.emit("log", {
-        level: "warn",
-        role: "art-director",
-        text: `no variant of ${name} passed the standard; casting the library's ${stand} instead`,
-      });
-      await this.tool(p, "art-director", st.row, "cast_asset", { name, libraryId: stand });
-      // marked, so a retry knows this is a stand-in and draws the asset (hasArt is false for it)
-      const k = p.doc().assets.findIndex((x) => x.id === name);
-      if (k >= 0)
-        await p.patch([{ op: "add", path: `/assets/${k}/standIn`, value: true }], {
-          reason: `${stand} stands in for ${name}`,
-          author: { kind: "agent", role: "art-director" },
-        });
-      return { status: "done", note: `partial: the library's ${stand} stands in`, outcome: "fallback" };
-    }
+    // the variants this judge waits on (1 to 3; one "Finish within" dropped stays out)
+    const plan = this.planNow(p)?.tasks ?? [];
+    const mine = pt.dependsOn
+      .map((id) => plan.find((t) => t.id === id))
+      .filter((t): t is PlanTaskT => !!t && t.kind === "asset.draw" && t.status !== "dropped")
+      .map((t) => t.variant ?? 1);
+    const vs = [...new Set(mine.length ? mine : [1, 2])].sort((a, b) => a - b);
+    const ok = vs.map((v) => ({ v, x: read(v) })).filter((x): x is { v: number; x: NonNullable<Variant> } => !!x.x);
+    if (!ok.length) return this.standIn(p, st, name);
     let best = ok[0];
     if (ok.length > 1) {
       const tj = this.task(p, {
@@ -3226,6 +3339,37 @@ export class Crew {
         throw e;
       }
     }
+    await this.castDrawing(p, st, tpl, best);
+    return { status: "done" };
+  }
+
+  /** no drawing passed: a library asset stands in, marked so a retry knows to draw it (§1.8) */
+  private async standIn(p: OpenProject, st: ArtSpec, name: string): Promise<Outcome> {
+    const stand = st.kind === "character" ? "mentor-ai" : "items";
+    p.emit("log", {
+      level: "warn",
+      role: "art-director",
+      text: `no variant of ${name} passed the standard; casting the library's ${stand} instead`,
+    });
+    await this.tool(p, "art-director", st.row, "cast_asset", { name, libraryId: stand });
+    // marked, so a retry knows this is a stand-in and draws the asset (hasArt is false for it)
+    const k = p.doc().assets.findIndex((x) => x.id === name);
+    if (k >= 0)
+      await p.patch([{ op: "add", path: `/assets/${k}/standIn`, value: true }], {
+        reason: `${stand} stands in for ${name}`,
+        author: { kind: "agent", role: "art-director" },
+      });
+    return { status: "done", note: `partial: the library's ${stand} stands in`, outcome: "fallback" };
+  }
+
+  /** the picked drawing becomes the project's asset file and is cast under its name (a stand-in is replaced) */
+  private async castDrawing(
+    p: OpenProject,
+    st: ArtSpec,
+    tpl: { w: number; h: number; frames: string[] },
+    best: { v: number; x: NonNullable<Variant> },
+  ) {
+    const name = st.name;
     // a drawing from a likeness reference is private and never published (RIGHTS.md §1)
     const likeness = !!st.fromRef;
     const grid = Object.fromEntries(best.x.frames.frames.map((fr) => [fr.name, fr.rows]));
@@ -3237,7 +3381,7 @@ export class Crew {
       h: tpl.h,
       frames: tpl.frames,
       palette: "pap-night@1",
-      tags: [st.kind],
+      tags: [st.kind, ...(st.motion ? [st.motion] : [])],
       description: st.spec.description,
       licence: likeness ? "LicenseRef-Private" : "LicenseRef-PAP-Library",
       rights: { likeness, brand: false, trademark: false, public: !likeness },
@@ -3248,7 +3392,7 @@ export class Crew {
         provider: best.x.model.split("/")[0],
         origin: p.id,
         judgeReason: best.x.judge ?? null,
-        promptVersion: "pixel-artist/draw@1",
+        promptVersion: card("pixel-artist", "draw").version,
         ...(st.fromRef ? { ref: st.fromRef } : {}),
       },
       hash: randomUUID().slice(0, 16),
@@ -3281,7 +3425,6 @@ export class Crew {
         baseRev: d.rev,
       },
     );
-    return { status: "done" };
   }
 
   /** the person's OK before any scene uses a likeness or a logo (never passed by itself, at any involvement) */
@@ -3384,7 +3527,7 @@ export class Crew {
           role: "pixel-artist",
           origin: p.id,
           variant: v,
-          promptVersion: "pixel-artist/draw@1",
+          promptVersion: card("pixel-artist", "draw").version,
           ...(pt.fromRef ? { ref: pt.fromRef } : {}),
         },
         hash: "x",
@@ -3460,11 +3603,14 @@ export class Crew {
         throw new Error(`grid errors after 2 repairs: ${shape(out.data).slice(0, 3).join("; ")}`);
       // critique rounds against the rendered sheet (vision), stopping when the artist says ship
       const caps = this.deps.gateway.caps(model ?? this.deps.gateway.modelFor("pixel-artist", p.doc().crew.models));
-      const rounds = caps?.vision === "failed" ? 0 : 1;
+      // "Finish within" may take the round away (pt.critiques 0)
+      const rounds = caps?.vision === "failed" ? 0 : Math.min(1, pt.critiques ?? 1);
       for (let k = 0; k < rounds; k++) {
         await this.checkpoint(p, r);
         p.upsertTask({ ...t, title: `Drawing ${a.name}, variant ${v}, critique ${k + 1}` });
         const std = checkAsset(toFile(out.data), { colours, sky: palette.sky });
+        // only what the artist can fix: provenance, licence and the file's records are the system's
+        const fixable = artistIssues(std.hard);
         const next = await this.ask(p, r, t, {
           role: "pixel-artist",
           kind: "asset.critique",
@@ -3472,8 +3618,8 @@ export class Crew {
           vars: {
             name: a.name,
             frames: tpl.frames.join(", "),
-            issues: std.hard.length
-              ? `The standard checker found:\n${std.hard.map((i) => `${i.frame ?? ""} ${i.message} (fix: ${i.fix})`).join("\n")}`
+            issues: fixable.length
+              ? `The standard checker found:\n${fixable.map((i) => `${i.frame ?? ""} ${i.message} (fix: ${i.fix})`).join("\n")}`
               : "",
             reads: spec.reads,
           },
@@ -3800,7 +3946,9 @@ export class Crew {
       p.updateNote(n.id, { status: "picked_up", reason: "the Reviewer checked the cut against it" });
     // in a person's change run, only the changed scenes are redone; other blockers wait as notes
     const redo = rev.blockers.filter((b) => !r.scope || r.scope.has(b.scene));
-    if (rev.verdict === "ship" || !redo.length || round >= this.reviewRounds()) return { status: "done" };
+    // "Finish within" may have made this round the last (the plan task's lastRound, or the run's oneReview)
+    const last = r.oneReview || !!this.planNow(p)?.tasks.find((x) => x.id === pt.id)?.lastRound;
+    if (rev.verdict === "ship" || !redo.length || round >= this.reviewRounds() || last) return { status: "done" };
     const scenes = [...new Set(redo.map((b) => b.scene))].filter((s) => p.doc().scenes.some((x) => x.id === s));
     let tunes: string[] = [];
     if (this.conductor && r.change) {

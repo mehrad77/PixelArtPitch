@@ -95,6 +95,8 @@ export class Ledger {
     const cols = this.db.prepare("PRAGMA table_info(calls)").all() as { name: string }[];
     if (!cols.some((c) => c.name === "est_in_tokens"))
       this.db.exec("ALTER TABLE calls ADD COLUMN est_in_tokens INTEGER");
+    // the thinking effort the request really sent (after the Settings ceiling); null when it sent none
+    if (!cols.some((c) => c.name === "effort")) this.db.exec("ALTER TABLE calls ADD COLUMN effort TEXT");
   }
 
   close(): void {
@@ -106,8 +108,8 @@ export class Ledger {
       .prepare(
         `INSERT INTO calls (ts, project, task, task_kind, role, attempt, provider, model, prompt_version, input_tokens,
           output_tokens, cache_write_tokens, cache_read_tokens, cache_write_1h_tokens, thinking_tokens, usd, usd_source,
-          ttft_ms, duration_ms, tok_per_sec, stop, est_usd, ticket, est_in_tokens)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ttft_ms, duration_ms, tok_per_sec, stop, est_usd, ticket, est_in_tokens, effort)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.ts ?? new Date().toISOString(),
@@ -134,6 +136,7 @@ export class Ledger {
         row.estUsd,
         row.ticket ?? null,
         row.estInTokens ?? null,
+        row.effort ?? null,
       );
     return Number(r.lastInsertRowid);
   }
@@ -271,6 +274,7 @@ function toRow(r: any): LedgerRow {
     stop: r.stop,
     estUsd: r.est_usd,
     ticket: r.ticket,
+    effort: r.effort ?? null,
   };
 }
 

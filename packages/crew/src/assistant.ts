@@ -147,7 +147,7 @@ type Action = {
   /** a card that handed work to the crew: it settles when the crew's run on that note ends */
   handoff?: { noteId: string };
   /** a card the crew asked for: its confirm or decline goes back to the crew (a revision, the budget) */
-  crew?: "pending" | "overrun";
+  crew?: "pending" | "overrun" | "finish";
 };
 /** the cards that hand work to one crew role, and so may lend it external tools */
 const LENDS = new Set(["crew_request_change"]);
@@ -258,7 +258,7 @@ export type PipDeps = {
   /** "Ask Pip about this": a crew instance's record (reason, cost, outcome, lives) for the turn's context, or null */
   instanceAbout?: (p: OpenProject, instance: string) => { text: string; label: string } | null;
   /** a crew card was decided: a plan revision past the 20% line, or the budget overrun */
-  crewDecide?: (p: OpenProject, what: "pending" | "overrun", decision: "confirm" | "decline") => void;
+  crewDecide?: (p: OpenProject, what: "pending" | "overrun" | "finish", decision: "confirm" | "decline") => void;
   /** the crew right now (Crew.snapshot): read fresh each turn, so Pip never answers from a stale picture */
   crewSnapshot?: (p: OpenProject) => CrewSnapshot;
   /** what a change would add to the plan (Crew.changeCost: its revision on a copy), or null without a plan */
@@ -1997,8 +1997,24 @@ export class Pip {
       throw new StoreError("not_actionable", "this card has nothing to confirm", undefined, 400);
     if (c.status !== "proposed")
       throw new StoreError("already_decided", `this card is ${c.status}`, "ask Pip again for a new card", 409);
+    // the budget question's two cards ("Finish within", "Raise the cap"): answering one settles the other
+    const siblings = () => {
+      if (c.action?.crew !== "finish" && c.action?.crew !== "overrun") return;
+      for (const o of item.cards)
+        if (
+          o.id !== c.id &&
+          o.type === "plan" &&
+          o.status === "proposed" &&
+          (o.action?.crew === "finish" || o.action?.crew === "overrun")
+        ) {
+          o.status = "declined";
+          o.result = { text: decision === "decline" ? "Kept as it is." : "You chose the other way." };
+          this.emit(p, { type: "card", itemId: item.id, card: publicCard(o) });
+        }
+    };
     if (decision === "decline") {
       c.status = "declined";
+      siblings();
       if (c.action.crew) {
         const pr = c.action.projectId ? this.deps.workspace.get(c.action.projectId) : p;
         if (pr) this.deps.crewDecide?.(pr, c.action.crew, "decline");
@@ -2006,6 +2022,16 @@ export class Pip {
       const card = save();
       return { card, done: Promise.resolve(card) };
     }
+    if (c.action.crew === "finish") {
+      const pr = c.action.projectId ? this.deps.workspace.get(c.action.projectId) : p;
+      if (pr) this.deps.crewDecide?.(pr, "finish", "confirm");
+      siblings();
+      c.status = "done";
+      c.result = { text: "The crew finishes within the cap." };
+      const card = save();
+      return { card, done: Promise.resolve(card) };
+    }
+    if (c.action.crew === "overrun") siblings();
     if (c.action.crew === "pending") {
       const pr = c.action.projectId ? this.deps.workspace.get(c.action.projectId) : p;
       if (pr) this.deps.crewDecide?.(pr, "pending", "confirm");
@@ -2079,7 +2105,9 @@ export class Pip {
       for (const c of it.cards) {
         if (c.type !== "plan" || c.status !== "proposed" || !c.action?.crew) continue;
         if (c.action.crew === "pending" && c.id === o.pendingCardId) out.push("plan");
-        else if (c.action.crew === "overrun" && o.budget) out.push("budget");
+        // "Finish within" and "Raise the cap" are two answers to one question: one need
+        else if ((c.action.crew === "overrun" || c.action.crew === "finish") && o.budget && !out.includes("budget"))
+          out.push("budget");
       }
     }
     return out;
@@ -2143,12 +2171,39 @@ export class Pip {
       action: { tool: "", input: {}, projectId: p.id, crew: "pending" },
     });
   }
-  /** the overrun card (§1.6): the existing "Raise the cap" plan card, posted by the crew when spend nears the cap */
-  overrunCard(p: OpenProject, o: { needUsd: number; capUsd: number; spentUsd: number; suggestUsd: number }): string {
+  /**
+   * The overrun question (§1.6), posted by the crew when spend nears the cap. It leads with "Finish within $X" (the
+   * rules trim droppable work until the rest fits, and the card lists exactly what goes); "Raise the cap to $Y" is the
+   * second card. Without anything to trim, only the raise is offered.
+   */
+  overrunCard(
+    p: OpenProject,
+    o: {
+      needUsd: number;
+      capUsd: number;
+      spentUsd: number;
+      suggestUsd: number;
+      finish?: { trims: string[]; fits: boolean; restUsd: number };
+    },
+  ): string {
     const want = Math.max(o.suggestUsd, o.capUsd + 0.5);
-    return this.postCrewCard(p, `The crew is near the budget: ${money(o.spentUsd)} of ${money(o.capUsd)} spent.`, {
+    const cards: Omit<StoredPlan, "id" | "type" | "status">[] = [];
+    if (o.finish?.trims.length)
+      cards.push({
+        title: `Finish within ${money(o.capUsd)}`,
+        detail: o.finish.fits
+          ? `The crew leaves out a few extras so the rest fits the ${money(o.capUsd)} cap.`
+          : `The crew leaves out every extra it can; the rest may still need up to ${money(o.finish.restUsd)} more than is left, and the crew asks again if it does.`,
+        who: [],
+        usd: [0, 0],
+        sec: null,
+        effects: [...o.finish.trims.slice(0, 8).map((t) => `Leaves out ${t}.`), "Everything else is made as planned."],
+        confirmLabel: `Finish within ${money(o.capUsd)}`,
+        action: { tool: "", input: {}, projectId: p.id, crew: "finish" },
+      });
+    cards.push({
       title: `Raise the cap to ${money(want)}`,
-      detail: `The project's budget cap goes from ${money(o.capUsd)} to ${money(want)} so the crew can finish.`,
+      detail: `The project's budget cap goes from ${money(o.capUsd)} to ${money(want)} so the crew can finish as planned.`,
       who: [],
       usd: [0, 0],
       sec: null,
@@ -2168,6 +2223,25 @@ export class Pip {
         crew: "overrun",
       },
     });
+    const made: StoredPlan[] = cards.map((c) => ({ id: rid("card"), type: "plan", status: "proposed", ...c }));
+    const item: StoredItem = {
+      id: rid("pip"),
+      at: now(),
+      kind: "pip",
+      text: `The crew is near the budget: ${money(o.spentUsd)} of ${money(o.capUsd)} spent.`,
+      cards: made,
+    };
+    this.log(p).append(item);
+    this.emit(p, { type: "item", item: publicItem(item) });
+    return made[0].id;
+  }
+  /** at `auto` the crew trimmed to finish within the cap by itself: said once in the thread, as an assumption */
+  finishNotice(p: OpenProject, o: { capUsd: number; trims: string[]; fits: boolean }) {
+    const what = o.trims.length ? o.trims.join(", ") : "nothing";
+    return this.notice(
+      p,
+      `Assumption: you'd rather finish within ${money(o.capUsd)} than raise the cap, so the crew left out ${what}.${o.fits ? "" : " The rest may still need more; I'll ask if it does."} Raise the cap any time to bring them back on the next run.`,
+    );
   }
 
   /** run reports that arrived before their card was saved (a fast run) */

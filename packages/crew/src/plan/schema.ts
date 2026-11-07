@@ -2,6 +2,7 @@
 // statuses; runs/plan.jsonl gets one PlanRevision per revision (never a status-only change).
 import { Role } from "@pap/schema";
 import { z } from "zod";
+import { ASSET_KINDS, CREATURE_SIZES, MOTIONS } from "../outputs.ts";
 import { CATALOGUE_KINDS, PIP_ADDABLE, PLAN_GATES } from "./catalogue.ts";
 
 export const PlanGate = z.enum(PLAN_GATES);
@@ -34,10 +35,20 @@ export const PlanTask = z.object({
     .regex(/^[a-z0-9][a-z0-9_-]*$/)
     .optional(),
   /** the asset's kind, for a chain Pip or a reference added (the Director's newAssets carry their own) */
-  assetKind: z.enum(["character", "prop", "icon", "decor"]).optional(),
+  assetKind: z.enum(ASSET_KINDS).optional(),
+  /** a creature's size ("16x16" or "16x24") and motion (walk, fly, sit): its template's size and frames */
+  assetSize: z.enum(CREATURE_SIZES).optional(),
+  motion: z.enum(MOTIONS).optional(),
   /** what the asset shows, for a chain not from the storyboard */
   description: z.string().max(400).optional(),
-  variant: z.union([z.literal(1), z.literal(2)]).optional(),
+  /** which drawing of the asset an asset.draw is (1-3) */
+  variant: z.number().int().min(1).max(3).optional(),
+  /** a chain's drawings per asset (1: no judge, the drawing is cast); absent means 2 */
+  variants: z.number().int().min(1).max(3).optional(),
+  /** asset.draw: critique rounds against the rendered sheet (absent: 1; "Finish within" sets 0) */
+  critiques: z.number().int().min(0).max(1).optional(),
+  /** review.final: no further review round after this one ("Finish within") */
+  lastRound: z.boolean().optional(),
   /** a round within one crew run (a request): a redo is round + 1 */
   round: z.number().int().min(1).max(3).optional(),
   /** a brief reference file the asset comes from */
@@ -73,6 +84,8 @@ export const PlanOp = z.discriminatedUnion("op", [
   z.object({ op: z.literal("drop"), task: z.string(), reason: z.string() }),
   z.object({ op: z.literal("retier"), task: z.string(), from: Tier, to: Tier, reason: z.string() }),
   z.object({ op: z.literal("expand"), placeholder: z.string(), into: z.array(z.string()), reason: z.string() }),
+  /** "Finish within": a task stays but does less (a draw without its critique, a review with no round after it) */
+  z.object({ op: z.literal("trim"), task: z.string(), what: z.enum(["critique", "review_round"]), reason: z.string() }),
 ]);
 export type PlanOpT = z.infer<typeof PlanOp>;
 
@@ -84,7 +97,17 @@ export const PlanEstimate = z.object({
 export type PlanEstimateT = z.infer<typeof PlanEstimate>;
 
 export const PlanBy = z.enum(["rules", "pip", "person", "code"]);
-export const PlanTrigger = z.enum(["start", "pip_revision", "expand", "change", "conductor", "retry", "decline"]);
+export const PlanTrigger = z.enum([
+  "start",
+  "pip_revision",
+  "expand",
+  "change",
+  "conductor",
+  "retry",
+  "decline",
+  /** "Finish within $X": the rules trim droppable work until the rest fits the cap (§1.6) */
+  "budget",
+]);
 
 /** one line of runs/plan.jsonl */
 export const PlanRevision = z.object({
@@ -123,7 +146,12 @@ export const PlanDiffOp = z.discriminatedUnion("op", [
       .string()
       .regex(/^[a-z][a-z0-9_-]*$/)
       .optional(),
-    assetKind: z.enum(["character", "prop", "icon", "decor"]).optional(),
+    assetKind: z.enum(ASSET_KINDS).optional(),
+    /** a creature's size and motion */
+    size: z.enum(CREATURE_SIZES).optional(),
+    motion: z.enum(MOTIONS).optional(),
+    /** drawings for this asset (1-3); absent: the project's setting */
+    variants: z.number().int().min(1).max(3).optional(),
     /** required with asset.spec */
     description: z.string().min(10).max(400).optional(),
     fromRef: z.string().optional(),
@@ -183,6 +211,6 @@ export type PlanRevisionSummary = {
   by: z.infer<typeof PlanBy>;
   trigger: string;
   reason: string;
-  ops: { op: "add" | "drop" | "retier" | "expand"; task: string; label: string; reason: string }[];
+  ops: { op: "add" | "drop" | "retier" | "expand" | "trim"; task: string; label: string; reason: string }[];
   deltaUsd: [number, number];
 };

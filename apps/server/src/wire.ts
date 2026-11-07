@@ -7,6 +7,7 @@ import { ModelGateway } from "@pap/crew/gateway-impl";
 import {
   createProvider,
   type ModelInfo,
+  mergeSettings,
   modelsFor,
   probeModel,
   publicSettings,
@@ -203,6 +204,7 @@ export async function wireCrew(deps: {
     resolveLend: (ref) => connections.resolve(ref)?.name,
     crewDecide: (p, what, decision) => {
       if (what === "pending") decision === "confirm" ? crew.confirmPending(p) : crew.declinePending(p);
+      else if (what === "finish" && decision === "confirm") crew.finishWithinBudget(p);
       else if (decision === "decline") crew.declineOverrun(p);
     },
     crewSnapshot: (p) => crew.snapshot(p),
@@ -226,6 +228,10 @@ export async function wireCrew(deps: {
   crew.onPlanCard = (p, c) => pip.revisionCard(p, c);
   crew.onOverrun = (p, o) => {
     pip.overrunCard(p, o);
+  };
+  // at `auto` the crew finished within the cap by itself: Pip says what went
+  crew.onFinish = (p, o) => {
+    pip.finishNotice(p, o);
   };
   deps.registry.add(
     defineTool({
@@ -386,9 +392,9 @@ export async function wireCrew(deps: {
       put: (v: any) => {
         const cur = structuredClone(gateway.publicSettings());
         // connections change only through /api/connections
+        // defaults and paths merge field by field: a form that sends four defaults keeps the rest (§ Settings)
         const next = {
-          ...cur,
-          ...v,
+          ...mergeSettings(cur, v ?? {}),
           providers: v.providers ?? cur.providers,
           roles: v.roles ?? cur.roles,
           connections: cur.connections,

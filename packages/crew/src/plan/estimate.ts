@@ -7,7 +7,7 @@ import type { Ledger } from "../llm/ledger.ts";
 import { priorFor } from "../llm/ledger.ts";
 import { priceFor } from "../llm/prices.ts";
 import type { Caps } from "../llm/types.ts";
-import { KIND_TEMPLATES } from "../outputs.ts";
+import { KIND_TEMPLATES, templateFor } from "../outputs.ts";
 import { CATALOGUE, type PlanKind } from "./catalogue.ts";
 import type { PlanEstimateT, PlanTaskT, TierT } from "./schema.ts";
 
@@ -60,9 +60,10 @@ export function resolveTier(role: RoleT, tier: TierT, env: PlanEnv): string {
 export type TaskEst = { usd: [number, number]; sec: [number, number]; rough: boolean };
 
 /** a sprite task's size for the priors' `sizeFactor`: its kind template's cells (w × h × frames), else none */
-export function sizeParams(t: { kind: string; assetKind?: string }) {
+export function sizeParams(t: { kind: string; assetKind?: string; assetSize?: string; motion?: string }) {
   if (!t.kind.startsWith("asset.") || t.kind === "asset.import") return undefined;
-  const tpl = KIND_TEMPLATES[t.assetKind ?? "character"];
+  const kind = t.assetKind ?? "character";
+  const tpl = kind === "creature" ? templateFor(kind, { size: t.assetSize, motion: t.motion }) : KIND_TEMPLATES[kind];
   return tpl ? { w: tpl.w, h: tpl.h, frames: tpl.frames.length } : undefined;
 }
 
@@ -71,7 +72,13 @@ export function sizeParams(t: { kind: string; assetKind?: string }) {
  * work is scaled by the sprite's size (a 16x16 icon costs less than an 8-frame 16x24 hero).
  */
 export function estimatePlanTask(
-  t: Pick<PlanTaskT, "kind" | "role" | "tier" | "conditional" | "expand" | "count"> & { assetKind?: string },
+  t: Pick<PlanTaskT, "kind" | "role" | "tier" | "conditional" | "expand" | "count"> & {
+    assetKind?: string;
+    assetSize?: string;
+    motion?: string;
+    /** asset.draw: 0 when "Finish within" took its critique round */
+    critiques?: number;
+  },
   env: PlanEnv,
 ): TaskEst {
   const row = CATALOGUE[t.kind as PlanKind];
@@ -88,6 +95,7 @@ export function estimatePlanTask(
   let rough = false;
   const params = sizeParams(t);
   for (const [kind, c50, c90] of row.prices) {
+    if (kind === "asset.critique" && t.critiques === 0) continue;
     const e = estimateCall(
       { kind, model: { id: model, price: priceFor(model), caps: { local } }, ...(params ? { params } : {}) },
       { ledger: env.ledger },

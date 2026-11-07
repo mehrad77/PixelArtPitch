@@ -284,6 +284,8 @@ export const Crew = z.object({
   profile: z.enum(["best", "balanced", "local", "custom"]).default("best"),
   /** role -> "provider/model"; empty uses the profile from Settings */
   models: z.record(z.string(), z.string()).default({}),
+  /** drawings per new asset for this project (1: no judge; 2-3: the Art Director picks); absent: Settings' default */
+  variants: z.number().int().min(1).max(3).optional(),
 });
 export const Budget = z.object({
   capUsd: z.number().min(0).max(10000),
@@ -329,6 +331,7 @@ export const AssetFile = z.object({
   version: z.number().int().min(1).default(1),
   kind: z.enum([
     "character",
+    "creature",
     "crowd",
     "prop",
     "icon",

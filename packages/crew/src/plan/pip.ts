@@ -8,16 +8,16 @@ import type { ChatMessage } from "../llm/types.ts";
 import { card, fill } from "../prompts.ts";
 import { CATALOGUE, CATALOGUE_KINDS, idPart, type PlanKind, stageOf } from "./catalogue.ts";
 import { estimatePlanTask, isLive } from "./estimate.ts";
-import { addRedo, mkTask, type RulesCtx } from "./rules.ts";
+import { addRedo, chainSubject, mkTask, type RulesCtx, variantsOf } from "./rules.ts";
 import { PlanDiffOut, type PlanDiffOutT, type PlanOpT, type PlanTaskT } from "./schema.ts";
 import { type PlanIssue, type ValidateCtx, validate } from "./validate.ts";
 
 const latest = (ts: PlanTaskT[], f: (t: PlanTaskT) => boolean) => ts.filter(f).at(-1);
 
 /**
- * Code expands Pip's ops into plan tasks: an asset becomes its chain (spec, two drawings, the judge, and the person's
- * OK when it comes from a likeness), a logo its import and OK, a scene.tune a redo on the same instance. Drop and
- * retier change the named task. Ops that can't apply come back as issues for the validator's list.
+ * Code expands Pip's ops into plan tasks: an asset becomes its chain (spec, its drawings, the judge when there are two
+ * or more, and the person's OK when it comes from a likeness), a logo its import and OK, a scene.tune a redo on the
+ * same instance. Drop and retier change the named task. Ops that can't apply come back as issues for the validator's list.
  */
 export function applyDiff(
   tasks: PlanTaskT[],
@@ -115,25 +115,35 @@ export function applyDiff(
       for (const t of ts) if (t.kind === "director.storyboard" && isLive(t)) t.dependsOn.push(imp.id);
     } else {
       const g2 = g("g2_animatic") ?? "t_g2";
-      const subj = {
-        asset: o.asset,
-        assetKind: o.assetKind,
-        description: o.description,
-        reason: o.reason,
-        ...(o.fromRef ? { fromRef: o.fromRef } : {}),
-        ...(o.tier ? { tier: o.tier } : {}),
-      };
+      // the op's own count wins, then the project's, then Settings'; one drawing has no judge
+      const n = variantsOf(o, ctx);
+      const subj = chainSubject(
+        {
+          name: o.asset,
+          kind: o.assetKind ?? "character",
+          description: o.description ?? o.asset,
+          ...(o.size ? { size: o.size } : {}),
+          ...(o.motion ? { motion: o.motion } : {}),
+          ...(o.fromRef ? { fromRef: o.fromRef } : {}),
+        },
+        n,
+        { reason: o.reason, ...(o.tier ? { tier: o.tier } : {}) },
+      );
+      if (!o.assetKind) delete subj.assetKind;
+      if (!o.description) delete subj.description;
       const spec = mkTask({ id: fresh(`t_spec_${k}`), kind: "asset.spec", dependsOn: [g2, ...o.after], ...subj }, ctx);
-      const d1 = mkTask(
-        { id: fresh(`t_draw_${k}_v1`), kind: "asset.draw", variant: 1, dependsOn: [spec.id], ...subj },
-        ctx,
+      const draws = Array.from({ length: n }, (_, i) =>
+        mkTask(
+          { id: fresh(`t_draw_${k}_v${i + 1}`), kind: "asset.draw", variant: i + 1, dependsOn: [spec.id], ...subj },
+          ctx,
+        ),
       );
-      const d2 = mkTask(
-        { id: fresh(`t_draw_${k}_v2`), kind: "asset.draw", variant: 2, dependsOn: [spec.id], ...subj },
-        ctx,
-      );
-      const j = mkTask({ id: fresh(`t_judge_${k}`), kind: "asset.judge", dependsOn: [d1.id, d2.id], ...subj }, ctx);
-      added.push(spec, d1, d2, j);
+      added.push(spec, ...draws);
+      if (n > 1)
+        added.push(
+          mkTask({ id: fresh(`t_judge_${k}`), kind: "asset.judge", dependsOn: draws.map((d) => d.id), ...subj }, ctx),
+        );
+      const j = added.at(-1)!;
       if (ref && (ref.type === "likeness" || ref.type === "logo"))
         added.push(
           mkTask(

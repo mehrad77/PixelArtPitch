@@ -139,8 +139,8 @@ There is one row per plan task kind. Every handler wraps today's code, named in 
 | `art.cast` **(new, code)** | art-director | storyboard | `castFor()`, split out of the storyboard and the reboard. It runs after the recipes are set, which is safe: `scene_set_recipes` checks params, not casting, and the animatic only renders at G2, after the cast | 0 | `scenes?` | – | – | `art-director` | rerun; idempotent |
 | `asset.import` **(new, code)** | art-director | storyboard | quantizes a logo reference to the palette (`engine/quantize.ts`) as an `icon` (16×16), writes a private asset, and casts it, so the Director's asset list includes it | 0 | `asset` | – | add, drop | `art-director` | rerun |
 | `asset.spec` | art-director | art | the spec part of `art()`, with the reference image added as an input when `fromRef` is set | 1 | `asset` | – | add, drop, retier (as a chain) | `art-director` | rerun |
-| `asset.draw` | pixel-artist | art | `drawVariant(v)` | 1–4 | `asset`, `variant` 1 or 2 | – | drop variant 2, retier | `pixel-artist:<asset>` | rerun that variant |
-| `asset.judge` | art-director | art | the judge, write and cast part of `art()`, including the library fallback | 0–1 | `asset` | – | – | `art-director` | rerun |
+| `asset.draw` | pixel-artist | art | `drawVariant(v)`; with one variant per asset it also writes and casts the drawing (or the library stand-in) | 1–4 | `asset`, `variant` 1–3 | – | drop variant 2 or 3, retier | `pixel-artist:<asset>` | rerun that variant |
+| `asset.judge` | art-director | art | the judge, write and cast part of `art()`, including the library fallback; only in a chain of 2–3 variants | 0–1 | `asset` | – | – | `art-director` | rerun |
 | `scene.tune` | animator | animate | `animate()`'s `one(s)` | 1 | `scene`, `round` | round ≥ 2 | add (a redo), retier | `animator:<scene>` | skip when `sceneStatus` is render/ready (as today) |
 | `vo.align` | editor | narrate | `narrate()` | 0 | – | – | – | `editor` | rerun; asks again |
 | `sound.mix` | mixer | sound | `sound()` | 0 | – | – | – | `mixer` | rerun |
@@ -179,7 +179,13 @@ export const PlanTask = z.object({
   scene: z.string().optional(),
   scenes: z.array(z.string()).max(8).optional(),    // a reboard or a scoped cast
   asset: z.string().regex(/^[a-z][a-z0-9_-]*$/).optional(),
-  variant: z.union([z.literal(1), z.literal(2)]).optional(),
+  assetKind: z.enum(["character", "creature", "prop", "icon", "decor"]).optional(),
+  assetSize: z.enum(["16x16", "16x24"]).optional(),  // a creature's size; `motion` (walk | fly | sit) its frames (§1.10)
+  motion: z.enum(["walk", "fly", "sit"]).optional(),
+  variant: z.number().int().min(1).max(3).optional(),
+  variants: z.number().int().min(1).max(3).optional(), // the chain's drawings per asset; absent = 2 (§1.10)
+  critiques: z.number().int().min(0).max(1).optional(), // asset.draw: 0 when "Finish within" took its critique round
+  lastRound: z.boolean().optional(),                // review.final: no round after this one ("Finish within")
   round: z.number().int().min(1).max(3).optional(),
   fromRef: z.string().optional(),                   // a brief reference file the asset comes from
   expand: z.enum(["per_scene", "per_new_asset"]).optional(),  // a placeholder until the storyboard is done
@@ -200,12 +206,13 @@ export const PlanOp = z.discriminatedUnion("op", [
   z.object({ op: z.literal("drop"), task: z.string(), reason: z.string() }),
   z.object({ op: z.literal("retier"), task: z.string(), from: Tier, to: Tier, reason: z.string() }),
   z.object({ op: z.literal("expand"), placeholder: z.string(), into: z.array(z.string()), reason: z.string() }),
+  z.object({ op: z.literal("trim"), task: z.string(), what: z.enum(["critique", "review_round"]), reason: z.string() }),
 ]);
 export const PlanRevision = z.object({              // one line of runs/plan.jsonl
   rev: z.number().int().min(0),
   at: z.string().datetime(),
   by: z.enum(["rules", "pip", "person", "code"]),   // code = expansion, a redo by the fixed rules, a retry
-  trigger: z.enum(["start", "pip_revision", "expand", "change", "conductor", "retry", "decline"]),
+  trigger: z.enum(["start", "pip_revision", "expand", "change", "conductor", "retry", "decline", "budget"]), // budget: "Finish within" (§1.6)
   reason: z.string().max(200),                      // shown as "Plan changed: <reason>"
   ops: z.array(PlanOp),
   tasks: z.array(PlanTask),                         // the full snapshot after this revision
@@ -247,9 +254,10 @@ g1_script              <- writer.angles                  (the pick question, the
 director.storyboard    <- g1 + every asset.import
 art.cast               <- director.storyboard
 g2_animatic            <- art.cast                       (renders the animatic contact sheet, then waits)
-per new asset a (placeholder per_new_asset, count = E[assets]):
-  asset.spec(a) <- g2; asset.draw(a,1), asset.draw(a,2) <- spec; asset.judge(a) <- both draws
-rights(a)              <- judge(a) | import(a)           for each likeness or logo asset (§1.5 V5)
+per new asset a (placeholder per_new_asset, count = E[assets]; the draw placeholder counts N per asset):
+  asset.spec(a) <- g2; asset.draw(a,1..N) <- spec; asset.judge(a) <- every draw   N = variants (§1.10), default 2
+  with N = 1: no judge; the draw is the pick, and the scenes and rights wait on it
+rights(a)              <- judge(a) | draw(a) | import(a) for each likeness or logo asset (§1.5 V5)
 per scene s (placeholder per_scene, count = E[scenes]):
   scene.tune(s, r1)    <- g2 + the last task of every new asset s uses (before expansion: of all of them)
 vo.align               <- every scene.tune               only when narration == "user"
@@ -305,7 +313,9 @@ export const PlanDiffOut = z.object({
   ops: z.array(z.discriminatedUnion("op", [
     z.object({ op: z.literal("add"), kind: z.enum(PIP_ADDABLE),     // asset.spec | asset.import | scene.tune
       scene: z.string().optional(), asset: z.string().regex(/^[a-z][a-z0-9_-]*$/).optional(),
-      assetKind: z.enum(["character", "prop", "icon", "decor"]).optional(),
+      assetKind: z.enum(["character", "creature", "prop", "icon", "decor"]).optional(),
+      size: z.enum(["16x16", "16x24"]).optional(), motion: z.enum(["walk", "fly", "sit"]).optional(), // a creature's
+      variants: z.number().int().min(1).max(3).optional(),          // this asset's drawings; absent: the project's
       description: z.string().min(10).max(400).optional(),          // required with asset.spec
       fromRef: z.string().optional(), tier: Tier.optional(),
       after: z.array(z.string()).max(4).default([]),                // extra deps on existing task ids
@@ -317,7 +327,7 @@ export const PlanDiffOut = z.object({
 });
 ```
 
-- Pip adds an asset as one op. Code expands it into the catalogue chain: spec → draw ×2 → judge (+ rights), or import (+ rights). Code also adds the catalogue's default dependencies.
+- Pip adds an asset as one op. Code expands it into the catalogue chain: spec → draw ×N → judge when N ≥ 2 (+ rights), or import (+ rights). N is the op's `variants`, else the project's (§1.10). Code also adds the catalogue's default dependencies.
 - Pip never writes `dependsOn` itself. It can only use `after`.
 - An empty `ops` is a good answer. The prompt says so.
 
@@ -386,8 +396,12 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
   - **Changed from the brief:** the rule applies to code expansions too, not only to Pip's revisions. Otherwise a storyboard with 4 new drawings could raise the cost silently.
 - **Overrun.** When `committed / cap ≥ askAtFraction` (`BudgetGuard.onThreshold`, which today only logs):
   - The executor stops starting tasks.
-  - Pip posts the existing `/budget` plan card ("Raise the cap to $X", X = spent + remaining p90 rounded up to $0.50), and the status line says why.
-  - Confirm sets `budget.capUsd` and continues.
+  - Pip posts the budget question as two cards in one message, and the status line says why ("Waiting for you: 80% of the $6 cap is spent. Finish within it, or raise it to $Y?"):
+    1. **"Finish within $X"** (X = the cap) leads. Confirm writes a rules-made revision (`by: "code"`, trigger `budget`, `finishWithin` in `plan/rules.ts`) that trims droppable work in a fixed order until the real remaining work's p90 fits `cap − spent`: second and third drawings first (a judge left with one drawing makes no call and costs $0), then critique rounds (`critiques: 0` on the draw), then the second review round (a planned one is dropped, else the live first round becomes `lastRound`, and the run reviews once), then the library questions. Only `pending` or `ready` work is trimmed, and it stops as soon as the rest fits. The card lists exactly what goes ("Leaves out the second drawing of the moth.").
+    2. **"Raise the cap to $Y"** comes second: Y = spent + the real remaining work's p90 (`p50 + sqrt(Σ(p90 − p50)²)`, as the plan estimate sums it), rounded up to $0.50, at least the cap + $0.50. Confirm sets `budget.capUsd` and continues.
+  - "Real remaining work" (`realRemaining`) leaves out live tasks the project already satisfies, which the run-time guards would skip: the chain and rights OK of art already in the doc, a publish question already answered, a scene already rendered (`Crew.satisfied`, from `keepOf`). The P4 run asked for $12.50 from phantom redraws; the real rest fit the $6 cap.
+  - Answering one card settles the other ("You chose the other way."); "Needs you" counts the question once. With nothing to trim, only the raise card is posted.
+  - At `auto` involvement the crew trims without asking: the same revision, a Pip message in the thread ("Assumption: you'd rather finish within $6 than raise the cap, so the crew left out …"), and a channel line. If the rest still doesn't fit, the raise card follows.
   - Decline continues only with tasks whose p90 fits; then the run waits on the status line ("Waiting for you: …"). The overrun is a wait, never a `problem` (§1.8).
   - **Changed from the brief:** overrun is a guard on spend, not a plan node. It fires on spend, not at a position in the DAG.
 
@@ -515,6 +529,26 @@ The P4 run re-added whole chains on every change (the estimate grew to $12.50), 
   - The answer is stored on the asset ref (`publish: "yes" | "no"`); `lib.publish` skips an asset already answered, rev 0 marks it done, and a rerun keeps it.
   - While it asks, the Librarian has a `waiting_user` row, so the crew shows "needs you".
   - Moving an asset into the seed is a separate, deliberate `pap library promote <id> [--from <user-library>]` (`promoteAsset`): the PAP standard's hard rules, the rights checks (RIGHTS.md §7: no likeness, brand, private or unknown rights, reference or derivative) and the seed's `index.json`. It never overwrites an id the seed has.
+
+### 1.10 Cost and speed controls (v0.2, after the P4 run)
+
+The P4 run's Pixel Artist spent 84% of its tokens thinking at `effort: high` (four calls hit max_tokens, about 3 minutes a draw), drew two variants of everything and judged one away, and drew a 16 × 16 moth that "drifts toward the light" as a 16 × 24 walking hero.
+
+- **The effort ceiling.** Settings → Defaults "Highest thinking effort" (`defaults.effortCeiling`: `low | medium | high`, default `medium`).
+  - A prompt card still picks its own effort (frontmatter `effort`), but the gateway never sends more than the ceiling (`clampEffort`, in `ModelGateway.json` and `chat`). A card with no effort sends none.
+  - Non-Anthropic providers are still always sent `low` (local reasoning models think through a whole budget).
+  - `pixel-artist/draw.md` and `critique.md` ask for `medium` (version 2). `director/storyboard.md` and `reviewer/final.md` still ask for `high`, so they are clamped to the ceiling unless it is `high`.
+  - The ledger's `effort` column records the effort each call really sent (after the clamp), or null.
+- **Variants per asset.** How many drawings a new asset gets (1–3): the asset's own `variants` (the storyboard's `newAssets[]`, Pip's `add` op), then the project's `crew.variants` in `pitch.json`, then Settings' `defaults.variants` (default 2) (`variantsOf`).
+  - With 1 there is no judge task: the single draw is the pick, and it writes and casts the asset itself (a failed one casts the library stand-in, as the judge would). Its critique and repair rounds stay as they are.
+  - With 2–3 the judge reads the variants it waits on (one "Finish within" dropped stays out).
+  - A chain stores `variants` on its tasks only when it isn't 2, so older plans are unchanged.
+  - The estimate follows: the brief card's rules plan (`drafts.ts`) uses Settings' count, and the composer's rough estimate (`composerEstimate` in `apps/web/src/lib/brief.ts`, each drawing about 15% of a run) updates live with its "Drawings per new asset" field, which it writes to `crew.variants` only when it differs from Settings.
+- **Finish within the budget**: §1.6 "Overrun".
+- **The creature kind.** `creature` is a kind of its own (`ASSET_KINDS` in `outputs.ts`, the plan schemas, `AssetFile.kind`, the standard's size classes); `character` stays the 8-frame 16 × 24 hero.
+  - The Director's storyboard asks for one with `"kind": "creature", "size": "16x16" | "16x24", "motion": "walk" | "fly" | "sit"`. The size and motion ride on the chain (`assetSize`, `motion`) into the spec, so `art-director/spec.md` rule 1 keeps them.
+  - `templateFor(kind, {size, motion})` gives the template: idle0-1 always; move0-3 for walk or fly; perch0-1 for sit or fly (the engine's `motionFrames` names; a walking creature's `walk` uses `move0-3` when it has no `run` frames). The spec, the draws, the draw checker, the judge's write and the size-scaled estimate all read it.
+- **The critique sees only what the artist can fix.** `artistIssues` drops the standard checker's findings on system-owned fields (provenance, licence and the file's records); the P4 critique was given only "provenance is empty".
 
 ---
 

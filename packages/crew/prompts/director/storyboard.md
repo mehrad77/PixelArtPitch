@@ -1,5 +1,5 @@
 ---
-version: 2
+version: 3
 maxOut: 12000
 effort: high
 ---
@@ -17,6 +17,9 @@ Hard rules:
    like "S(c02)+0.4". Never raw seconds. Leave a param out to take its default.
 5. Use only asset names from the asset list. If the video needs a character or object the library lacks, use the
    placeholder name "hero" (or another lower-case name) and list it in newAssets with a one-line description.
+   Its kind: "character" is a walking hero (16x24, runs, jumps, waves); "creature" is an animal or small being: give
+   its "size" ("16x16" small, "16x24" tall) and "motion" ("walk", "fly" or "sit") as the script asks, e.g.
+   {"name": "moth", "kind": "creature", "size": "16x16", "motion": "fly", "description": "a small pale moth..."}.
 6. The last scene is an end card (end_card_loop) that holds while the music plays out.
 Return only the JSON object.
 

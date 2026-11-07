@@ -230,7 +230,16 @@ export const SETTINGS: Settings = {
   roles: Object.fromEntries(
     Object.entries(ROLE_MODELS).map(([r, m]) => [r, { model: m, fallback: "anthropic/claude-haiku-5" }]),
   ) as Settings["roles"],
-  defaults: { capUsd: 6, askAtFraction: 0.8, involvement: "key", concurrency: 3 },
+  defaults: {
+    capUsd: 6,
+    askAtFraction: 0.8,
+    involvement: "key",
+    concurrency: 3,
+    pipPlan: "shadow",
+    reviewRounds: 2,
+    effortCeiling: "medium",
+    variants: 2,
+  },
   paths: {
     roots: ["~/Movies/PixelArtPitch"],
     library: "~/worksapce/PixelArtPitch/library",

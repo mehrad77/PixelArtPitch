@@ -1,7 +1,7 @@
 ---
-version: 1
+version: 2
 maxOut: 20000
-effort: high
+effort: medium
 ---
 ## user
 Here is your "{{name}}" sprite rendered on the night sky (frames left to right, top to bottom: {{frames}}).

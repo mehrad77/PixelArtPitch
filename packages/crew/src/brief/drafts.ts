@@ -503,7 +503,8 @@ export class DraftConversations {
         ),
       );
     const doc0 = draft(budgetUsd ?? 3);
-    const tasks = rulesPlan(doc0, { env, rev: 0 });
+    // the card prices as many drawings per new asset as Settings asks (one: no judge)
+    const tasks = rulesPlan(doc0, { env, rev: 0, variants: this.deps.gateway.defaults?.().variants });
     const est = planEstimate(tasks, 0, env);
     const reserve = doc0.budget.reserveUsd;
     const recommendedUsd = Math.min(BUDGET.max, Math.max(BUDGET.min, roundUpHalf(est.usd[1] + reserve)));

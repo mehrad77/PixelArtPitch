@@ -1011,7 +1011,13 @@ export function actorFrame(
   const first = fr ? Object.keys(fr)[0] : "idle0";
   const idles: string[] = Array.isArray(o.idle) ? o.idle : ["idle0", "idle1"].filter((n) => has(fr, n));
   const idle = idles.length ? idles : [first];
-  const runs: string[] = Array.isArray(o.run) ? o.run : ["run0", "run1", "run2", "run3"].filter((n) => has(fr, n));
+  // a walking creature has move0-3 instead of a hero's run0-3
+  const own = ["run0", "run1", "run2", "run3"].filter((n) => has(fr, n));
+  const runs: string[] = Array.isArray(o.run)
+    ? o.run
+    : own.length
+      ? own
+      : ["move0", "move1", "move2", "move3"].filter((n) => has(fr, n));
   const pick = (...names: (string | undefined)[]) => names.find((n) => n && has(fr, n)) ?? idle[0];
   switch (st.motion) {
     case "run": {

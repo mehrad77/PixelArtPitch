@@ -35,7 +35,7 @@ Most scenes need only [recipes](RECIPES.md). Use hand-written layers when no rec
 | widget | **widget**: banner, toast, nameTag, label, hudSlots, qblock, counter, flagpole (props below) | ready-made UI |
 
 **Actors** choose their frame from what the asset has:
-- `run0`–`run3` while walking. Without those, they alternate `idle0`/`idle1` with a 1 px bob.
+- `run0`–`run3` while walking (a creature's `move0`–`move3` when it has no `run` frames). Without those, they alternate `idle0`/`idle1` with a 1 px bob.
 - `jump` in the air, falling back to `give`.
 - `wave`, falling back to `give`.
 - While a [`fly`](#fly-needs-at) moves them: `move0`–`move3`, falling back to `run0`–`run3`, then `idle0`/`idle1`. While they [`sit`](#sit-needs-at): `perch0`/`perch1`, falling back to `idle0`/`idle1`. Sprites pick the same way during fly and sit.

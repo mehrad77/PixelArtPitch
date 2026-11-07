@@ -4,14 +4,20 @@
 // the storyboard, and the revisions a run from a stage, a change request, a redo or a re-board make.
 import type { ProjectT, RoleT } from "@pap/schema";
 import { type RuntimeState, STAGES, type Stage } from "@pap/tools";
+import type { AssetKindT, MotionT } from "../outputs.ts";
 import { CATALOGUE, idPart, instanceKey, type PlanGateId, type PlanKind, stageOf } from "./catalogue.ts";
 import { estimatePlanTask, isLive, type PlanEnv } from "./estimate.ts";
 import type { PlanOpT, PlanTaskT } from "./schema.ts";
 
 export type NewAsset = {
   name: string;
-  kind: "character" | "prop" | "icon" | "decor";
+  kind: AssetKindT;
   description: string;
+  /** a creature's size and motion (its template: size and frames) */
+  size?: "16x16" | "16x24";
+  motion?: MotionT;
+  /** drawings for this asset (1-3); absent: the project's or Settings' count */
+  variants?: number;
   fromRef?: string;
   /** a likeness or a brand: private, never published, the person's OK before a scene uses it */
   rights?: "likeness" | "brand";
@@ -21,7 +27,13 @@ export type RulesCtx = {
   rev: number;
   /** asset ids a decl scene's recipes use (params and their defaults); without it every scene waits for all new art */
   assetsOf?: (sceneId: string) => string[];
+  /** drawings per new asset (the project's `crew.variants`, else Settings' `defaults.variants`); absent means 2 */
+  variants?: number;
 };
+
+/** drawings per new asset: the asset's own count, then the plan's (project, then Settings), then 2; always 1-3 */
+export const variantsOf = (a: { variants?: number } | undefined, ctx: { variants?: number }) =>
+  Math.min(3, Math.max(1, Math.round(a?.variants ?? ctx.variants ?? 2)));
 type Spec = Partial<PlanTaskT> & { id: string; kind: PlanKind; dependsOn: string[] };
 
 /** the judge's stand-in when no variant passed (§1.8): a library asset cast in the drawing's place, not the drawing */
@@ -108,26 +120,41 @@ export function refAssets(doc: ProjectT) {
   return { logos, likeness, blocked };
 }
 
-/** an asset's chain: spec -> draw v1, v2 -> judge (+ rights) */
-function chain(a: NewAsset, after: string[], ctx: RulesCtx, extra: Partial<PlanTaskT> = {}): PlanTaskT[] {
-  const k = idPart(a.name);
-  const subj = {
+/** the subject fields a chain's tasks share */
+export function chainSubject(a: NewAsset, n: number, extra: Partial<PlanTaskT> = {}): Partial<PlanTaskT> {
+  return {
     asset: a.name,
     assetKind: a.kind,
     description: a.description,
+    ...(a.size ? { assetSize: a.size } : {}),
+    ...(a.motion ? { motion: a.motion } : {}),
+    ...(n !== 2 ? { variants: n } : {}),
     ...(a.fromRef ? { fromRef: a.fromRef } : {}),
     ...extra,
   };
-  const out = [
-    mkTask({ id: `t_spec_${k}`, kind: "asset.spec", dependsOn: after, ...subj }, ctx),
-    mkTask({ id: `t_draw_${k}_v1`, kind: "asset.draw", variant: 1, dependsOn: [`t_spec_${k}`], ...subj }, ctx),
-    mkTask({ id: `t_draw_${k}_v2`, kind: "asset.draw", variant: 2, dependsOn: [`t_spec_${k}`], ...subj }, ctx),
-    mkTask({ id: `t_judge_${k}`, kind: "asset.judge", dependsOn: [`t_draw_${k}_v1`, `t_draw_${k}_v2`], ...subj }, ctx),
-  ];
+}
+
+/**
+ * An asset's chain: spec -> draw v1..vN -> judge (+ rights). With one drawing there is no judge: the draw is the pick,
+ * and it writes and casts the asset itself (its critique and repair rounds stay as they are).
+ */
+function chain(a: NewAsset, after: string[], ctx: RulesCtx, extra: Partial<PlanTaskT> = {}): PlanTaskT[] {
+  const k = idPart(a.name);
+  const n = variantsOf(a, ctx);
+  const subj = chainSubject(a, n, extra);
+  const draws = Array.from({ length: n }, (_, i) =>
+    mkTask(
+      { id: `t_draw_${k}_v${i + 1}`, kind: "asset.draw", variant: i + 1, dependsOn: [`t_spec_${k}`], ...subj },
+      ctx,
+    ),
+  );
+  const out = [mkTask({ id: `t_spec_${k}`, kind: "asset.spec", dependsOn: after, ...subj }, ctx), ...draws];
+  if (n > 1)
+    out.push(mkTask({ id: `t_judge_${k}`, kind: "asset.judge", dependsOn: draws.map((d) => d.id), ...subj }, ctx));
   if (a.rights)
     out.push(
       mkTask(
-        { id: `t_rights_${k}`, kind: "gate", gate: "rights", asset: a.name, dependsOn: [`t_judge_${k}`], ...extra },
+        { id: `t_rights_${k}`, kind: "gate", gate: "rights", asset: a.name, dependsOn: [out.at(-1)!.id], ...extra },
         ctx,
       ),
     );
@@ -156,7 +183,9 @@ function lastOf(tasks: PlanTaskT[], asset: string) {
   return (
     mine.find((t) => t.kind === "gate" && t.gate === "rights") ??
     mine.find((t) => t.kind === "asset.judge") ??
-    mine.find((t) => t.kind === "asset.import")
+    mine.find((t) => t.kind === "asset.import") ??
+    // one drawing: no judge, the draw is the pick
+    mine.find((t) => t.kind === "asset.draw")
   )?.id;
 }
 const isLiveOrDone = (t: PlanTaskT) => isLive(t) || t.status === "done";
@@ -199,6 +228,7 @@ export function rulesPlan(doc: ProjectT, ctx: RulesCtx, expanded?: Expanded): Pl
   if (!expanded) {
     // the hero baselineBoard assumes, unless the references are the new art
     const nNew = refs.likeness.length ? 0 : 1;
+    const nv = variantsOf(undefined, ctx);
     if (nNew) {
       add(
         mkTask(
@@ -208,20 +238,27 @@ export function rulesPlan(doc: ProjectT, ctx: RulesCtx, expanded?: Expanded): Pl
       );
       add(
         mkTask(
-          { id: "t_draw_new", kind: "asset.draw", expand: "per_new_asset", count: 2 * nNew, dependsOn: ["t_spec_new"] },
+          {
+            id: "t_draw_new",
+            kind: "asset.draw",
+            expand: "per_new_asset",
+            count: nv * nNew,
+            dependsOn: ["t_spec_new"],
+          },
           ctx,
         ),
       );
-      add(
-        mkTask(
-          { id: "t_judge_new", kind: "asset.judge", expand: "per_new_asset", count: nNew, dependsOn: ["t_draw_new"] },
-          ctx,
-        ),
-      );
+      if (nv > 1)
+        add(
+          mkTask(
+            { id: "t_judge_new", kind: "asset.judge", expand: "per_new_asset", count: nNew, dependsOn: ["t_draw_new"] },
+            ctx,
+          ),
+        );
     }
     const waits = [
       "t_g2",
-      ...(nNew ? ["t_judge_new"] : []),
+      ...(nNew ? [nv > 1 ? "t_judge_new" : "t_draw_new"] : []),
       ...assetNames.map((n) => lastOf(T, n)).filter((x): x is string => !!x),
     ];
     add(
@@ -429,8 +466,10 @@ export function rerun(
   for (const id of ids) {
     const t = tasks.find((x) => x.id === id)!;
     const round = o.round ? o.round(t) : t.round;
+    // a copy is a fresh start: "Finish within" trims stay with the run that made them
+    const { critiques: _c, lastRound: _l, ...base } = t;
     copies.push({
-      ...t,
+      ...base,
       id: map.get(id)!,
       status: "pending",
       taskIds: [],
@@ -760,3 +799,113 @@ export function expandPlan(
 export const liveRoles = (tasks: PlanTaskT[]) => [
   ...new Set(tasks.filter((t) => isLive(t) && t.role !== "person").map((t) => t.role as RoleT)),
 ];
+
+// ---------------------------------------------------------------- finish within the budget (§1.6)
+
+/** the live tasks that will really run: none the project already satisfies (art it has, a publish met, a scene done) */
+export function realRemaining(tasks: PlanTaskT[], satisfied: (t: PlanTaskT) => boolean = () => false) {
+  return tasks.filter((t) => isLive(t) && !satisfied(t));
+}
+/** what the rest may cost at the top of its range: p50 + sqrt(Σ(p90 − p50)²), as planEstimate sums it */
+export function restP90(tasks: PlanTaskT[]) {
+  let p50 = 0;
+  let spread = 0;
+  for (const t of tasks) {
+    p50 += t.estUsd[0];
+    spread += (t.estUsd[1] - t.estUsd[0]) ** 2;
+  }
+  return p50 + Math.sqrt(spread);
+}
+/** the cap that finishes the rest: spent + the real remaining work's p90, rounded up to $0.50 */
+export const suggestCap = (spentUsd: number, rest: PlanTaskT[]) => Math.ceil((spentUsd + restP90(rest)) * 2 - 1e-9) / 2;
+
+export type TrimT = { task: string; what: "variant" | "critique" | "review_round" | "publish"; asset?: string };
+/** a trim in the person's words, for the card: "the second drawing of the moth" */
+export function trimWords(t: TrimT, tasks: PlanTaskT[]) {
+  const x = tasks.find((y) => y.id === t.task);
+  const nth = ["first", "second", "third"][(x?.variant ?? 2) - 1] ?? "extra";
+  switch (t.what) {
+    case "variant":
+      return `the ${nth} drawing of ${t.asset ?? "the asset"}`;
+    case "critique":
+      return `the critique round on ${t.asset ?? "a drawing"}${x?.variant ? ` (drawing ${x.variant})` : ""}`;
+    case "review_round":
+      return "the second review round";
+    case "publish":
+      return `the library question for ${t.asset ?? "the new art"}`;
+  }
+}
+
+/**
+ * "Finish within $X": a rules-made trim of droppable work, in a fixed order, until the real remaining work's p90 fits
+ * what is left of the cap: second (and third) drawings first, then critique rounds, then the second review round,
+ * then the library questions. Only pending or ready work is trimmed (a running draw finishes), a judge left with one
+ * drawing makes no call (its estimate goes to $0), and nothing the project already satisfies counts. Pure.
+ */
+export function finishWithin(
+  tasks: PlanTaskT[],
+  o: {
+    /** cap − spent */
+    leftUsd: number;
+    satisfied?: (t: PlanTaskT) => boolean;
+    ctx: Pick<RulesCtx, "env" | "rev">;
+    /** review rounds the run would make (settings): the second one can go only when there is one */
+    reviewRounds?: number;
+  },
+): { tasks: PlanTaskT[]; ops: PlanOpT[]; trims: TrimT[]; fits: boolean; restUsd: number } {
+  const ts = tasks.map((t) => ({ ...t }));
+  const ops: PlanOpT[] = [];
+  const trims: TrimT[] = [];
+  const sat = o.satisfied ?? (() => false);
+  const rest = () => restP90(realRemaining(ts, sat));
+  const fits = () => rest() <= o.leftUsd + 1e-9;
+  const open = (t: PlanTaskT) => (t.status === "pending" || t.status === "ready") && !sat(t);
+  const reason = "to finish within the budget";
+  const drop = (t: PlanTaskT, what: TrimT["what"]) => {
+    t.status = "dropped";
+    t.note = "trimmed to finish within the budget";
+    ops.push({ op: "drop", task: t.id, reason });
+    trims.push({ task: t.id, what, ...(t.asset ? { asset: t.asset } : {}) });
+  };
+  // 1. second and third drawings (the highest first), while the asset keeps one
+  const extra = ts
+    .filter((t) => t.kind === "asset.draw" && !t.expand && (t.variant ?? 1) >= 2 && open(t))
+    .sort((a, b) => (b.variant ?? 1) - (a.variant ?? 1));
+  for (const t of extra) {
+    if (fits()) break;
+    drop(t, "variant");
+    // a judge with one drawing left only casts it: no model call
+    for (const j of ts)
+      if (j.kind === "asset.judge" && isLive(j) && j.dependsOn.includes(t.id)) {
+        const left = j.dependsOn.filter((d) => {
+          const x = ts.find((y) => y.id === d);
+          return x?.kind === "asset.draw" && x.status !== "dropped";
+        });
+        if (left.length <= 1) j.estUsd = [0, 0];
+      }
+  }
+  // 2. critique rounds
+  for (const t of ts.filter((x) => x.kind === "asset.draw" && !x.expand && open(x) && x.critiques !== 0)) {
+    if (fits()) break;
+    t.critiques = 0;
+    const e = estimatePlanTask(t, o.ctx.env);
+    t.estUsd = e.usd;
+    t.estSec = e.sec;
+    ops.push({ op: "trim", task: t.id, what: "critique", reason });
+    trims.push({ task: t.id, what: "critique", ...(t.asset ? { asset: t.asset } : {}) });
+  }
+  // 3. the second review round: a planned one is dropped; else the live first round is the last
+  if (!fits() && (o.reviewRounds ?? 2) >= 2) {
+    const second = ts.filter((t) => t.kind === "review.final" && (t.round ?? 1) >= 2 && open(t));
+    for (const t of second) drop(t, "review_round");
+    const first = ts.find((t) => t.kind === "review.final" && isLive(t) && (t.round ?? 1) === 1 && !t.lastRound);
+    if (!second.length && first) {
+      first.lastRound = true;
+      ops.push({ op: "trim", task: first.id, what: "review_round", reason });
+      trims.push({ task: first.id, what: "review_round" });
+    }
+  }
+  // 4. the library questions
+  if (!fits()) for (const t of ts.filter((x) => x.kind === "lib.publish" && !x.expand && open(x))) drop(t, "publish");
+  return { tasks: ts, ops, trims, fits: fits(), restUsd: Math.round(rest() * 10000) / 10000 };
+}

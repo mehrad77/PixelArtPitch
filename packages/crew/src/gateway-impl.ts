@@ -8,6 +8,7 @@ import {
   BudgetGuard,
   type Caps,
   chatJson,
+  clampEffort,
   createProvider,
   errorKind,
   estimatePlan,
@@ -129,6 +130,11 @@ export class ModelGateway implements Gateway {
     return p;
   }
 
+  /** a card's effort under Settings' "Highest thinking effort" (defaults.effortCeiling, default medium) */
+  effort(e: CallSpec<unknown>["effort"]) {
+    return clampEffort(e, this.settings.defaults?.effortCeiling ?? "medium");
+  }
+
   guard(project: string, capUsd: number) {
     let g = this.guards.get(project);
     if (!g) {
@@ -178,8 +184,8 @@ export class ModelGateway implements Gateway {
             messages: spec.messages,
             // a local model that runs away should fail fast so the fallback takes over
             maxOut: providerId === "anthropic" ? spec.maxOut : Math.min(spec.maxOut, 6000),
-            // local reasoning models can think through a whole output budget: keep them brief
-            effort: providerId === "anthropic" ? spec.effort : "low",
+            // local reasoning models can think through a whole output budget: keep them brief; never past the ceiling
+            effort: providerId === "anthropic" ? this.effort(spec.effort) : "low",
             cache: true,
             // small local models loop at their default temperature
             ...(providerId === "anthropic" ? {} : { temperature: 0.4 }),
@@ -242,7 +248,7 @@ export class ModelGateway implements Gateway {
           // never a forced choice: Sonnet 5.5 and Opus 5.5 reject it
           ...(spec.tools?.length ? { toolChoice: "auto" as const } : {}),
           maxOut: anthropic ? spec.maxOut : Math.min(spec.maxOut, 6000),
-          effort: anthropic ? spec.effort : "low",
+          effort: anthropic ? this.effort(spec.effort) : "low",
           cache: true,
           ...(spec.thinking === false ? { thinking: false } : {}),
           ...(anthropic ? {} : { temperature: 0.4 }),

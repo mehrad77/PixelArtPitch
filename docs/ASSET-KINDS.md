@@ -20,6 +20,17 @@ Every spec has this shape:
 - **Describe:** "A <age/build> <person> facing RIGHT: <hair>, <top>, <trousers>, <one prop or trait>. idle0/idle1 breathe (1 px chest move). run0-3: contact, passing, contact, passing. jump: knees up, arms up. wave: right arm raised. Feet on the bottom row."
 - Check: feet on row 23 in all but `jump`; the head is about 8 × 8; the run swaps ≤ 50% of cells; one strong trait reads at 1× (hair shape, glasses, hat).
 
+## creature (an animal or small being)
+- **Size:** 16 × 16 (a moth, a bird, a cat) or 16 × 24 (an owl, a fox sitting up), as the Director asked. **Frames:** from its `motion` (the engine's names, `motionFrames`):
+  - `walk`: `idle0 idle1 move0 move1 move2 move3`
+  - `fly`: `idle0 idle1 move0 move1 move2 move3 perch0 perch1`
+  - `sit`: `idle0 idle1 perch0 perch1`
+- The Director's storyboard sets it: `{ "name": "moth", "kind": "creature", "size": "16x16", "motion": "fly", "description": "a small pale moth that drifts toward the light" }`. The spec keeps that size and motion; it never becomes a 16 × 24 hero.
+- **Palette roles:** body (one group), one accent (eyes, wing spots), outline `k`.
+- **Describe:** "A <animal> true to its own shape, facing RIGHT: <body>, <one trait>. idle0/idle1 breathe (1 px). move0-3: <the walk or wing cycle>. perch0/perch1: resting, a blink or a twitch."
+- Check: it reads as that animal at 1×, not a chibi person; the move cycle swaps ≤ 50% of cells; a flyer's wings change shape between move frames.
+- A creature moves with the `fly` and `sit` behaviours ([BEHAVIORS.md](BEHAVIORS.md)); a walking one also walks with `walk` (its `move` frames stand in for `run`).
+
 ## NPC (a character tagged `npc`)
 - **Size:** 16 × 24. `kind: "character"`, tags `["npc", …]`. **Frames:** `idle0` required; usually `idle0 idle1 give`.
 - **Palette roles:** like the hero, but the outfit must not use any player colour (`T`, `Q`, `O`) as its main tone.

@@ -11,6 +11,7 @@ import {
   type RadioProps,
 } from "@shabboo/kit/react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { composerEstimate } from "../lib/brief.ts";
 import { client } from "../lib/client.ts";
 import { clock, duration, usd } from "../lib/format.ts";
 import { Link, navigate } from "../lib/router.tsx";
@@ -42,13 +43,6 @@ const RIGHTS: { id: Rights; label: string }[] = [
   { id: "licensed", label: "Licensed" },
   { id: "unsure", label: "Not sure" },
 ];
-/** rough per-60-second cost and minutes, by profile; the server's estimate replaces this once it has one */
-const RATE: Record<Exclude<Profile, "custom">, { usd: [number, number]; min: [number, number] }> = {
-  best: { usd: [3.8, 6.2], min: [25, 40] },
-  balanced: { usd: [1.9, 3.4], min: [20, 35] },
-  local: { usd: [0, 0.4], min: [50, 90] },
-};
-const INVOLVE_WAIT: Record<Involvement, number> = { every: 1.3, key: 1.1, auto: 1 };
 
 /** a Radio whose input carries its label as its name too, so every tool reads the label, never the value ("on") */
 const NamedRadio = (p: RadioProps) => <Radio aria-label={p.label} {...p} />;
@@ -77,6 +71,24 @@ export function ComposerPage({ first = false, draftId }: { first?: boolean; draf
   const [hold, setHold] = useState("3");
   const [endCard, setEndCard] = useState(true);
   const [refs, setRefs] = useState<RefRow[]>([]);
+  // drawings per new asset: Settings' default until the person picks (the estimate follows it live)
+  const [variants, setVariants] = useState("2");
+  const [defaultVariants, setDefaultVariants] = useState(2);
+  useEffect(() => {
+    let live = true;
+    client.settings().then(
+      (s) => {
+        if (!live) return;
+        const v = s.defaults.variants ?? 2;
+        setDefaultVariants(v);
+        setVariants(String(v));
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ message: string; fix?: string } | null>(null);
@@ -120,15 +132,10 @@ export function ComposerPage({ first = false, draftId }: { first?: boolean; draf
     navigate(draftId ? `/new/${encodeURIComponent(draftId)}` : "/new");
   };
 
-  const est = useMemo(() => {
-    const r = RATE[profile];
-    const f = length / 60;
-    const w = INVOLVE_WAIT[involvement];
-    return {
-      usd: [r.usd[0] * f, r.usd[1] * f] as const,
-      min: [r.min[0] * Math.max(0.5, f) * w, r.min[1] * Math.max(0.5, f) * w] as const,
-    };
-  }, [profile, length, involvement]);
+  const est = useMemo(
+    () => composerEstimate({ profile, lengthSec: length, involvement, variants: Number(variants) }),
+    [profile, length, involvement, variants],
+  );
   const capNum = Number(cap);
   const now = Date.now();
   const readyBy = [new Date(now + est.min[0] * 60000), new Date(now + est.min[1] * 60000)];
@@ -210,6 +217,10 @@ export function ComposerPage({ first = false, draftId }: { first?: boolean; draf
             ops: [
               { op: "replace", path: "/crew/profile", value: profile },
               { op: "replace", path: "/budget/askAtFraction", value: askAt80 ? 0.8 : 1 },
+              // only a choice that differs from Settings is the project's own
+              ...(Number(variants) !== defaultVariants
+                ? [{ op: "add" as const, path: "/crew/variants", value: Number(variants) }]
+                : []),
             ],
             reason: "Profile and budget question from the composer",
             baseRev: st.rev,
@@ -394,6 +405,18 @@ export function ComposerPage({ first = false, draftId }: { first?: boolean; draf
                   capNum < est.usd[0] &&
                   " The cap is below the estimate: the crew will ask before it runs out."}
               </p>
+              <Field
+                id="c-variants"
+                label="Drawings per new asset"
+                control="select"
+                value={variants}
+                onChange={(e) => setVariants(e.currentTarget.value)}
+                hint="With one, that drawing is used and it costs less. With two or three, the Art Director picks the best."
+              >
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+              </Field>
               <Checkbox
                 id="c-ask80"
                 label="Ask me at 80% of the cap"

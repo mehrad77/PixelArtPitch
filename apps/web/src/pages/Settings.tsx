@@ -18,7 +18,7 @@ import { client } from "../lib/client.ts";
 import { n, usd } from "../lib/format.ts";
 import { useLoad } from "../lib/hooks.ts";
 import { Link } from "../lib/router.tsx";
-import type { Cap, ModelRow, Profile, Provider, ProviderKind, Settings } from "../lib/types.ts";
+import type { Cap, Effort, ModelRow, Profile, Provider, ProviderKind, Settings } from "../lib/types.ts";
 import { Connections } from "./Connections.tsx";
 import { Roles } from "./SettingsRoles.tsx";
 import "./Settings.css";
@@ -526,6 +526,9 @@ function Defaults({ settings, onSaved }: { settings: Settings; onSaved: () => vo
   const [ask, setAsk] = useState(String(Math.round(d.askAtFraction * 100)));
   const [inv, setInv] = useState(d.involvement);
   const [conc, setConc] = useState(String(d.concurrency));
+  const [rounds, setRounds] = useState(String(d.reviewRounds ?? 2));
+  const [effort, setEffort] = useState<Effort>(d.effortCeiling ?? "medium");
+  const [variants, setVariants] = useState(String(d.variants ?? 2));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const save = async (e: FormEvent) => {
@@ -545,6 +548,9 @@ function Defaults({ settings, onSaved }: { settings: Settings; onSaved: () => vo
           askAtFraction: Number(ask) / 100,
           involvement: inv,
           concurrency: Number(conc),
+          reviewRounds: rounds === "1" ? 1 : 2,
+          effortCeiling: effort,
+          variants: Number(variants),
         },
       });
       setMsg("Saved. New projects start with these.");
@@ -597,6 +603,41 @@ function Defaults({ settings, onSaved }: { settings: Settings; onSaved: () => vo
         hint="More is faster, but spends faster too."
         error={errors["d-conc"]}
       />
+      <Field
+        id="d-effort"
+        label="Highest thinking effort"
+        control="select"
+        value={effort}
+        onChange={(e) => setEffort(e.currentTarget.value as Effort)}
+        hint="Each step picks its own effort, never above this. Higher thinks longer and costs more."
+      >
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+      </Field>
+      <Field
+        id="d-variants"
+        label="Drawings per new asset"
+        control="select"
+        value={variants}
+        onChange={(e) => setVariants(e.currentTarget.value)}
+        hint="With one, that drawing is used. With two or three, the Art Director picks the best."
+      >
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+      </Field>
+      <Field
+        id="d-rounds"
+        label="Review rounds"
+        control="select"
+        value={rounds}
+        onChange={(e) => setRounds(e.currentTarget.value)}
+        hint="Two: a second round checks the fixes before the rough cut."
+      >
+        <option value="1">1</option>
+        <option value="2">2</option>
+      </Field>
       <div className="provider-actions">
         <Button type="submit" variant="primary">
           Save defaults

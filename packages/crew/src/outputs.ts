@@ -2,6 +2,13 @@
 // so structured-output grammars stay small and weak models can fill them.
 import { z } from "zod";
 
+/** the kinds a new drawing can be: `character` is the 8-frame hero; `creature` follows the brief's size and motion */
+export const ASSET_KINDS = ["character", "creature", "prop", "icon", "decor"] as const;
+export type AssetKindT = (typeof ASSET_KINDS)[number];
+export const CREATURE_SIZES = ["16x16", "16x24"] as const;
+export const MOTIONS = ["walk", "fly", "sit"] as const;
+export type MotionT = (typeof MOTIONS)[number];
+
 const OptionOut = z.object({
   id: z.string().regex(/^[a-z0-9_-]+$/),
   label: z.string().min(1).max(80),
@@ -56,8 +63,12 @@ export const StoryboardOut = z.object({
     .array(
       z.object({
         name: z.string().regex(/^[a-z][a-z0-9_-]*$/),
-        kind: z.enum(["character", "prop", "icon", "decor"]),
+        kind: z.enum(ASSET_KINDS),
         description: z.string().min(10).max(400),
+        /** a creature's size as the brief asks: "16x16" (small: a moth, a bird) or "16x24" */
+        size: z.enum(CREATURE_SIZES).optional(),
+        /** how a creature moves: walk (move0-3), fly (move0-3 and perch0-1) or sit (perch0-1) */
+        motion: z.enum(MOTIONS).optional(),
       }),
     )
     .max(4),
@@ -120,8 +131,45 @@ export type StoryboardOutT = z.infer<typeof StoryboardOut>;
 export type DrawOutT = z.infer<typeof DrawOut>;
 export type ReviewOutT = z.infer<typeof ReviewOut>;
 
-/** size and frames per asset kind (the PAP standard's size classes) */
-export const KIND_TEMPLATES: Record<string, { w: number; h: number; frames: string[]; note: string }> = {
+export type KindTemplate = { w: number; h: number; frames: string[]; note: string };
+
+/**
+ * A creature's template: its size from the brief (16x16, or 16x24), its frames from how it moves. The names are the
+ * engine's (`motionFrames`): idle0-1 always; move0-3 for walk or fly; perch0-1 for sit or fly.
+ */
+export function creatureTemplate(o: { size?: string; motion?: string } = {}): KindTemplate {
+  const h = o.size === "16x24" ? 24 : 16;
+  const motion = (MOTIONS as readonly string[]).includes(o.motion ?? "") ? (o.motion as MotionT) : "walk";
+  const move = motion === "walk" || motion === "fly";
+  const perch = motion === "sit" || motion === "fly";
+  const frames = [
+    "idle0",
+    "idle1",
+    ...(move ? ["move0", "move1", "move2", "move3"] : []),
+    ...(perch ? ["perch0", "perch1"] : []),
+  ];
+  const how =
+    motion === "fly"
+      ? "move0-move3 a 4-frame flight cycle facing RIGHT (wings up, level, down, level); perch0/perch1 resting on a ledge, wings folded, a 1 px shift between them"
+      : motion === "sit"
+        ? "perch0/perch1 sitting still, a 1 px shift between them (a blink, a twitch)"
+        : "move0-move3 a 4-frame walk cycle facing RIGHT, legs alternating, feet on the bottom row";
+  return {
+    w: 16,
+    h,
+    frames,
+    note: `A small animal or creature, 16x${h}, true to its own shape (never a chibi biped). idle0/idle1 breathe (1 px shift); ${how}. Never draw frames it doesn't list.`,
+  };
+}
+
+/** the template for an asset: its kind's, and for a creature its size and motion */
+export function templateFor(kind: string, o: { size?: string; motion?: string } = {}): KindTemplate {
+  if (kind === "creature") return creatureTemplate(o);
+  return KIND_TEMPLATES[kind] ?? KIND_TEMPLATES.icon;
+}
+
+/** size and frames per asset kind (the PAP standard's size classes); a creature's come from `creatureTemplate` */
+export const KIND_TEMPLATES: Record<string, KindTemplate> = {
   character: {
     w: 16,
     h: 24,
@@ -131,4 +179,16 @@ export const KIND_TEMPLATES: Record<string, { w: number; h: number; frames: stri
   prop: { w: 24, h: 32, frames: ["prop"], note: "A level prop standing on the bottom row, transparent background." },
   icon: { w: 16, h: 16, frames: ["icon"], note: "A centred icon with a 1 px dark outline, readable at 1x." },
   decor: { w: 24, h: 24, frames: ["decor"], note: "A small decoration, transparent background." },
+  /** the default creature (16x16, walking); `templateFor` gives the one its brief asks for */
+  creature: creatureTemplate(),
 };
+
+/**
+ * What the critique shows the Pixel Artist of the standard checker's findings: only what the artist can fix in the
+ * grid. Provenance, licence and rights are the system's fields (code writes them), and so are the file's records (id,
+ * version, hash, standard, palette, tags): a finding about them is noise in an Opus call (P4: "provenance is empty").
+ */
+export function artistIssues<T extends { rule: string; message: string }>(hard: T[]): T[] {
+  const SYSTEM = /^(provenance|licence|rights|hash|standard|id|version|palette|tags|description)\b/;
+  return hard.filter((i) => i.rule !== "rights" && !(i.rule === "shape" && SYSTEM.test(i.message)));
+}

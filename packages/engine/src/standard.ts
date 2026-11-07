@@ -11,6 +11,13 @@ type Size = [number, number];
 /** allowed sizes per kind: a list of exact sizes, or bounds (w and h multiples of `step`, at most max) */
 export const SIZE_CLASSES: Record<string, { sizes?: Size[]; max?: Size; step?: number; doc: string }> = {
   character: { sizes: [[16, 24]], doc: "16x24" },
+  creature: {
+    sizes: [
+      [16, 16],
+      [16, 24],
+    ],
+    doc: "16x16 or 16x24",
+  },
   crowd: { max: [96, 24], step: 16, doc: "w a multiple of 16 up to 96, h 16 or 24" },
   prop: {
     sizes: [
@@ -39,7 +46,7 @@ export const SIZE_CLASSES: Record<string, { sizes?: Size[]; max?: Size; step?: n
 };
 const CHARACTER_FRAMES = ["idle0", "idle1", "run0", "run1", "run2", "run3", "jump", "wave"];
 /** kinds whose silhouette must read on the night sky */
-const ON_SKY = new Set(["character", "crowd", "prop", "icon", "block", "decor", "logo"]);
+const ON_SKY = new Set(["character", "creature", "crowd", "prop", "icon", "block", "decor", "logo"]);
 /** share of silhouette edge cells that must reach 1.7:1 against the sky, per frame */
 export const EDGE_PASS = 0.4;
 export const EDGE_MIN = 1.7;
@@ -155,9 +162,11 @@ export function checkAsset(input: unknown, palette: StdPalette): StdResult {
       ? npc
         ? ["idle0"]
         : CHARACTER_FRAMES
-      : a.kind === "font"
-        ? [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"].map((c) => `g${c.codePointAt(0)}`)
-        : [];
+      : a.kind === "creature"
+        ? ["idle0", "idle1"]
+        : a.kind === "font"
+          ? [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"].map((c) => `g${c.codePointAt(0)}`)
+          : [];
   const lacking = need.filter((f) => !a.grid[f]);
   if (lacking.length)
     add(
@@ -205,11 +214,13 @@ export function checkAsset(input: unknown, palette: StdPalette): StdResult {
           f,
         );
     }
-  // frame-to-frame swap cap on loops
-  if (a.kind === "character") {
+  // frame-to-frame swap cap on loops (a creature's move and perch cycles too)
+  if (a.kind === "character" || a.kind === "creature") {
     const loops = [
       ["idle0", "idle1"],
       ["run0", "run1", "run2", "run3"],
+      ["move0", "move1", "move2", "move3"],
+      ["perch0", "perch1"],
     ].map((l) => l.filter((f) => a.grid[f]));
     for (const loop of loops) {
       if (loop.length < 2) continue;

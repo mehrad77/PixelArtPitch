@@ -226,6 +226,7 @@ export function metered(provider: Provider, ctx: MeterCtx): Provider {
           promptVersion: ctx.promptVersion ?? "",
           estUsd: ctx.estUsd ?? null,
           ticket: ticket.id,
+          effort: req.effort ?? null,
         }),
         estInTokens: estIn,
       });

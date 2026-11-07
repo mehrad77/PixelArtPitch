@@ -4,6 +4,7 @@
 import { humanStatus, PHASES, phaseOf, problemOf, STAGE_WORD } from "../lib/human.ts";
 import { msgsOf } from "../lib/instances.ts";
 import { applyEvent } from "../lib/reducer.ts";
+import { mergeSettings } from "../lib/settings.ts";
 import type {
   ActivityEntry,
   AnswerInput,
@@ -1816,7 +1817,7 @@ export class MockClient implements Client {
   async saveSettings(partial: Partial<Settings>) {
     await wait();
     const b = be();
-    b.settings = { ...b.settings, ...clone(partial) };
+    b.settings = mergeSettings(b.settings, clone(partial));
     return clone(b.settings);
   }
   async saveKey(provider: string) {

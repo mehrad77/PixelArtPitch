@@ -61,8 +61,13 @@ export interface Gateway {
   laneSize?(providerId: string): number;
   /** a model on a local endpoint (its calls are free, one at a time) */
   isLocal?(model: string): boolean;
-  /** the crew defaults from settings (pipPlan, reviewRounds) */
-  defaults?(): { pipPlan?: "on" | "shadow" | "off"; reviewRounds?: 1 | 2 };
+  /** the crew defaults from settings (pipPlan, reviewRounds, the effort ceiling, variants per new asset) */
+  defaults?(): {
+    pipPlan?: "on" | "shadow" | "off";
+    reviewRounds?: 1 | 2;
+    effortCeiling?: "low" | "medium" | "high";
+    variants?: number;
+  };
   /** the ledger, for estimates from observed calls */
   ledgerRef?(): import("./llm/ledger.ts").Ledger;
   estimate(

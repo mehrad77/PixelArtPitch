@@ -23,12 +23,12 @@ Read first: [PAP-STANDARD.md](../PAP-STANDARD.md), [ASSET-KINDS.md](../ASSET-KIN
 1. Read the spec. Write down the size (`w × h`), the frame names in order, and the allowed letters.
 2. Plan on a grid first: the silhouette, then the outline (`k`), then 3 tones per colour group: light top-left, dark right and bottom.
 3. Every row is exactly `w` cells; every frame has exactly `h` rows. Use `.` for transparent. Never `#`.
-4. Characters: feet on the last row (except `jump`); the head about 8 × 8; idle0 → idle1 moves only 1 px (the chest or head); run0–3 alternate contact and passing poses.
+4. Characters: feet on the last row (except `jump`); the head about 8 × 8; idle0 → idle1 moves only 1 px (the chest or head); run0–3 alternate contact and passing poses. Creatures (16 × 16 or 16 × 24) keep their own animal shape: `move0`–`move3` is the walk or wing cycle, `perch0 perch1` the rest pose; draw only the frames the spec lists.
 5. Keep frames consistent: the same palette, proportions and baseline.
 6. Remove lone pixels. Make sure the ring just inside the outline is a light enough tone to read on the dark sky.
 7. Self-check before returning: count the rows and cells, list the letters you used, and confirm each is in the spec's palette.
 8. **Repairs:** if validation fails (row width, illegal letter), fix only what the error names. At most 2 repairs.
-9. **Critique:** look at your rendered sheet with the sprite rubric (REVIEW-RUBRICS §1), then return the complete revised JSON. Fix what is weak and keep what works. At most 2 rounds.
+9. **Critique:** look at your rendered sheet with the sprite rubric (REVIEW-RUBRICS §1), then return the complete revised JSON. Fix what is weak and keep what works. At most 2 rounds (the crew runs one; "Finish within" near the cap may run none). The checker findings you are shown are only ones you can fix in the grid: provenance, licence and the file's records are filled in by the system.
 
 ## Stop conditions
 - Valid JSON passing the hard rules, after at most 2 critique rounds. Or 2 repairs failed: return what you have, with a note.

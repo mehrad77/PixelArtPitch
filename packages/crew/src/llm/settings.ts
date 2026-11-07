@@ -58,6 +58,10 @@ export const SettingsSchema = z.object({
     pipPlan: z.enum(["on", "shadow", "off"]).default("shadow"),
     /** review rounds per crew run: 2 = one review plus one round that checks the fixes */
     reviewRounds: z.union([z.literal(1), z.literal(2)]).default(2),
+    /** the highest thinking effort any call may send (a prompt card picks its own, up to this) */
+    effortCeiling: z.enum(["low", "medium", "high"]).default("medium"),
+    /** drawings per new asset: 1 = no judge (the drawing is cast), 2-3 = the Art Director picks the best */
+    variants: z.number().int().min(1).max(3).default(2),
   }),
   paths: z.object({ roots: z.array(z.string()), library: z.string(), ffmpeg: z.string() }),
   /** manual $/MTok per model id, applied with setPriceOverride by the caller */
@@ -162,6 +166,8 @@ export function defaultSettings(): Settings {
       concurrency: 4,
       pipPlan: "shadow",
       reviewRounds: 2,
+      effortCeiling: "medium",
+      variants: 2,
     },
     paths: { roots: [join(appDataDir(), "projects")], library: lib, ffmpeg: "ffmpeg" },
     prices: {},
@@ -180,6 +186,30 @@ export function loadSettings(dir = appDataDir()): Settings {
     defaults: { ...base.defaults, ...raw.defaults },
     paths: { ...base.paths, ...raw.paths },
   });
+}
+
+export type Effort = "low" | "medium" | "high" | "xhigh";
+const EFFORT_RANK: Record<Effort, number> = { low: 0, medium: 1, high: 2, xhigh: 3 };
+/**
+ * The effort a call really sends: the card's own, never above the Settings ceiling (default medium). A card that names
+ * none sends none (the provider's default).
+ */
+export function clampEffort(effort: Effort | undefined, ceiling: Effort = "medium"): Effort | undefined {
+  if (!effort) return undefined;
+  return EFFORT_RANK[effort] > EFFORT_RANK[ceiling] ? ceiling : effort;
+}
+
+/**
+ * `PUT /api/settings` (and the mock's save): the nested objects (`defaults`, `paths`) merge field by field, so a form
+ * that sends four defaults keeps the rest (pipPlan, reviewRounds, the effort ceiling, variants). Records (`roles`,
+ * `prices`) and lists are replaced whole, so an entry can still be removed.
+ */
+export function mergeSettings<T extends { defaults?: object; paths?: object }>(cur: T, patch: Partial<T>): T {
+  const out = { ...cur, ...patch } as T;
+  for (const k of ["defaults", "paths"] as const)
+    if (patch[k] && typeof patch[k] === "object")
+      (out as any)[k] = { ...((cur as any)[k] ?? {}), ...(patch[k] as object) };
+  return out;
 }
 
 /** Validates, strips anything that looks like a key, writes atomically. */

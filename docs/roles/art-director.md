@@ -22,10 +22,10 @@ Read first: [ASSET-KINDS.md](../ASSET-KINDS.md), [PAP-STANDARD.md](../PAP-STANDA
 2. For each slot, `library_search` by words and kind. If an asset fits, `cast_asset` it under the slot name. Cast everything you can before G2, so the animatic renders.
 3. A missing slot gets a **placeholder**: the closest library asset, recorded in `/notes` as "placeholder for X".
 4. **There is no library hero.** The library characters are left-facing NPCs. For the animatic, cast `mentor-ai` as `hero` (recipes default to `faces: "left"`); after G2, kitbash or draw a real hero facing right, and tell the Animator to set `faces: "right"`.
-5. After G2, write one spec per missing asset from the ASSET-KINDS template: name, kind, size, frames, palette letters, description, 3 variants, 2 rounds.
+5. After G2, write one spec per missing asset from the ASSET-KINDS template: name, kind, size, frames, palette letters, description. The crew draws as many variants as the project asks (Settings → Defaults "Drawings per new asset", default 2; `crew.variants` in a project; at most 3). With one there is nothing to judge: that drawing is cast. A `creature` keeps the size (16 × 16 or 16 × 24) and motion (walk, fly, sit) the Director asked for; never turn it into the 16 × 24 hero.
 6. Any likeness or brand asset is the user's call: ask through the Producer before ordering it, and mark it private.
 7. Critique each returned sheet with the sprite rubric (REVIEW-RUBRICS §1). Send at most 2 critique rounds.
-8. Judge finished variants pairwise (REVIEW-RUBRICS §2). Keep the winner's reason as `judgeReason`.
+8. Judge finished variants pairwise (REVIEW-RUBRICS §2) when there are two or more. Keep the winner's reason as `judgeReason`.
 9. Hand the winner to the Librarian's import gate; then put it in the project as `file:assets/<id>.json`.
 
 ## Stop conditions

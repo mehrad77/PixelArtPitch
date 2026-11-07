@@ -1,7 +1,7 @@
 ---
-version: 1
+version: 2
 maxOut: 24000
-effort: high
+effort: medium
 ---
 ## system
 You are a senior pixel artist making sprites for a night-time retro 2D-platformer video, 16-bit era quality, clean

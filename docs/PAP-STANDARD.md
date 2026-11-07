@@ -22,8 +22,8 @@ The checker is `checkAsset()` in `packages/engine/src/standard.ts`. Per-kind tem
 | `legend` | Only palette letters and `.`; never `#` | Replace illegal letters |
 | `feet` | Characters: the bottom row is not empty, except in frames named `jump…` or `fall…` | Move the figure down |
 | `orphans` | No opaque cell with all 8 neighbours transparent (fonts are exempt) | Remove or connect the pixel |
-| `swap` | Characters: idle0 → idle1 and each run step repaint ≤ 50% of the opaque cells | Change less between loop frames |
-| `contrast` | Kinds drawn on the sky (character, crowd, prop, icon, block, decor, logo): ≥ 40% of the silhouette's edge ring reaches 1.7:1 against `#0f1411`, on every frame | Lighten the ring just inside the outline |
+| `swap` | Characters and creatures: idle0 → idle1, each run or move step, and perch0 → perch1 repaint ≤ 50% of the opaque cells | Change less between loop frames |
+| `contrast` | Kinds drawn on the sky (character, creature, crowd, prop, icon, block, decor, logo): ≥ 40% of the silhouette's edge ring reaches 1.7:1 against `#0f1411`, on every frame | Lighten the ring just inside the outline |
 | `rights` | `licence` is not empty, and `provenance` is not empty | Fill both (§5) |
 
 The edge ring is the first ring of non-ink cells next to transparency or ink. Ink means any colour under 1.25:1 against the sky, such as `k`.
@@ -33,6 +33,7 @@ The edge ring is the first ring of non-ink cells next to transparency or ink. In
 | Kind | Allowed sizes (w × h) |
 |---|---|
 | character (hero or NPC) | 16 × 24 |
+| creature (an animal or small being) | 16 × 16 or 16 × 24 |
 | crowd | w a multiple of 16, up to 96; h 16 or 24 |
 | prop | 24 × 32, 16 × 32 or 16 × 16 |
 | icon | 12 × 12, 16 × 16 or 8 × 8 |
@@ -51,6 +52,7 @@ The edge ring is the first ring of non-ink cells next to transparency or ink. In
 |---|---|
 | character, hero | `idle0 idle1 run0 run1 run2 run3 jump wave` |
 | character tagged `npc` | `idle0` (usually also `idle1`, plus one action such as `give`) |
+| creature | `idle0 idle1`, plus its motion's frames (not checked): walk `move0`–`move3`; fly `move0`–`move3` and `perch0 perch1`; sit `perch0 perch1` |
 | font | `g65`…`g90` (A–Z) and `g48`…`g57` (0–9). Frame name = `g` + the character's code point. Lower case and punctuation are optional. |
 | every other kind | At least 1 frame, named for what it shows (`signpost`, `flag0`, `node-done`) |
 

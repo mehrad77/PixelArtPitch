@@ -169,6 +169,8 @@ export type LedgerRow = {
   estUsd: number | null;
   /** the BudgetGuard ticket this call settled, so restarts can reconcile reservations */
   ticket?: string | null;
+  /** the thinking effort the request sent (after the Settings ceiling); null when it sent none */
+  effort?: string | null;
 };
 
 export class BudgetError extends Error {
