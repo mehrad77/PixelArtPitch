@@ -68,3 +68,14 @@
 .mcp-dl dd {
   margin: 0;
 }
+/* Setup first; the rest folds under Advanced */
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-4);
+  margin-block-end: var(--space-5);
+}
+.settings-tabs ul {
+  margin: 0;
+}

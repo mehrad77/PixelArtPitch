@@ -127,6 +127,15 @@ export class HttpClient implements Client {
   async crewResume(id: string) {
     await this.post(`/api/p/${enc(id)}/crew/resume`);
   }
+  async crewRetry(id: string, taskId: string, stage?: Stage) {
+    try {
+      await this.post(`/api/p/${enc(id)}/crew/retry`, { taskId });
+    } catch (e) {
+      // an older server has no retry: run the stage again
+      if (e instanceof ApiError && (e.status === 404 || e.status === 405)) await this.crewRun(id, stage);
+      else throw e;
+    }
+  }
   async transcript(id: string, taskId: string) {
     try {
       const res = await fetch(`/api/p/${enc(id)}/tasks/${enc(taskId)}/transcript`);

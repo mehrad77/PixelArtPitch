@@ -49,7 +49,7 @@ export function ProjectsPage() {
             {data.map((p) => (
               <tr key={p.id}>
                 <td>
-                  <Link className="row-link" href={`/p/${encodeURIComponent(p.id)}/${p.stage}`}>
+                  <Link className="row-link" href={`/p/${encodeURIComponent(p.id)}`}>
                     {p.title}
                   </Link>
                   <div className="muted mono small ltr">{p.dir}</div>

@@ -1,4 +1,6 @@
 // Views over ProjectState: departments, stage states, timeline clips. Pure functions, no React.
+
+import { CLIP_STATE_WORD, isRecovered, VERSION_WORD } from "./human.ts";
 import type {
   ClipState,
   GateId,
@@ -98,9 +100,12 @@ const ACTIVE_ORDER: TaskStatus[] = [
   "done",
   "cancelled",
 ];
-/** the task that speaks for a group of tasks: needs-you first, then failures, then work in progress */
+/** the task that speaks for a group of tasks: needs-you first, then failures, then work in progress. A failure a
+ * later try recovered never speaks. */
 export function leadTask(tasks: Task[]): Task | undefined {
-  return [...tasks].sort((a, b) => ACTIVE_ORDER.indexOf(a.status) - ACTIVE_ORDER.indexOf(b.status))[0];
+  return tasks
+    .filter((t) => !isRecovered(t, tasks))
+    .sort((a, b) => ACTIVE_ORDER.indexOf(a.status) - ACTIVE_ORDER.indexOf(b.status))[0];
 }
 
 /** 0..1 from elapsed vs ETA, or undefined when unknown (indeterminate bar) */
@@ -167,14 +172,7 @@ export type Clip = {
   cue?: string;
   kind?: "note" | "finding" | "gate";
 };
-export const CLIP_WORD: Record<ClipState, string> = {
-  planned: "planned",
-  drafting: "drafting",
-  ready: "ready",
-  stale: "stale",
-  approval: "needs approval",
-  locked: "locked",
-};
+export const CLIP_WORD: Record<ClipState, string> = CLIP_STATE_WORD;
 
 const sceneStatusOf = (s: ProjectState, id: string): SceneStatus =>
   s.sceneStatus?.[id] ?? { version: "slate", stale: false, state: "planned" };
@@ -270,7 +268,7 @@ export function buildClips(s: ProjectState): Clip[] {
       track: "picture",
       from: sc.from,
       to: sc.to,
-      label: st.version,
+      label: VERSION_WORD[st.version],
       state,
       scene: sc.id,
       by: st.by,

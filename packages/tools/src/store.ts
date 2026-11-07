@@ -611,7 +611,11 @@ export class Workspace {
       ],
       audio: { sfx: {}, music: { generator: "chip-bed" } },
       delivery: [{ id: "hd", scale: 6, crf: 16, out: `${slug}.mp4` }],
-      assets: [{ id: "font", src: "lib:font-5x8@1" }],
+      // what the night backdrop and the common recipes draw, so a new project never shows missing-asset boxes
+      assets: [
+        { id: "font", src: "lib:font-5x8@1" },
+        ...["moon", "skyline", "tiles", "props", "qblock", "items", "powerups", "castle", "gamers"].map((id) => ({ id, src: `lib:${id}@1` })),
+      ],
       budget: { capUsd: input.budgetUsd },
     });
     writeFileSync(join(dir, "pitch.json"), `${JSON.stringify(doc, null, 2)}\n`);

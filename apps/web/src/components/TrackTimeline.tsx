@@ -1,12 +1,38 @@
 // The track timeline: Notes, Scenes, Picture, Text, Voice, SFX and Music against one time axis, with a playhead,
 // zoom and an In/Out range. The axis runs left to right in every language (dir="ltr"). Each clip says its state in
 // a word (and a pattern), never by colour alone. Nothing here scrolls or seeks unless the user does it.
-import { Button } from "@shabboo/kit/react";
-import { type KeyboardEvent, type PointerEvent, useMemo, useRef } from "react";
+// Labels follow the room a clip has: under 56 px a state glyph only (the name is in the tooltip and accessible name),
+// 56–140 px the word, wider the word and the label. Words are never cut: a label that doesn't fit drops whole words.
+// Planned clips are a dashed outline with no word. Tracks with nothing on them are hidden; zoom fits on mount.
+import { Button, Popover } from "@shabboo/kit/react";
+import { type KeyboardEvent, type PointerEvent, useLayoutEffect, useMemo, useRef } from "react";
 import { CLIP_WORD, type Clip, initials, TRACKS, type TrackId } from "../lib/derive.ts";
 import { clamp, FPS, timecode } from "../lib/format.ts";
 import type { Playback } from "../lib/playback.ts";
+import type { ClipState } from "../lib/types.ts";
 import "./TrackTimeline.css";
+
+const GLYPH: Record<ClipState, string> = {
+  planned: "",
+  drafting: "…",
+  ready: "✓",
+  stale: "!",
+  approval: "?",
+  locked: "■",
+};
+/** about one mono character at --step--2, in px */
+const CH = 6.6;
+/** the words of `text` that fit in `chars` characters, whole, with an ellipsis when some were dropped */
+function fitWords(text: string, chars: number): string {
+  if (text.length <= chars) return text;
+  let out = "";
+  for (const w of text.split(/\s+/)) {
+    const next = out ? `${out} ${w}` : w;
+    if (next.length + 1 > chars) break;
+    out = next;
+  }
+  return out ? `${out}…` : "";
+}
 
 export function TrackTimeline({
   clips,
@@ -34,6 +60,7 @@ export function TrackTimeline({
     return m;
   }, [clips]);
 
+  const tracks = TRACKS.filter((t) => byTrack.get(t.id)?.length);
   const tick = zoom >= 80 ? 1 : zoom >= 30 ? 2 : zoom >= 12 ? 5 : 10;
   const ticks: number[] = [];
   for (let s = 0; s <= pb.duration; s += tick) ticks.push(s);
@@ -64,6 +91,9 @@ export function TrackTimeline({
     const w = scroller.current?.clientWidth ?? 800;
     setZoom(clamp(Math.floor((w - 48) / pb.duration), 4, 200));
   };
+  // fit once when the timeline first shows; after that the zoom is the person's
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on mount only
+  useLayoutEffect(fit, []);
 
   const [i, o] = inOut;
   return (
@@ -72,30 +102,33 @@ export function TrackTimeline({
         <h2 className="label">Timeline</h2>
         <fieldset className="tracks-zoom">
           <legend className="visually-hidden">Zoom</legend>
-          <Button size="sm" variant="ghost" onClick={() => setZoom(clamp(zoom / 1.5, 4, 200))}>
-            Zoom out
+          <Button size="sm" variant="ghost" aria-label="Zoom out" onClick={() => setZoom(clamp(zoom / 1.5, 4, 200))}>
+            −
           </Button>
           <Button size="sm" variant="ghost" onClick={fit}>
             Fit
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setZoom(clamp(zoom * 1.5, 4, 200))}>
-            Zoom in
+          <Button size="sm" variant="ghost" aria-label="Zoom in" onClick={() => setZoom(clamp(zoom * 1.5, 4, 200))}>
+            +
           </Button>
-          <span className="muted small mono">{Math.round(zoom)} px/s</span>
         </fieldset>
-        <ul className="tracks-legend" aria-label="Clip states">
-          {(Object.keys(CLIP_WORD) as (keyof typeof CLIP_WORD)[]).map((s) => (
-            <li key={s}>
-              <span className="clip legend-swatch" data-state={s} aria-hidden="true" />
-              {CLIP_WORD[s]}
-            </li>
-          ))}
-        </ul>
+        <Popover id="tracks-key" label="Key" variant="quiet" size="sm">
+          <ul className="tracks-legend" aria-label="Clip states">
+            {(Object.keys(CLIP_WORD) as ClipState[]).map((s) => (
+              <li key={s}>
+                <span className="clip legend-swatch" data-state={s} aria-hidden="true">
+                  {GLYPH[s]}
+                </span>
+                {CLIP_WORD[s]}
+              </li>
+            ))}
+          </ul>
+        </Popover>
       </div>
       <div className="tracks-body" dir="ltr">
         <div className="tracks-heads" aria-hidden="true">
           <div className="track-head ruler-head" />
-          {TRACKS.map((t) => (
+          {tracks.map((t) => (
             <div key={t.id} className="track-head">
               {t.label}
             </div>
@@ -133,7 +166,7 @@ export function TrackTimeline({
                 }}
               />
             )}
-            {TRACKS.map((tr) => (
+            {tracks.map((tr) => (
               <ul key={tr.id} className="track" aria-label={`${tr.label} track`}>
                 {(byTrack.get(tr.id) ?? []).map((c) => {
                   const left = c.from * zoom;
@@ -160,21 +193,7 @@ export function TrackTimeline({
                           onSelect(c);
                         }}
                       >
-                        {!c.point && (
-                          <>
-                            {c.state === "drafting" && c.by && (
-                              <span className="clip-avatar" aria-hidden="true">
-                                {initials(c.by)}
-                              </span>
-                            )}
-                            <span className="clip-word" aria-hidden="true">
-                              {word}
-                            </span>
-                            <span className="clip-label" aria-hidden="true">
-                              {c.label}
-                            </span>
-                          </>
-                        )}
+                        {!c.point && <ClipText clip={c} w={w} word={word} />}
                       </button>
                     </li>
                   );
@@ -186,5 +205,38 @@ export function TrackTimeline({
         </div>
       </div>
     </section>
+  );
+}
+
+function ClipText({ clip: c, w, word }: { clip: Clip; w: number; word: string }) {
+  const planned = c.state === "planned";
+  if (w < 56)
+    return planned ? null : (
+      <span className="clip-glyph" aria-hidden="true">
+        {GLYPH[c.state]}
+      </span>
+    );
+  const avatar = c.state === "drafting" && c.by && w > 140;
+  const room = Math.floor((w - 12 - (avatar ? 24 : 0)) / CH);
+  const shownWord = planned ? "" : word;
+  const label = w > 140 || planned ? fitWords(c.label, room - (shownWord ? shownWord.length + 1 : 0)) : "";
+  return (
+    <>
+      {avatar && c.by && (
+        <span className="clip-avatar" aria-hidden="true">
+          {initials(c.by)}
+        </span>
+      )}
+      {shownWord && (
+        <span className="clip-word" aria-hidden="true">
+          {fitWords(shownWord, room) || GLYPH[c.state]}
+        </span>
+      )}
+      {label && (
+        <span className="clip-label" aria-hidden="true">
+          {label}
+        </span>
+      )}
+    </>
   );
 }

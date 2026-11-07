@@ -57,6 +57,10 @@ export type Task = {
   error?: { message: string; fix?: string };
   lastImage?: string;
   parent?: string;
+  /** extension: the id of the task that retried this one */
+  supersededBy?: string;
+  /** extension: 1 for the first try, 2 for the first retry… */
+  attempt?: number;
 };
 
 export type GateId = "g0_brief" | "g1_script" | "g2_animatic" | "g3_rough" | "g4_final";
@@ -127,6 +131,16 @@ export type ArtAsset = {
   variants: { id: string; img: string; score?: number; reason?: string }[];
 };
 export type CrewState = "idle" | "running" | "pausing" | "paused";
+export type ProblemAction = "retry" | "change_model" | "add_budget";
+/** extension: the one sentence the person sees, and the one problem the crew can't fix alone */
+export type ProjectStatus = {
+  line: string;
+  /** 0..4: Idea, Story, Pictures, Sound, Finished */
+  phase: number;
+  etaSec?: number;
+  problem?: { text: string; action: ProblemAction; taskId: string };
+};
+export type Milestone = { id: string; at: string; text: string; image?: string };
 
 export type ProjectState = {
   doc: ProjectT;
@@ -146,6 +160,8 @@ export type ProjectState = {
   findings?: Finding[];
   art?: ArtAsset[];
   crew?: { state: CrewState };
+  status?: ProjectStatus;
+  milestones?: Milestone[];
 };
 
 export type Session = { version: string; token: string; workspace: { roots: string[]; libraryDir: string } };
@@ -210,6 +226,10 @@ export type ServerEvent =
   | { event: "render"; data: { kind: "proxy" | "still" | "final"; url: string } }
   | { event: "log"; data: { level: string; text: string; role?: Role } }
   | { event: "stage"; data: { stage: Stage } }
+  /** extension: the plain status line and the problem, if any */
+  | { event: "status"; data: ProjectStatus }
+  /** extension: one more thing finished, in plain words */
+  | { event: "milestone"; data: Milestone }
   /** extension: merge these top-level fields (the mock uses it for sceneStatus, findings, art, crew, files, time) */
   | { event: "x-state"; data: Partial<ProjectState> };
 
@@ -246,6 +266,8 @@ export interface Client {
   crewRun(id: string, stage?: Stage): Promise<void>;
   crewPause(id: string, mode: "after_step" | "now"): Promise<void>;
   crewResume(id: string): Promise<void>;
+  /** extension: POST …/crew/retry { taskId }; falls back to crew/run for `stage` when the server has no retry */
+  crewRetry(id: string, taskId: string, stage?: Stage): Promise<void>;
   /** extension: the agent transcript of a task; null when the server has none */
   transcript(id: string, taskId: string): Promise<string | null>;
   uploadVo(id: string, body: Blob, take: string): Promise<{ file: string }>;

@@ -1,6 +1,8 @@
 import { Badge, EmptyState, SkipLink } from "@shabboo/kit/react";
+import { SimpleProjectPage } from "./components/SimpleProject.tsx";
 import { client } from "./lib/client.ts";
 import { isStage } from "./lib/derive.ts";
+import { getView } from "./lib/human.ts";
 import { Link, match, navigate, usePath } from "./lib/router.tsx";
 import { ComposerPage } from "./pages/Composer.tsx";
 import { LibraryPage } from "./pages/Library.tsx";
@@ -14,7 +16,7 @@ function Route({ path }: { path: string }) {
   if (path === "/new") return <ComposerPage />;
   if (path === "/library") return <LibraryPage />;
   if (path === "/settings") {
-    navigate("/settings/providers", { replace: true });
+    navigate("/settings/setup", { replace: true });
     return null;
   }
   let m = match("/settings/:tab", path);
@@ -23,11 +25,14 @@ function Route({ path }: { path: string }) {
   if (m) return <RecordPage id={m.id} />;
   m = match("/p/:id/:stage", path);
   if (m && isStage(m.stage)) return <WorkspacePage key={m.id} id={m.id} stage={m.stage} />;
+  // the project's own address opens the simple view, or Studio when the person last chose it; a stage is Studio
   m = match("/p/:id", path);
-  if (m) {
-    navigate(`/p/${encodeURIComponent(m.id)}/brief`, { replace: true });
-    return null;
-  }
+  if (m)
+    return getView() === "studio" ? (
+      <WorkspacePage key={`studio-${m.id}`} id={m.id} />
+    ) : (
+      <SimpleProjectPage key={m.id} id={m.id} />
+    );
   return (
     <main id="main" className="page-narrow">
       <EmptyState title="This page doesn't exist" action={<Link href="/">Go to projects</Link>}>
@@ -54,7 +59,7 @@ export function App() {
           <Link href="/library" aria-current={section === "library" ? "page" : undefined}>
             Library
           </Link>
-          <Link href="/settings/providers" aria-current={section === "settings" ? "page" : undefined}>
+          <Link href="/settings/setup" aria-current={section === "settings" ? "page" : undefined}>
             Settings
           </Link>
         </nav>

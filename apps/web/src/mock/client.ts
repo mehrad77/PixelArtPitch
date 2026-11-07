@@ -1,6 +1,7 @@
 // The in-browser mock backend (?mock=1 or VITE_PAP_MOCK=1). One singleton holds every project; a simulated crew
 // runs a project only while something subscribes to it (ref-counted, so React's StrictMode double effects are safe).
 // The simulation never seeks, scrolls or opens anything: it only emits events, like the server would.
+import { humanStatus, PHASES, phaseOf, problemOf } from "../lib/human.ts";
 import { applyEvent } from "../lib/reducer.ts";
 import type {
   AnswerInput,
@@ -13,12 +14,14 @@ import type {
   GateId,
   GateVerdict,
   LibraryIndex,
+  Milestone,
   ModelRow,
   Note,
   NoteInput,
   PatchEntryT,
   PatchOpT,
   ProjectState,
+  ProjectStatus,
   ProjectSummary,
   ProjectT,
   QuestionT,
@@ -61,6 +64,27 @@ type MockProject = {
   pauseIn: number | null;
   reopen: { gate: GateId; at: number } | null;
   transcripts: Map<string, string[]>;
+  /** a first try's id → the id of its newest retry, so the script keeps addressing the live task */
+  alias: Map<string, string>;
+  /** the script waits while a problem only the person can fix is open */
+  hold: boolean;
+  lastStatus: string;
+};
+
+/** the orchestrator's task kinds, by mock task id */
+const KIND: Record<string, string> = {
+  t_producer: "producer.plan",
+  t_writer: "writer.angles",
+  t_director: "director.storyboard",
+  t_librarian: "lib.match",
+  t_art: "asset.draw",
+  t_ad: "asset.judge",
+  t_sound: "sound.sfx",
+  t_anim: "scene.tune",
+  t_editor: "vo.align",
+  t_mixer: "sound.mix",
+  t_review: "review.final",
+  t_export: "deliver.export",
 };
 
 function timelineOf(doc: ProjectT): TimelineJSON {
@@ -80,7 +104,7 @@ function timelineOf(doc: ProjectT): TimelineJSON {
 }
 
 function task(id: string, role: Role, title: string, status: Task["status"], extra: Partial<Task> = {}): Task {
-  return { id, kind: role, role, title, status, model: ROLE_MODELS[role], usd: 0, estUsd: 0.3, ...extra };
+  return { id, kind: KIND[id] ?? role, role, title, status, model: ROLE_MODELS[role], usd: 0, estUsd: 0.3, ...extra };
 }
 
 function newProject(
@@ -131,6 +155,7 @@ function newProject(
           usd: seeded ? 0.18 : 0,
           estUsd: 0.2,
           summary: seeded ? "Split the $6 cap: story 20%, art 45%, animation 20%, sound and edit 15%." : undefined,
+          ...(seeded ? { startedAt: iso(-900), endedAt: iso(-840) } : {}),
         },
       ),
     ],
@@ -158,6 +183,7 @@ function newProject(
     findings: [],
     art: [],
     crew: { state: "running" },
+    milestones: seeded ? [{ id: "m_plan", at: iso(-840), text: "Plan ready" }] : [],
   };
   const history: PatchEntryT[] = seeded
     ? [
@@ -199,6 +225,9 @@ function newProject(
     pauseIn: null,
     reopen: null,
     transcripts: new Map(),
+    alias: new Map(),
+    hold: false,
+    lastStatus: "",
   };
 }
 
@@ -279,7 +308,8 @@ class MockBackend {
     const copy = clone(e);
     for (const l of p.listeners) l(copy);
   }
-  setTask(p: MockProject, id: string, patch: Partial<Task> & { role?: Role; title?: string }) {
+  setTask(p: MockProject, first: string, patch: Partial<Task> & { role?: Role; title?: string }) {
+    const id = p.alias.get(first) ?? first;
     const old = p.state.tasks.find((t) => t.id === id);
     const role = patch.role ?? old?.role ?? "producer";
     const next: Task = { ...(old ?? task(id, role, patch.title ?? "", "queued")), ...patch };
@@ -287,6 +317,48 @@ class MockBackend {
     if (patch.status === "done") next.endedAt = iso();
     this.emit(p, { event: "task", data: next });
     this.log(p, role, `${next.title}: ${next.status}`);
+  }
+  /** start a new try of a failed task: the old one points at it, and the script follows the new id */
+  retry(p: MockProject, first: string, extra: Partial<Task> = {}) {
+    const old = p.state.tasks.find((t) => t.id === (p.alias.get(first) ?? first) || t.id === first);
+    if (!old) return;
+    const base = [...p.alias.entries()].find(([, v]) => v === old.id)?.[0] ?? old.id;
+    const attempt = (old.attempt ?? 1) + 1;
+    const next = `${base}_${attempt}`;
+    this.setTask(p, old.id, { supersededBy: next });
+    this.setTask(p, next, {
+      role: old.role,
+      kind: old.kind,
+      title: old.title,
+      parent: old.parent,
+      status: "working",
+      attempt,
+      etaSec: 5,
+      estUsd: old.estUsd,
+      error: undefined,
+      ...extra,
+    });
+    p.alias.set(base, next);
+  }
+  milestone(p: MockProject, text: string, image?: string) {
+    const m: Milestone = { id: `m_${p.seq}`, at: iso(), text, ...(image ? { image } : {}) };
+    this.emit(p, { event: "milestone", data: m });
+  }
+  /** what the server will send as `status`: the same plain sentence the client derives, plus the problem */
+  pushStatus(p: MockProject) {
+    const bare: ProjectState = { ...p.state, status: undefined };
+    const h = humanStatus(bare);
+    const eta = bare.time.etaSec;
+    const st: ProjectStatus = {
+      line: h.text,
+      phase: Math.min(PHASES.length - 1, phaseOf(bare)),
+      ...(eta && eta[1] > 0 ? { etaSec: (eta[0] + eta[1]) / 2 } : {}),
+      ...(problemOf(bare) ? { problem: problemOf(bare) } : {}),
+    };
+    const key = JSON.stringify(st);
+    if (key === p.lastStatus) return;
+    p.lastStatus = key;
+    this.emit(p, { event: "status", data: st });
   }
   log(p: MockProject, role: Role, line: string) {
     const list = p.transcripts.get(role) ?? [];
@@ -349,7 +421,7 @@ class MockBackend {
 
   tick(p: MockProject) {
     const crew = p.state.crew?.state ?? "running";
-    if (crew === "paused" || crew === "idle") return;
+    if (crew === "paused" || crew === "idle") return this.pushStatus(p);
     if (crew === "pausing" && p.pauseIn != null && --p.pauseIn <= 0) {
       p.pauseIn = null;
       this.x(p, { crew: { state: "paused" } });
@@ -394,8 +466,11 @@ class MockBackend {
       this.digest(p, "The Producer revised the work you sent back. It is ready for another look.");
       p.reopen = null;
     }
-    this.script(p);
-    p.tick++;
+    if (!p.hold) {
+      this.script(p);
+      p.tick++;
+    }
+    this.pushStatus(p);
   }
 
   /** the crew's run, as a list of timed beats per phase; a phase waits on the user at its end */
@@ -434,6 +509,7 @@ class MockBackend {
             status: "done",
             summary: "Planned eight cues, five scenes and a 45% art share of the budget.",
           });
+          this.milestone(p, "Plan ready");
           this.gateSet(p, "g0_brief", "open");
           this.digest(
             p,
@@ -517,6 +593,8 @@ class MockBackend {
         return;
       case 2:
         if (k === 0) {
+          if (p.state.tasks.find((t) => t.id === "t_librarian")?.status === "working")
+            this.setTask(p, "t_librarian", { status: "done", summary: "Found moon, props and tiles in the library." });
           this.stage(p, "storyboard");
           this.setTask(p, "t_director", {
             role: "director",
@@ -548,12 +626,17 @@ class MockBackend {
               fix: "Start LM Studio's local server, or pick another Sound model in Settings, Roles.",
             },
           });
+        // the crew fixes this one alone: it retries on the fallback model, and the person never hears about it
+        if (k === 10) this.retry(p, "t_sound", { model: ROLE_MODELS.writer });
+        if (k === 13)
+          this.setTask(p, "t_sound", { status: "done", summary: "Picked six SFX hits on the fallback model." });
         if (k === 11) {
           this.setTask(p, "t_director", {
             status: "done",
             title: "Boarded 5 scenes",
             summary: "Five scenes, one beat each; the long walk is cut to one beat as you noted.",
           });
+          this.milestone(p, "Storyboard ready", p.state.tasks.find((t) => t.id === "t_director")?.lastImage);
           this.allScenes(p, { version: "animatic", state: "approval" });
           this.emit(p, {
             event: "note",
@@ -572,6 +655,8 @@ class MockBackend {
         return;
       case 3: {
         if (k === 0) {
+          if (p.state.tasks.find((t) => t.id === p.alias.get("t_sound"))?.status === "working")
+            this.setTask(p, "t_sound", { status: "done", summary: "Picked six SFX hits on the fallback model." });
           this.stage(p, "art");
           this.setTask(p, "t_art", {
             role: "pixel-artist",
@@ -639,6 +724,7 @@ class MockBackend {
             title: "Drew hero and stall",
             summary: "Hero v2 and one stall, 4 frames each.",
           });
+          this.milestone(p, "Hero drawn", art[0]?.variants.find((v) => v.id === "v2")?.img);
           this.allScenes(p, { state: "drafting", by: "animator" });
         }
         if (k === 9) {
@@ -662,6 +748,7 @@ class MockBackend {
         }
         if (k === 16) {
           this.setTask(p, "t_anim", { status: "done", title: "Animated 5 scenes" });
+          this.milestone(p, "Scenes animated", p.state.tasks.find((t) => t.id === "t_anim")?.lastImage);
           this.gateSet(p, "g3_rough", "open");
           this.digest(
             p,
@@ -686,6 +773,17 @@ class MockBackend {
             etaSec: 6,
             estUsd: 0,
           });
+        }
+        // this one the crew can't fix alone: the script waits until the person presses Try again
+        if (k === 3 && !p.alias.has("t_mixer")) {
+          this.setTask(p, "t_mixer", {
+            status: "failed",
+            error: {
+              message: "The mix came back silent twice.",
+              fix: "Try again; if it fails a third time, pick another Mixer model in Settings, Roles.",
+            },
+          });
+          p.hold = true;
         }
         if (k === 6) {
           this.setTask(p, "t_mixer", { status: "done", summary: "Music −14 dB, SFX −15 dB, limiter 0.84." });
@@ -727,6 +825,7 @@ class MockBackend {
           ];
           this.x(p, { findings: f });
           this.setTask(p, "t_review", { status: "done", summary: "Three findings: one error, one warning, one note." });
+          this.milestone(p, "Checked for mistakes");
           this.gateSet(p, "g4_final", "open");
           this.digest(
             p,
@@ -737,7 +836,9 @@ class MockBackend {
       case 5:
         if (k === 0) {
           this.stage(p, "deliver");
-          this.setTask(p, "t_editor", {
+          if (p.state.tasks.find((t) => t.id === "t_editor")?.status === "waiting_user")
+            this.setTask(p, "t_editor", { status: "done", title: "Lined up the narration" });
+          this.setTask(p, "t_export", {
             role: "editor",
             title: "Encoding the final at 6×",
             status: "working",
@@ -745,7 +846,7 @@ class MockBackend {
           });
         }
         if (k === 5) {
-          this.setTask(p, "t_editor", {
+          this.setTask(p, "t_export", {
             status: "done",
             title: "Encoded the final",
             summary: "1920×1080, 30 fps, −15 LUFS.",
@@ -767,6 +868,7 @@ class MockBackend {
             time: { ...p.state.time, etaSec: [0, 0] },
           });
           this.digest(p, "The final is encoded with subtitles. Everything is in Deliver.");
+          this.milestone(p, "Your video is ready");
         }
         return;
     }
@@ -892,6 +994,7 @@ export class MockClient implements Client {
         summary: `Went with the ${pick} angle: ${p.state.doc.script.cues.length} cues.`,
       });
       b.gateSet(p, "g1_script", "passed");
+      b.milestone(p, "Script written · 3 options");
       b.digest(p, `You picked the ${pick} angle. The Director is boarding the scenes now.`);
       b.advance(p);
     }
@@ -962,6 +1065,16 @@ export class MockClient implements Client {
     p.pauseIn = null;
     b.x(p, { crew: { state: "running" } });
     b.digest(p, "The crew is back at work.");
+  }
+  async crewRetry(id: string, taskId: string) {
+    await wait();
+    const b = be();
+    const p = b.get(id);
+    if (!p.state.tasks.some((t) => t.id === taskId && t.status === "failed"))
+      throw new Error("That task isn't stopped.");
+    b.retry(p, taskId);
+    p.hold = false;
+    b.pushStatus(p);
   }
   async transcript(id: string, taskId: string) {
     await wait();

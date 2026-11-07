@@ -340,7 +340,7 @@ function Recorder({ id, state, proxy }: { id: string; state: ProjectState; proxy
     <main id="main" className="page record">
       <div className="page-head">
         <h1>Record narration</h1>
-        <Link href={`/p/${encodeURIComponent(id)}/narrate`}>Back to {state.doc.title}</Link>
+        <Link href={`/p/${encodeURIComponent(id)}`}>Back to {state.doc.title}</Link>
       </div>
       <p className="muted">
         The video plays muted so its effects don't reach your mic. Press <Kbd>Space</Kbd> to start, <Kbd>R</Kbd> to

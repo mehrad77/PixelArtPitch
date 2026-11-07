@@ -5,10 +5,11 @@ import { useEffect, useState } from "react";
 import { client } from "../lib/client.ts";
 import { DEPARTMENTS, type Department, leadTask, ROLE_LABEL, TASK_STATUS, taskProgress } from "../lib/derive.ts";
 import { duration, usd } from "../lib/format.ts";
+import { retriesOf, visibleTasks } from "../lib/human.ts";
 import type { ProjectState, Task } from "../lib/types.ts";
 import "./CrewRow.css";
 
-const modelName = (m?: string) => (m ? (m.split("/").pop() ?? m) : "No model yet");
+const modelName = (m?: string) => (m ? (m.split("/").pop() ?? m) : "Model picked when it starts");
 
 export function CrewPanel({ projectId, state }: { projectId: string; state: ProjectState }) {
   const [open, setOpen] = useState<Task | null>(null);
@@ -37,9 +38,12 @@ export function CrewPanel({ projectId, state }: { projectId: string; state: Proj
   );
 }
 
-export function CrewRow({ dept, tasks, onOpen }: { dept: Department; tasks: Task[]; onOpen: (t: Task) => void }) {
+export function CrewRow({ dept, tasks: all, onOpen }: { dept: Department; tasks: Task[]; onOpen: (t: Task) => void }) {
+  // a failure a later try recovered isn't news: hide it, and say "Retried 1×" on the try that took over
+  const tasks = visibleTasks(all);
+  const retried = (t: Task) => retriesOf(t, all);
   const lead = leadTask(tasks);
-  const spent = tasks.reduce((a, t) => a + t.usd, 0);
+  const spent = all.reduce((a, t) => a + t.usd, 0);
   const eta = tasks.filter((t) => t.status === "working").reduce((a, t) => Math.max(a, t.etaSec ?? 0), 0);
   const img = [...tasks].reverse().find((t) => t.lastImage)?.lastImage;
   const pid = `crew-${dept.id}`;
@@ -67,6 +71,11 @@ export function CrewRow({ dept, tasks, onOpen }: { dept: Department; tasks: Task
         <Badge tone={st.tone} live={lead.status === "working"}>
           {st.word}
         </Badge>
+        {retried(lead) > 0 && (
+          <span className="muted small" title="An earlier try stopped; the crew retried it on its own.">
+            Retried {retried(lead)}×
+          </span>
+        )}
         <span className="crew-money mono small">
           {usd(spent)}
           {eta > 0 && ` · ${duration(eta)} left`}
@@ -106,6 +115,7 @@ export function CrewRow({ dept, tasks, onOpen }: { dept: Department; tasks: Task
                   {TASK_STATUS[t.status].word}
                 </Badge>{" "}
                 <span>{ROLE_LABEL[t.role]}:</span> {t.title} <span className="muted mono small">{usd(t.usd)}</span>{" "}
+                {retried(t) > 0 && <span className="muted small">Retried {retried(t)}× </span>}
                 <Button size="sm" variant="quiet" onClick={() => onOpen(t)}>
                   Details
                 </Button>
@@ -143,7 +153,8 @@ function TaskDrawer({
     >
       <div className="stack-4">
         <p>
-          <Badge tone={st.tone}>{st.word}</Badge> <span className="mono small">{task.model ?? "No model"}</span> ·{" "}
+          <Badge tone={st.tone}>{st.word}</Badge>{" "}
+          <span className="mono small">{task.model ?? "Model picked when it starts"}</span> ·{" "}
           <span className="mono small">
             {usd(task.usd)}
             {task.estUsd != null && ` of about ${usd(task.estUsd)}`}

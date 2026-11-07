@@ -110,3 +110,26 @@
 .viewer-scene {
   min-inline-size: 8ch;
 }
+/* the simple view: the paused frame is a button ("what should change here?"); one play/scrub bar */
+.viewer-hit {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-raised);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: crosshair;
+}
+.viewer-hit:hover {
+  box-shadow: inset 0 0 0 1px var(--stroke-strong);
+}
+.viewer-min {
+  flex-wrap: nowrap;
+  gap: var(--space-3);
+}
+.viewer-scrub {
+  flex: 1;
+  min-inline-size: 0;
+  accent-color: var(--fill-accent);
+}

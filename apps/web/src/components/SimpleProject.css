@@ -1,0 +1,134 @@
+/* the simple view: one column, the film first */
+.simple {
+  display: grid;
+  gap: var(--space-4);
+  inline-size: min(100% - 2 * var(--gutter, 1rem), 56rem);
+  margin-inline: auto;
+  padding-block: var(--space-4) var(--space-6);
+}
+.sp-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+}
+.sp-back {
+  font-size: var(--step--1);
+}
+.sp-title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--step-2);
+}
+.sp-top-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.sp-money {
+  color: var(--text-muted);
+}
+.sp-money[data-warn] {
+  color: var(--status-warning);
+}
+.sp-pause-panel {
+  display: grid;
+  gap: var(--space-2);
+}
+.sp-film .viewer {
+  grid-template-rows: auto auto;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.sp-film .viewer-stage {
+  container-type: inline-size;
+  padding: 0;
+}
+.sp-film .viewer-frame {
+  inline-size: 100%;
+  outline: 0;
+}
+.sp-status {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-block-size: 2.5rem;
+}
+.sp-status > p:first-child {
+  position: relative;
+  z-index: var(--z-raised);
+  flex: 1;
+  margin: 0;
+  font-size: var(--step-1);
+  max-inline-size: var(--measure);
+}
+.sp-status[data-hero] {
+  min-block-size: 9rem;
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.sp-status[data-tone="problem"] > p:first-child::before {
+  content: "Stopped · ";
+  color: var(--status-error);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  text-transform: uppercase;
+}
+.sp-sofar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+}
+.sp-sofar h2 {
+  margin: 0;
+}
+.sp-sofar-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+}
+.sp-sofar-line li + li::before {
+  content: "·";
+  padding-inline: var(--space-2);
+}
+.sp-ms-img {
+  inline-size: 8rem;
+  border: 1px solid var(--stroke);
+}
+.sp-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--stroke-subtle);
+}
+/* steering popover, placed at the press */
+.steer {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  inline-size: 20rem;
+  max-inline-size: calc(100vw - 1rem);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--stroke-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.steer h2 {
+  margin: 0;
+}
+.steer-sent {
+  margin: 0;
+  color: var(--status-success);
+}

@@ -5,6 +5,7 @@ import {
   Callout,
   CodeBlock,
   CopyButton,
+  Disclosure,
   Field,
   Fieldset,
   Radio,
@@ -22,9 +23,10 @@ import { Link } from "../lib/router.tsx";
 import type { Cap, ModelRow, Profile, Provider, ProviderKind, Role, Settings } from "../lib/types.ts";
 import "./Settings.css";
 
-export const SETTINGS_TABS = ["providers", "models", "roles", "defaults", "mcp"] as const;
+export const SETTINGS_TABS = ["setup", "providers", "models", "roles", "defaults", "mcp"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 const TAB_LABEL: Record<SettingsTab, string> = {
+  setup: "Setup",
   providers: "Providers",
   models: "Models",
   roles: "Roles",
@@ -39,14 +41,23 @@ export function SettingsPage({ tab }: { tab: SettingsTab }) {
       <h1>Settings</h1>
       <nav aria-label="Settings sections" className="settings-tabs">
         <ul>
-          {SETTINGS_TABS.map((t) => (
-            <li key={t}>
-              <Link href={`/settings/${t}`} aria-current={t === tab ? "page" : undefined}>
-                {TAB_LABEL[t]}
-              </Link>
-            </li>
-          ))}
+          <li>
+            <Link href="/settings/setup" aria-current={tab === "setup" ? "page" : undefined}>
+              {TAB_LABEL.setup}
+            </Link>
+          </li>
         </ul>
+        <Disclosure size="sm" summary="Advanced" open={tab !== "setup" ? true : undefined}>
+          <ul>
+            {SETTINGS_TABS.filter((t) => t !== "setup").map((t) => (
+              <li key={t}>
+                <Link href={`/settings/${t}`} aria-current={t === tab ? "page" : undefined}>
+                  {TAB_LABEL[t]}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Disclosure>
       </nav>
       {s.error && (
         <Callout tone="error" title="Settings didn't load">
@@ -57,6 +68,7 @@ export function SettingsPage({ tab }: { tab: SettingsTab }) {
       {s.data && (
         <section aria-labelledby="settings-h2">
           <h2 id="settings-h2">{TAB_LABEL[tab]}</h2>
+          {tab === "setup" && <Setup settings={s.data} onSaved={s.reload} />}
           {tab === "providers" && <Providers settings={s.data} onSaved={s.reload} />}
           {tab === "models" && <Models />}
           {tab === "roles" && <Roles settings={s.data} onSaved={s.reload} />}
@@ -65,6 +77,165 @@ export function SettingsPage({ tab }: { tab: SettingsTab }) {
         </section>
       )}
     </main>
+  );
+}
+
+// ---- setup: one question, where the crew thinks ----
+type Where = "local" | "anthropic" | "both";
+const WHERE: { id: Where; label: string; profile: Exclude<Profile, "custom"> }[] = [
+  { id: "local", label: "On this Mac (LM Studio): free and private, slower", profile: "local" },
+  { id: "anthropic", label: "Anthropic: best quality, about $1–3 per video", profile: "best" },
+  { id: "both", label: "Both: local first, Anthropic when it matters", profile: "balanced" },
+];
+const LM_URL = "http://127.0.0.1:1234/v1";
+
+function Setup({ settings, onSaved }: { settings: Settings; onSaved: () => void }) {
+  const lm = settings.providers.find((p) => p.kind === "lmstudio");
+  const an = settings.providers.find((p) => p.kind === "anthropic");
+  const initial: Where =
+    settings.profile === "local"
+      ? "local"
+      : settings.profile === "best"
+        ? "anthropic"
+        : settings.profile === "balanced"
+          ? "both"
+          : lm?.enabled && !an?.enabled
+            ? "local"
+            : an?.enabled && !lm?.enabled
+              ? "anthropic"
+              : "both";
+  const [where, setWhere] = useState<Where>(initial);
+  const [url, setUrl] = useState(lm?.baseUrl ?? LM_URL);
+  const [key, setKey] = useState("");
+  const [hasKey, setHasKey] = useState(an?.hasKey ?? false);
+  const [msg, setMsg] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const useLocal = where !== "anthropic";
+  const useCloud = where !== "local";
+
+  /** writes the providers and the profile; returns false when nothing was saved */
+  const write = async (): Promise<boolean> => {
+    if (useLocal && !url.trim()) {
+      setMsg({ tone: "error", text: "Enter LM Studio's address, for example http://127.0.0.1:1234/v1." });
+      document.getElementById("setup-url")?.focus();
+      return false;
+    }
+    if (useCloud && !hasKey && !key.trim()) {
+      setMsg({ tone: "error", text: "Paste your Anthropic key; it starts with sk-ant-." });
+      document.getElementById("setup-key")?.focus();
+      return false;
+    }
+    const lmNext: Provider = {
+      id: lm?.id ?? "lmstudio",
+      kind: "lmstudio",
+      label: lm?.label ?? "LM Studio",
+      baseUrl: url.trim() || LM_URL,
+      hasKey: lm?.hasKey ?? false,
+      enabled: useLocal,
+    };
+    const anNext: Provider = {
+      id: an?.id ?? "anthropic",
+      kind: "anthropic",
+      label: an?.label ?? "Anthropic",
+      baseUrl: an?.baseUrl ?? "https://api.anthropic.com",
+      hasKey,
+      enabled: useCloud,
+    };
+    const others = settings.providers.filter((p) => p.kind !== "lmstudio" && p.kind !== "anthropic");
+    const profile = WHERE.find((w) => w.id === where)?.profile ?? "balanced";
+    try {
+      await client.saveSettings({ providers: [...others, lmNext, anNext], profile });
+      if (useCloud && key.trim()) {
+        await client.saveKey(anNext.id, key.trim());
+        setHasKey(true);
+        setKey("");
+      }
+      return true;
+    } catch (e) {
+      setMsg({ tone: "error", text: `${(e as Error).message}. Nothing was saved; try again.` });
+      return false;
+    }
+  };
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setMsg(null);
+    if (await write()) {
+      setMsg({ tone: "success", text: "Saved. New work uses this; running steps finish where they started." });
+      onSaved();
+    }
+  };
+  const check = async () => {
+    setMsg(null);
+    setTesting(true);
+    try {
+      if (!(await write())) return;
+      const r = await client.testProvider(lm?.id ?? "lmstudio");
+      setMsg(
+        r.ok
+          ? { tone: "success", text: `Connected. LM Studio has ${r.models.length} models ready.` }
+          : { tone: "error", text: r.error ?? "LM Studio didn't answer. Start its local server and check again." },
+      );
+    } finally {
+      setTesting(false);
+    }
+  };
+  return (
+    <form className="stack-4 narrow" onSubmit={save} noValidate>
+      <Fieldset id="setup-where" legend="Where should the crew think?">
+        {WHERE.map((w) => (
+          <Radio
+            key={w.id}
+            id={`setup-${w.id}`}
+            name="setup-where"
+            value={w.id}
+            label={w.label}
+            checked={where === w.id}
+            onChange={() => setWhere(w.id)}
+          />
+        ))}
+      </Fieldset>
+      {useLocal && (
+        <div className="stack-2">
+          <Field
+            id="setup-url"
+            label="LM Studio address"
+            code
+            type="url"
+            autoComplete="off"
+            value={url}
+            onChange={(e) => setUrl(e.currentTarget.value)}
+            hint="Start LM Studio's local server; this is the address it shows."
+          />
+          <div>
+            <Button size="sm" variant="ghost" onClick={check}>
+              {testing ? "Checking…" : "Check connection"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {useCloud && (
+        <Field
+          id="setup-key"
+          label={hasKey ? "Replace your Anthropic key" : "Anthropic key"}
+          type="password"
+          autoComplete="off"
+          value={key}
+          onChange={(e) => setKey(e.currentTarget.value)}
+          placeholder={hasKey ? "A key is saved; paste a new one to replace it" : "sk-ant-…"}
+          hint="Stored by the studio server, never shown again."
+        />
+      )}
+      <div className="provider-actions">
+        <Button type="submit" variant="primary">
+          Save
+        </Button>
+        {msg && (
+          <p className={msg.tone === "error" ? "decision-error" : "ok-text"} role="status">
+            {msg.text}
+          </p>
+        )}
+      </div>
+    </form>
   );
 }
 

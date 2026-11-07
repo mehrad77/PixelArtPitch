@@ -1,0 +1,137 @@
+/* crew faces: flat discs in the category hues, a two-glyph face in dark ink */
+.crew-strip {
+  display: flex;
+  justify-content: center;
+}
+.crew-faces {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.crew-faces li + li {
+  margin-inline-start: calc(var(--space-2) * -1);
+}
+.crew-face-btn.btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  min-block-size: 0;
+  border-radius: var(--radius-pill);
+  box-shadow: none;
+}
+.crew-face {
+  --face: 3.25rem;
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--face);
+  block-size: var(--face);
+  border-radius: var(--radius-pill);
+  background: var(--face-hue);
+  color: var(--surface);
+  box-shadow: 0 0 0 2px var(--surface);
+  font-family: var(--font-mono);
+  font-size: calc(var(--face) * 0.34);
+  font-weight: 700;
+  line-height: 1;
+  white-space: pre;
+}
+.crew-face[data-size="lg"] {
+  --face: 4.25rem;
+  position: relative;
+  z-index: var(--z-raised);
+}
+.crew-face[data-mood="later"] {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    inset 0 0 0 1px var(--stroke-control);
+}
+.crew-face[data-mood="stuck"],
+.crew-face[data-mood="needs"] {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--text-signal);
+}
+.crew-face-btn:focus-visible .crew-face {
+  outline: var(--focus-ring, 2px solid var(--stroke-strong));
+  outline-offset: 3px;
+}
+.crew-face-panel {
+  display: grid;
+  gap: var(--space-2);
+  max-inline-size: 16rem;
+}
+.crew-face-panel p {
+  margin: 0;
+  font-size: var(--step--1);
+}
+.crew-face-panel img {
+  inline-size: 100%;
+  border: 1px solid var(--stroke);
+}
+/* movement only without reduced motion: a stepped ring pulse while working, the eyes glance a cell */
+@media (prefers-reduced-motion: no-preference) {
+  .crew-face-glyphs {
+    transition: translate var(--dur-step, 120ms) steps(1);
+  }
+  .crew-face[data-glance="start"] .crew-face-glyphs {
+    translate: calc(var(--face) * -0.08) 0;
+  }
+  .crew-face[data-glance="end"] .crew-face-glyphs {
+    translate: calc(var(--face) * 0.08) 0;
+  }
+  .crew-face[data-glance="up"] .crew-face-glyphs {
+    translate: 0 calc(var(--face) * -0.1);
+  }
+  .crew-face[data-mood="working"] {
+    animation: crew-ring 1.8s steps(1) infinite;
+  }
+  @keyframes crew-ring {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 2px var(--surface),
+        0 0 0 3px var(--stroke-strong);
+    }
+    50% {
+      box-shadow:
+        0 0 0 2px var(--surface),
+        0 0 0 5px var(--stroke-strong);
+    }
+  }
+}
+/* the hero: big discs, partly cropped, behind the status line while the crew starts */
+.crew-hero {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.crew-hero-slot {
+  position: absolute;
+  opacity: 0.9;
+}
+.crew-hero .crew-face[data-size="hero"] {
+  --face: 7rem;
+  box-shadow: none;
+}
+.crew-hero-slot[data-slot="0"] {
+  inset-inline-start: -1.5rem;
+  inset-block-start: -2.5rem;
+}
+.crew-hero-slot[data-slot="1"] {
+  inset-inline-end: 12%;
+  inset-block-end: -3.5rem;
+}
+.crew-hero-slot[data-slot="2"] {
+  inset-inline-end: -2rem;
+  inset-block-start: -1rem;
+}
+.crew-hero-slot[data-slot="3"] {
+  inset-inline-start: 30%;
+  inset-block-end: -5rem;
+}

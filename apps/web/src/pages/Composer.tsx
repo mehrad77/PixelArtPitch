@@ -1,4 +1,15 @@
-import { Badge, Button, Callout, Checkbox, Disclosure, Field, Fieldset, Form, Radio } from "@shabboo/kit/react";
+import {
+  Badge,
+  Button,
+  Callout,
+  Checkbox,
+  Disclosure,
+  Field,
+  Fieldset,
+  Form,
+  Radio,
+  type RadioProps,
+} from "@shabboo/kit/react";
 import { type FormEvent, useMemo, useState } from "react";
 import { client } from "../lib/client.ts";
 import { clock, duration, usd } from "../lib/format.ts";
@@ -17,7 +28,7 @@ const PURPOSES: { id: Brief["purpose"]; label: string }[] = [
   { id: "social", label: "Social" },
   { id: "other", label: "Other" },
 ];
-const LENGTHS = [15, 30, 60, 90, 120];
+const LENGTHS = [15, 30, 60];
 const REF_TYPES: { id: RefType; label: string }[] = [
   { id: "likeness", label: "Likeness of a person" },
   { id: "logo", label: "Logo or trademark" },
@@ -39,6 +50,9 @@ const RATE: Record<Exclude<Profile, "custom">, { usd: [number, number]; min: [nu
 };
 const INVOLVE_WAIT: Record<Involvement, number> = { every: 1.3, key: 1.1, auto: 1 };
 
+/** a Radio whose input carries its label as its name too, so every tool reads the label, never the value ("on") */
+const NamedRadio = (p: RadioProps) => <Radio aria-label={p.label} {...p} />;
+
 function guessType(file: File): RefType {
   const n = file.name.toLowerCase();
   if (file.type.startsWith("audio/")) return /voice|vo|narrat/.test(n) ? "voice" : "sound";
@@ -51,9 +65,9 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
   const [purpose, setPurpose] = useState<Brief["purpose"]>("pitch");
-  const [length, setLength] = useState(60);
+  const [length, setLength] = useState(30);
   const [narration, setNarration] = useState<Brief["narration"]>("user");
-  const [cap, setCap] = useState("6");
+  const [cap, setCap] = useState("5");
   const [askAt80, setAskAt80] = useState(true);
   const [deadline, setDeadline] = useState("");
   const [involvement, setInvolvement] = useState<Involvement>("key");
@@ -109,6 +123,9 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
     setErrors(errs);
     const firstBad = Object.keys(errs)[0];
     if (firstBad) {
+      // everything but the idea lives under More options: open it so the field can take the focus
+      if (firstBad !== "c-idea")
+        (document.getElementById("c-more") as HTMLDetailsElement | null)?.setAttribute("open", "");
       if (firstBad === "c-hold")
         (document.getElementById("c-style") as HTMLDetailsElement | null)?.setAttribute("open", "");
       requestAnimationFrame(() => document.getElementById(firstBad)?.focus());
@@ -152,7 +169,7 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
           })
           .catch(() => {});
       await client.crewRun(id).catch(() => {});
-      navigate(`/p/${encodeURIComponent(id)}/brief`);
+      navigate(`/p/${encodeURIComponent(id)}`);
     } catch (err) {
       const ex = err as Error & { fix?: string };
       setFailure({ message: ex.message, fix: ex.fix });
@@ -164,10 +181,8 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
 
   return (
     <main id="main" className="page-narrow composer">
-      <h1>{first ? "Make your first pitch video" : "New project"}</h1>
-      <p className="muted">
-        Describe the idea. The crew plans the script, the art and the sound, and asks you at the gates you choose.
-      </p>
+      <h1>{first ? "Make your first pitch video" : "New video"}</h1>
+      <p className="muted">Say what it's about. The crew writes, draws and scores it, and checks in when you want.</p>
       <Form
         noValidate
         onSubmit={submit}
@@ -178,7 +193,7 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
         errors={errList}
         actions={
           <Button type="submit" variant="primary" size="lg" aria-describedby={failure ? "c-failure" : undefined}>
-            {busy ? "Starting…" : "Start project"}
+            {busy ? "Starting…" : "Make my video"}
           </Button>
         }
       >
@@ -194,32 +209,9 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
           hint="What it is, who it's for, and what you want viewers to do."
           error={errors["c-idea"]}
         />
-        <Fieldset id="c-purpose" legend="Purpose" layout="row">
-          {PURPOSES.map((p) => (
-            <Radio
-              key={p.id}
-              id={`c-purpose-${p.id}`}
-              name="purpose"
-              variant="chip"
-              indicator={false}
-              label={p.label}
-              value={p.id}
-              checked={purpose === p.id}
-              onChange={() => setPurpose(p.id)}
-            />
-          ))}
-        </Fieldset>
-        <Field
-          id="c-title"
-          label="Project name"
-          value={title}
-          onChange={(e) => setTitle(e.currentTarget.value)}
-          hint="Optional. Taken from the idea when empty."
-          autoComplete="off"
-        />
         <Fieldset id="c-length" legend="Length" layout="row" hint="Seconds of video, before the end card.">
           {LENGTHS.map((l) => (
-            <Radio
+            <NamedRadio
               key={l}
               id={`c-len-${l}`}
               name="length"
@@ -232,265 +224,301 @@ export function ComposerPage({ first = false }: { first?: boolean }) {
             />
           ))}
         </Fieldset>
-        <Fieldset id="c-narration" legend="Narration">
-          <Radio
-            id="c-nar-user"
-            name="narration"
-            label="I'll record it"
-            hint="A record page with a teleprompter; the Editor aligns your take."
-            checked={narration === "user"}
-            onChange={() => setNarration("user")}
-          />
-          <Radio
-            id="c-nar-tts"
-            name="narration"
-            label="AI voice"
-            checked={narration === "tts"}
-            onChange={() => setNarration("tts")}
-          />
-          <Radio
-            id="c-nar-none"
-            name="narration"
-            label="None"
-            hint="Captions and music only."
-            checked={narration === "none"}
-            onChange={() => setNarration("none")}
-          />
-        </Fieldset>
-        <div className="field-group">
-          <Field
-            id="c-cap"
-            label="Budget cap ($)"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step="0.5"
-            value={cap}
-            onChange={(e) => setCap(e.currentTarget.value)}
-            error={errors["c-cap"]}
-            aria-describedby="c-estimate"
-          />
-          <p id="c-estimate" className="estimate" aria-live="polite">
-            Estimated {usd(est.usd[0])} to {usd(est.usd[1])} for {length} s on {profile}.
-            {Number.isFinite(capNum) &&
-              capNum > 0 &&
-              capNum < est.usd[0] &&
-              " The cap is below the estimate: the crew will ask before it runs out."}
-          </p>
-          <Checkbox
-            id="c-ask80"
-            label="Ask me at 80% of the cap"
-            checked={askAt80}
-            onChange={(e) => setAskAt80(e.currentTarget.checked)}
-          />
-        </div>
-        <div className="field-group">
-          <Field
-            id="c-deadline"
-            label="Deadline"
-            type="datetime-local"
-            value={deadline}
-            onChange={(e) => setDeadline(e.currentTarget.value)}
-            hint="Optional."
-            error={errors["c-deadline"]}
-            aria-describedby="c-eta"
-          />
-          <p id="c-eta" className="estimate" aria-live="polite">
-            Ready in about {duration(est.min[0] * 60)} to {duration(est.min[1] * 60)} (between {clock(readyBy[0])} and{" "}
-            {clock(readyBy[1])}).
-            {deadlineMs != null &&
-              deadlineMs > now &&
-              deadlineMs < readyBy[1].getTime() &&
-              " The deadline falls inside that range, so the crew may ask you to trim."}
-          </p>
-        </div>
-        <Fieldset id="c-involvement" legend="How involved do you want to be">
-          <Radio
-            id="c-inv-every"
-            name="involvement"
-            label="Every gate"
-            hint="You approve the brief, script, animatic, rough cut and final."
-            checked={involvement === "every"}
-            onChange={() => setInvolvement("every")}
-          />
-          <Radio
+        <Fieldset id="c-involvement" legend="How involved?">
+          <NamedRadio
             id="c-inv-key"
             name="involvement"
-            label="Key gates"
-            hint="You pick the script angle and approve the animatic and the final."
+            value="key"
+            label="Check in with me at key moments"
+            hint="You pick the script and say yes to the pacing and the final cut."
             checked={involvement === "key"}
             onChange={() => setInvolvement("key")}
           />
-          <Radio
+          <NamedRadio
+            id="c-inv-every"
+            name="involvement"
+            value="every"
+            label="Show me everything"
+            hint="You see the plan, the script, the pacing, the first cut and the final."
+            checked={involvement === "every"}
+            onChange={() => setInvolvement("every")}
+          />
+          <NamedRadio
             id="c-inv-auto"
             name="involvement"
-            label="Run on its own"
-            hint="The Producer decides; you get the result and a list of choices it made."
+            value="auto"
+            label="Surprise me"
+            hint="The crew decides everything and shows you the finished video."
             checked={involvement === "auto"}
             onChange={() => setInvolvement("auto")}
           />
         </Fieldset>
-        <Fieldset
-          id="c-profile"
-          legend="Model profile"
-          layout="row"
-          hint="Which models the crew uses. Fine-tune roles in Settings."
-        >
-          {(["best", "balanced", "local"] as const).map((p) => (
-            <Radio
-              key={p}
-              id={`c-prof-${p}`}
-              name="profile"
-              variant="chip"
-              indicator={false}
-              label={p === "best" ? "Best" : p === "balanced" ? "Balanced" : "Local"}
-              checked={profile === p}
-              onChange={() => setProfile(p)}
+        <Disclosure id="c-more" summary="More options" boxed>
+          <div className="stack-4">
+            <Fieldset id="c-purpose" legend="Purpose" layout="row">
+              {PURPOSES.map((p) => (
+                <NamedRadio
+                  key={p.id}
+                  id={`c-purpose-${p.id}`}
+                  name="purpose"
+                  variant="chip"
+                  indicator={false}
+                  label={p.label}
+                  value={p.id}
+                  checked={purpose === p.id}
+                  onChange={() => setPurpose(p.id)}
+                />
+              ))}
+            </Fieldset>
+            <Field
+              id="c-title"
+              label="Project name"
+              value={title}
+              onChange={(e) => setTitle(e.currentTarget.value)}
+              hint="Optional. Taken from the first words of the idea when empty."
+              autoComplete="off"
             />
-          ))}
-        </Fieldset>
-        <Disclosure
-          id="c-style"
-          summary={`Style: ${pace} pace, ${iconsFirst ? "icons first, " : ""}${hold} s hold${endCard ? ", end card" : ""}`}
-          boxed
-        >
-          <div className="stack-3">
-            <Fieldset id="c-pace" legend="Pace" layout="row">
-              <Radio
-                id="c-pace-calm"
-                name="pace"
-                variant="chip"
-                indicator={false}
-                label="Calm"
-                checked={pace === "calm"}
-                onChange={() => setPace("calm")}
+            <Fieldset id="c-narration" legend="Narration">
+              <NamedRadio
+                id="c-nar-user"
+                name="narration"
+                value="user"
+                label="I'll record it"
+                hint="A record page with a teleprompter; the Editor aligns your take."
+                checked={narration === "user"}
+                onChange={() => setNarration("user")}
               />
-              <Radio
-                id="c-pace-brisk"
-                name="pace"
-                variant="chip"
-                indicator={false}
-                label="Brisk"
-                checked={pace === "brisk"}
-                onChange={() => setPace("brisk")}
+              <NamedRadio
+                id="c-nar-tts"
+                name="narration"
+                value="tts"
+                label="AI voice"
+                checked={narration === "tts"}
+                onChange={() => setNarration("tts")}
+              />
+              <NamedRadio
+                id="c-nar-none"
+                name="narration"
+                value="none"
+                label="None"
+                hint="Captions and music only."
+                checked={narration === "none"}
+                onChange={() => setNarration("none")}
               />
             </Fieldset>
-            <Checkbox
-              id="c-icons"
-              label="Icons first"
-              hint="Show an icon before the words that name it."
-              checked={iconsFirst}
-              onChange={(e) => setIconsFirst(e.currentTarget.checked)}
-            />
-            <Field
-              id="c-hold"
-              label="Hold the first frame (s)"
-              type="number"
-              min={0}
-              max={10}
-              step="0.5"
-              value={hold}
-              onChange={(e) => setHold(e.currentTarget.value)}
-              error={errors["c-hold"]}
-            />
-            <Checkbox
-              id="c-endcard"
-              label="End card"
-              hint="Name, link and the ask, held for 4 s."
-              checked={endCard}
-              onChange={(e) => setEndCard(e.currentTarget.checked)}
-            />
+            <div className="field-group">
+              <Field
+                id="c-cap"
+                label="Budget cap ($)"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.5"
+                value={cap}
+                onChange={(e) => setCap(e.currentTarget.value)}
+                error={errors["c-cap"]}
+                aria-describedby="c-estimate"
+              />
+              <p id="c-estimate" className="estimate" aria-live="polite">
+                Estimated {usd(est.usd[0])} to {usd(est.usd[1])} for {length} s on {profile}.
+                {Number.isFinite(capNum) &&
+                  capNum > 0 &&
+                  capNum < est.usd[0] &&
+                  " The cap is below the estimate: the crew will ask before it runs out."}
+              </p>
+              <Checkbox
+                id="c-ask80"
+                label="Ask me at 80% of the cap"
+                checked={askAt80}
+                onChange={(e) => setAskAt80(e.currentTarget.checked)}
+              />
+            </div>
+            <div className="field-group">
+              <Field
+                id="c-deadline"
+                label="Deadline"
+                type="datetime-local"
+                value={deadline}
+                onChange={(e) => setDeadline(e.currentTarget.value)}
+                hint="Optional."
+                error={errors["c-deadline"]}
+                aria-describedby="c-eta"
+              />
+              <p id="c-eta" className="estimate" aria-live="polite">
+                Ready in about {duration(est.min[0] * 60)} to {duration(est.min[1] * 60)} (between {clock(readyBy[0])}{" "}
+                and {clock(readyBy[1])}).
+                {deadlineMs != null &&
+                  deadlineMs > now &&
+                  deadlineMs < readyBy[1].getTime() &&
+                  " The deadline falls inside that range, so the crew may ask you to trim."}
+              </p>
+            </div>
+            <Fieldset
+              id="c-profile"
+              legend="Model profile"
+              layout="row"
+              hint="Which models the crew uses. Fine-tune roles in Settings."
+            >
+              {(["best", "balanced", "local"] as const).map((p) => (
+                <NamedRadio
+                  key={p}
+                  id={`c-prof-${p}`}
+                  name="profile"
+                  value={p}
+                  variant="chip"
+                  indicator={false}
+                  label={p === "best" ? "Best" : p === "balanced" ? "Balanced" : "Local"}
+                  checked={profile === p}
+                  onChange={() => setProfile(p)}
+                />
+              ))}
+            </Fieldset>
+            <Disclosure
+              id="c-style"
+              summary={`Style: ${pace} pace, ${iconsFirst ? "icons first, " : ""}${hold} s hold${endCard ? ", end card" : ""}`}
+              boxed
+            >
+              <div className="stack-3">
+                <Fieldset id="c-pace" legend="Pace" layout="row">
+                  <NamedRadio
+                    id="c-pace-calm"
+                    name="pace"
+                    value="calm"
+                    variant="chip"
+                    indicator={false}
+                    label="Calm"
+                    checked={pace === "calm"}
+                    onChange={() => setPace("calm")}
+                  />
+                  <NamedRadio
+                    id="c-pace-brisk"
+                    name="pace"
+                    value="brisk"
+                    variant="chip"
+                    indicator={false}
+                    label="Brisk"
+                    checked={pace === "brisk"}
+                    onChange={() => setPace("brisk")}
+                  />
+                </Fieldset>
+                <Checkbox
+                  id="c-icons"
+                  label="Icons first"
+                  hint="Show an icon before the words that name it."
+                  checked={iconsFirst}
+                  onChange={(e) => setIconsFirst(e.currentTarget.checked)}
+                />
+                <Field
+                  id="c-hold"
+                  label="Hold the first frame (s)"
+                  type="number"
+                  min={0}
+                  max={10}
+                  step="0.5"
+                  value={hold}
+                  onChange={(e) => setHold(e.currentTarget.value)}
+                  error={errors["c-hold"]}
+                />
+                <Checkbox
+                  id="c-endcard"
+                  label="End card"
+                  hint="Name, link and the ask, held for 4 s."
+                  checked={endCard}
+                  onChange={(e) => setEndCard(e.currentTarget.checked)}
+                />
+              </div>
+            </Disclosure>
+            <section className="refs" aria-labelledby="c-refs-title">
+              <h2 id="c-refs-title" className="h3">
+                References
+              </h2>
+              <Field
+                id="c-files"
+                label="Add files"
+                type="file"
+                multiple
+                accept="image/*,audio/*,video/*"
+                hint="Pictures, logos, sounds or a voice sample. They stay in this project's folder."
+                onChange={(e) => {
+                  onFiles((e.currentTarget as HTMLInputElement).files);
+                  e.currentTarget.value = "";
+                }}
+              />
+              {refs.length > 0 && (
+                <ol className="ref-list">
+                  {refs.map((r, i) => {
+                    const priv = r.type === "likeness" || r.type === "logo";
+                    return (
+                      <li key={r.key} className="ref-row">
+                        <div className="ref-head">
+                          <span className="mono ltr">{r.file.name}</span>
+                          {priv && (
+                            <Badge tone="info" variant="pill" caps={false} aria-describedby={`ref-why-${i}`}>
+                              Private to this project
+                            </Badge>
+                          )}
+                          <Button
+                            variant="quiet"
+                            size="sm"
+                            onClick={() => setRefs((x) => x.filter((y) => y.key !== r.key))}
+                            aria-label={`Remove ${r.file.name}`}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                        {priv && (
+                          <p id={`ref-why-${i}`} className="muted small">
+                            {r.type === "likeness" ? "A real person's likeness" : "A logo or trademark"} and anything
+                            drawn from it never enters the public library.
+                          </p>
+                        )}
+                        <div className="ref-fields">
+                          <Field
+                            id={`ref-type-${i}`}
+                            label="Type"
+                            control="select"
+                            size="sm"
+                            value={r.type}
+                            onChange={(e) => setRef(r.key, { type: e.currentTarget.value as RefType })}
+                          >
+                            {REF_TYPES.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.label}
+                              </option>
+                            ))}
+                          </Field>
+                          <Field
+                            id={`ref-rights-${i}`}
+                            label="Rights"
+                            control="select"
+                            size="sm"
+                            value={r.rights}
+                            onChange={(e) => setRef(r.key, { rights: e.currentTarget.value as Rights })}
+                          >
+                            {RIGHTS.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.label}
+                              </option>
+                            ))}
+                          </Field>
+                          <Field
+                            id={`ref-note-${i}`}
+                            label="Note"
+                            size="sm"
+                            value={r.note}
+                            maxLength={400}
+                            onChange={(e) => setRef(r.key, { note: e.currentTarget.value })}
+                            placeholder="Keep the flame shape"
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </section>
           </div>
         </Disclosure>
-        <section className="refs" aria-labelledby="c-refs-title">
-          <h2 id="c-refs-title" className="h3">
-            References
-          </h2>
-          <Field
-            id="c-files"
-            label="Add files"
-            type="file"
-            multiple
-            accept="image/*,audio/*,video/*"
-            hint="Pictures, logos, sounds or a voice sample. They stay in this project's folder."
-            onChange={(e) => {
-              onFiles((e.currentTarget as HTMLInputElement).files);
-              e.currentTarget.value = "";
-            }}
-          />
-          {refs.length > 0 && (
-            <ol className="ref-list">
-              {refs.map((r, i) => {
-                const priv = r.type === "likeness" || r.type === "logo";
-                return (
-                  <li key={r.key} className="ref-row">
-                    <div className="ref-head">
-                      <span className="mono ltr">{r.file.name}</span>
-                      {priv && (
-                        <Badge tone="info" variant="pill" caps={false} aria-describedby={`ref-why-${i}`}>
-                          Private to this project
-                        </Badge>
-                      )}
-                      <Button
-                        variant="quiet"
-                        size="sm"
-                        onClick={() => setRefs((x) => x.filter((y) => y.key !== r.key))}
-                        aria-label={`Remove ${r.file.name}`}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                    {priv && (
-                      <p id={`ref-why-${i}`} className="muted small">
-                        {r.type === "likeness" ? "A real person's likeness" : "A logo or trademark"} and anything drawn
-                        from it never enters the public library.
-                      </p>
-                    )}
-                    <div className="ref-fields">
-                      <Field
-                        id={`ref-type-${i}`}
-                        label="Type"
-                        control="select"
-                        size="sm"
-                        value={r.type}
-                        onChange={(e) => setRef(r.key, { type: e.currentTarget.value as RefType })}
-                      >
-                        {REF_TYPES.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </Field>
-                      <Field
-                        id={`ref-rights-${i}`}
-                        label="Rights"
-                        control="select"
-                        size="sm"
-                        value={r.rights}
-                        onChange={(e) => setRef(r.key, { rights: e.currentTarget.value as Rights })}
-                      >
-                        {RIGHTS.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </Field>
-                      <Field
-                        id={`ref-note-${i}`}
-                        label="Note"
-                        size="sm"
-                        value={r.note}
-                        maxLength={400}
-                        onChange={(e) => setRef(r.key, { note: e.currentTarget.value })}
-                        placeholder="Keep the flame shape"
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </section>
         {failure && (
           <Callout id="c-failure" tone="error" title="The project didn't start">
             <p>{failure.message}</p>

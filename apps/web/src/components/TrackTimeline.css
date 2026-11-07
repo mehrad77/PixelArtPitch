@@ -44,9 +44,14 @@
   gap: var(--space-1);
 }
 .legend-swatch {
-  display: inline-block;
+  display: inline-grid;
+  place-items: center;
   inline-size: 1.5rem;
-  block-size: 0.75rem;
+  block-size: 1rem;
+}
+#tracks-key .tracks-legend {
+  display: grid;
+  gap: var(--space-2);
 }
 .tracks-body {
   display: grid;
@@ -143,7 +148,9 @@
 }
 .clip-label {
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+.clip-glyph {
+  margin-inline: auto;
 }
 .clip-avatar {
   flex: none;

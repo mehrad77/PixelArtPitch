@@ -17,7 +17,9 @@ import { client } from "../lib/client.ts";
 import { buildClips, type Clip, NOTE_CATEGORY, ROLE_LABEL, type TrackId } from "../lib/derive.ts";
 import { ago, FPS, timecode } from "../lib/format.ts";
 import { isControlTarget, useProject, useThrottled } from "../lib/hooks.ts";
+import { isStaleDigest, setView } from "../lib/human.ts";
 import { usePlayback } from "../lib/playback.ts";
+import { navigate } from "../lib/router.tsx";
 import type { NoteStatus, NoteTarget, ProjectState, Role, Stage } from "../lib/types.ts";
 import "./Workspace.css";
 
@@ -36,7 +38,8 @@ const NOTE_STATUS: Record<NoteStatus, { word: string; tone: "muted" | "accent" |
   declined: { word: "Declined", tone: "muted" },
 };
 
-export function WorkspacePage({ id, stage }: { id: string; stage: Stage }) {
+/** `stage` comes from the URL; without one (/p/:id with the Studio view remembered) the crew's stage shows */
+export function WorkspacePage({ id, stage }: { id: string; stage?: Stage }) {
   const view = useProject(id);
   const { state, error } = view;
   if (error && !state)
@@ -54,7 +57,7 @@ export function WorkspacePage({ id, stage }: { id: string; stage: Stage }) {
         <Skeleton lines={6} label="Opening the project" />
       </main>
     );
-  return <Workspace id={id} stage={stage} state={state} view={view} />;
+  return <Workspace id={id} stage={stage ?? state.stage} state={state} view={view} />;
 }
 
 function Workspace({
@@ -84,7 +87,9 @@ function Workspace({
     changes: null,
   });
   const clips = useMemo(() => buildClips(state), [state]);
-  const digest = useThrottled(state.digest, 20000);
+  // "The crew stopped: …" outlives the failure it reports; once a retry recovered it, say nothing
+  const digestText = isStaleDigest(state) ? "" : state.digest;
+  const digest = useThrottled(digestText, 20000);
   const openQs = state.questions.filter((q) => q.status === "open");
   const openGates = state.gates.filter((g) => g.status === "open");
   const inboxCount = openQs.length + openGates.length;
@@ -182,9 +187,19 @@ function Workspace({
       <ProjectHeader projectId={id} state={state} stage={stage} conn={view.conn} onNeedsYou={nextQuestion} />
       <div className="digest">
         <span className="label">Producer</span>
-        <p>{state.digest}</p>
+        <p>{digestText}</p>
         <button type="button" className="linkish small" onClick={() => setHelp(true)}>
           Shortcuts (?)
+        </button>
+        <button
+          type="button"
+          className="linkish small"
+          onClick={() => {
+            setView("simple");
+            navigate(`/p/${encodeURIComponent(id)}`);
+          }}
+        >
+          ‹ Simple view
         </button>
       </div>
       <p className="visually-hidden" role="status" aria-live="polite">

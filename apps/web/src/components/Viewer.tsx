@@ -1,19 +1,16 @@
 // The viewer: a 320×180 canvas scaled with nearest-neighbour. Scrubbing draws server frames (GET …/frame?t=);
 // playback uses the proxy mp4 when one exists, or steps through frames at a lower rate when it doesn't.
+// `minimal` (the simple view) keeps only the picture and one play/scrub bar; the paused frame is a button that
+// asks what should change there (onSteer).
 import { Badge, Button, Icon } from "@shabboo/kit/react";
 import { useEffect, useRef, useState } from "react";
 import { client } from "../lib/client.ts";
 import { FPS, timecode } from "../lib/format.ts";
+import { mss, VERSION_WORD } from "../lib/human.ts";
 import type { Playback } from "../lib/playback.ts";
-import type { ProjectState, SceneVersion } from "../lib/types.ts";
+import type { ProjectState } from "../lib/types.ts";
 import "./Viewer.css";
 
-const VERSION_WORD: Record<SceneVersion, string> = {
-  render: "Render",
-  animatic: "Animatic",
-  board: "Board",
-  slate: "Slate",
-};
 const SLOW_FPS = 8;
 
 export type Overlays = { safe: boolean; captions: boolean; grid: boolean };
@@ -28,6 +25,8 @@ export function Viewer({
   compare,
   setCompare,
   inOut,
+  minimal = false,
+  onSteer,
 }: {
   projectId: string;
   state: ProjectState;
@@ -38,6 +37,10 @@ export function Viewer({
   compare: boolean;
   setCompare: (on: boolean) => void;
   inOut: [number | null, number | null];
+  /** the simple view: no overlays, timecode or frame steps; one play/scrub bar */
+  minimal?: boolean;
+  /** minimal only: the paused frame was pressed at (x, y) in the viewport */
+  onSteer?: (t: number, x: number, y: number) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -153,6 +156,25 @@ export function Viewer({
             role="img"
             aria-label={`Frame at ${timecode(pb.t)}${sceneTitle ? `, ${sceneTitle}` : ""}`}
           />
+          {minimal && (
+            <button
+              type="button"
+              className="viewer-hit"
+              aria-label={
+                pb.playing
+                  ? "Pause"
+                  : `Frame at ${mss(pb.t)}${sceneTitle ? `, ${sceneTitle}` : ""}. Say what should change here`
+              }
+              onClick={(e) => {
+                if (pb.playing) return pb.pause();
+                const r = e.currentTarget.getBoundingClientRect();
+                // a keyboard press has no pointer position: open it in the middle of the frame
+                const x = e.detail === 0 ? r.left + r.width / 2 : e.clientX;
+                const y = e.detail === 0 ? r.top + r.height / 2 : e.clientY;
+                onSteer?.(pb.t, x, y);
+              }}
+            />
+          )}
           {overlays.grid && <div className="ov-grid" aria-hidden="true" />}
           {overlays.safe && (
             <div className="ov-safe" aria-hidden="true">
@@ -164,17 +186,19 @@ export function Viewer({
               {cue.text}
             </p>
           )}
-          <div className="viewer-tags">
-            {status ? (
-              <Badge tone={status.version === "render" ? "accent" : "muted"} variant="pill">
-                {VERSION_WORD[status.version]}
-              </Badge>
-            ) : (
-              <Badge tone="muted">Slate</Badge>
-            )}
-            {status?.stale && <Badge tone="warning">Stale</Badge>}
-            {compare && <Badge tone="signal">Before (rev {state.rev - 1})</Badge>}
-          </div>
+          {!minimal && (
+            <div className="viewer-tags">
+              {status ? (
+                <Badge tone={status.version === "render" ? "accent" : "muted"} variant="pill">
+                  {VERSION_WORD[status.version]}
+                </Badge>
+              ) : (
+                <Badge tone="muted">Slate</Badge>
+              )}
+              {status?.stale && <Badge tone="warning">Needs update</Badge>}
+              {compare && <Badge tone="signal">Before (rev {state.rev - 1})</Badge>}
+            </div>
+          )}
           {frameError && (
             <p className="viewer-error" role="status">
               This frame didn't render. The crew may still be drawing this scene; try another point or wait for the next
@@ -186,54 +210,79 @@ export function Viewer({
           <video ref={video} src={proxy} muted playsInline preload="auto" hidden onError={() => setProxyOk(false)} />
         )}
       </div>
-      <fieldset className="viewer-bar">
-        <legend className="visually-hidden">Transport</legend>
-        <output className="timecode mono" aria-label="Timecode">
-          {timecode(pb.t)} <span className="muted">/ {timecode(pb.duration)}</span>
-        </output>
-        <span className="muted small viewer-scene">{sceneTitle}</span>
-        <div className="transport">
-          <Button size="sm" variant="ghost" onClick={() => pb.seek(0)}>
-            Start
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => pb.step(-1)} aria-label="Previous frame">
-            <Icon name="arrow-left" />
-          </Button>
+      {minimal ? (
+        <div className="viewer-bar viewer-min">
           <Button size="sm" variant="primary" onClick={pb.toggle} aria-label={pb.playing ? "Pause" : "Play"}>
             <Icon name={pb.playing ? "pause" : "play"} />
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => pb.step(1)} aria-label="Next frame">
-            <Icon name="arrow-right" />
-          </Button>
-          {pb.playing && Math.abs(pb.rate) !== 1 && <span className="mono small">{pb.rate}×</span>}
+          <input
+            type="range"
+            className="viewer-scrub"
+            aria-label="Position"
+            min={0}
+            max={pb.duration}
+            step={1 / FPS}
+            value={pb.t}
+            aria-valuetext={`${mss(pb.t)} of ${mss(pb.duration)}`}
+            onChange={(e) => {
+              pb.pause();
+              pb.seek(Number(e.currentTarget.value));
+            }}
+          />
+          <span className="muted small mono" aria-hidden="true">
+            {mss(pb.t)} / {mss(pb.duration)}
+          </span>
         </div>
-        <fieldset className="overlays">
-          <legend className="visually-hidden">Overlays</legend>
-          <Button size="sm" variant="ghost" aria-pressed={overlays.safe} onClick={() => toggle("safe")}>
-            Safe area
-          </Button>
-          <Button size="sm" variant="ghost" aria-pressed={overlays.captions} onClick={() => toggle("captions")}>
-            Captions
-          </Button>
-          <Button size="sm" variant="ghost" aria-pressed={overlays.grid} onClick={() => toggle("grid")}>
-            Pixel grid
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-pressed={compare}
-            onClick={() => setCompare(!compare)}
-            disabled={state.rev < 1}
-          >
-            Before / after
-          </Button>
+      ) : (
+        <fieldset className="viewer-bar">
+          <legend className="visually-hidden">Transport</legend>
+          <output className="timecode mono" aria-label="Timecode">
+            {timecode(pb.t)} <span className="muted">/ {timecode(pb.duration)}</span>
+          </output>
+          <span className="muted small viewer-scene">{sceneTitle}</span>
+          <div className="transport">
+            <Button size="sm" variant="ghost" onClick={() => pb.seek(0)}>
+              Start
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => pb.step(-1)} aria-label="Previous frame">
+              <Icon name="arrow-left" />
+            </Button>
+            <Button size="sm" variant="primary" onClick={pb.toggle} aria-label={pb.playing ? "Pause" : "Play"}>
+              <Icon name={pb.playing ? "pause" : "play"} />
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => pb.step(1)} aria-label="Next frame">
+              <Icon name="arrow-right" />
+            </Button>
+            {pb.playing && Math.abs(pb.rate) !== 1 && <span className="mono small">{pb.rate}×</span>}
+          </div>
+          <fieldset className="overlays">
+            <legend className="visually-hidden">Overlays</legend>
+            <Button size="sm" variant="ghost" aria-pressed={overlays.safe} onClick={() => toggle("safe")}>
+              Safe area
+            </Button>
+            <Button size="sm" variant="ghost" aria-pressed={overlays.captions} onClick={() => toggle("captions")}>
+              Captions
+            </Button>
+            <Button size="sm" variant="ghost" aria-pressed={overlays.grid} onClick={() => toggle("grid")}>
+              Pixel grid
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-pressed={compare}
+              onClick={() => setCompare(!compare)}
+              disabled={state.rev < 1}
+            >
+              Before / after
+            </Button>
+          </fieldset>
+          <span className="muted small">
+            {mode}
+            {(inOut[0] != null || inOut[1] != null) &&
+              ` · In ${inOut[0] != null ? timecode(inOut[0]) : "–"} Out ${inOut[1] != null ? timecode(inOut[1]) : "–"}`}
+          </span>
         </fieldset>
-        <span className="muted small">
-          {mode}
-          {(inOut[0] != null || inOut[1] != null) &&
-            ` · In ${inOut[0] != null ? timecode(inOut[0]) : "–"} Out ${inOut[1] != null ? timecode(inOut[1]) : "–"}`}
-        </span>
-      </fieldset>
+      )}
     </section>
   );
 }
