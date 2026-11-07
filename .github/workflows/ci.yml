@@ -1,0 +1,57 @@
+# CI: the gate (Biome, tsc, every test) and the studio build on every push and PR. A pushed tag v* also publishes a
+# GitHub release with the built studio UI attached.
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.21"
+          cache: pnpm
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - name: Check (Biome, tsc, tests)
+        run: pnpm check
+      - name: Build the studio UI
+        run: pnpm --filter @pap/web build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-web
+          path: apps/web/dist
+          retention-days: 14
+
+  release:
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: studio-web
+          path: studio-web
+      - run: tar -czf studio-web.tar.gz -C studio-web .
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" studio-web.tar.gz --repo "$GITHUB_REPOSITORY" --generate-notes
