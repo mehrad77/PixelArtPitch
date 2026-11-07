@@ -1,0 +1,24 @@
+{
+  "name": "pixelartpitch",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=24.21"
+  },
+  "scripts": {
+    "check": "biome check . && tsc -p tsconfig.json && node --test --test-reporter=dot \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\"",
+    "test": "node --test \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\"",
+    "format": "biome check --write .",
+    "typecheck": "tsc -p tsconfig.json",
+    "pap": "node apps/server/src/cli.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

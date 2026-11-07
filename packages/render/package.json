@@ -1,0 +1,15 @@
+{
+  "name": "@pap/render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@pap/schema": "workspace:*",
+    "@pap/engine": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}
