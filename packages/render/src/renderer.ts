@@ -55,6 +55,13 @@ export class Renderer {
   private buf: Buffer = Buffer.alloc(0);
   private onFrame: ((f: Buffer) => void | Promise<void>) | null = null;
   private ready: Promise<void>;
+  /** frames come back on one pipe: one frame request at a time, in order */
+  private chain: Promise<unknown> = Promise.resolve();
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.chain.then(fn, fn);
+    this.chain = next.catch(() => {});
+    return next;
+  }
   readonly project: LoadedProject;
 
   constructor(project: LoadedProject) {
@@ -119,7 +126,10 @@ export class Renderer {
   }
 
   /** frames [from, to) in order; onFrame gets each raw RGB frame */
-  async frames(from: number, to: number, onFrame: (f: Buffer, i: number) => void | Promise<void>) {
+  frames(from: number, to: number, onFrame: (f: Buffer, i: number) => void | Promise<void>) {
+    return this.serial(() => this.framesNow(from, to, onFrame));
+  }
+  private async framesNow(from: number, to: number, onFrame: (f: Buffer, i: number) => void | Promise<void>) {
     let i = from;
     const got: Buffer[] = [];
     this.onFrame = (f) => {
@@ -139,7 +149,10 @@ export class Renderer {
   }
 
   /** one frame at scene time t (seconds, without the hold) */
-  async frame(t: number): Promise<Buffer> {
+  frame(t: number): Promise<Buffer> {
+    return this.serial(() => this.frameNow(t));
+  }
+  private async frameNow(t: number): Promise<Buffer> {
     let f: Buffer | null = null;
     this.onFrame = (b) => {
       f = b;

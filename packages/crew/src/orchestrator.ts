@@ -1146,89 +1146,99 @@ export class Crew {
         s.kind === "decl" &&
         !(p.state.sceneStatus[s.id]?.version === "render" && p.state.sceneStatus[s.id]?.state === "ready"),
     );
-    await Promise.all(
-      scenes.map(async (s) => {
-        await this.checkpoint(p, r);
-        const t = this.task(p, { kind: "scene.tune", role: "animator", title: `Animating ${s.title || s.id}` });
-        p.setSceneStatus(s.id, { version: "animatic", state: "drafting" });
-        try {
-          const d = p.doc();
-          const sc = d.scenes.find((x) => x.id === s.id)!;
-          if (sc.kind !== "decl") return this.done(p, t);
-          const tl = p.timeline();
-          const w = tl.scenes.find((x) => x.id === s.id)!;
-          const lints = lintProject(d, tl)
-            .filter((l: any) => l.scene === s.id)
-            .map((l: any) => `${l.severity}: ${l.message} (fix: ${l.fix})`);
-          const notes = p.state.notes.filter((n) => n.target.scene === s.id && n.status === "open");
-          const { data } = await this.ask(p, r, t, {
-            role: "animator",
-            kind: "scene.tune",
-            prompt: "animator/tune",
-            vars: {
-              scene: s.id,
-              title: sc.title,
-              from: w.from.toFixed(2),
-              to: w.to.toFixed(2),
-              cues: tl.cues
-                .filter((c) => sc.cues.includes(c.id))
-                .map((c) => `${c.id} (${c.start.toFixed(2)}-${c.end.toFixed(2)} s): ${c.text}`)
-                .join("\n"),
-              recipes: sc.recipes.map((x, i) => `${i}: ${x.id} ${JSON.stringify(x.params)}`).join("\n"),
-              menu: cat
-                .filter((c: any) => sc.recipes.some((x) => x.id === c.id))
-                .map((c: any) => ({ id: c.id, params: c.params.properties })),
-              notes: notes.length ? notes.map((n) => `${n.id} (${n.category}): ${n.text}`).join("\n") : "(none)",
-              lints: lints.length ? lints.join("\n") : "(none)",
-            },
-            schema: TuneOut,
-            images: await this.sceneStills(p, s.id),
-          });
-          if (data.changes.length) {
-            const recipes = sc.recipes.map((x) => ({ ...x, params: { ...x.params } }));
-            for (const c of data.changes)
-              if (recipes[c.recipe]) recipes[c.recipe].params = { ...recipes[c.recipe].params, ...c.params };
-            const res = await this.deps.registry.call(
-              "scene_set_recipes",
-              {
-                scene: s.id,
-                recipes,
-                reason:
-                  data.changes
-                    .map((c) => c.why)
-                    .join("; ")
-                    .slice(0, 280) || "tune",
-              },
-              this.ctx(p, "animator", t.id),
-            );
-            if (!res.ok)
-              p.emit("log", {
-                level: "warn",
-                role: "animator",
-                text: `${s.id}: kept the scene as it was (${res.error.message})`,
-              });
-          }
-          for (const n of notes)
-            p.updateNote(n.id, {
-              status: "done",
-              reason: data.changes.map((c) => c.why).join("; ") || "checked; no change needed",
-            });
-          this.done(p, t, {
-            summary: data.changes.length ? data.changes.map((c) => c.why).join("; ") : "no changes needed",
-          });
-          p.setSceneStatus(s.id, { version: "render", state: "ready" });
-        } catch (e: any) {
-          if (r.abort.signal.aborted) throw e;
-          // a weak model failing here costs nothing: the scene keeps its recipes as they are
-          this.failTask(p, t, e);
-          p.emit("log", {
-            level: "warn",
-            role: "animator",
-            text: `${s.id}: kept as built (${String(e?.message ?? e).slice(0, 120)})`,
-          });
-        }
-      }),
+    // a local vision model takes one request at a time: animate the scenes in turn so the crew shows the truth
+    const local =
+      this.deps.gateway.caps(this.deps.gateway.modelFor("animator", d0.crew.models))?.local ??
+      this.deps.gateway.modelFor("animator", d0.crew.models).startsWith("lmstudio/");
+    const queued = new Map(
+      scenes.map((s) => [
+        s.id,
+        this.task(p, { kind: "scene.tune", role: "animator", title: `Animating ${s.title || s.id}`, status: "queued" }),
+      ]),
     );
+    const one = async (s: (typeof scenes)[number]) => {
+      await this.checkpoint(p, r);
+      const t = p.upsertTask({ ...queued.get(s.id)!, status: "working", startedAt: new Date().toISOString() });
+      p.setSceneStatus(s.id, { version: "animatic", state: "drafting" });
+      try {
+        const d = p.doc();
+        const sc = d.scenes.find((x) => x.id === s.id)!;
+        if (sc.kind !== "decl") return this.done(p, t);
+        const tl = p.timeline();
+        const w = tl.scenes.find((x) => x.id === s.id)!;
+        const lints = lintProject(d, tl)
+          .filter((l: any) => l.scene === s.id)
+          .map((l: any) => `${l.severity}: ${l.message} (fix: ${l.fix})`);
+        const notes = p.state.notes.filter((n) => n.target.scene === s.id && n.status === "open");
+        const { data } = await this.ask(p, r, t, {
+          role: "animator",
+          kind: "scene.tune",
+          prompt: "animator/tune",
+          vars: {
+            scene: s.id,
+            title: sc.title,
+            from: w.from.toFixed(2),
+            to: w.to.toFixed(2),
+            cues: tl.cues
+              .filter((c) => sc.cues.includes(c.id))
+              .map((c) => `${c.id} (${c.start.toFixed(2)}-${c.end.toFixed(2)} s): ${c.text}`)
+              .join("\n"),
+            recipes: sc.recipes.map((x, i) => `${i}: ${x.id} ${JSON.stringify(x.params)}`).join("\n"),
+            menu: cat
+              .filter((c: any) => sc.recipes.some((x) => x.id === c.id))
+              .map((c: any) => ({ id: c.id, params: c.params.properties })),
+            notes: notes.length ? notes.map((n) => `${n.id} (${n.category}): ${n.text}`).join("\n") : "(none)",
+            lints: lints.length ? lints.join("\n") : "(none)",
+          },
+          schema: TuneOut,
+          images: await this.sceneStills(p, s.id),
+        });
+        if (data.changes.length) {
+          const recipes = sc.recipes.map((x) => ({ ...x, params: { ...x.params } }));
+          for (const c of data.changes)
+            if (recipes[c.recipe]) recipes[c.recipe].params = { ...recipes[c.recipe].params, ...c.params };
+          const res = await this.deps.registry.call(
+            "scene_set_recipes",
+            {
+              scene: s.id,
+              recipes,
+              reason:
+                data.changes
+                  .map((c) => c.why)
+                  .join("; ")
+                  .slice(0, 280) || "tune",
+            },
+            this.ctx(p, "animator", t.id),
+          );
+          if (!res.ok)
+            p.emit("log", {
+              level: "warn",
+              role: "animator",
+              text: `${s.id}: kept the scene as it was (${res.error.message})`,
+            });
+        }
+        for (const n of notes)
+          p.updateNote(n.id, {
+            status: "done",
+            reason: data.changes.map((c) => c.why).join("; ") || "checked; no change needed",
+          });
+        this.done(p, t, {
+          summary: data.changes.length ? data.changes.map((c) => c.why).join("; ") : "no changes needed",
+        });
+        p.setSceneStatus(s.id, { version: "render", state: "ready" });
+      } catch (e: any) {
+        if (r.abort.signal.aborted) throw e;
+        // a weak model failing here costs nothing: the scene keeps its recipes as they are
+        this.failTask(p, t, e);
+        p.emit("log", {
+          level: "warn",
+          role: "animator",
+          text: `${s.id}: kept as built (${String(e?.message ?? e).slice(0, 120)})`,
+        });
+      }
+    };
+    if (local) for (const s of scenes) await one(s);
+    else await Promise.all(scenes.map(one));
   }
 
   private async narrateMilestone(p: OpenProject) {
