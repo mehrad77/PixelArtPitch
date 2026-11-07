@@ -303,7 +303,17 @@ export async function decidePip(
       ...(edit != null ? { edit } : {}),
       ...(values ? { values } : {}),
     });
-    if (next) set(key, (s) => ({ ...s, items: replaceCard(s.items, next) }));
+    // the card's own events can beat this reply (a fork finishes in milliseconds): a reply never moves a card back
+    // from where its events already took it ("done" stays done, not "running" again)
+    if (next)
+      set(key, (s) => {
+        const now = s.items.flatMap((i) => (i.kind === "pip" ? i.cards : [])).find((c) => c.id === next.id);
+        const settled = (c?: PipCard) => {
+          const st = c && "status" in c ? String(c.status) : "";
+          return !!st && st !== "running" && st !== "proposed" && st !== "open";
+        };
+        return settled(now) && !settled(next) ? s : { ...s, items: replaceCard(s.items, next) };
+      });
   } catch (e) {
     set(key, (s) => ({ ...s, items: replaceCard(s.items, card) }));
     throw e;
