@@ -135,10 +135,6 @@
 .steer h2 {
   margin: 0;
 }
-.steer-sent {
-  margin: 0;
-  color: var(--status-success);
-}
 
 /* a phone: the row of nine faces (Pip and the crew) a size down, so it fits without scrolling */
 @media (max-width: 30rem) {
