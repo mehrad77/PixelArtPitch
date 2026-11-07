@@ -300,6 +300,55 @@ test("sit: glides onto its anchor, squashes, perches, follows a layer and sounds
   assert.match(bad[0].message, /no layer "nest"/);
 });
 
+test("sit keeps facing the way it came in after touchdown", () => {
+  const cs = compile({
+    layers: [
+      {
+        id: "bug",
+        kind: "sprite",
+        props: { asset: "bug", x: 200, y: 60, anchor: "bottom" },
+        behaviors: [{ kind: "sit", at: "S(c01)", params: { x: 80, y: 60, land: 0.5, fps: 0.1 } }],
+      },
+    ],
+  });
+  const t0 = cs.layers.find((l) => l.id === "bug")!.behaviors[0].at;
+  const e = eng();
+  const edges = (s: number) => {
+    drawDecl(e, cs, t0 + s);
+    const b = box(cs, "bug", t0 + s)!;
+    return [hexAt(e.buf, b.x, b.y + 1), hexAt(e.buf, b.x + b.w - 1, b.y + 1)];
+  };
+  assert.deepEqual(edges(0.25), [COLOURS.G, COLOURS.T], "glides in facing left");
+  // after touchdown: the perched owl draws exactly like an owl standing there facing left (one frame for both)
+  const perch = compile({
+    layers: [
+      {
+        id: "owl",
+        kind: "actor",
+        props: { asset: "owl", x: 200, y: 100, artFaces: "right", frames: { perch: ["idle0"] } },
+        behaviors: [{ kind: "sit", at: "S(c01)", params: { x: 80, y: 100, land: 0.5 } }],
+      },
+    ],
+  });
+  const p0 = perch.layers.find((l) => l.id === "owl")!.behaviors[0].at;
+  const draw = (s: number) => {
+    drawDecl(e, perch, p0 + s);
+    return Buffer.from(e.buf);
+  };
+  const mirrored = compile({
+    layers: [
+      {
+        id: "owl",
+        kind: "actor",
+        props: { asset: "owl", x: 80, y: 100, artFaces: "right", facing: "left", frames: { idle: ["idle0"] } },
+      },
+    ],
+  });
+  drawDecl(e, mirrored, p0 + 1);
+  const want = Buffer.from(e.buf);
+  assert.ok(draw(1).equals(want), "after touchdown it still faces left");
+});
+
 test("fly then sit on an actor: the owl lands where the flight left it, using its run and idle frames", () => {
   const cs = compile({
     layers: [

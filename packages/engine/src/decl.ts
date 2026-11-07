@@ -776,13 +776,13 @@ function stateOf(l: CLayer, env: Env, t = env.t, withFx = true): LayerState {
         }
         ax += bp.dx;
         ay += bp.dy;
+        // it faces the way it came in, during the glide and after touchdown
+        if (Math.abs(ax - st.x) > 0.5) st.facing = ax > st.x ? "right" : "left";
         if (s < bp.land) {
           // glide in on a small hop, still flapping
           const q = easeFn("inOut", s / bp.land);
-          const x0 = st.x;
-          st.x = lerp(x0, ax, q);
+          st.x = lerp(st.x, ax, q);
           st.y = lerp(st.y, ay, q) - Math.sin(q * Math.PI) * bp.lift;
-          if (Math.abs(ax - x0) > 0.5) st.facing = ax > x0 ? "right" : "left";
           st.motion = "fly";
           st.motionT0 = b.at;
           st.mfps = 8;
