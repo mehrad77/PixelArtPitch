@@ -26,30 +26,102 @@
 .digest .wait-line {
   font-size: var(--step--1);
 }
+/* the timeline folded to a footer: its bar only */
+.workspace:has(.tracks[data-folded]) {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+/* the viewer and one side panel (Crew, Stage, Inbox, Notes, Changes); folded, the panel is a thin rail */
 .ws-main {
   display: grid;
-  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr) minmax(18rem, 25rem);
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 27rem);
   min-block-size: 0;
 }
-.ws-left,
-.ws-right {
-  min-block-size: 0;
-  overflow-y: auto;
-  background: var(--surface);
-}
-.ws-left {
-  border-inline-end: 1px solid var(--stroke);
+.ws-main[data-side-folded] {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 .ws-right {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  min-block-size: 0;
+  overflow-y: auto;
   border-inline-start: 1px solid var(--stroke);
+  background: var(--surface);
+}
+.ws-right[hidden] {
+  display: none;
 }
 .ws-right .tabs {
   position: sticky;
   inset-block-start: 0;
   z-index: var(--z-sticky);
+  display: flex;
+  align-items: stretch;
   background: var(--surface);
+}
+.ws-right .tab-list {
+  flex: 1;
+  min-inline-size: 0;
+}
+.ws-fold,
+.ws-rail-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-inline-size: var(--target-min);
+  min-block-size: var(--target-min);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+.ws-fold:hover,
+.ws-rail-open:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+.ws-fold:focus-visible,
+.ws-rail-open:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.ws-fold span,
+.ws-rail-open > span:first-child {
+  display: inline-block;
+}
+:dir(rtl) .ws-fold span,
+:dir(rtl) .ws-rail-open > span:first-child {
+  scale: -1 1;
+}
+.ws-rail {
+  display: flex;
+  border-inline-start: 1px solid var(--stroke);
+  background: var(--surface);
+}
+.ws-rail-open {
+  flex-direction: column;
+  justify-content: flex-start;
+  padding-block: var(--space-3);
+}
+.ws-rail-word {
+  writing-mode: vertical-rl;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tracks-fold {
+  order: 9;
+  margin-inline-start: auto;
+}
+.tracks[data-folded] .tracks-body {
+  display: none;
+}
+.tracks[data-folded] .tracks-bar {
+  border-block-end: 0;
 }
 .tab-panel {
   min-block-size: 0;
@@ -92,11 +164,26 @@
     grid-row: 1;
     min-block-size: 18rem;
   }
-  .ws-left,
-  .ws-right {
+  .ws-main[data-side-folded] {
+    grid-template-columns: 1fr;
+  }
+  .ws-right,
+  .ws-rail {
     overflow: visible;
     border: 0;
     border-block-start: 1px solid var(--stroke);
+  }
+  .ws-rail-word {
+    writing-mode: horizontal-tb;
+  }
+  .ws-rail-open {
+    flex-direction: row;
+    inline-size: 100%;
+    padding-block: 0;
+  }
+  .ws-rail-open > span:first-child,
+  .ws-fold span {
+    rotate: 90deg;
   }
   .tracks {
     min-block-size: 16rem;

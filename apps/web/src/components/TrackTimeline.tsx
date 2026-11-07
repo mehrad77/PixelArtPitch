@@ -45,8 +45,13 @@ export function TrackTimeline({
   onSelect,
   projectId,
   narration = "none",
+  folded = false,
+  onFold,
 }: {
   projectId: string;
+  /** folded: only the bar shows, as a footer; the tracks come back with "Show" */
+  folded?: boolean;
+  onFold?: (folded: boolean) => void;
   /** how the narration is made; with nothing recorded yet, the Voice track is one quiet band (hidden for "none") */
   narration?: "user" | "tts" | "none";
   clips: Clip[];
@@ -98,41 +103,67 @@ export function TrackTimeline({
     const w = scroller.current?.clientWidth ?? 800;
     setZoom(clamp(Math.floor((w - 48) / pb.duration), 4, 200));
   };
-  // fit once when the timeline first shows; after that the zoom is the person's
-  // biome-ignore lint/correctness/useExhaustiveDependencies: on mount only
-  useLayoutEffect(fit, []);
+  // fit once when the timeline first shows (a folded one has no width yet); after that the zoom is the person's
+  const fitted = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only when it first unfolds
+  useLayoutEffect(() => {
+    if (folded || fitted.current) return;
+    fitted.current = true;
+    fit();
+  }, [folded]);
 
   const [i, o] = inOut;
   return (
-    <section className="tracks" aria-label="Timeline">
+    <section className="tracks" aria-label="Timeline" data-folded={folded ? "" : undefined}>
       <div className="tracks-bar">
         <h2 className="label">Timeline</h2>
-        <fieldset className="tracks-zoom">
-          <legend className="visually-hidden">Zoom</legend>
-          <Button size="sm" variant="ghost" aria-label="Zoom out" onClick={() => setZoom(clamp(zoom / 1.5, 4, 200))}>
-            −
+        {onFold && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="tracks-fold"
+            aria-expanded={!folded}
+            aria-controls="tracks-body"
+            onClick={() => onFold(!folded)}
+          >
+            {folded ? "Show ▴" : "Hide ▾"}
           </Button>
-          <Button size="sm" variant="ghost" onClick={fit}>
-            Fit
-          </Button>
-          <Button size="sm" variant="ghost" aria-label="Zoom in" onClick={() => setZoom(clamp(zoom * 1.5, 4, 200))}>
-            +
-          </Button>
-        </fieldset>
-        <Popover id="tracks-key" label="Key" variant="quiet" size="sm">
-          <ul className="tracks-legend" aria-label="Clip states">
-            {(Object.keys(CLIP_WORD) as ClipState[]).map((s) => (
-              <li key={s}>
-                <span className="clip legend-swatch" data-state={s} aria-hidden="true">
-                  {GLYPH[s]}
-                </span>
-                {CLIP_WORD[s]}
-              </li>
-            ))}
-          </ul>
-        </Popover>
+        )}
+        {!folded && (
+          <>
+            <fieldset className="tracks-zoom">
+              <legend className="visually-hidden">Zoom</legend>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Zoom out"
+                onClick={() => setZoom(clamp(zoom / 1.5, 4, 200))}
+              >
+                −
+              </Button>
+              <Button size="sm" variant="ghost" onClick={fit}>
+                Fit
+              </Button>
+              <Button size="sm" variant="ghost" aria-label="Zoom in" onClick={() => setZoom(clamp(zoom * 1.5, 4, 200))}>
+                +
+              </Button>
+            </fieldset>
+            <Popover id="tracks-key" label="Key" variant="quiet" size="sm">
+              <ul className="tracks-legend" aria-label="Clip states">
+                {(Object.keys(CLIP_WORD) as ClipState[]).map((s) => (
+                  <li key={s}>
+                    <span className="clip legend-swatch" data-state={s} aria-hidden="true">
+                      {GLYPH[s]}
+                    </span>
+                    {CLIP_WORD[s]}
+                  </li>
+                ))}
+              </ul>
+            </Popover>
+          </>
+        )}
       </div>
-      <div className="tracks-body" dir="ltr">
+      <div className="tracks-body" id="tracks-body" dir="ltr" hidden={folded}>
         <div className="tracks-heads" aria-hidden="true">
           <div className="track-head ruler-head" />
           {tracks.map((t) => (

@@ -13,7 +13,6 @@ import { ShortcutsDialog } from "../components/ShortcutsDialog.tsx";
 import { StagePanel } from "../components/StagePanel.tsx";
 import { TrackTimeline } from "../components/TrackTimeline.tsx";
 import { type Overlays, Viewer } from "../components/Viewer.tsx";
-import { WaitLine } from "../components/WaitLine.tsx";
 import { client } from "../lib/client.ts";
 import { usePublishProject } from "../lib/current.ts";
 import { buildClips, type Clip, NOTE_CATEGORY, ROLE_LABEL, type TrackId } from "../lib/derive.ts";
@@ -25,9 +24,10 @@ import { usePlayback } from "../lib/playback.ts";
 import type { NoteStatus, NoteTarget, ProjectState, Role, Stage } from "../lib/types.ts";
 import "./Workspace.css";
 
-type Tab = "crew" | "inbox" | "notes" | "changes";
+type Tab = "crew" | "stage" | "inbox" | "notes" | "changes";
 const TABS: { id: Tab; label: string }[] = [
   { id: "crew", label: "Crew" },
+  { id: "stage", label: "Stage" },
   { id: "inbox", label: "Inbox" },
   { id: "notes", label: "Notes" },
   { id: "changes", label: "Changes" },
@@ -39,6 +39,29 @@ const NOTE_STATUS: Record<NoteStatus, { word: string; tone: "muted" | "accent" |
   done: { word: "Done", tone: "success" },
   declined: { word: "Declined", tone: "muted" },
 };
+
+/** a remembered on/off switch (browser storage; off when storage is unavailable) */
+function useStoredFlag(key: string): [boolean, (v: boolean) => void] {
+  const [v, setV] = useState(() => {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const set = useCallback(
+    (next: boolean) => {
+      setV(next);
+      try {
+        localStorage.setItem(key, next ? "1" : "0");
+      } catch {
+        // storage off: the choice lasts for this page only
+      }
+    },
+    [key],
+  );
+  return [v, set];
+}
 
 /** `stage` comes from the URL; without one (/p/:id with the Studio view remembered) the crew's stage shows */
 export function WorkspacePage({ id, stage }: { id: string; stage?: Stage }) {
@@ -80,13 +103,32 @@ function Workspace({
   const [inOut, setInOut] = useState<[number | null, number | null]>([null, null]);
   const [zoom, setZoom] = useState(24);
   const [selected, setSelected] = useState<Clip | null>(null);
-  const [tab, setTab] = useState<Tab>("crew");
+  const [tab, setTabRaw] = useState<Tab>("crew");
+  // the side panel and the timeline fold away; the choice is remembered per browser
+  const [sideFolded, setSideFolded] = useStoredFlag("pap.sideFolded");
+  const [tracksFolded, setTracksFolded] = useStoredFlag("pap.tracksFolded");
+  const setTab = useCallback(
+    (t: Tab) => {
+      setTabRaw(t);
+      setSideFolded(false);
+    },
+    [setSideFolded],
+  );
+  // picking a stage in the header shows its panel (not on first open: the crew leads)
+  const firstStage = useRef(stage);
+  useEffect(() => {
+    if (stage !== firstStage.current) {
+      firstStage.current = stage;
+      setTab("stage");
+    }
+  }, [stage, setTab]);
   // "Ask Pip about this" anywhere in Studio: Pip is pinned first in the Crew tab
   usePipOpenRequest(id, () => setTab("crew"));
   const [note, setNote] = useState<{ target: NoteTarget; track: TrackId } | null>(null);
   const [help, setHelp] = useState(false);
   const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({
     crew: null,
+    stage: null,
     inbox: null,
     notes: null,
     changes: null,
@@ -129,7 +171,7 @@ function Workspace({
       const next = cards[(cur + 1) % cards.length];
       next.querySelector<HTMLElement>("input:checked, input, textarea, button")?.focus();
     });
-  }, []);
+  }, [setTab]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -175,7 +217,7 @@ function Workspace({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [id, pb, state.timeline, openNote, nextQuestion]);
+  }, [id, pb, state.timeline, openNote, nextQuestion, setTab]);
 
   const onTabKey = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
     const i = TABS.findIndex((t) => t.id === tab);
@@ -201,7 +243,6 @@ function Workspace({
         <span className="label">Producer</span>
         <div className="digest-text">
           <p>{digestText}</p>
-          <WaitLine projectId={id} state={state} onNeeds={nextQuestion} needsLabel="" />
         </div>
         {inboxCount > 0 && (
           <button type="button" className="linkish small" onClick={nextQuestion}>
@@ -215,19 +256,7 @@ function Workspace({
       <p className="visually-hidden" role="status" aria-live="polite">
         {digest}
       </p>
-      <div className="ws-main">
-        <aside className="ws-left" aria-label="Stage">
-          <StagePanel
-            projectId={id}
-            state={state}
-            stage={stage}
-            lastStill={view.lastStill}
-            onSeek={(t) => {
-              pb.pause();
-              pb.seek(t);
-            }}
-          />
-        </aside>
+      <div className="ws-main" data-side-folded={sideFolded ? "" : undefined}>
         <Viewer
           projectId={id}
           state={state}
@@ -239,8 +268,22 @@ function Workspace({
           setCompare={setCompare}
           inOut={inOut}
         />
-        <aside className="ws-right" aria-label="Crew and inbox">
-          <div className="tabs" data-ready="" data-size="sm" data-shab-tabs="">
+        {sideFolded && (
+          <aside className="ws-rail" aria-label="Side panel">
+            <button
+              type="button"
+              className="ws-rail-open"
+              aria-expanded="false"
+              aria-controls="ws-side"
+              onClick={() => setSideFolded(false)}
+            >
+              <span aria-hidden="true">◂</span>
+              <span className="ws-rail-word">Panel{inboxCount > 0 && ` · ${inboxCount}`}</span>
+            </button>
+          </aside>
+        )}
+        <aside className="ws-right" id="ws-side" aria-label="Side panel" hidden={sideFolded}>
+          <div className="tabs ws-tabs" data-ready="" data-size="sm" data-shab-tabs="">
             <div className="tab-list" role="tablist" aria-label="Side panel" data-shab-tabs="">
               {TABS.map((t) => (
                 <button
@@ -264,6 +307,17 @@ function Workspace({
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              className="ws-fold"
+              aria-label="Hide the side panel"
+              title="Hide the side panel"
+              aria-expanded="true"
+              aria-controls="ws-side"
+              onClick={() => setSideFolded(true)}
+            >
+              <span aria-hidden="true">▸</span>
+            </button>
           </div>
           <section
             id="panel-crew"
@@ -273,6 +327,24 @@ function Workspace({
             className="tab-panel"
           >
             <CrewPanel projectId={id} state={state} currentScene={() => sceneAt(pb.t)?.id} />
+          </section>
+          <section
+            id="panel-stage"
+            role="tabpanel"
+            aria-labelledby="tab-stage"
+            hidden={tab !== "stage"}
+            className="tab-panel"
+          >
+            <StagePanel
+              projectId={id}
+              state={state}
+              stage={stage}
+              lastStill={view.lastStill}
+              onSeek={(t) => {
+                pb.pause();
+                pb.seek(t);
+              }}
+            />
           </section>
           <section
             id="panel-inbox"
@@ -391,6 +463,8 @@ function Workspace({
         inOut={inOut}
         selected={selected?.id ?? null}
         onSelect={setSelected}
+        folded={tracksFolded}
+        onFold={setTracksFolded}
       />
       {note && <NoteForm projectId={id} target={note.target} track={note.track} onClose={() => setNote(null)} />}
       {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
