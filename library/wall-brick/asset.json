@@ -1,0 +1,91 @@
+{
+ "id": "wall-brick",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "brick-red",
+  "brick-stone"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "wall",
+  "brick",
+  "building",
+  "masonry",
+  "tileable"
+ ],
+ "description": "Brick walls in running bond (8x4 bricks, alternate courses offset), tileable in all directions. brick-red = wine-red bricks with a lit top edge (r R) on grey mortar (e); brick-stone = grey stone blocks (p q e) on dark joints (l).",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-build.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "4b256cb4deb60b1b",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Brick walls in running bond (8x4 bricks, alternate courses offset), tileable in all directions. brick-red = wine-red bricks with a lit top edge (r R) on grey mortar (e); brick-stone = grey stone blocks (p q e) on dark joints (l).) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:brick-red": 1,
+   "seamTB:brick-red": 1,
+   "seamLR:brick-stone": 1,
+   "seamTB:brick-stone": 1
+  }
+ },
+ "grid": {
+  "brick-red": [
+   "rrrrrrRerrrrrrRe",
+   "RRRRRRReRRRRRRRe",
+   "RRRRRRReRRRRRRRe",
+   "eeeeeeeeeeeeeeee",
+   "rrRerrrrrrRerrrr",
+   "RRReRRRRRRReRRRR",
+   "RRReRRRRRRReRRRR",
+   "eeeeeeeeeeeeeeee",
+   "rrrrrrRerrrrrrRe",
+   "RRRRRRReRRRRRRRe",
+   "RRRRRRReRRRRRRRe",
+   "eeeeeeeeeeeeeeee",
+   "rrRerrrrrrRerrrr",
+   "RRReRRRRRRReRRRR",
+   "RRReRRRRRRReRRRR",
+   "eeeeeeeeeeeeeeee"
+  ],
+  "brick-stone": [
+   "ppppppqlppppppql",
+   "qqqqqqqlqqqqqqql",
+   "qqeeeeelqqeeeeel",
+   "llllllllllllllll",
+   "ppqlppppppqlpppp",
+   "qqqlqqqqqqqlqqqq",
+   "eeelqqeeeeelqqee",
+   "llllllllllllllll",
+   "ppppppqlppppppql",
+   "qqqqqqqlqqqqqqql",
+   "qqeeeeelqqeeeeel",
+   "llllllllllllllll",
+   "ppqlppppppqlpppp",
+   "qqqlqqqqqqqlqqqq",
+   "eeelqqeeeeelqqee",
+   "llllllllllllllll"
+  ]
+ }
+}

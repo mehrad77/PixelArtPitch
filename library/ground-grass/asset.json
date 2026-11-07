@@ -1,0 +1,147 @@
+{
+ "id": "ground-grass",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "grass-top",
+  "grass-fill",
+  "grass-end-l",
+  "grass-end-r",
+  "grass-tuft"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "ground",
+  "grass",
+  "terrain",
+  "platform",
+  "tileable"
+ ],
+ "description": "Grassy platform ground. grass-top = a grass band (T G g) with small tufts on top over umber soil (n c, A dents, q pebbles), tileable left-right; grass-fill = the soil below, tileable in all directions; grass-end-l / grass-end-r = the platform's rounded left and right ends (k side edge); grass-tuft = a loose tuft of blades (T G g) standing on the bottom row, transparent above.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-ground.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "b66c351f4971e3a9",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Grassy platform ground. grass-top = a grass band (T G g) with small tufts on top over umber soil (n c, A dents, q pebbles), tileable left-right; grass-fill = the soil below, tileable in all directions; grass-end-l / grass-end-r = the platform's rounded left and right ends (k side edge); grass-tuft = a loose tuft of blades (T G g) standing on the bottom row, transparent above.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:grass-top": 1,
+   "seamLR:grass-fill": 1,
+   "seamV:grass-top/grass-fill": 1
+  }
+ },
+ "grid": {
+  "grass-top": [
+   "...T.....TT.....",
+   "TTTTTTTTTTTTTTTT",
+   "TTTGTTGTTGGTTTTT",
+   "GGGGGGGGGGGGGGGG",
+   "GGggGGGGGggGGGGG",
+   "gggggggggngggggg",
+   "gnnnggnpgnggcgnn",
+   "nnnngnnqennnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnncccnnnnnnnAA",
+   "nnnnnnnnnnnnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnnnnnnnnccnnnn",
+   "nnnnnnnnnnnnnpqn",
+   "ccnnnnAAnnnnnqen",
+   "nnnnnnnnnnnnnnnn"
+  ],
+  "grass-fill": [
+   "nnnnnnnnnnnnnnnn",
+   "nnnnncnnncccnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nccnnnnnnnnnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnAnnnnnnnnnnnn",
+   "nnnnnnnpqnnnccnn",
+   "nnnnnnnqennnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnncccnnnnnnnAA",
+   "nnnnnnnnnnnnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnnnnnnnnccnnnn",
+   "nnnnnnnnnnnnnpqn",
+   "ccnnnnAAnnnnnqen",
+   "nnnnnnnnnnnnnnnn"
+  ],
+  "grass-end-l": [
+   ".........TT.....",
+   ".kTTTTTTTTTTTTTT",
+   "kTTGTTGTTGGTTTTT",
+   "kTGGGGGGGGGGGGGG",
+   "kGggGGGGGggGGGGG",
+   "kGgggggggngggggg",
+   "kGnnggnpgnggcgnn",
+   "kGnngnnqennnnnnn",
+   "knnnnnnnnnnnnnnn",
+   "knnncccnnnnnnnAA",
+   "knnnnnnnnnnnnnnn",
+   "knnnnnnnnnnnnnnn",
+   "knnnnnnnnnccnnnn",
+   "knnnnnnnnnnnnpqn",
+   "kcnnnnAAnnnnnqen",
+   "knnnnnnnnnnnnnnn"
+  ],
+  "grass-end-r": [
+   "...T.....TT.....",
+   "TTTTTTTTTTTTTTk.",
+   "TTTGTTGTTGGTTTGk",
+   "GGGGGGGGGGGGGGGk",
+   "GGggGGGGGggGGGgk",
+   "gggggggggngggggk",
+   "gnnnggnpgnggcggk",
+   "nnnngnnqennnnngk",
+   "nnnnnnnnnnnnnnAk",
+   "nnnncccnnnnnnnAk",
+   "nnnnnnnnnnnnnnAk",
+   "nnnnnnnnnnnnnnAk",
+   "nnnnnnnnnnccnnAk",
+   "nnnnnnnnnnnnnpAk",
+   "ccnnnnAAnnnnnqAk",
+   "nnnnnnnnnnnnnnAk"
+  ],
+  "grass-tuft": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".....T...T......",
+   "....TG..TG..T...",
+   "..T.TG.TGG.TG...",
+   "..TGGgTGGgTGg...",
+   "..GGgggGggGggg.."
+  ]
+ }
+}

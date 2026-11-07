@@ -1,0 +1,91 @@
+{
+ "id": "floor-wood",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "planks",
+  "planks-dark"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "floor",
+  "wood",
+  "planks",
+  "interior",
+  "tileable"
+ ],
+ "description": "Wooden floorboards, four horizontal planks per tile with offset joints, tileable in all directions. planks = warm wood (s lit edge, c body, n grain, A gaps); planks-dark = the same boards in dark wood (c n a A).",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-build.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "9668a606b860950d",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Wooden floorboards, four horizontal planks per tile with offset joints, tileable in all directions. planks = warm wood (s lit edge, c body, n grain, A gaps); planks-dark = the same boards in dark wood (c n a A).) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:planks": 1,
+   "seamTB:planks": 1,
+   "seamLR:planks-dark": 1,
+   "seamTB:planks-dark": 1
+  }
+ },
+ "grid": {
+  "planks": [
+   "sssAssssssssssss",
+   "cccAccnnnccccccc",
+   "cccAcccccccccnnc",
+   "AAAAAAAAAAAAAAAA",
+   "sssssssssssAssss",
+   "cccccnnccccAcccc",
+   "nccccccccccAccnn",
+   "AAAAAAAAAAAAAAAA",
+   "sssssssAssssssss",
+   "cccccccAccnnnccc",
+   "cnnccccAcccccccc",
+   "AAAAAAAAAAAAAAAA",
+   "ssssssssssssssAs",
+   "ccccccccnnccccAc",
+   "cnnnccccccccccAc",
+   "AAAAAAAAAAAAAAAA"
+  ],
+  "planks-dark": [
+   "cccAcccccccccccc",
+   "nnnAnnaaannnnnnn",
+   "nnnAnnnnnnnnnaan",
+   "AAAAAAAAAAAAAAAA",
+   "cccccccccccAcccc",
+   "nnnnnaannnnAnnnn",
+   "annnnnnnnnnAnnaa",
+   "AAAAAAAAAAAAAAAA",
+   "cccccccAcccccccc",
+   "nnnnnnnAnnaaannn",
+   "naannnnAnnnnnnnn",
+   "AAAAAAAAAAAAAAAA",
+   "ccccccccccccccAc",
+   "nnnnnnnnaannnnAn",
+   "naaannnnnnnnnnAn",
+   "AAAAAAAAAAAAAAAA"
+  ]
+ }
+}

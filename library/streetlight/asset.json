@@ -1,0 +1,122 @@
+{
+ "id": "streetlight",
+ "version": 1,
+ "kind": "prop",
+ "w": 16,
+ "h": 32,
+ "frames": [
+  "streetlight-on",
+  "streetlight-off"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "prop",
+  "streetlight",
+  "lamp",
+  "street",
+  "night"
+ ],
+ "description": "A tall curved-arm streetlight standing on the bottom row, 1 px k outline: a grey pole (p q e) with a collar (Y) and a flared base, the arm bending right to a slate lamp head (Y q). streetlight-on = a glowing lamp (P H B); streetlight-off = the same lamp dark (p q e).",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w2-big.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "f9ea066895ab8737",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a prop (A tall curved-arm streetlight standing on the bottom row, 1 px k outline: a grey pole (p q e) with a collar (Y) and a flared base, the arm bending right to a slate lamp head (Y q). streetlight-on = a glowing lamp (P H B); streetlight-off = the same lamp dark (p q e).) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:streetlight-on": 1,
+   "edge:streetlight-off": 1,
+   "edgeK:streetlight-on": 1,
+   "edgeK:streetlight-off": 1
+  }
+ },
+ "grid": {
+  "streetlight-on": [
+   "................",
+   "................",
+   "......kkkkkk....",
+   ".....kpqqqqqk...",
+   "....kpqkkkkqqkk.",
+   "....kpqk.kYYYYYk",
+   "....kpqk.kYqqqYk",
+   "....kpqk.kHPPPHk",
+   "....kpqk.kBHHHBk",
+   "....kpqk..kBBBk.",
+   "....kpqk...kkk..",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "...kYYYYk.......",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "...kpqqek.......",
+   "..kpqqqqek......",
+   ".kpqqqqqqek.....",
+   "..kkkkkkkk......"
+  ],
+  "streetlight-off": [
+   "................",
+   "................",
+   "......kkkkkk....",
+   ".....kpqqqqqk...",
+   "....kpqkkkkqqkk.",
+   "....kpqk.kYYYYYk",
+   "....kpqk.kYqqqYk",
+   "....kpqk.kqpppqk",
+   "....kpqk.keqqqek",
+   "....kpqk..keeek.",
+   "....kpqk...kkk..",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "...kYYYYk.......",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "....kpqk........",
+   "...kpqqek.......",
+   "..kpqqqqek......",
+   ".kpqqqqqqek.....",
+   "..kkkkkkkk......"
+  ]
+ }
+}

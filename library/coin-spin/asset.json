@@ -1,0 +1,140 @@
+{
+ "id": "coin-spin",
+ "version": 1,
+ "kind": "icon",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "coin0",
+  "coin1",
+  "coin2",
+  "coin3"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "icon",
+  "coin",
+  "money",
+  "pickup",
+  "animated"
+ ],
+ "description": "A spinning gold coin, 4-frame loop, centred and registered on the same middle in every frame, 1 px k outline: coin0 = the full face (H B c rim, an embossed inner ring and bar); coin1 = turned to a narrow oval; coin2 = edge-on (H c n); coin3 = the narrow oval from the other side (coin1 mirrored). Complements the static coin in icons-pitch.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w3-icons.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "3a19151ffd9d0f8a",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a icon (A spinning gold coin, 4-frame loop, centred and registered on the same middle in every frame, 1 px k outline: coin0 = the full face (H B c rim, an embossed inner ring and bar); coin1 = turned to a narrow oval; coin2 = edge-on (H c n); coin3 = the narrow oval from the other side (coin1 mirrored). Complements the static coin in icons-pitch.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:coin0": 1,
+   "edge:coin1": 1,
+   "edge:coin2": 1,
+   "edge:coin3": 1,
+   "edgeK:coin0": 1,
+   "edgeK:coin1": 1,
+   "edgeK:coin2": 1,
+   "edgeK:coin3": 1,
+   "swap:coin0>coin1": 124,
+   "swapcap:coin0>coin1": 78,
+   "swap:coin1>coin2": 90,
+   "swapcap:coin1>coin2": 78,
+   "swap:coin2>coin3": 90,
+   "swapcap:coin2>coin3": 78,
+   "swap:coin3>coin0": 124,
+   "swapcap:coin3>coin0": 78
+  }
+ },
+ "grid": {
+  "coin0": [
+   "................",
+   ".....kkkkkk.....",
+   "....kHHHHHck....",
+   "...kHBBccBBck...",
+   "..kHBccBBccBck..",
+   ".kHBcBBBBBBHBck.",
+   ".kHBcBBHHBBHBck.",
+   ".kHcBBBHHBBBHck.",
+   ".kHcBBBHHBBBHck.",
+   ".kHBcBBHHBBHBck.",
+   ".kcBcBBBBBBHBck.",
+   "..kcBHHBBHHBck..",
+   "...kcBBHHBBck...",
+   "....kcccccck....",
+   ".....kkkkkk.....",
+   "................"
+  ],
+  "coin1": [
+   "................",
+   "......kkkk......",
+   ".....kHHHck.....",
+   ".....kHBBck.....",
+   "....kHBccBck....",
+   "....kHcBBcck....",
+   "....kHcHHcck....",
+   "...kHBcHHHBck...",
+   "...kcBcHHHBck...",
+   "....kHcHHHck....",
+   "....kHHBBHck....",
+   "....kcBHHBck....",
+   ".....kHBBck.....",
+   ".....kcccck.....",
+   "......kkkk......",
+   "................"
+  ],
+  "coin2": [
+   "................",
+   ".......kk.......",
+   "......kBck......",
+   "......kHck......",
+   "......kHck......",
+   "......kHck......",
+   "......kHck......",
+   "......kHck......",
+   "......kHck......",
+   "......kHck......",
+   "......kHck......",
+   "......kHck......",
+   "......kHck......",
+   "......kHnk......",
+   ".......kk.......",
+   "................"
+  ],
+  "coin3": [
+   "................",
+   "......kkkk......",
+   ".....kcHHHk.....",
+   ".....kcBBHk.....",
+   "....kcBccBHk....",
+   "....kccBBcHk....",
+   "....kccHHcHk....",
+   "...kcBHHHcBHk...",
+   "...kcBHHHcBck...",
+   "....kcHHHcHk....",
+   "....kcHBBHHk....",
+   "....kcBHHBck....",
+   ".....kcBBHk.....",
+   ".....kcccck.....",
+   "......kkkk......",
+   "................"
+  ]
+ }
+}

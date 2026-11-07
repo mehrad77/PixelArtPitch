@@ -1,0 +1,140 @@
+{
+ "id": "fx-confetti",
+ "version": 1,
+ "kind": "decor",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "confetti0",
+  "confetti1",
+  "confetti2",
+  "confetti3"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "fx",
+  "confetti",
+  "party",
+  "celebrate",
+  "animated"
+ ],
+ "description": "Falling confetti, a seamless 4-frame loop: ten 2-cell paper bits (r R, B c, T G, Q D, V U) drop 4 rows a frame and tumble between flat and upright; pieces wrap from the bottom back to the top, so the loop never runs dry. No outline.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w4-fx.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "8d3f3863c8d95a1c",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (Falling confetti, a seamless 4-frame loop: ten 2-cell paper bits (r R, B c, T G, Q D, V U) drop 4 rows a frame and tumble between flat and upright; pieces wrap from the bottom back to the top, so the loop never runs dry. No outline.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:confetti0": 1,
+   "edge:confetti1": 1,
+   "edge:confetti2": 1,
+   "edge:confetti3": 1,
+   "edgeK:confetti0": 1,
+   "edgeK:confetti1": 1,
+   "edgeK:confetti2": 1,
+   "edgeK:confetti3": 1,
+   "swap:confetti0>confetti1": 38,
+   "swapcap:confetti0>confetti1": 10,
+   "swap:confetti1>confetti2": 40,
+   "swapcap:confetti1>confetti2": 10,
+   "swap:confetti2>confetti3": 38,
+   "swapcap:confetti2>confetti3": 10,
+   "swap:confetti3>confetti0": 40,
+   "swapcap:confetti3>confetti0": 10
+  }
+ },
+ "grid": {
+  "confetti0": [
+   ".rR.............",
+   "...........TG...",
+   "......Bc........",
+   "................",
+   "................",
+   "...QD...........",
+   "............VU..",
+   "................",
+   "........r.......",
+   "........R.......",
+   "B...............",
+   "c...............",
+   ".....T..........",
+   ".....G....Q.....",
+   "..V.......D.....",
+   "..U............."
+  ],
+  "confetti1": [
+   ".....TG.........",
+   "..........QD....",
+   "...VU...........",
+   "................",
+   "..r.............",
+   "..R........T....",
+   "......B....G....",
+   "......c.........",
+   "................",
+   "....Q...........",
+   "....D.......V...",
+   "............U...",
+   "........rR......",
+   "................",
+   ".Bc.............",
+   "................"
+  ],
+  "confetti2": [
+   "........r.......",
+   "........R.......",
+   "B...............",
+   "c...............",
+   ".....T..........",
+   ".....G....Q.....",
+   "..V.......D.....",
+   "..U.............",
+   ".rR.............",
+   "...........TG...",
+   "......Bc........",
+   "................",
+   "................",
+   "...QD...........",
+   "............VU..",
+   "................"
+  ],
+  "confetti3": [
+   "................",
+   "....Q...........",
+   "....D.......V...",
+   "............U...",
+   "........rR......",
+   "................",
+   ".Bc.............",
+   "................",
+   ".....TG.........",
+   "..........QD....",
+   "...VU...........",
+   "................",
+   "..r.............",
+   "..R........T....",
+   "......B....G....",
+   "......c........."
+  ]
+ }
+}

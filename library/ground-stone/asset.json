@@ -1,0 +1,108 @@
+{
+ "id": "ground-stone",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "stone-path",
+  "cobbles",
+  "stepping-stone"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "ground",
+  "stone",
+  "path",
+  "cobbles",
+  "tileable"
+ ],
+ "description": "Stone ground. stone-path = flat grey flagstones (p q e, l joints) laid over umber soil, a lit top edge, tileable left-right; cobbles = rounded cobblestones (p q e) on dark grout (l), tileable in all directions; stepping-stone = one flat stone (p q e l) resting on the bottom rows, transparent above.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-ground.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "a1946327b303e3ea",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Stone ground. stone-path = flat grey flagstones (p q e, l joints) laid over umber soil, a lit top edge, tileable left-right; cobbles = rounded cobblestones (p q e) on dark grout (l), tileable in all directions; stepping-stone = one flat stone (p q e l) resting on the bottom rows, transparent above.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:cobbles": 1,
+   "seamTB:cobbles": 1
+  }
+ },
+ "grid": {
+  "stone-path": [
+   "pppppppqpppppppp",
+   "ppppppplpppppppp",
+   "pqqqqqelpqqqqqqe",
+   "pqqqqqelpqqqqqqe",
+   "eeeeeeeleeeeeeee",
+   "llllllllllllllll",
+   "ppplppppppplpppp",
+   "qqqlpqqqqqelpqqq",
+   "qqqlpqqqqqelpqqq",
+   "eeeleeeeeeeleeee",
+   "llllllllllllllll",
+   "nnnnnnnnnnnnnnnn",
+   "nnnAAnnnnnnnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnnnnnnnnnnnAnn",
+   "nnnnnnnnnnnnnnnn"
+  ],
+  "cobbles": [
+   "lppplllpppplllpp",
+   "eqqqelpqqqqelpqq",
+   "eqqqelpqqqqelpqq",
+   "leeellleeeelllee",
+   "llllllllllllllll",
+   "plllpppplllpppll",
+   "qelpqqqqelpqqqep",
+   "qelpqqqqelpqqqep",
+   "ellleeeellleeell",
+   "llllllllllllllll",
+   "lppplllpplllpppl",
+   "pqqqelpqqelpqqqe",
+   "pqqqelpqqelpqqqe",
+   "pqqqelpqqelpqqqe",
+   "leeellleellleeel",
+   "llllllllllllllll"
+  ],
+  "stepping-stone": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".....pppppp.....",
+   "...ppqqqqqqpe...",
+   "..pqqqqqqqqqee..",
+   "..eqqqqqqqqeel..",
+   "...eeeeeeeeel...",
+   ".....llllll....."
+  ]
+ }
+}

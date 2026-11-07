@@ -1,0 +1,117 @@
+{
+ "id": "fx-dust",
+ "version": 1,
+ "kind": "decor",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "dust0",
+  "dust1",
+  "dust2"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "fx",
+  "dust",
+  "puff",
+  "landing",
+  "animated"
+ ],
+ "description": "A dust puff for landings and quick starts, 3 frames sharing the bottom-centre: dust0 = a small pale cloud on the ground (W p q); dust1 = it spreads wider; dust2 = it breaks into small rising wisps. No outline.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w4-fx.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "b95fc7c863e4a712",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (A dust puff for landings and quick starts, 3 frames sharing the bottom-centre: dust0 = a small pale cloud on the ground (W p q); dust1 = it spreads wider; dust2 = it breaks into small rising wisps. No outline.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:dust0": 1,
+   "edge:dust1": 1,
+   "edge:dust2": 1,
+   "edgeK:dust0": 1,
+   "edgeK:dust1": 1,
+   "edgeK:dust2": 1,
+   "swap:dust0>dust1": 76,
+   "swapcap:dust0>dust1": 16,
+   "swap:dust1>dust2": 90,
+   "swapcap:dust1>dust2": 16,
+   "swap:dust2>dust0": 66,
+   "swapcap:dust2>dust0": 16
+  }
+ },
+ "grid": {
+  "dust0": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "......WWpp......",
+   ".....WWppqp.....",
+   "....Wpppqqpq....",
+   "....ppqpppqq....",
+   ".....qq.qqq.....",
+   "................"
+  ],
+  "dust1": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".....WWpWWpp....",
+   "....WppWWppqq...",
+   "..WWWppWppqqqp..",
+   ".WWpppqqpqqqppp.",
+   ".Wppqqqq..Wppqq.",
+   ".ppqqq....ppqqq.",
+   "..qqq......qqq..",
+   "................"
+  ],
+  "dust2": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".........WWp....",
+   ".....Wp..ppq....",
+   "....Wppq.pqq....",
+   ".....pq.........",
+   ".Wpp........Wpp.",
+   ".ppq........ppq.",
+   ".pqq........pqq.",
+   "................",
+   "................",
+   "................",
+   "................"
+  ]
+ }
+}

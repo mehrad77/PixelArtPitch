@@ -1,0 +1,90 @@
+{
+ "id": "fx-marks",
+ "version": 1,
+ "kind": "decor",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "exclaim",
+  "question"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "fx",
+  "exclamation",
+  "question",
+  "alert",
+  "emote"
+ ],
+ "description": "Emote marks to pop over a head, centred, 1 px k outline, light from the upper left: exclaim = a bold brass exclamation mark (H B c), for surprise or alert; question = a light blue question mark (Q L D), for confusion. Symbols only, not text.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w4-fx.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "a10234b72b7242b9",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (Emote marks to pop over a head, centred, 1 px k outline, light from the upper left: exclaim = a bold brass exclamation mark (H B c), for surprise or alert; question = a light blue question mark (Q L D), for confusion. Symbols only, not text.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:exclaim": 1,
+   "edge:question": 1,
+   "edgeK:exclaim": 1,
+   "edgeK:question": 1
+  }
+ },
+ "grid": {
+  "exclaim": [
+   "................",
+   "......kkk.......",
+   ".....kHHBk......",
+   "....kHBBBck.....",
+   "....kHBBBck.....",
+   "....kHBBBck.....",
+   ".....kHBck......",
+   ".....kHBck......",
+   ".....kHBck......",
+   "......kck.......",
+   "......kk........",
+   ".....kHBk.......",
+   ".....kBcck......",
+   "......kkk.......",
+   "................",
+   "................"
+  ],
+  "question": [
+   "................",
+   "......kkkk......",
+   ".....kQLLLk.....",
+   "....kQLLLLDk....",
+   "...kQLDkkLLDk...",
+   "....kkk.kLLDk...",
+   ".......kQLDk....",
+   "......kQLDk.....",
+   "......kLLDk.....",
+   "......kDDk......",
+   ".......kk.......",
+   "......kQLk......",
+   "......kLDk......",
+   ".......kk.......",
+   "................",
+   "................"
+  ]
+ }
+}

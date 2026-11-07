@@ -1,0 +1,140 @@
+{
+ "id": "fx-smoke",
+ "version": 1,
+ "kind": "decor",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "smoke0",
+  "smoke1",
+  "smoke2",
+  "smoke3"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "fx",
+  "smoke",
+  "chimney",
+  "fire",
+  "animated"
+ ],
+ "description": "A rising smoke column, 4-frame loop over the bottom-centre: round puffs climb, swell then thin out, and darken from pale (P W p) to grey (q e) as they rise. Put it on a chimney or a campfire. No outline.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w4-fx.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "408a84ed4d10b85d",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (A rising smoke column, 4-frame loop over the bottom-centre: round puffs climb, swell then thin out, and darken from pale (P W p) to grey (q e) as they rise. Put it on a chimney or a campfire. No outline.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:smoke0": 1,
+   "edge:smoke1": 1,
+   "edge:smoke2": 1,
+   "edge:smoke3": 1,
+   "edgeK:smoke0": 1,
+   "edgeK:smoke1": 1,
+   "edgeK:smoke2": 1,
+   "edgeK:smoke3": 1,
+   "swap:smoke0>smoke1": 34,
+   "swapcap:smoke0>smoke1": 42,
+   "swap:smoke1>smoke2": 46,
+   "swapcap:smoke1>smoke2": 42,
+   "swap:smoke2>smoke3": 44,
+   "swapcap:smoke2>smoke3": 42,
+   "swap:smoke3>smoke0": 77,
+   "swapcap:smoke3>smoke0": 42
+  }
+ },
+ "grid": {
+  "smoke0": [
+   "................",
+   "................",
+   ".....qqq........",
+   "....qqqqqq......",
+   "...qqqqqqe......",
+   "...qqpppqq......",
+   "....ppqqqqq.....",
+   "....pqqqqqq.....",
+   "....qqqWWWpp....",
+   "....qqWWppppq...",
+   ".....qWWpppqq...",
+   "......ppppqqq...",
+   "......PPWWqq....",
+   "......PWWpq.....",
+   "......WWpq......",
+   "................"
+  ],
+  "smoke1": [
+   "................",
+   "................",
+   ".....qqqq.......",
+   "....qqqqqq......",
+   "....qpppqe......",
+   "....pppqqq......",
+   "...ppqqqqqq.....",
+   "...pqqqWWWp.....",
+   "...qqqWWpppp....",
+   "....qqWppppqq...",
+   "......ppppqqq...",
+   "......pPPWWqq...",
+   "......PWWWpq....",
+   "......WWWpq.....",
+   ".......Wpq......",
+   "................"
+  ],
+  "smoke2": [
+   "................",
+   "................",
+   ".......q........",
+   ".....pppq.......",
+   "....pppqqq......",
+   "...ppqqqqq......",
+   "...pqqqWWWp.....",
+   "...qqqWWpppp....",
+   "...qqWWppppq....",
+   ".....Wppppqqq...",
+   ".....ppPPWWq....",
+   "......PPWWWp....",
+   "......PWWWpp....",
+   ".......WWppq....",
+   "........pq......",
+   "................"
+  ],
+  "smoke3": [
+   "................",
+   "................",
+   ".......qqq......",
+   "....pppqqe......",
+   "...ppqqqqq......",
+   "...ppqqWWq......",
+   "...qqWWWppp.....",
+   "...qWWpppppq....",
+   "....WWppppqq....",
+   "....WppPPPWW....",
+   ".....pPPWWWW....",
+   "......PWWWWpp...",
+   ".......WWppq....",
+   ".......Wppqq....",
+   "................",
+   "................"
+  ]
+ }
+}

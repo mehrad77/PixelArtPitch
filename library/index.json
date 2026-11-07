@@ -472,6 +472,496 @@
     "reader",
     "cute"
    ]
+  },
+  {
+   "id": "ground-grass",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 5,
+   "tags": [
+    "ground",
+    "grass",
+    "terrain",
+    "platform",
+    "tileable"
+   ]
+  },
+  {
+   "id": "ground-dirt",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "ground",
+    "dirt",
+    "soil",
+    "terrain",
+    "tileable"
+   ]
+  },
+  {
+   "id": "ground-stone",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "ground",
+    "stone",
+    "path",
+    "cobbles",
+    "tileable"
+   ]
+  },
+  {
+   "id": "ground-sand",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "ground",
+    "sand",
+    "beach",
+    "desert",
+    "tileable"
+   ]
+  },
+  {
+   "id": "ground-snow",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "ground",
+    "snow",
+    "winter",
+    "ice",
+    "tileable"
+   ]
+  },
+  {
+   "id": "floor-wood",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "floor",
+    "wood",
+    "planks",
+    "interior",
+    "tileable"
+   ]
+  },
+  {
+   "id": "floor-tile",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "floor",
+    "tile",
+    "checker",
+    "interior",
+    "tileable"
+   ]
+  },
+  {
+   "id": "wall-brick",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "wall",
+    "brick",
+    "building",
+    "masonry",
+    "tileable"
+   ]
+  },
+  {
+   "id": "wall-plaster",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "wall",
+    "plaster",
+    "window",
+    "house",
+    "tileable"
+   ]
+  },
+  {
+   "id": "wall-wood",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "wall",
+    "wood",
+    "cabin",
+    "boards",
+    "tileable"
+   ]
+  },
+  {
+   "id": "roof-tiles",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "roof",
+    "slate",
+    "clay",
+    "house",
+    "tileable"
+   ]
+  },
+  {
+   "id": "water",
+   "kind": "tile",
+   "w": 16,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "water",
+    "sea",
+    "river",
+    "animated",
+    "tileable"
+   ]
+  },
+  {
+   "id": "sky-bands",
+   "kind": "backdrop",
+   "w": 96,
+   "h": 40,
+   "frames": 3,
+   "tags": [
+    "sky",
+    "gradient",
+    "dusk",
+    "dawn",
+    "backdrop"
+   ]
+  },
+  {
+   "id": "clouds",
+   "kind": "decor",
+   "w": 32,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "sky",
+    "cloud",
+    "weather",
+    "night",
+    "decor"
+   ]
+  },
+  {
+   "id": "stars",
+   "kind": "decor",
+   "w": 16,
+   "h": 16,
+   "frames": 4,
+   "tags": [
+    "sky",
+    "star",
+    "twinkle",
+    "night",
+    "decor"
+   ]
+  },
+  {
+   "id": "trees",
+   "kind": "prop",
+   "w": 24,
+   "h": 32,
+   "frames": 3,
+   "tags": [
+    "tree",
+    "plant",
+    "nature",
+    "forest",
+    "park"
+   ]
+  },
+  {
+   "id": "plants-small",
+   "kind": "prop",
+   "w": 16,
+   "h": 16,
+   "frames": 6,
+   "tags": [
+    "plant",
+    "bush",
+    "flower",
+    "grass",
+    "garden"
+   ]
+  },
+  {
+   "id": "props-small",
+   "kind": "prop",
+   "w": 16,
+   "h": 16,
+   "frames": 10,
+   "tags": [
+    "prop",
+    "candle",
+    "lantern",
+    "campfire",
+    "book"
+   ]
+  },
+  {
+   "id": "props-storage",
+   "kind": "prop",
+   "w": 16,
+   "h": 16,
+   "frames": 5,
+   "tags": [
+    "prop",
+    "chest",
+    "crate",
+    "barrel",
+    "gift"
+   ]
+  },
+  {
+   "id": "props-house",
+   "kind": "prop",
+   "w": 24,
+   "h": 32,
+   "frames": 8,
+   "tags": [
+    "prop",
+    "house",
+    "furniture",
+    "door",
+    "window"
+   ]
+  },
+  {
+   "id": "props-yard",
+   "kind": "prop",
+   "w": 24,
+   "h": 32,
+   "frames": 4,
+   "tags": [
+    "prop",
+    "outdoor",
+    "bench",
+    "fence",
+    "sign"
+   ]
+  },
+  {
+   "id": "props-misc",
+   "kind": "prop",
+   "w": 24,
+   "h": 32,
+   "frames": 3,
+   "tags": [
+    "prop",
+    "clock",
+    "trophy",
+    "rocket",
+    "award"
+   ]
+  },
+  {
+   "id": "streetlight",
+   "kind": "prop",
+   "w": 16,
+   "h": 32,
+   "frames": 2,
+   "tags": [
+    "prop",
+    "streetlight",
+    "lamp",
+    "street",
+    "night"
+   ]
+  },
+  {
+   "id": "icons-ui",
+   "kind": "icon",
+   "w": 16,
+   "h": 16,
+   "frames": 9,
+   "tags": [
+    "icon",
+    "ui",
+    "interface",
+    "action",
+    "symbol"
+   ]
+  },
+  {
+   "id": "icons-misc",
+   "kind": "icon",
+   "w": 16,
+   "h": 16,
+   "frames": 9,
+   "tags": [
+    "icon",
+    "symbol",
+    "status",
+    "media",
+    "misc"
+   ]
+  },
+  {
+   "id": "coin-spin",
+   "kind": "icon",
+   "w": 16,
+   "h": 16,
+   "frames": 4,
+   "tags": [
+    "icon",
+    "coin",
+    "money",
+    "pickup",
+    "animated"
+   ]
+  },
+  {
+   "id": "fx-sparkle",
+   "kind": "decor",
+   "w": 16,
+   "h": 16,
+   "frames": 4,
+   "tags": [
+    "fx",
+    "sparkle",
+    "shine",
+    "magic",
+    "animated"
+   ]
+  },
+  {
+   "id": "fx-dust",
+   "kind": "decor",
+   "w": 16,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "fx",
+    "dust",
+    "puff",
+    "landing",
+    "animated"
+   ]
+  },
+  {
+   "id": "fx-pop",
+   "kind": "decor",
+   "w": 16,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "fx",
+    "pop",
+    "burst",
+    "impact",
+    "animated"
+   ]
+  },
+  {
+   "id": "fx-confetti",
+   "kind": "decor",
+   "w": 16,
+   "h": 16,
+   "frames": 4,
+   "tags": [
+    "fx",
+    "confetti",
+    "party",
+    "celebrate",
+    "animated"
+   ]
+  },
+  {
+   "id": "fx-hearts",
+   "kind": "decor",
+   "w": 16,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "fx",
+    "heart",
+    "love",
+    "like",
+    "animated"
+   ]
+  },
+  {
+   "id": "fx-zzz",
+   "kind": "decor",
+   "w": 16,
+   "h": 16,
+   "frames": 3,
+   "tags": [
+    "fx",
+    "sleep",
+    "zzz",
+    "tired",
+    "animated"
+   ]
+  },
+  {
+   "id": "fx-marks",
+   "kind": "decor",
+   "w": 16,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "fx",
+    "exclamation",
+    "question",
+    "alert",
+    "emote"
+   ]
+  },
+  {
+   "id": "fx-smoke",
+   "kind": "decor",
+   "w": 16,
+   "h": 16,
+   "frames": 4,
+   "tags": [
+    "fx",
+    "smoke",
+    "chimney",
+    "fire",
+    "animated"
+   ]
+  },
+  {
+   "id": "fx-speed",
+   "kind": "decor",
+   "w": 32,
+   "h": 16,
+   "frames": 2,
+   "tags": [
+    "fx",
+    "speed",
+    "motion",
+    "dash",
+    "animated"
+   ]
   }
  ]
 }

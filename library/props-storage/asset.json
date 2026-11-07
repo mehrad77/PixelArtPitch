@@ -1,0 +1,153 @@
+{
+ "id": "props-storage",
+ "version": 1,
+ "kind": "prop",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "chest-closed",
+  "chest-open",
+  "crate",
+  "barrel",
+  "gift-box"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "prop",
+  "chest",
+  "crate",
+  "barrel",
+  "gift"
+ ],
+ "description": "Containers standing on the bottom row, 1 px k outline, light from the upper left. chest-closed = a wooden treasure chest (s c n) with brass bands and a lock (B H, k keyhole); chest-open = the same chest with its lid raised, showing the dark inside (A) and gold coins (B H); crate = a wooden crate, a lit frame round a dark panel with a diagonal X brace (s c n); barrel = a wooden barrel (s c n) with two grey hoops (p q e); gift-box = a red present (r R) with a brass ribbon and bow (H B).",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w2-small.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "ecb34ba2dda4f322",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a prop (Containers standing on the bottom row, 1 px k outline, light from the upper left. chest-closed = a wooden treasure chest (s c n) with brass bands and a lock (B H, k keyhole); chest-open = the same chest with its lid raised, showing the dark inside (A) and gold coins (B H); crate = a wooden crate, a lit frame round a dark panel with a diagonal X brace (s c n); barrel = a wooden barrel (s c n) with two grey hoops (p q e); gift-box = a red present (r R) with a brass ribbon and bow (H B).) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:chest-closed": 1,
+   "edge:chest-open": 1,
+   "edge:crate": 1,
+   "edge:barrel": 1,
+   "edge:gift-box": 1,
+   "edgeK:chest-closed": 1,
+   "edgeK:chest-open": 1,
+   "edgeK:crate": 1,
+   "edgeK:barrel": 1,
+   "edgeK:gift-box": 1
+  }
+ },
+ "grid": {
+  "chest-closed": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "...kkkkkkkkkk...",
+   "..kcccccccccck..",
+   ".kcssssssssssnk.",
+   "kcsscccccccccnnk",
+   "kBBBBBBBBBBBBBck",
+   "kcccccBHBcccccnk",
+   "kcsccsBkBsccnnnk",
+   "kcccccBBBcccnnnk",
+   "kcscccccccccnnnk",
+   "kBBBBBBBBBBBBBck",
+   "kcnnnnnnnnnnnnnk",
+   ".kkkkkkkkkkkkkk."
+  ],
+  "chest-open": [
+   "................",
+   "................",
+   "..kkkkkkkkkkkk..",
+   ".kcccccccccccck.",
+   "kcnnnnnnnnnnnnnk",
+   "kcnAAAAAAAAAAnnk",
+   "kcnAAAAAAAAAAnnk",
+   "kBBBBBBBBBBBBBck",
+   "kcHBHHBHBBHBHBck",
+   "kcBHBBHBBHBBBnnk",
+   "kcscccccccccnnnk",
+   "kcscccBBBcccnnnk",
+   "kcscccccccccnnnk",
+   "kBBBBBBBBBBBBBck",
+   "kcnnnnnnnnnnnnnk",
+   ".kkkkkkkkkkkkkk."
+  ],
+  "crate": [
+   "................",
+   "................",
+   "................",
+   "..kkkkkkkkkkkk..",
+   ".kssssssssssssk.",
+   ".ksssccccccssck.",
+   ".ksncsccccscnck.",
+   ".ksnncsccscnnck.",
+   ".ksnnncsscnnnck.",
+   ".ksnnnnscnnnnck.",
+   ".ksnnncscsnnnck.",
+   ".ksnncscnncsnck.",
+   ".ksncscnnnncsck.",
+   ".ksccccccccccck.",
+   ".kcccccccccccck.",
+   "..kkkkkkkkkkkk.."
+  ],
+  "barrel": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "....kkkkkkk.....",
+   "...kpqqqqqqk....",
+   "..kcssccccnnk...",
+   ".kscsccccnnnnk..",
+   ".kpqqqqqqqqqek..",
+   ".kscscccccnnnk..",
+   ".kscscccccnnnk..",
+   ".kscscccccnnnk..",
+   ".kpqqqqqqqqqek..",
+   "..kcscccccnnk...",
+   "...knnnnnnnk....",
+   "....kkkkkkk....."
+  ],
+  "gift-box": [
+   "................",
+   "................",
+   "................",
+   ".....kk..kk.....",
+   "....kHBkkBHk....",
+   "...kHBBHHBBHk...",
+   "..kkkkBBBBkkkk..",
+   ".krrrrrHBrrrrRk.",
+   ".krrrrrHBrrrRRk.",
+   ".kRRRRRHBRRRRRk.",
+   "..krrrrHBrrrRk..",
+   "..krrrrHBrrrRk..",
+   "..krrrrHBrrRRk..",
+   "..krrrrHBrRRRk..",
+   "..kRRRRHBRRRRk..",
+   "...kkkkkkkkkk..."
+  ]
+ }
+}

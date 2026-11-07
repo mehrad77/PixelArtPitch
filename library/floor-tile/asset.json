@@ -1,0 +1,91 @@
+{
+ "id": "floor-tile",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "checker",
+  "checker-small"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "floor",
+  "tile",
+  "checker",
+  "interior",
+  "tileable"
+ ],
+ "description": "Checkered floor tiles, tileable in all directions: light squares (P W w) and slate squares (q Y e), each with a lit top-left bevel. checker = 8x8 squares; checker-small = 4x4 squares.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-build.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "8bb40d9519e8027e",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Checkered floor tiles, tileable in all directions: light squares (P W w) and slate squares (q Y e), each with a lit top-left bevel. checker = 8x8 squares; checker-small = 4x4 squares.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:checker": 1,
+   "seamTB:checker": 1,
+   "seamLR:checker-small": 1,
+   "seamTB:checker-small": 1
+  }
+ },
+ "grid": {
+  "checker": [
+   "PPPPPPPPqqqqqqqq",
+   "PWWWWWWwqYYYYYYe",
+   "PWWWWWWwqYYYYYYe",
+   "PWWWWWWwqYYYYYYe",
+   "PWWWWWWwqYYYYYYe",
+   "PWWWWWWwqYYYYYYe",
+   "PWWWWWWwqYYYYYYe",
+   "Pwwwwwwwqeeeeeee",
+   "qqqqqqqqPPPPPPPP",
+   "qYYYYYYePWWWWWWw",
+   "qYYYYYYePWWWWWWw",
+   "qYYYYYYePWWWWWWw",
+   "qYYYYYYePWWWWWWw",
+   "qYYYYYYePWWWWWWw",
+   "qYYYYYYePWWWWWWw",
+   "qeeeeeeePwwwwwww"
+  ],
+  "checker-small": [
+   "PPPPqqqqPPPPqqqq",
+   "PWWwqYYePWWwqYYe",
+   "PWWwqYYePWWwqYYe",
+   "PwwwqeeePwwwqeee",
+   "qqqqPPPPqqqqPPPP",
+   "qYYePWWwqYYePWWw",
+   "qYYePWWwqYYePWWw",
+   "qeeePwwwqeeePwww",
+   "PPPPqqqqPPPPqqqq",
+   "PWWwqYYePWWwqYYe",
+   "PWWwqYYePWWwqYYe",
+   "PwwwqeeePwwwqeee",
+   "qqqqPPPPqqqqPPPP",
+   "qYYePWWwqYYePWWw",
+   "qYYePWWwqYYePWWw",
+   "qeeePwwwqeeePwww"
+  ]
+ }
+}

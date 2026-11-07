@@ -1,0 +1,117 @@
+{
+ "id": "fx-pop",
+ "version": 1,
+ "kind": "decor",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "pop0",
+  "pop1",
+  "pop2"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "fx",
+  "pop",
+  "burst",
+  "impact",
+  "animated"
+ ],
+ "description": "A pop, 3 frames centred in the 16x16 frame: pop0 = a small bright disc (P W); pop1 = an expanding ring (P H); pop2 = eight short sparks flying out (P H B). For a bubble bursting, an item appearing or a hit. No outline.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w4-fx.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "81e3b3cbf205ba81",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (A pop, 3 frames centred in the 16x16 frame: pop0 = a small bright disc (P W); pop1 = an expanding ring (P H); pop2 = eight short sparks flying out (P H B). For a bubble bursting, an item appearing or a hit. No outline.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:pop0": 1,
+   "edge:pop1": 1,
+   "edge:pop2": 1,
+   "edgeK:pop0": 1,
+   "edgeK:pop1": 1,
+   "edgeK:pop2": 1,
+   "swap:pop0>pop1": 84,
+   "swapcap:pop0>pop1": 16,
+   "swap:pop1>pop2": 78,
+   "swapcap:pop1>pop2": 16,
+   "swap:pop2>pop0": 64,
+   "swapcap:pop2>pop0": 16
+  }
+ },
+ "grid": {
+  "pop0": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "......PPPP......",
+   ".....PPPPWW.....",
+   ".....PPPWWW.....",
+   ".....PPWWWW.....",
+   ".....PWWWWW.....",
+   "......WWWW......",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................"
+  ],
+  "pop1": [
+   "................",
+   "................",
+   ".......PP.......",
+   ".....PPPPPP.....",
+   "....PPP..PPH....",
+   "...PP......HH...",
+   "...PP......HH...",
+   "..PP........HH..",
+   "..PP........HH..",
+   "...PP......HH...",
+   "...PP......HH...",
+   "....HHH..HHH....",
+   ".....HHHHHH.....",
+   ".......HH.......",
+   "................",
+   "................"
+  ],
+  "pop2": [
+   "................",
+   ".......PH.......",
+   ".......HB.......",
+   "................",
+   "..PH........HP..",
+   "..HB........BH..",
+   "................",
+   "................",
+   ".PH..........PH.",
+   ".HB..........HB.",
+   "................",
+   "..PH........HP..",
+   "..HB........BH..",
+   "................",
+   ".......PH.......",
+   ".......HB......."
+  ]
+ }
+}

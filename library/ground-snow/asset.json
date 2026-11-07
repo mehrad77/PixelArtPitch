@@ -1,0 +1,90 @@
+{
+ "id": "ground-snow",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "snow-top",
+  "snow-fill"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "ground",
+  "snow",
+  "winter",
+  "ice",
+  "tileable"
+ ],
+ "description": "Snow ground. snow-top = soft drifted snow with a bright rounded top edge (P W) and grey hollows (w), tileable left-right; snow-fill = the packed snow body (W w P), tileable in all directions.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-ground.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "d4143840d70bb28e",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Snow ground. snow-top = soft drifted snow with a bright rounded top edge (P W) and grey hollows (w), tileable left-right; snow-fill = the packed snow body (W w P), tileable in all directions.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:snow-top": 1,
+   "seamLR:snow-fill": 1,
+   "seamV:snow-top/snow-fill": 1
+  }
+ },
+ "grid": {
+  "snow-top": [
+   ".PPPP...PPPPP...",
+   "PPPPPPPPPPPPPPPP",
+   "PWWWWPPPWWWWWPPP",
+   "WWWWWWWWWWWWWWWW",
+   "WWWwwWWWWWWWWWWW",
+   "WWWWWWPPWWWWwWWW",
+   "WWWWWWWWWWWWWwwW",
+   "WWWWWWWWWWWWWWWW",
+   "WWWWWWWWWWWWWWWW",
+   "wwwWWWWWwwWWWWWW",
+   "WWWWWWWWWWWWWWWW",
+   "WWWWWWWWWWWWWWWW",
+   "WWWWPPWWWWWWWWWW",
+   "WWWWWWWWWWWwwwWW",
+   "WwWWWWWWWWWWWWWW",
+   "WWWWWWWWWWWWWWWW"
+  ],
+  "snow-fill": [
+   "WWWWWWWWWWWWWWWW",
+   "WWwwWWWWWWWWWWWW",
+   "WWWWWWWWWWwwwWWW",
+   "WWWWWWWWWWWWWWWW",
+   "WWWWWWWWWWWWWWWW",
+   "WWWWWWPPWWWWWWWW",
+   "WWWWWWWWWWWWWwwW",
+   "WWWWWWWWWWWWWWWW",
+   "WWWWWWWWWWWWWWWW",
+   "wwwWWWWWwwWWWWWW",
+   "WWWWWWWWWWWWWWWW",
+   "WWWWWWWWWWWWWWWW",
+   "WWWWPPWWWWWWWWWW",
+   "WWWWWWWWWWWwwwWW",
+   "WwWWWWWWWWWWWWWW",
+   "WWWWWWWWWWWWWWWW"
+  ]
+ }
+}

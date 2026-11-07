@@ -1,0 +1,111 @@
+{
+ "id": "clouds",
+ "version": 1,
+ "kind": "decor",
+ "w": 32,
+ "h": 16,
+ "frames": [
+  "cloud-s",
+  "cloud-m",
+  "cloud-l"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "sky",
+  "cloud",
+  "weather",
+  "night",
+  "decor"
+ ],
+ "description": "Lumpy grey night clouds in three sizes (small, medium, large), flat-bottomed, with a 1 px k outline, a pale top-left (P W) and a grey underside (w p q). Each sits on the bottom rows of its 32x16 frame, transparent around.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-sky.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "21e7c044e8e6693e",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (Lumpy grey night clouds in three sizes (small, medium, large), flat-bottomed, with a 1 px k outline, a pale top-left (P W) and a grey underside (w p q). Each sits on the bottom rows of its 32x16 frame, transparent around.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:cloud-s": 1,
+   "edge:cloud-m": 1,
+   "edge:cloud-l": 1,
+   "edgeK:cloud-s": 1,
+   "edgeK:cloud-m": 1,
+   "edgeK:cloud-l": 1
+  }
+ },
+ "grid": {
+  "cloud-s": [
+   "................................",
+   "................................",
+   "................................",
+   "................................",
+   "................k...............",
+   "..............kkPkk.............",
+   ".............kPPPWWk............",
+   "..........kkkPPPWWWWk...........",
+   ".........kPPPPPWWWWwkkk.........",
+   "........kPPWPPWWWWPPPWWk........",
+   ".......kPPWWWWWWWPPWWWWwk.......",
+   ".......kPWWWWWWWwPWWWWwwk.......",
+   "........kqqqqqqqqqqqqqqqk.......",
+   ".........kkkkkkkkkkkkkkk........",
+   "................................",
+   "................................"
+  ],
+  "cloud-m": [
+   "................................",
+   "................................",
+   ".............k..................",
+   "..........kkkPkkk...............",
+   ".........kPPPPWWWk.k............",
+   "........kPPPPWWWWWkPkk..........",
+   "........kPPPWWWWWPPPWWk.........",
+   "........kPPWWWWWPPWWWWWk........",
+   ".....kkkPPWWWWWPPWWWWWwwk.......",
+   "....kPPPWWWWWWwPPWWWWwwwkkk.....",
+   "...kPPWWWWWWWwwPWWWWwPPPWWWk....",
+   "..kPPWWWWWWWwwwwWWWwPPWWWWwwk...",
+   "...kWWWWwwWwwwpppWwwPWWWWwwpk...",
+   "....kqqqqqqkkqkkkkkqkqqqqqqk....",
+   ".....kkkkkk..k.....k.kkkkkk.....",
+   "................................"
+  ],
+  "cloud-l": [
+   "..............kkkk..............",
+   "............kkPPPWkk............",
+   "...........kPPPPWWWWk...........",
+   "........kkkPPPPWWWWWWkkk........",
+   "......kkPPPPPPWWWWWWPPPWkk......",
+   ".....kPPPPWPPWWWWWPPPPWWWWk.....",
+   ".....kPPPWPPWWWWWWPPWWWWWWk.....",
+   "....kPPPWWWWWWWWWPPWWWWWWwwk....",
+   "....kPPWWWWWWWWWwPPWWWWWwwwkkk..",
+   "..kkkPWWWWWWWWWwwPWWWWWwPPPWWWk.",
+   ".kPPPWWWWWwwWWwwwpWWWWwwPWWWWwk.",
+   ".kPWWWWWWwwwwpwwppWWwwwPPWWWwwpk",
+   ".kWWWWWWwwwpppkkkkkkwwwpWWWwwpk.",
+   ".kWWWwwpwwppkk......kkkkWWwwppk.",
+   "..kkkqkkkkkk............kkkkkk..",
+   ".....k.........................."
+  ]
+ }
+}

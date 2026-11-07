@@ -1,0 +1,112 @@
+{
+ "id": "wall-plaster",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "plaster",
+  "window-lit",
+  "window-dark"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "wall",
+  "plaster",
+  "window",
+  "house",
+  "tileable"
+ ],
+ "description": "Plastered wall, tileable in all directions. plaster = grey render (q) with pale patches (p) and a hairline crack (e); window-lit = the same wall with a four-pane window in a wooden frame (c n), warm light (H B, O glow low right) and a pale sill (P W w e); window-dark = the window unlit (N I panes, a Q glint).",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-build.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "7b24d2283f7af117",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Plastered wall, tileable in all directions. plaster = grey render (q) with pale patches (p) and a hairline crack (e); window-lit = the same wall with a four-pane window in a wooden frame (c n), warm light (H B, O glow low right) and a pale sill (P W w e); window-dark = the window unlit (N I panes, a Q glint).) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:plaster": 1,
+   "seamTB:plaster": 1,
+   "seamLR:window-lit": 1,
+   "seamTB:window-lit": 1,
+   "seamLR:window-dark": 1,
+   "seamTB:window-dark": 1
+  }
+ },
+ "grid": {
+  "plaster": [
+   "qqqqqqqqqqqqqqqq",
+   "qqqqqqqqqqqpppqq",
+   "qqppqqqqqqqqqqqq",
+   "qqpqqqqqqqqqqqqq",
+   "qqqqqqqqqqqqqqqq",
+   "qqqqqqqqqqqqqqqq",
+   "qqqqqqqqqqqqqqqq",
+   "qqqqqqqeqqqqqqqq",
+   "qqqqqqqeeqqqqqqq",
+   "qqqqqqqqeqqqqqqq",
+   "qqqqqqqqqqqqqppq",
+   "qqqqqqqqqqqqqqqq",
+   "qeeqqqqqqqqqqqqq",
+   "qqqqppqqqqqqqqqq",
+   "qqqqqqqqqqeqqqqq",
+   "qqqqqqqqqqqqqqqq"
+  ],
+  "window-lit": [
+   "qqqqqqqqqqqqqqqq",
+   "qppqqqqqqqqqqqqq",
+   "qqqccccccccccqqq",
+   "qqqcHBBBnBBBnqqq",
+   "qqqcBBBBnBBBnqqq",
+   "qqqcBBBcnBBcnqqq",
+   "qqqcnnnnnnnnnqqq",
+   "qqqcnnnnnnnnnqqq",
+   "qqqcBBBBnBBBnqqq",
+   "qqqcBBBOnBBOnqqq",
+   "qqqcBBOOnBOOnqqq",
+   "qqqcnnnnnnnnnqqq",
+   "qqqcnnnnnnnnnqqq",
+   "qqPWWWWWWWWWWwqq",
+   "qqqeeeeeeeeeeeeq",
+   "qqqqqqqqqqqqqqqq"
+  ],
+  "window-dark": [
+   "qqqqqqqqqqqqqqqq",
+   "qppqqqqqqqqqqqqq",
+   "qqqccccccccccqqq",
+   "qqqcQNNNnNNNnqqq",
+   "qqqcIINNnNNNnqqq",
+   "qqqcNNNNnNNNnqqq",
+   "qqqcnnnnnnnnnqqq",
+   "qqqcnnnnnnnnnqqq",
+   "qqqcNNNNnNNNnqqq",
+   "qqqcNNNNnNNNnqqq",
+   "qqqcNNNNnNNNnqqq",
+   "qqqcnnnnnnnnnqqq",
+   "qqqcnnnnnnnnnqqq",
+   "qqPWWWWWWWWWWwqq",
+   "qqqeeeeeeeeeeeeq",
+   "qqqqqqqqqqqqqqqq"
+  ]
+ }
+}

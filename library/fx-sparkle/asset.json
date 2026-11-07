@@ -1,0 +1,140 @@
+{
+ "id": "fx-sparkle",
+ "version": 1,
+ "kind": "decor",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "sparkle0",
+  "sparkle1",
+  "sparkle2",
+  "sparkle3"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "fx",
+  "sparkle",
+  "shine",
+  "magic",
+  "animated"
+ ],
+ "description": "A sparkle burst, 4 frames centred on cell (7,7), no outline: sparkle0 = a small cross glint (P H); sparkle1 = a four-point star with diagonal glints (P H B); sparkle2 = the star at full stretch (P H B); sparkle3 = it breaks into four tiny diagonal glints at the corners (H B). Play once over an item or a reveal.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w4-fx.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "be2d268465934fc2",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (A sparkle burst, 4 frames centred on cell (7,7), no outline: sparkle0 = a small cross glint (P H); sparkle1 = a four-point star with diagonal glints (P H B); sparkle2 = the star at full stretch (P H B); sparkle3 = it breaks into four tiny diagonal glints at the corners (H B). Play once over an item or a reveal.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:sparkle0": 1,
+   "edge:sparkle1": 1,
+   "edge:sparkle2": 1,
+   "edge:sparkle3": 1,
+   "edgeK:sparkle0": 1,
+   "edgeK:sparkle1": 1,
+   "edgeK:sparkle2": 1,
+   "edgeK:sparkle3": 1,
+   "swap:sparkle0>sparkle1": 12,
+   "swapcap:sparkle0>sparkle1": 3,
+   "swap:sparkle1>sparkle2": 24,
+   "swapcap:sparkle1>sparkle2": 3,
+   "swap:sparkle2>sparkle3": 33,
+   "swapcap:sparkle2>sparkle3": 3,
+   "swap:sparkle3>sparkle0": 13,
+   "swapcap:sparkle3>sparkle0": 3
+  }
+ },
+ "grid": {
+  "sparkle0": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".......H........",
+   "......HPH.......",
+   ".......H........",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................"
+  ],
+  "sparkle1": [
+   "................",
+   "................",
+   "................",
+   "................",
+   ".......B........",
+   ".......B........",
+   "......HHH.......",
+   "....BBHPHBB.....",
+   "......HHH.......",
+   ".......B........",
+   ".......B........",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................"
+  ],
+  "sparkle2": [
+   "................",
+   "................",
+   ".......H........",
+   ".......H........",
+   ".......H........",
+   ".......H........",
+   "......BPB.......",
+   "..HHHHPPPHHHH...",
+   "......BPB.......",
+   ".......H........",
+   ".......H........",
+   ".......H........",
+   ".......H........",
+   "................",
+   "................",
+   "................"
+  ],
+  "sparkle3": [
+   "................",
+   "................",
+   "................",
+   "...H.......H....",
+   "....B.......B...",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "...H.......H....",
+   "....B.......B...",
+   "................",
+   "................",
+   "................"
+  ]
+ }
+}

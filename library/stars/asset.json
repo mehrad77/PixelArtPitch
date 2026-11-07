@@ -1,0 +1,136 @@
+{
+ "id": "stars",
+ "version": 1,
+ "kind": "decor",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "big0",
+  "big1",
+  "small0",
+  "small1"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "sky",
+  "star",
+  "twinkle",
+  "night",
+  "decor"
+ ],
+ "description": "Twinkling stars, centred on cell (7,7) in every frame so the loops stay registered. big0 / big1 = a brass cross star (P H B) that stretches its arms and adds diagonal glints on the twinkle; small0 / small1 = a small grey cross star (p q) that brightens (P H). No outline.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-sky.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "0adbe35621987a17",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (Twinkling stars, centred on cell (7,7) in every frame so the loops stay registered. big0 / big1 = a brass cross star (P H B) that stretches its arms and adds diagonal glints on the twinkle; small0 / small1 = a small grey cross star (p q) that brightens (P H). No outline.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:big0": 1,
+   "edge:big1": 1,
+   "edge:small0": 1,
+   "edge:small1": 1,
+   "edgeK:big0": 1,
+   "edgeK:big1": 1,
+   "edgeK:small0": 1,
+   "edgeK:small1": 1,
+   "swap:big0>big1": 20,
+   "swapcap:big0>big1": 5,
+   "swap:small0>small1": 5,
+   "swapcap:small0>small1": 3
+  }
+ },
+ "grid": {
+  "big0": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".......B........",
+   ".......H........",
+   ".....BHPHB......",
+   ".......H........",
+   ".......B........",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................"
+  ],
+  "big1": [
+   "................",
+   "................",
+   "................",
+   ".......H........",
+   ".......H........",
+   ".......H........",
+   "......BPB.......",
+   "...HHHPPPHHH....",
+   "......BPB.......",
+   ".......H........",
+   ".......H........",
+   ".......H........",
+   "................",
+   "................",
+   "................",
+   "................"
+  ],
+  "small0": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".......q........",
+   "......qpq.......",
+   ".......q........",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................"
+  ],
+  "small1": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".......H........",
+   "......HPH.......",
+   ".......H........",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................"
+  ]
+ }
+}

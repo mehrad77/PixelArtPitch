@@ -1,0 +1,110 @@
+{
+ "id": "roof-tiles",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "slate",
+  "clay",
+  "ridge"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "roof",
+  "slate",
+  "clay",
+  "house",
+  "tileable"
+ ],
+ "description": "Roof coverings, tileable in all directions. slate = grey overlapping shingles in offset rows (q Y e, F gaps); clay = staggered rounded terracotta tiles (S s c z n, A shadow lips); ridge = a row of rounded slate cap tiles along the top edge over slate (p q e F), transparent above, tileable left-right.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-build.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "8740727c494caac2",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Roof coverings, tileable in all directions. slate = grey overlapping shingles in offset rows (q Y e, F gaps); clay = staggered rounded terracotta tiles (S s c z n, A shadow lips); ridge = a row of rounded slate cap tiles along the top edge over slate (p q e F), transparent above, tileable left-right.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:slate": 1,
+   "seamTB:slate": 1,
+   "seamLR:clay": 1,
+   "seamTB:clay": 1
+  }
+ },
+ "grid": {
+  "slate": [
+   "qYYFqYYFqYYFqYYF",
+   "qYYFqYYFqYYFqYYF",
+   "eeeFeeeFeeeFeeeF",
+   "FFFFFFFFFFFFFFFF",
+   "YFqYYFqYYFqYYFqY",
+   "YFqYYFqYYFqYYFqY",
+   "eFeeeFeeeFeeeFee",
+   "FFFFFFFFFFFFFFFF",
+   "qYYFqYYFqYYFqYYF",
+   "qYYFqYYFqYYFqYYF",
+   "eeeFeeeFeeeFeeeF",
+   "FFFFFFFFFFFFFFFF",
+   "YFqYYFqYYFqYYFqY",
+   "YFqYYFqYYFqYYFqY",
+   "eFeeeFeeeFeeeFee",
+   "FFFFFFFFFFFFFFFF"
+  ],
+  "clay": [
+   "SssnSssnSssnSssn",
+   "sccnsccnsccnsccn",
+   "sccnsccnsccnsccn",
+   "sccnsccnsccnsccn",
+   "sccnsccnsccnsccn",
+   "sccnsccnsccnsccn",
+   "nzzAnzzAnzzAnzzA",
+   "AnnAAnnAAnnAAnnA",
+   "snSssnSssnSssnSs",
+   "cnsccnsccnsccnsc",
+   "cnsccnsccnsccnsc",
+   "cnsccnsccnsccnsc",
+   "cnsccnsccnsccnsc",
+   "cnsccnsccnsccnsc",
+   "zAnzzAnzzAnzzAnz",
+   "nAAnnAAnnAAnnAAn"
+  ],
+  "ridge": [
+   ".qqqqqq..qqqqqq.",
+   "qpppppeeqpppppee",
+   "pppppqqepppppqqe",
+   "eeeeeeeFeeeeeeeF",
+   "FFFFFFFFFFFFFFFF",
+   "YFqYYFqYYFqYYFqY",
+   "eFeeeFeeeFeeeFee",
+   "FFFFFFFFFFFFFFFF",
+   "qYYFqYYFqYYFqYYF",
+   "qYYFqYYFqYYFqYYF",
+   "eeeFeeeFeeeFeeeF",
+   "FFFFFFFFFFFFFFFF",
+   "YFqYYFqYYFqYYFqY",
+   "YFqYYFqYYFqYYFqY",
+   "eFeeeFeeeFeeeFee",
+   "FFFFFFFFFFFFFFFF"
+  ]
+ }
+}

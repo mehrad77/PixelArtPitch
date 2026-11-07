@@ -1,0 +1,92 @@
+{
+ "id": "fx-speed",
+ "version": 1,
+ "kind": "decor",
+ "w": 32,
+ "h": 16,
+ "frames": [
+  "speed0",
+  "speed1"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "fx",
+  "speed",
+  "motion",
+  "dash",
+  "animated"
+ ],
+ "description": "Speed lines for a dash to the right, 2-frame flicker: six horizontal streaks with bright heads on the right (P p) fading to grey tails (q) on the left; speed1 shifts alternate streaks so they shimmer. Place behind a moving figure; flip for leftward motion. No outline.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w4-fx.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "b975d3b3464e1a63",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (Speed lines for a dash to the right, 2-frame flicker: six horizontal streaks with bright heads on the right (P p) fading to grey tails (q) on the left; speed1 shifts alternate streaks so they shimmer. Place behind a moving figure; flip for leftward motion. No outline.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:speed0": 1,
+   "edge:speed1": 1,
+   "edgeK:speed0": 1,
+   "edgeK:speed1": 1,
+   "swap:speed0>speed1": 45,
+   "swapcap:speed0>speed1": 40
+  }
+ },
+ "grid": {
+  "speed0": [
+   "................................",
+   "................................",
+   "..qqqqqqqppPPP..................",
+   "................................",
+   "..........qqqqqqqqqqqqqppp......",
+   "................................",
+   "................................",
+   "qqqqqqqqqqpppppPPP..............",
+   "................................",
+   "......qqqqqqqqqq................",
+   "................................",
+   "............qqqqqqqqqqqppp......",
+   "................................",
+   "...qqqqqpPPP....................",
+   "................................",
+   "................................"
+  ],
+  "speed1": [
+   "................................",
+   "................................",
+   "qqqqqqqppPPP....................",
+   "................................",
+   ".............qqqqqqqqqqqqqppp...",
+   "................................",
+   "................................",
+   "qqqqqqqqpppppPPP................",
+   "................................",
+   ".........qqqqqqqqqq.............",
+   "................................",
+   "..........qqqqqqqqqqqppp........",
+   "................................",
+   "......qqqqqpPPP.................",
+   "................................",
+   "................................"
+  ]
+ }
+}

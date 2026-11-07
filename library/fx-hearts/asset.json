@@ -1,0 +1,117 @@
+{
+ "id": "fx-hearts",
+ "version": 1,
+ "kind": "decor",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "hearts0",
+  "hearts1",
+  "hearts2"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "fx",
+  "heart",
+  "love",
+  "like",
+  "animated"
+ ],
+ "description": "A heart burst, 3 frames: hearts0 = one red heart (r R) low in the middle; hearts1 = it rises as two small hearts pop out to the sides; hearts2 = the big heart near the top, four small hearts scattered. Play once for a like or affection. No outline.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w4-fx.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "7282b0d9498ea59d",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (A heart burst, 3 frames: hearts0 = one red heart (r R) low in the middle; hearts1 = it rises as two small hearts pop out to the sides; hearts2 = the big heart near the top, four small hearts scattered. Play once for a like or affection. No outline.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:hearts0": 1,
+   "edge:hearts1": 1,
+   "edge:hearts2": 1,
+   "edgeK:hearts0": 1,
+   "edgeK:hearts1": 1,
+   "edgeK:hearts2": 1,
+   "swap:hearts0>hearts1": 38,
+   "swapcap:hearts0>hearts1": 7,
+   "swap:hearts1>hearts2": 62,
+   "swapcap:hearts1>hearts2": 7,
+   "swap:hearts2>hearts0": 50,
+   "swapcap:hearts2>hearts0": 7
+  }
+ },
+ "grid": {
+  "hearts0": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".....rr.rR......",
+   ".....rrrRR......",
+   "......rRR.......",
+   ".......R........",
+   "................",
+   "................"
+  ],
+  "hearts1": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   ".....rr.rR......",
+   ".....rrrRR......",
+   "......rRR.......",
+   ".......R...r.R..",
+   ".r.R.......rRR..",
+   ".rRR........R...",
+   "..R.............",
+   "................",
+   "................",
+   "................"
+  ],
+  "hearts2": [
+   "................",
+   "......rr.rR.....",
+   "......rrrRR.....",
+   ".......rRR......",
+   "........R...r.R.",
+   "r.R.........rRR.",
+   "rRR..........R..",
+   ".R..............",
+   "................",
+   "................",
+   "................",
+   "................",
+   "...r.R.....r.R..",
+   "...rRR.....rRR..",
+   "....R.......R...",
+   "................"
+  ]
+ }
+}

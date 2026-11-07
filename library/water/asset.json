@@ -1,0 +1,113 @@
+{
+ "id": "water",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "water-top0",
+  "water-top1",
+  "water-deep"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "water",
+  "sea",
+  "river",
+  "animated",
+  "tileable"
+ ],
+ "description": "Water. water-top0 / water-top1 = the surface, pale crests (E C) over teal water (X x), a 2-frame loop where the waves roll 4 px, tileable left-right; water-deep = the body below (x with X streaks), tileable in all directions.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-build.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "1442c9d23f98178c",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Water. water-top0 / water-top1 = the surface, pale crests (E C) over teal water (X x), a 2-frame loop where the waves roll 4 px, tileable left-right; water-deep = the body below (x with X streaks), tileable in all directions.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "swap:water-top0>water-top1": 81,
+   "swapcap:water-top0>water-top1": 119,
+   "seamLR:water-top0": 0.94,
+   "seamLR:water-top1": 0.94,
+   "seamLR:water-deep": 1,
+   "seamV:water-top0/water-deep": 1,
+   "seamV:water-top1/water-deep": 1
+  }
+ },
+ "grid": {
+  "water-top0": [
+   ".EEE............",
+   "ECCCEEE...EEEE..",
+   "CXXXCCCEEECCCCEE",
+   "XxxxXXXCCCXXXXCC",
+   "xxxxxxxXXXXXxxXX",
+   "xxxxxxxxxxxxCxxx",
+   "xxxxCCxxxxxxxxxx",
+   "xxxxxXXXXxxxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxXXx",
+   "xxxxxxxxxxxxxxxx",
+   "xxXXxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxXXXxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxx"
+  ],
+  "water-top1": [
+   ".............EEE",
+   "EEE...EEEE..ECCC",
+   "CCCEEECCCCEECXXX",
+   "XXXCCCXXXXCCXxxx",
+   "xxxXXXXXxxXXxxxx",
+   "xxxxxxxxCxxxxxxx",
+   "CCxxxxxxxxxxxxxx",
+   "xXXXXxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxXXxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxXX",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxXXXxxxxxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxx"
+  ],
+  "water-deep": [
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxXxxx",
+   "xXXXxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxXXxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxXXXXxxxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxXXx",
+   "xxxxxxxxxxxxxxxx",
+   "xxXXxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxXXXxxxxx",
+   "xxxxxxxxxxxxxxxx",
+   "xxxxxxxxxxxxxxxx"
+  ]
+ }
+}

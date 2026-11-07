@@ -1,0 +1,117 @@
+{
+ "id": "fx-zzz",
+ "version": 1,
+ "kind": "decor",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "zzz0",
+  "zzz1",
+  "zzz2"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "fx",
+  "sleep",
+  "zzz",
+  "tired",
+  "animated"
+ ],
+ "description": "Sleep letters rising to the upper right, 3 frames: zzz0 = one small z (P p) at the lower left; zzz1 = a medium z joins above; zzz2 = a large z at the top right. Place above a sleeping head. No outline.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w4-fx.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "880c04ada8ec9886",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a decor (Sleep letters rising to the upper right, 3 frames: zzz0 = one small z (P p) at the lower left; zzz1 = a medium z joins above; zzz2 = a large z at the top right. Place above a sleeping head. No outline.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:zzz0": 1,
+   "edge:zzz1": 1,
+   "edge:zzz2": 1,
+   "edgeK:zzz0": 1,
+   "edgeK:zzz1": 1,
+   "edgeK:zzz2": 1,
+   "swap:zzz0>zzz1": 13,
+   "swapcap:zzz0>zzz1": 5,
+   "swap:zzz1>zzz2": 16,
+   "swapcap:zzz1>zzz2": 5,
+   "swap:zzz2>zzz0": 29,
+   "swapcap:zzz2>zzz0": 5
+  }
+ },
+ "grid": {
+  "zzz0": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "PPPp............",
+   "..P.............",
+   ".P..............",
+   "Pppp............"
+  ],
+  "zzz1": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "................",
+   "....PPPPp.......",
+   ".......P........",
+   "......P.........",
+   ".....P..........",
+   "....Ppppp.......",
+   "................",
+   "PPPp............",
+   "..P.............",
+   ".P..............",
+   "Pppp............"
+  ],
+  "zzz2": [
+   "..........PPPPPp",
+   "..............P.",
+   ".............P..",
+   "............P...",
+   "...........P....",
+   "..........Pppppp",
+   "....PPPPp.......",
+   ".......P........",
+   "......P.........",
+   ".....P..........",
+   "....Ppppp.......",
+   "................",
+   "PPPp............",
+   "..P.............",
+   ".P..............",
+   "Pppp............"
+  ]
+ }
+}

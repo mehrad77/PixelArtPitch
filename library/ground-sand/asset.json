@@ -1,0 +1,90 @@
+{
+ "id": "ground-sand",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "sand-top",
+  "sand-fill"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "ground",
+  "sand",
+  "beach",
+  "desert",
+  "tileable"
+ ],
+ "description": "Sand ground. sand-top = a pale dune surface (P H) with a gentle wave in its top edge over straw sand (h H j ripples), tileable left-right; sand-fill = the sand body (h H j), tileable in all directions.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-ground.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "a9f07bd93d63294c",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Sand ground. sand-top = a pale dune surface (P H) with a gentle wave in its top edge over straw sand (h H j ripples), tileable left-right; sand-fill = the sand body (h H j), tileable in all directions.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:sand-top": 1,
+   "seamLR:sand-fill": 1,
+   "seamV:sand-top/sand-fill": 1
+  }
+ },
+ "grid": {
+  "sand-top": [
+   "..PPPPP....PPPP.",
+   "PPHHHHHPPPPHHHHP",
+   "HHHHHHHHHHHHHHHH",
+   "HHHHHHHHHHHHHHjH",
+   "HHHHhhhHHHHHHHHH",
+   "HHHHHhhhHHHhhHHH",
+   "HHHHHHHHHHHHhhHH",
+   "HHHHHHHHHHHHHHHH",
+   "hhHHHHHHHHHHHHHH",
+   "HHHHHHHhhhHHHHHH",
+   "HHHHHHHHHHHHHHHH",
+   "HHHHHHHHHHHHHhhh",
+   "HHHhhHHHHHHHHHHH",
+   "HHHHHHjHHHHHHHHH",
+   "HHHHHHHHHhhHHHHH",
+   "HHHHHHHHHHHHHHHH"
+  ],
+  "sand-fill": [
+   "HHHHHHHHHHHHHHHH",
+   "HHHHHHHHHhhHHHHH",
+   "HhhhHHHHHHHHHHHH",
+   "HHHHHHHHHHHHHHjH",
+   "HHHHHHHHHHHHHHHH",
+   "HHHHHhhhHHHHHHHH",
+   "HHHHHHHHHHHHhhHH",
+   "HHHHHHHHHHHHHHHH",
+   "hhHHHHHHHHHHHHHH",
+   "HHHHHHHhhhHHHHHH",
+   "HHHHHHHHHHHHHHHH",
+   "HHHHHHHHHHHHHhhh",
+   "HHHhhHHHHHHHHHHH",
+   "HHHHHHjHHHHHHHHH",
+   "HHHHHHHHHhhHHHHH",
+   "HHHHHHHHHHHHHHHH"
+  ]
+ }
+}

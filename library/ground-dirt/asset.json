@@ -1,0 +1,90 @@
+{
+ "id": "ground-dirt",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "dirt-top",
+  "dirt-fill"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "ground",
+  "dirt",
+  "soil",
+  "terrain",
+  "tileable"
+ ],
+ "description": "Bare dirt ground. dirt-top = packed soil with a lit chestnut crust (c s) and small pebbles (p q e) on umber (n A), tileable left-right; dirt-fill = the soil body (n c A, pebbles), tileable in all directions.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-ground.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "78b879f81ed8d14a",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Bare dirt ground. dirt-top = packed soil with a lit chestnut crust (c s) and small pebbles (p q e) on umber (n A), tileable left-right; dirt-fill = the soil body (n c A, pebbles), tileable in all directions.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:dirt-top": 1,
+   "seamLR:dirt-fill": 1,
+   "seamV:dirt-top/dirt-fill": 1
+  }
+ },
+ "grid": {
+  "dirt-top": [
+   "cccc..ccssc.cccc",
+   "ccsccccccccccscc",
+   "nnnnccnnnnncnnnn",
+   "nccnnpqnnnnnnnnn",
+   "nnnnnqennnnnnnnn",
+   "nnnAnnnnnnnnnnnn",
+   "nnnnnnnpqnnnccnn",
+   "nnnnnnnqennnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnncccnnnnnnnAA",
+   "nnnnnnnnnnnnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnnnnnnnnccnnnn",
+   "nnnnnnnnnnnnnpqn",
+   "ccnnnnAAnnnnnqen",
+   "nnnnnnnnnnnnnnnn"
+  ],
+  "dirt-fill": [
+   "nnnnnnnnnnnncnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnAAnnnnnnnnnnnn",
+   "nnnnnnnnnccnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnnnpqnnnnnnnnn",
+   "nnnnnqennnnnnnnn",
+   "nnnnnnnnnnnnnAAn",
+   "nnnnnnnnnnnnnnnn",
+   "cccnnnnnnnnnnnnn",
+   "nnnnnnnnAnnnnnnn",
+   "nnnnnnnnnnnnnnnn",
+   "nnnccnnnnnnpqnnn",
+   "nnnnnnnnnnnqennn",
+   "nnnnnnncnnnnnnnn"
+  ]
+ }
+}

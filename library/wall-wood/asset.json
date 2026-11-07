@@ -1,0 +1,91 @@
+{
+ "id": "wall-wood",
+ "version": 1,
+ "kind": "tile",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "boards",
+  "logs"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "wall",
+  "wood",
+  "cabin",
+  "boards",
+  "tileable"
+ ],
+ "description": "Wooden walls, tileable in all directions. boards = vertical 4 px boards with a lit left edge and dark seam (s c n A) and a knot; logs = stacked horizontal logs, lit on top and shaded below (s c n A).",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "drawn",
+  "by": "claude-code",
+  "method": "code recipe",
+  "recipe": "w1-build.mjs",
+  "role": "pixel-artist",
+  "origin": "common library pack, authored in code (2026-11-08)",
+  "sourceAssets": [],
+  "judgeReason": null
+ },
+ "hash": "61e475209286f6c9",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a tile (Wooden walls, tileable in all directions. boards = vertical 4 px boards with a lit left edge and dark seam (s c n A) and a knot; logs = stacked horizontal logs, lit on top and shaded below (s c n A).) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone.",
+   "Tiles seamlessly left to right."
+  ],
+  "stats": {
+   "seamLR:boards": 1,
+   "seamTB:boards": 1,
+   "seamLR:logs": 1,
+   "seamTB:logs": 1
+  }
+ },
+ "grid": {
+  "boards": [
+   "scnAscnAscnAscnA",
+   "scnAscnAscnAscnA",
+   "scnAscnAsnnAscnA",
+   "scnAscnAsnnAscnA",
+   "snnAscnAscnAscnA",
+   "snnAscnAscnAscnA",
+   "scnAsAAAscnAscnA",
+   "scnAsAAAscnAscnA",
+   "scnAscnAscnAscnA",
+   "scnAscnAscnAsnnA",
+   "scnAscnAscnAsnnA",
+   "scnAsnnAscnAscnA",
+   "scnAscnAscnAscnA",
+   "scnAscnAscnAscnA",
+   "scnAscnAscnAscnA",
+   "scnAscnAscnAscnA"
+  ],
+  "logs": [
+   "ssssssssssssssss",
+   "cccnnccccccccccc",
+   "nnnnnnnnnnnnnnnn",
+   "AAAAAAAAAAAAAAAA",
+   "ssssssssssssssss",
+   "cccccccccccnnncc",
+   "nnnnnnnnnnnnnnnn",
+   "AAAAAAAAAAAAAAAA",
+   "ssssssssssssssss",
+   "ccccccnncccccccc",
+   "nnnnnnnnnnnnnnnn",
+   "AAAAAAAAAAAAAAAA",
+   "ssssssssssssssss",
+   "nccccccccccccnnc",
+   "nnnnnnnnnnnnnnnn",
+   "AAAAAAAAAAAAAAAA"
+  ]
+ }
+}
