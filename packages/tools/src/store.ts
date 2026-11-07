@@ -141,7 +141,7 @@ export type RuntimeState = {
   };
   milestones: { id: string; at: string; text: string; image?: string }[];
   /** a person's change the crew is making (kept across restarts, so a resumed run still reports on it) */
-  change?: { notes: string[]; scope?: string[]; reboard?: string[]; startedAt: string };
+  change?: { notes: string[]; scope?: string[]; reboard?: string[]; assets?: string[]; startedAt: string };
   sceneStatus: Record<
     string,
     { version: "slate" | "board" | "animatic" | "render"; state: "planned" | "drafting" | "ready" | "stale" }
@@ -766,6 +766,7 @@ export function newProjectDoc(input: { title: string; brief: ProjectT["brief"]; 
 
 /** All projects this process knows: the roots it scans plus folders opened by path. */
 export class Workspace {
+  /** the repo's read-only seed library; reads go through @pap/render's two layers (libraryIndex, libraryAssetDir) */
   readonly libraryDir = LIBRARY_DIR;
   private open = new Map<string, OpenProject>();
   private known = new Map<string, string>(); // id -> dir

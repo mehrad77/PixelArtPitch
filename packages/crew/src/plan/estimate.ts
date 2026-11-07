@@ -7,6 +7,7 @@ import type { Ledger } from "../llm/ledger.ts";
 import { priorFor } from "../llm/ledger.ts";
 import { priceFor } from "../llm/prices.ts";
 import type { Caps } from "../llm/types.ts";
+import { KIND_TEMPLATES } from "../outputs.ts";
 import { CATALOGUE, type PlanKind } from "./catalogue.ts";
 import type { PlanEstimateT, PlanTaskT, TierT } from "./schema.ts";
 
@@ -58,9 +59,19 @@ export function resolveTier(role: RoleT, tier: TierT, env: PlanEnv): string {
 
 export type TaskEst = { usd: [number, number]; sec: [number, number]; rough: boolean };
 
-/** one task's estimate on its resolved model; a placeholder counts `count` runs, a conditional one $0 at p50 */
+/** a sprite task's size for the priors' `sizeFactor`: its kind template's cells (w × h × frames), else none */
+export function sizeParams(t: { kind: string; assetKind?: string }) {
+  if (!t.kind.startsWith("asset.") || t.kind === "asset.import") return undefined;
+  const tpl = KIND_TEMPLATES[t.assetKind ?? "character"];
+  return tpl ? { w: tpl.w, h: tpl.h, frames: tpl.frames.length } : undefined;
+}
+
+/**
+ * one task's estimate on its resolved model; a placeholder counts `count` runs, a conditional one $0 at p50. Sprite
+ * work is scaled by the sprite's size (a 16x16 icon costs less than an 8-frame 16x24 hero).
+ */
 export function estimatePlanTask(
-  t: Pick<PlanTaskT, "kind" | "role" | "tier" | "conditional" | "expand" | "count">,
+  t: Pick<PlanTaskT, "kind" | "role" | "tier" | "conditional" | "expand" | "count"> & { assetKind?: string },
   env: PlanEnv,
 ): TaskEst {
   const row = CATALOGUE[t.kind as PlanKind];
@@ -75,9 +86,10 @@ export function estimatePlanTask(
   let s50 = 0;
   let s90 = 0;
   let rough = false;
+  const params = sizeParams(t);
   for (const [kind, c50, c90] of row.prices) {
     const e = estimateCall(
-      { kind, model: { id: model, price: priceFor(model), caps: { local } } },
+      { kind, model: { id: model, price: priceFor(model), caps: { local } }, ...(params ? { params } : {}) },
       { ledger: env.ledger },
     );
     u50 += c50 * e.usd[0];

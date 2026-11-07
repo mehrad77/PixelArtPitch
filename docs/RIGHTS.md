@@ -58,3 +58,17 @@ Publishing is **opt-in**, it is the user's call, and the Librarian runs it after
 - [ ] The description and tags name no real person, brand or product
 - [ ] The licence is `LicenseRef-PAP-Library` or an SPDX id the user chose
 - [ ] The user approved the publish
+
+## 7. Two libraries, and promote
+
+- The repo's `library/` is the public **seed**. At run time it is read-only.
+- The crew's publish (`lib.publish`, after the person's yes) writes to the person's **own library**: `settings.paths.library`, by default `<appData>/library`. Search, `library_get`, `cast_asset` and rendering read both, and the person's library wins on an id both have. Publish never writes over an id either library has.
+- The person's answer is stored on the asset ref (`publish: "yes" | "no"`), so the question is asked once per asset.
+- Moving an asset into the public seed is a separate, deliberate step: `pap library promote <id> [--from <user-library>]`. It refuses, and leaves the asset where it is, when:
+  - `rights.likeness`, `rights.brand` or `rights.trademark` is true, or `rights.public` is false;
+  - the rights are missing (the file isn't an asset file), the licence is private or unknown, or the provenance is empty;
+  - it comes from a reference (`provenance.ref`, an import) or derives from other assets;
+  - a hard rule of [PAP-STANDARD.md](PAP-STANDARD.md) fails;
+  - the seed already has that id (a new version is an edit, not a promote).
+- On success it copies `asset.json` (with the fresh standard result) and `sheet.png`, and adds the entry to `library/index.json`. The §6 checklist items code can't check (names of real people, brands or products in the id, tags and description) stay a person's review before the commit.
+

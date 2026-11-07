@@ -261,8 +261,15 @@ export type PipDeps = {
   crewDecide?: (p: OpenProject, what: "pending" | "overrun", decision: "confirm" | "decline") => void;
   /** the crew right now (Crew.snapshot): read fresh each turn, so Pip never answers from a stale picture */
   crewSnapshot?: (p: OpenProject) => CrewSnapshot;
+  /** what a change would add to the plan (Crew.changeCost: its revision on a copy), or null without a plan */
+  changeCost?: (
+    p: OpenProject,
+    c: { assignee: string; scene?: string; asset?: string },
+  ) => { usd: [number, number]; toUsd: [number, number] } | null;
 };
 
+/** the scope words the web once prefilled ("About the moth: "), stripped before slash commands are matched */
+export const ABOUT_PREFIX = /^About [^:\n]{1,120}:\s*/i;
 const now = () => new Date().toISOString();
 const rid = (p: string) => `${p}_${randomUUID().slice(0, 8)}`;
 const WORKSPACE = "_workspace";
@@ -326,10 +333,12 @@ const money = (n: number) => `$${n < 1 ? n.toFixed(2) : n.toFixed(2).replace(/\.
 // ---------------------------------------------------------------- facts (from code)
 async function facts(p: OpenProject | undefined, budget: { capUsd: number; spentUsd: number; daily?: boolean }) {
   const { recipeCatalog } = await import("@pap/engine/recipes");
-  const { LIBRARY_DIR } = await import("@pap/render");
+  const { LIBRARY_DIR, libraryAssetDir } = await import("@pap/render");
   let glyphs = "A-Z, a-z, 0-9";
   try {
-    const f = JSON.parse(readFileSync(join(LIBRARY_DIR, "font-5x8", "asset.json"), "utf8"));
+    const f = JSON.parse(
+      readFileSync(join(libraryAssetDir("font-5x8") ?? join(LIBRARY_DIR, "font-5x8"), "asset.json"), "utf8"),
+    );
     const chars = (f.frames as string[]).map((k) => String.fromCodePoint(Number(k.slice(1))));
     glyphs += ` and ${chars.filter((c) => !/[A-Za-z0-9]/.test(c)).join(" ")}`;
   } catch {}
@@ -704,7 +713,10 @@ export class Pip {
   ): { turnId: string; done: Promise<PipItem> } {
     const key = projectId ?? WORKSPACE;
     const p = this.project(projectId);
-    const t = text.trim().slice(0, 4000);
+    let t = text.trim().slice(0, 4000);
+    // "Ask Pip about this" used to prefill "About the moth: ": a slash command after it is still a command (§1.9)
+    const bare = t.replace(ABOUT_PREFIX, "");
+    if (bare.startsWith("/")) t = bare;
     let about: { text: string; label: string } | null = null;
     if (opts.about) {
       if (!p)
@@ -1494,6 +1506,14 @@ export class Pip {
       }
       case "crew_request_change": {
         if (!p) return { error: "crew_request_change needs a project" };
+        if (
+          /^\/[a-z]/i.test(
+            String(input.text ?? "")
+              .replace(ABOUT_PREFIX, "")
+              .trim(),
+          )
+        )
+          return { error: "a slash command is not a change: run it as a command (/context, /budget, /why)" };
         const d = p.doc();
         let scene = input.scene === undefined ? undefined : String(input.scene);
         if (scene !== undefined) {
@@ -1522,7 +1542,9 @@ export class Pip {
               : d.scenes.map((_, i) => i + 1);
         const others = d.scenes.map((_, i) => i + 1).filter((i) => !touched.includes(i));
         const n = touched.length;
-        const est = this.deps.gateway.estimate(p.id, [
+        // the change's own revision on a copy of the plan (only what it touches), else the kinds it touches
+        const own = this.deps.changeCost?.(p, { assignee: owner, ...(scene ? { scene } : {}) });
+        const fromKinds = this.deps.gateway.estimate(p.id, [
           ...(owner === "director" ? [{ kind: "director.storyboard", role: "director" as RoleT }] : []),
           ...(owner === "writer"
             ? [
@@ -1536,6 +1558,7 @@ export class Pip {
             : []),
           { kind: "review.final", role: "reviewer" as RoleT, count: 2 },
         ]);
+        const est = own && fromKinds ? { ...fromKinds, usd: own.usd } : fromKinds;
         const sceneWord = (xs: number[]) => `${xs.length === 1 ? "scene" : "scenes"} ${list(xs.map(String))}`;
         // open review notes the model chose to include: each one is shown, never folded in silently
         const also = ((input.alsoNotes as string[] | undefined) ?? []).map((id) => {

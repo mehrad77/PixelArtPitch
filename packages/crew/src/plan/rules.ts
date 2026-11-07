@@ -24,6 +24,12 @@ export type RulesCtx = {
 };
 type Spec = Partial<PlanTaskT> & { id: string; kind: PlanKind; dependsOn: string[] };
 
+/** the judge's stand-in when no variant passed (§1.8): a library asset cast in the drawing's place, not the drawing */
+export const isStandIn = (ref: { standIn?: boolean }) => !!ref.standIn;
+/** the asset is in the project as itself (drawn, imported or cast), not as a stand-in a retry may redraw */
+export const hasArt = (doc: Pick<ProjectT, "assets">, name: string) =>
+  doc.assets.some((a) => a.id === name && !isStandIn(a));
+
 export const PLACEHOLDER_SCRIPT = /^Placeholder: the Writer replaces this/;
 
 /** a plan task with the catalogue's role, instance and estimate filled in */
@@ -372,10 +378,12 @@ export function startPlan(
       const s = state.sceneStatus[t.scene];
       if (s?.version === "render" && s.state === "ready") done(t);
     }
-    if (t.asset && doc.assets.some((a) => a.id === t.asset) && t.kind !== "lib.publish")
+    if (t.asset && hasArt(doc, t.asset) && t.kind !== "lib.publish")
       if (t.kind !== "gate" || t.status !== "done") done(t, "already in the project");
     if (t.kind === "lib.publish" && tasks.find((x) => x.id === "t_g4")?.status === "done")
       done(t, "asked at the last export");
+    else if (t.kind === "lib.publish" && doc.assets.some((a) => a.id === t.asset && a.publish))
+      done(t, "already answered");
   }
   return tasks;
 }
@@ -386,8 +394,18 @@ export function startPlan(
 export const jobKey = (t: PlanTaskT) =>
   [t.kind, t.gate ?? "", t.scene ?? "", t.asset ?? "", t.variant ?? "", (t.scenes ?? []).join(",")].join("|");
 
-function freshId(base: string, rev: number, taken: Set<string>) {
-  const root = base.replace(/_v\d+(_\d+)?$/, "");
+/**
+ * A fresh id for a copy made in revision `rev`: the base without its earlier revision suffix, then `_v<rev>`. A
+ * variant's own suffix stays (`t_draw_owl_v1` at rev 4 is `t_draw_owl_v1_v4`, never `t_draw_owl_v4_2`).
+ */
+export function freshId(base: string, rev: number, taken: Set<string>, variant?: number) {
+  const own = variant !== undefined ? `_v${variant}` : "";
+  const root =
+    own && base.includes(`${own}_v`)
+      ? base.slice(0, base.lastIndexOf(`${own}_v`) + own.length)
+      : own && base.endsWith(own)
+        ? base
+        : base.replace(/_v\d+(_\d+)?$/, "");
   let id = taken.has(root) ? `${root}_v${rev}` : root;
   for (let k = 2; taken.has(id); k++) id = `${root}_v${rev}_${k}`;
   taken.add(id);
@@ -406,7 +424,7 @@ export function rerun(
 ): { tasks: PlanTaskT[]; map: Map<string, string>; ops: PlanOpT[] } {
   const taken = new Set(tasks.map((t) => t.id));
   const map = new Map<string, string>();
-  for (const id of ids) map.set(id, freshId(id, rev, taken));
+  for (const id of ids) map.set(id, freshId(id, rev, taken, tasks.find((t) => t.id === id)?.variant));
   const copies: PlanTaskT[] = [];
   for (const id of ids) {
     const t = tasks.find((x) => x.id === id)!;
@@ -446,13 +464,19 @@ const sceneReady = (st: RuntimeState["sceneStatus"], s?: string) =>
 /**
  * A run from a stage (`crew_run {stage}`, a resume, a change): what comes before the stage and is unfinished is
  * skipped, finished work from the stage on runs again as fresh copies (a scene already rendered keeps its tune), and
- * failed tasks go back to pending.
+ * failed tasks go back to pending. `keep` names finished work that stays as it is (the caller builds it from the
+ * project: art already drawn, a publish already answered); `exclude` also keeps a failed task failed.
  */
 export function reopenFrom(
   tasks: PlanTaskT[],
   from: Stage,
   rev: number,
-  o: { sceneStatus: RuntimeState["sceneStatus"]; exclude?: (t: PlanTaskT) => boolean; reason?: string },
+  o: {
+    sceneStatus: RuntimeState["sceneStatus"];
+    exclude?: (t: PlanTaskT) => boolean;
+    keep?: (t: PlanTaskT) => boolean;
+    reason?: string;
+  },
 ) {
   const at = stageIdx(from);
   const reason = o.reason ?? `the crew runs again from the ${from} stage`;
@@ -470,6 +494,7 @@ export function reopenFrom(
         stageIdx(stageOf(t)) >= at &&
         (t.status === "done" || (t.status === "skipped" && !t.expand)) &&
         !o.exclude?.(t) &&
+        !o.keep?.(t) &&
         !(t.kind === "scene.tune" && sceneReady(o.sceneStatus, t.scene)) &&
         !live.has(jobKey(t)),
     )
@@ -588,7 +613,9 @@ export function addReboard(
 
 /**
  * A person's change on an idle crew (after reopen()): the rules tasks from its stage on, the re-board in place of the
- * full storyboard when the Director re-plans, then the review, the rough cut, the export and the final.
+ * full storyboard when the Director re-plans, then the review, the rough cut, the export and the final. Only what the
+ * change touches comes back: a tune outside `change.scope` stays done, and so does whatever `keep` says the project
+ * already has (art drawn, a publish answered; the orchestrator's `keepOf`).
  */
 export function changeRevision(
   tasks: PlanTaskT[],
@@ -596,6 +623,7 @@ export function changeRevision(
   from: Stage,
   ctx: RulesCtx,
   sceneStatus: RuntimeState["sceneStatus"],
+  keep?: (t: PlanTaskT) => boolean,
 ) {
   const reboard = change.reboard?.length ? change.reboard : null;
   const exclude = reboard
@@ -604,7 +632,10 @@ export function changeRevision(
         (t.kind === "art.cast" && !t.scenes) ||
         (t.kind === "gate" && t.gate === "g2_animatic")
     : undefined;
-  const r = reopenFrom(tasks, from, ctx.rev, { sceneStatus, exclude, reason: "your change" });
+  const scope = change.scope ? new Set(change.scope) : null;
+  const keeps = (t: PlanTaskT) =>
+    !!keep?.(t) || (!!scope && t.kind === "scene.tune" && !!t.scene && !scope.has(t.scene));
+  const r = reopenFrom(tasks, from, ctx.rev, { sceneStatus, exclude, keep: keeps, reason: "your change" });
   if (!reboard) return { tasks: r.tasks, ops: r.ops };
   const b = addReboard(r.tasks, reboard, ctx, { reason: "your change" });
   return { tasks: b.tasks, ops: [...r.ops, ...b.ops] };
@@ -631,7 +662,7 @@ export function expandPlan(
   const chainIds: string[] = [];
   for (const a of fresh) {
     const c = chain(a, [g2], ctx).map((t) => {
-      const id = taken.has(t.id) ? freshId(t.id, ctx.rev, taken) : t.id;
+      const id = taken.has(t.id) ? freshId(t.id, ctx.rev, taken, t.variant) : t.id;
       taken.add(id);
       return { ...t, id };
     });

@@ -127,7 +127,12 @@ export class PipConductor implements Conductor {
   async think(
     p: OpenProject,
     t: Trigger,
-    ctx: { change?: ChangePlan; redos: Map<string, number>; replan?: boolean },
+    ctx: {
+      change?: ChangePlan;
+      redos: Map<string, number>;
+      replan?: boolean;
+      check?: (d: Decision) => string | null;
+    },
   ): Promise<Decision[]> {
     const model = this.gateway.modelFor("assistant", p.doc().crew.models);
     if (this.modeFor(model) !== "agent") return rules(t, ctx);
@@ -142,7 +147,12 @@ export class PipConductor implements Conductor {
   /** the plan's live tasks, one line each, so crew_replan can name them */
   plan?: (p: OpenProject) => string;
 
-  private async loop(p: OpenProject, t: Trigger, ctx: { redos: Map<string, number>; replan?: boolean }, model: string) {
+  private async loop(
+    p: OpenProject,
+    t: Trigger,
+    ctx: { redos: Map<string, number>; replan?: boolean; check?: (d: Decision) => string | null },
+    model: string,
+  ) {
     const c = card("assistant", "conduct");
     const d = p.doc();
     const st = p.state;
@@ -215,7 +225,7 @@ export class PipConductor implements Conductor {
           continue;
         }
         const v = parsed.data as any;
-        out.push(
+        const d: Decision =
           call.name === "crew_brief"
             ? { kind: "brief", role: v.role, text: v.text, ref: v.ref }
             : call.name === "crew_answer"
@@ -230,8 +240,14 @@ export class PipConductor implements Conductor {
                       ? { kind: "hold", why: v.why }
                       : call.name === "crew_replan"
                         ? { kind: "replan", diff: v }
-                        : { kind: "escalate", question: v.question, options: v.options },
-        );
+                        : { kind: "escalate", question: v.question, options: v.options };
+        // a plan change the orchestrator refuses goes back as this tool's error, so Pip can correct it (§1.9)
+        const refused = ctx.check?.(d);
+        if (refused) {
+          messages.push({ role: "tool", toolCallId: call.id, name: call.name, content: refused, isError: true });
+          continue;
+        }
+        out.push(d);
         if (TERMINAL.has(call.name)) terminal = true;
         messages.push({ role: "tool", toolCallId: call.id, name: call.name, content: "ok" });
       }

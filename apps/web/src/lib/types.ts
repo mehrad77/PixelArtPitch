@@ -240,7 +240,12 @@ export type ProjectState = {
   needs?: { count: number; words: string | null; waiting?: number };
 };
 
-export type Session = { version: string; token: string; workspace: { roots: string[]; libraryDir: string } };
+export type Session = {
+  version: string;
+  token: string;
+  /** libraryDir: where publish writes (the person's library); seedDir: the repo's read-only seed */
+  workspace: { roots: string[]; libraryDir: string; seedDir?: string };
+};
 
 export type ProviderKind = "anthropic" | "openai" | "openrouter" | "lmstudio" | "ollama" | "llamacpp" | "custom";
 export type Provider = {

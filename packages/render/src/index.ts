@@ -1,3 +1,4 @@
+export * from "./library.ts";
 export * from "./project.ts";
 export * from "./renderer.ts";
 export * from "./sound.ts";

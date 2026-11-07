@@ -16,6 +16,7 @@ import {
   withProbe,
 } from "@pap/crew/llm/index";
 import { Crew } from "@pap/crew/orchestrator";
+import { setUserLibrary } from "@pap/render";
 import {
   crewRequestChangeTool,
   DraftStore,
@@ -60,6 +61,8 @@ export async function wireCrew(deps: {
     },
     secrets: gateway.secrets,
   });
+  // publish writes to the person's library (settings.paths.library); the repo's library/ is the read-only seed
+  setUserLibrary(gateway.publicSettings().paths?.library);
   const crew = new Crew({ workspace: deps.workspace, registry: deps.registry, gateway });
   // a crash or restart never loses a crew: pick up every run that was in progress
   if (deps.resume !== false)
@@ -203,6 +206,7 @@ export async function wireCrew(deps: {
       else if (decision === "decline") crew.declineOverrun(p);
     },
     crewSnapshot: (p) => crew.snapshot(p),
+    changeCost: (p, c) => crew.changeCost(p, c),
   });
   // a held run (a rejected key, no credit, no connection): Pip says so once in the thread
   crew.onHold = (p, h) => {
@@ -394,6 +398,7 @@ export async function wireCrew(deps: {
             rolesForProfile(v.profile, { providers: next.providers, current: cur.roles as any }) ?? cur.roles;
         saveSettings(next);
         gateway.reload();
+        setUserLibrary(next.paths?.library);
         return settingsView();
       },
       // N22: what each profile assigns, from the server's own rule (rolesForProfile), so the UI never guesses

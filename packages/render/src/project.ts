@@ -1,24 +1,24 @@
 // Open a project folder: validate pitch.json, resolve its assets (public library + the project's own), its palette and
 // its code bundles, and compute the timeline. Everything the renderer needs, as plain data.
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Frames } from "@pap/engine";
 import { AssetFile, Project, type ProjectT, resolveTimeline, type Timeline } from "@pap/schema";
-
-export const PAP_ROOT = resolve(new URL("../../../", import.meta.url).pathname);
-export const LIBRARY_DIR = process.env.PAP_LIBRARY ?? join(PAP_ROOT, "library");
+import { libraryAssetDir, libraryFile } from "./library.ts";
 
 export type Palette = { id: string; sky: string; colours: Record<string, string> };
 
 export function loadPalette(ref: string): Palette {
   const [id] = ref.split("@");
-  const p = JSON.parse(readFileSync(join(LIBRARY_DIR, "palettes", `${id}.json`), "utf8"));
+  const p = JSON.parse(readFileSync(libraryFile("palettes", `${id}.json`), "utf8"));
   return { id, sky: p.sky, colours: Object.fromEntries(Object.entries(p.colours).map(([k, v]: any) => [k, v.hex])) };
 }
 
+/** a library asset from either layer (the user library first, then the seed: library.ts) */
 export function loadLibraryAsset(id: string, version?: number) {
-  const file = join(LIBRARY_DIR, id, "asset.json");
-  if (!existsSync(file)) throw new Error(`library asset ${id} not found`);
+  const dir = libraryAssetDir(id);
+  if (!dir) throw new Error(`library asset ${id} not found`);
+  const file = join(dir, "asset.json");
   const a = AssetFile.parse(JSON.parse(readFileSync(file, "utf8")));
   if (version !== undefined && a.version !== version)
     throw new Error(`library asset ${id} is v${a.version}, the project pins v${version}`);

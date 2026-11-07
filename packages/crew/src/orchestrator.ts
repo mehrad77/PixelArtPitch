@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { RECIPE_MAP } from "@pap/engine/recipes";
 import { checkAsset } from "@pap/engine/standard";
-import { contactSheet, LIBRARY_DIR, renderSheet } from "@pap/render";
+import { contactSheet, libraryAssetDir, libraryFile, libraryIndex, publishAsset, renderSheet } from "@pap/render";
 import type { RoleT } from "@pap/schema";
 import {
   type ChannelMsg,
@@ -21,6 +21,7 @@ import {
   type Registry,
   STAGES,
   type Stage,
+  StoreError,
   type Task,
   type ToolContext,
   type Workspace,
@@ -43,7 +44,7 @@ import {
   StoryboardOut,
   TuneOut,
 } from "./outputs.ts";
-import { CATALOGUE, taskLabel } from "./plan/catalogue.ts";
+import { CATALOGUE, stageOf, taskLabel } from "./plan/catalogue.ts";
 import { envOf, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
 import { Executor, type Outcome } from "./plan/executor.ts";
 import { logoIcon } from "./plan/import.ts";
@@ -55,6 +56,7 @@ import {
   addReviewRound,
   changeRevision,
   expandPlan,
+  hasArt,
   type NewAsset,
   type RulesCtx,
   reopenFrom,
@@ -291,6 +293,13 @@ type Run = {
   overrun?: { cap: number; declined?: boolean };
   /** the person pressed "Looks good" at the rough cut in this run (D2: that passes the final too) */
   roughByUser?: boolean;
+  /** the person asked for changes at this gate: the run ends there and its end starts the change (§1.9) */
+  changesAt?: GateId;
+  /**
+   * the last plan change Pip made in this run, without its words, and the tasks it added: the same change again is
+   * dropped while those tasks haven't run yet (§1.9)
+   */
+  lastPipChange?: { sig: string; tasks: string[] };
 };
 type AnglesState = { angles: { name: string; approach: string; cues: string[] }[]; recommended: number; row: string };
 type ArtSpec = {
@@ -303,8 +312,11 @@ type ArtSpec = {
   fromRef?: string;
 };
 type Variant = { frames: DrawOutT; std: any; model: string; judge?: string } | null;
-/** a change run: its notes, the scenes it may redo, the scenes the Director re-plans, and asks no scene carries */
-export type ChangePlan = { notes: string[]; scope?: string[]; reboard?: string[] };
+/**
+ * a change run: its notes, the scenes it may redo, the scenes the Director re-plans, and the drawn assets it redraws
+ * (a note on an asset)
+ */
+export type ChangePlan = { notes: string[]; scope?: string[]; reboard?: string[]; assets?: string[] };
 /** the crew right now, for Pip's turn context and its card copy (Crew.snapshot) */
 export type CrewSnapshot = {
   running: boolean;
@@ -340,15 +352,22 @@ export type RunReport = {
 };
 const isEndCard = (sc: { kind: string; recipes?: { id: string }[] }) =>
   sc.kind === "decl" && !!sc.recipes?.some((r) => r.id === "end_card_loop");
-/** which scenes a set of change notes touches and which the Director re-plans */
-function planChange(p: OpenProject, notes: Note[]): ChangePlan {
+/**
+ * which scenes a set of change notes touches and which the Director re-plans; a note on an asset touches the scenes
+ * that draw it (`usesOf`) and redraws it
+ */
+function planChange(p: OpenProject, notes: Note[], usesOf: (scene: string) => string[] = () => []): ChangePlan {
   const d = p.doc();
   const all = d.scenes.filter((s) => s.kind === "decl").map((s) => s.id);
   const reboard = new Set<string>();
   const scope = new Set<string>();
+  const assets = new Set<string>();
   let everywhere = false;
   for (const n of notes) {
-    if (n.assignee === "director") {
+    if (n.target.asset && !n.target.scene) {
+      assets.add(n.target.asset);
+      for (const s of all) if (usesOf(s).includes(n.target.asset)) scope.add(s);
+    } else if (n.assignee === "director") {
       // a change for the whole video re-plans every scene but the end card
       const ids = n.target.scene ? [n.target.scene] : d.scenes.filter((s) => !isEndCard(s as any)).map((s) => s.id);
       for (const id of ids) {
@@ -362,6 +381,7 @@ function planChange(p: OpenProject, notes: Note[]): ChangePlan {
     notes: notes.map((n) => n.id),
     ...(everywhere ? {} : { scope: [...scope] }),
     ...(reboard.size ? { reboard: all.filter((id) => reboard.has(id)) } : {}),
+    ...(assets.size ? { assets: [...assets] } : {}),
   };
 }
 
@@ -419,6 +439,21 @@ const STAGE_GATE: Record<Stage, GateId> = {
   deliver: "g4_final",
 };
 const GATES: GateId[] = ["g0_brief", "g1_script", "g2_animatic", "g3_rough", "g4_final"];
+/** who a gate's "Change something" goes to (a whole-stage note: no scene) */
+const GATE_OWNER: Partial<Record<GateId, RoleT>> = {
+  g0_brief: "producer",
+  g1_script: "writer",
+  g2_animatic: "director",
+  g3_rough: "animator",
+  g4_final: "editor",
+};
+const GATE_WORDS: Partial<Record<GateId, string>> = {
+  g0_brief: "the brief",
+  g1_script: "the script",
+  g2_animatic: "the animatic",
+  g3_rough: "the rough cut",
+  g4_final: "the final cut",
+};
 /** milestones a reopened stage earns again */
 const STAGE_MILESTONES: [Stage, string][] = [
   ["script", "writer.angles"],
@@ -474,9 +509,28 @@ export interface Conductor {
   think(
     p: OpenProject,
     trigger: Trigger,
-    ctx: { change?: ChangePlan; redos: Map<string, number>; replan?: boolean },
+    ctx: {
+      change?: ChangePlan;
+      redos: Map<string, number>;
+      replan?: boolean;
+      /**
+       * a plan change (redo, re-board, replan) checked before it is accepted (§1.9): the validator's first error, a
+       * name that isn't the project's, a second change on one trigger, or the same change again. The conductor sends
+       * it back as the tool's error so the model can correct itself; null accepts it.
+       */
+      check?: (d: Decision) => string | null;
+    },
   ): Promise<Decision[]>;
 }
+/** the decisions that change the plan: one per trigger (§1.9) */
+const planChanging = (d: Decision) => d.kind === "redo" || d.kind === "reboard" || d.kind === "replan";
+/** a plan change without its words: two with the same signature do the same thing */
+const changeSig = (d: Decision) =>
+  d.kind === "replan"
+    ? `replan:${JSON.stringify(d.diff.ops.map(({ reason: _r, ...o }) => o))}`
+    : d.kind === "redo" || d.kind === "reboard"
+      ? `${d.kind}:${[...d.scenes].sort().join(",")}`
+      : "";
 /** at most this many redo rounds per scene per request */
 export const MAX_REDO = 2;
 
@@ -570,7 +624,21 @@ export class Crew {
       // crew_replan only while this run has Pip proposals left (§1.6: at most 6)
       const run = this.planNow(p)?.runs.find((x) => x.id === r.id);
       const replan = !!run && run.pipProposals < MAX_PIP_PROPOSALS;
-      return await this.conductor.think(p, tr, { change: r.change, redos: r.redos, replan });
+      // one plan change per trigger, checked before it is accepted, so a rejection goes back to Pip as a tool error
+      let accepted = false;
+      const check = (d: Decision) => {
+        if (!planChanging(d)) return null;
+        if (accepted) return "one plan change per trigger: this one was not applied (the first one stands)";
+        const why = this.checkChange(p, r, d);
+        if (why && d.kind === "replan") {
+          // a refused proposal counts toward the run's six (§1.6), so failures can't loop
+          const live = this.planNow(p)?.runs.find((x) => x.id === r.id);
+          if (live) live.pipProposals++;
+        }
+        if (!why) accepted = true;
+        return why;
+      };
+      return await this.conductor.think(p, tr, { change: r.change, redos: r.redos, replan, check });
     } catch (e: any) {
       // Pip's own key or provider failing holds the run the same way a crew member's does
       if (holdsRun(e) && this.runs.get(p.id) === r && this.holdRun(p, r, e, null)) return [];
@@ -580,8 +648,68 @@ export class Crew {
   }
 
   /**
+   * Pip's plan change before it is applied (§1.9), or why not: the scenes are the project's and have redo rounds
+   * left, the revision it makes passes the validator (crew_redo and crew_reboard too, not only crew_replan), its words
+   * name only ids the project has, and it isn't the same change as Pip's last one in this run.
+   */
+  checkChange(p: OpenProject, r: Run, d: Decision, o: { replan?: boolean } = {}): string | null {
+    if (!planChanging(d)) return null;
+    const plan = this.planNow(p);
+    if (!plan) return null;
+    const last = r.lastPipChange;
+    if (
+      last?.sig === changeSig(d) &&
+      plan.tasks.some((t) => last.tasks.includes(t.id) && isLive(t) && t.status !== "waiting_person")
+    )
+      return "the same plan change as your last one: it is already in the plan and hasn't run yet";
+    const doc = p.doc();
+    const ctx = { ...this.rulesCtx(p, plan.rev + 1), refs: doc.brief.references };
+    const library = new Set(libraryIndex().assets.map((a) => a.id));
+    const env = this.planEnv(p);
+    const vctx = { doc, library, env, spentUsd: this.deps.gateway.spent(p.id).spentUsd, redos: r.redos };
+    const fix = (e: { message: string; fix?: string }) => `${e.message}${e.fix ? ` (fix: ${e.fix})` : ""}`;
+    if (d.kind === "replan") {
+      // apply() leaves the validation to pipRevise, which says "Kept the default plan: …" on the channel
+      if (o.replan === false) return null;
+      const applied = applyDiff(plan.tasks, d.diff, ctx);
+      const v = validatePlan(applied.tasks, {
+        ...vctx,
+        by: "pip",
+        before: plan.tasks,
+        ops: d.diff.ops.map((x) => ({ ...x, task: "task" in x ? x.task : undefined })) as any,
+        texts: [...d.diff.ops.map((o) => o.reason), d.diff.summary],
+        strictNames: true,
+      });
+      const first = [...applied.issues, ...v.errors][0];
+      return first ? fix(first) : null;
+    }
+    if (d.kind !== "redo" && d.kind !== "reboard") return null;
+    const ids = doc.scenes.map((s) => s.id);
+    const unknown = d.scenes.filter((s) => !ids.includes(s));
+    if (unknown.length) return `no scene ${unknown.join(", ")} (fix: use a scene id: ${ids.join(", ")})`;
+    const over = d.scenes.filter((s) => (r.redos.get(s) ?? 0) >= MAX_REDO);
+    // past the redo limit: accepted, and apply() holds the run and tells the person (the 2-redo hold)
+    if (over.length === d.scenes.length) return null;
+    const why = d.kind === "redo" ? d.why : d.direction;
+    const out =
+      d.kind === "redo"
+        ? addRedo(plan.tasks, d.scenes, ctx, { reason: why.slice(0, 200) })
+        : addReboard(plan.tasks, d.scenes, ctx, { reason: why.slice(0, 200) });
+    const v = validatePlan(out.tasks, {
+      ...vctx,
+      by: "pip",
+      before: plan.tasks,
+      ops: out.ops,
+      texts: [why],
+      strictNames: true,
+    });
+    return v.errors[0] ? fix(v.errors[0]) : null;
+  }
+
+  /**
    * apply Pip's decisions; a redo or re-board becomes a plan revision (the executor runs it after `after`). Returns
-   * whether any scene was sent back, and the redo tunes it added.
+   * whether any scene was sent back, and the redo tunes it added. At most one plan change per trigger, each checked
+   * (`checkChange`) even when the fixed rules decided it.
    */
   private async apply(
     p: OpenProject,
@@ -596,7 +724,19 @@ export class Crew {
       for (const id of ok) r.redos.set(id, (r.redos.get(id) ?? 0) + 1);
       return { ok, over: ids.filter((id) => !ok.includes(id)) };
     };
+    let changed = false;
+    let sig: { sig: string; had: Set<string> } | null = null;
     for (const d of ds) {
+      if (planChanging(d)) {
+        const why = changed ? "one plan change per trigger" : this.checkChange(p, r, d, { replan: false });
+        if (why) {
+          p.emit("log", { level: "warn", text: `Pip's ${d.kind} was not applied: ${why.slice(0, 200)}` });
+          continue;
+        }
+        changed = true;
+        const had = new Set((this.planNow(p)?.tasks ?? []).map((t) => t.id));
+        sig = { sig: changeSig(d), had };
+      }
       if (d.kind === "brief") {
         const m = p.say({ from: "pip", to: d.role, kind: "brief", text: d.text, ref: d.ref });
         const key = `${p.id}:${d.role}`;
@@ -662,6 +802,13 @@ export class Crew {
         r.held = d.why;
         p.say({ from: "pip", to: "crew", kind: "brief", text: `Hold: ${d.why}` });
       }
+    }
+    if (sig) {
+      const { had } = sig;
+      r.lastPipChange = {
+        sig: sig.sig,
+        tasks: (this.planNow(p)?.tasks ?? []).filter((t) => !had.has(t.id)).map((t) => t.id),
+      };
     }
     if (r.held && !r.paused) {
       // stop and tell the person; the cards that handed work to this run settle now
@@ -870,6 +1017,12 @@ export class Crew {
     this.plans.set(p.id, next);
     const added = out.ops.flatMap((o) => (o.op === "add" ? [o.task] : []));
     this.overTwenty(p, next, plan, rv, added);
+    // a person's change or retry is consent to its cost, up to the top of the range its card showed: later code and
+    // Pip revisions compare against that (§1.6)
+    if (rv.by === "person" && (rv.trigger === "change" || rv.trigger === "retry")) {
+      next.approvedUsd = next.estimate.usd[1];
+      touch(p, next, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
+    }
     r?.exec?.wake();
     return { added, tasks: next.tasks };
   }
@@ -1005,11 +1158,7 @@ export class Crew {
     const env = this.planEnv(p);
     const ctx = { ...this.rulesCtx(p, plan.rev + 1), refs: d.brief.references };
     const { spentUsd } = this.deps.gateway.spent(p.id);
-    const lib = JSON.parse(readFileSync(join(LIBRARY_DIR, "index.json"), "utf8")).assets as {
-      id: string;
-      kind: string;
-      tags?: string[];
-    }[];
+    const lib: { id: string; kind: string; tags?: string[] }[] = libraryIndex().assets;
     const vctx = { doc: d, library: new Set(lib.map((a) => a.id)), env, spentUsd, redos: r.redos };
     let res: PipRevisionResult;
     if (given) {
@@ -1019,6 +1168,8 @@ export class Crew {
         by: "pip",
         before: plan.tasks,
         ops: given.ops.map((x) => ({ ...x, task: "task" in x ? x.task : undefined })) as any,
+        texts: [...given.ops.map((x) => x.reason), given.summary],
+        strictNames: why === "conductor",
       });
       const errors = [...applied.issues, ...v.errors];
       res = {
@@ -1335,11 +1486,28 @@ export class Crew {
     if (taskId) {
       const id = tasks.some((t) => t.id === taskId) ? taskId : p.state.tasks.find((x) => x.id === taskId)?.planTask;
       const one = tasks.find((t) => t.id === id);
-      if (one && redo(one)) return [one];
+      // a judge whose stand-in was cast redraws the variants that fell back with it
+      if (one && redo(one))
+        return one.kind === "asset.judge"
+          ? [...tasks.filter((t) => t.kind === "asset.draw" && t.asset === one.asset && redo(t)), one]
+          : [one];
     }
     return tasks.filter(redo);
   }
+  /**
+   * A verdict on a gate (HTTP, MCP's gate_decide, a Pip card). Only a gate that is open, or that a run waits on, takes
+   * one: a click on an old card can't pass a gate a rerun locked again (409).
+   */
   gate(p: OpenProject, gate: string, v: { verdict: string; items?: string[]; reasons?: string[]; by: string }) {
+    const waiter = this.gateWaiters.get(`${p.id}:${gate}`);
+    const now = p.state.gates.find((x) => x.id === gate);
+    if (!waiter && now?.status !== "open")
+      throw new StoreError(
+        "gate_not_open",
+        `${gate} isn't waiting for a verdict (it is ${now?.status ?? "unknown"})`,
+        "answer a gate when the crew opens it (state.gates status open)",
+        409,
+      );
     const g = p.setGate(gate as GateId, {
       status: v.verdict === "changes" ? "changes" : "passed",
       verdict: { by: v.by, verdict: v.verdict, reasons: v.reasons, at: new Date().toISOString() },
@@ -1383,19 +1551,75 @@ export class Crew {
     this.run(p, { stage: from, change }).catch(() => {});
     return { queued: false, stage: from, started: true };
   }
-  /** reopen the stage a change needs and write its plan revision (§1.7 "Change requests become revisions") */
+  /**
+   * reopen the stage a change needs and write its plan revision (§1.7 "Change requests become revisions"). Only what
+   * the change touches comes back (`keepOf`); the new total is what the person approved by asking.
+   */
   private startChange(p: OpenProject, notes: Note[]) {
     // rev 0 first, from the project as it was before the change reopened anything
     this.ensurePlan(p, null);
     const from = this.reopen(p, notes);
-    const change = planChange(p, notes);
+    const change = planChange(p, notes, (s) => this.sceneAssets(p, s));
     p.state.change = { ...change, startedAt: new Date().toISOString() };
     p.saveState();
     const what = notes[0]?.text.slice(0, 160) ?? "a change";
     this.planRevise(p, null, { by: "person", trigger: "change", reason: `Your change: ${what}` }, (ts, ctx) =>
-      changeRevision(ts, change, from, ctx, p.state.sceneStatus),
+      changeRevision(ts, change, from, ctx, p.state.sceneStatus, this.keepOf(p, change.assets)),
     );
     return { from, change };
+  }
+  /**
+   * What a change would cost before it runs (the change card, §1.9): its revision on a copy of the plan, nothing
+   * written. `null` when the project has no plan yet (the card then prices the change from the kinds it touches).
+   */
+  changeCost(
+    p: OpenProject,
+    c: { assignee: string; scene?: string; asset?: string },
+  ): { usd: [number, number]; toUsd: [number, number] } | null {
+    const plan = this.planNow(p);
+    if (!plan) return null;
+    const note = {
+      id: "preview",
+      target: { ...(c.scene ? { scene: c.scene } : {}), ...(c.asset ? { asset: c.asset } : {}) },
+      assignee: c.assignee,
+    } as Note;
+    let from = OWNER_STAGE[c.assignee] ?? "review";
+    if (STAGES.indexOf(p.state.stage) < STAGES.indexOf(from)) from = p.state.stage;
+    const ss = structuredClone(p.state.sceneStatus);
+    for (const id of c.scene ? [c.scene] : c.assignee === "animator" ? Object.keys(ss) : [])
+      if (ss[id]) ss[id] = { version: "animatic", state: "stale" };
+    const change = planChange(p, [note], (s) => this.sceneAssets(p, s));
+    const out = changeRevision(
+      plan.tasks.map((t) => ({ ...t })),
+      change,
+      from,
+      this.rulesCtx(p, plan.rev + 1),
+      ss,
+      this.keepOf(p, change.assets),
+    );
+    const env = this.planEnv(p);
+    const spent = this.deps.gateway.spent(p.id).spentUsd;
+    const was = planEstimate(plan.tasks, spent, env).usd;
+    const now = planEstimate(out.tasks, spent, env).usd;
+    const r = (x: number) => Math.max(0, Math.round(x * 10000) / 10000);
+    return { usd: [r(now[0] - was[0]), r(now[1] - was[1])], toUsd: now };
+  }
+  /**
+   * What a rerun keeps as it is (§1.9): the chain and rights OK of art the project already has as itself (a stand-in
+   * isn't art: a retry redraws it), and every publish question already met. `redraw` names assets the change redoes.
+   */
+  keepOf(p: OpenProject, redraw: string[] = []): (t: PlanTaskT) => boolean {
+    const d = p.doc();
+    return (t) => {
+      if (t.kind === "lib.publish") return true;
+      if (!t.asset || redraw.includes(t.asset)) return false;
+      if (t.kind.startsWith("asset.") || (t.kind === "gate" && t.gate === "rights")) return hasArt(d, t.asset);
+      return false;
+    };
+  }
+  /** the art is in the project as itself and this change doesn't redraw it: its chain skips (a run-time guard) */
+  private drawn(p: OpenProject, name: string) {
+    return hasArt(p.doc(), name) && !p.state.change?.assets?.includes(name);
   }
 
   /** called when a run ends, or stops at a gate for the person, with what it did (Pip settles its cards) */
@@ -1428,6 +1652,15 @@ export class Crew {
     };
   }
 
+  /**
+   * Every rerun (a change, a retry, a run from a stage) locks the gates at and after the stage it reopens (§1.9), so
+   * no copied gate passes on an old approval: the person is asked again (a resume never relocks).
+   */
+  private relockFrom(p: OpenProject, from: Stage) {
+    for (const g of GATES.slice(GATES.indexOf(STAGE_GATE[from])))
+      if (p.state.gates.find((x) => x.id === g)?.status !== "locked")
+        p.setGate(g, { status: "locked", verdict: undefined });
+  }
   /** reopen the earliest stage the open notes need; returns the stage the crew should run from */
   private reopen(p: OpenProject, notes: Note[]): Stage {
     const order = STAGES;
@@ -1442,9 +1675,7 @@ export class Crew {
           ? Object.keys(p.state.sceneStatus)
           : [])
         if (p.state.sceneStatus[id]) p.setSceneStatus(id, { version: "animatic", state: "stale" });
-    for (const g of GATES.slice(GATES.indexOf(STAGE_GATE[from])))
-      if (p.state.gates.find((x) => x.id === g)?.status !== "locked")
-        p.setGate(g, { status: "locked", verdict: undefined });
+    this.relockFrom(p, from);
     for (const t of p.state.tasks)
       if (t.kind === "deliver.export" && t.status === "done" && !t.supersededBy)
         p.upsertTask({ ...t, supersededBy: `change:${notes.map((n) => n.id).join(",")}` });
@@ -1575,9 +1806,13 @@ export class Crew {
         this.onRunEnd?.(p, this.report(p, r, outcome.status, outcome.error));
       } catch {}
       // changes the person asked for while this run worked, and that no review picked up: their stage reopens now
-      // (only notes made during this run, so a change no stage can read never loops)
-      const left = p.state.notes.filter((n) => n.status === "open" && n.by === "user" && n.createdAt >= r.startedAt);
-      if (finished && left.length && !p.state.paused) {
+      // (only notes made during this run, so a change no stage can read never loops). A note no crew stage owns, or a
+      // slash command that slipped into a note, is closed instead: it never reruns the crew (§1.9).
+      const mine = p.state.notes.filter((n) => n.status === "open" && n.by === "user" && n.createdAt >= r.startedAt);
+      for (const n of mine.filter((x) => !OWNER_STAGE[x.assignee] || x.text.trim().startsWith("/")))
+        p.updateNote(n.id, { status: "declined", reason: "no crew stage owns this note" });
+      const left = p.state.notes.filter((n) => mine.includes(n) && n.status === "open");
+      if ((finished || r.changesAt) && left.length && !p.state.paused) {
         const { from, change } = this.startChange(p, left);
         setTimeout(() => this.run(p, { stage: from, change }).catch(() => {}), 0);
       }
@@ -1604,6 +1839,11 @@ export class Crew {
       touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
     } else if (opts.retry && this.retryTargets(p, opts.taskId).length) {
       const targets = this.retryTargets(p, opts.taskId);
+      // the gates from the earliest redone stage on ask again
+      this.relockFrom(
+        p,
+        targets.map(stageOf).reduce((a, b) => (STAGES.indexOf(b) < STAGES.indexOf(a) ? b : a)),
+      );
       // the person asked for it, so the 20% rule doesn't hold it (by: "person")
       this.planRevise(
         p,
@@ -1617,13 +1857,16 @@ export class Crew {
       );
     } else if (!opts.change) {
       const from = (opts.stage as Stage | undefined) ?? (plan.tasks.some(isLive) ? null : p.state.stage);
-      if (from || (opts.resume && !had))
+      if (from || (opts.resume && !had)) {
+        const at = (from ?? p.state.stage) as Stage;
+        if (from) this.relockFrom(p, at);
         this.planRevise(
           p,
           r,
-          { by: "code", trigger: "start", reason: `The crew runs again from the ${from ?? p.state.stage} stage.` },
-          (ts) => reopenFrom(ts, (from ?? p.state.stage) as Stage, plan.rev + 1, { sceneStatus }),
+          { by: "code", trigger: "start", reason: `The crew runs again from the ${at} stage.` },
+          (ts) => reopenFrom(ts, at, plan.rev + 1, { sceneStatus, keep: this.keepOf(p) }),
         );
+      }
     }
     plan = this.planNow(p)!;
     // a /new project: G0 was passed by Start, so Pip's revision comes now (once)
@@ -2016,8 +2259,34 @@ export class Crew {
     p.setDigest(`Waiting for you: ${items.map((i) => i.label).join(", ")}.`);
     if (pt) this.setPlanStatus(p, pt.id, "waiting_person");
     const v = await this.waitGate(p, r, gate);
-    if (gate === "g3_rough" && v.by === "user" && v.verdict !== "changes") r.roughByUser = true;
+    if (v.verdict === "changes") this.changesAsked(p, r, gate, v);
+    if (gate === "g3_rough" && v.by === "user") r.roughByUser = true;
     return v;
+  }
+  /**
+   * "Change something" at a gate is never a pass (§1.9): its reasons become the person's note to the gate's owner,
+   * the run ends at the gate (the gate task goes back to pending), and the run's end starts the change. With no
+   * reasons the run waits for the person to say what to change (Pip's field; crew_request_change).
+   */
+  private changesAsked(
+    p: OpenProject,
+    r: Run,
+    gate: GateId,
+    v: { verdict: string; reasons?: string[]; items?: string[] },
+  ): never {
+    const text = [...(v.reasons ?? []), ...(v.items ?? [])]
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .join("; ")
+      .slice(0, 2000);
+    const owner = GATE_OWNER[gate] ?? "editor";
+    if (text && !text.startsWith("/")) p.addNote({ target: {}, category: "other", text, assignee: owner, by: "user" });
+    r.changesAt = gate;
+    p.setStatus({
+      line: text ? "The crew is making your change" : `Waiting for you: what to change in ${GATE_WORDS[gate] ?? gate}`,
+    });
+    r.abort.abort(new Paused("changes"));
+    throw new Paused("changes");
   }
   private waitGate(p: OpenProject, r: Run, gate: GateId) {
     return new Promise<{ verdict: string; reasons?: string[]; by: string }>((res, rej) => {
@@ -2255,14 +2524,8 @@ export class Crew {
   }
 
   private libraryList() {
-    const idx = JSON.parse(readFileSync(join(LIBRARY_DIR, "index.json"), "utf8")).assets as {
-      id: string;
-      kind: string;
-      w: number;
-      h: number;
-    }[];
-    return idx.map((a) => {
-      const f = JSON.parse(readFileSync(join(LIBRARY_DIR, a.id, "asset.json"), "utf8"));
+    return libraryIndex().assets.map((a) => {
+      const f = JSON.parse(readFileSync(join(libraryAssetDir(a.id)!, "asset.json"), "utf8"));
       return `${a.id}: ${a.kind} ${a.w}x${a.h}, frames ${f.frames.slice(0, 10).join(", ")}${f.frames.length > 10 ? ", …" : ""}`;
     });
   }
@@ -2698,7 +2961,7 @@ export class Crew {
 
   // ---------------------------------------------------------------- art: import, spec, draw, judge, rights
   private palette() {
-    const palette = JSON.parse(readFileSync(join(LIBRARY_DIR, "palettes", "pap-night.json"), "utf8"));
+    const palette = JSON.parse(readFileSync(libraryFile("palettes", "pap-night.json"), "utf8"));
     const table = Object.entries<any>(palette.colours)
       .map(([k, v]) => `${k}  ${v.hex}  ${v.use}`)
       .join("\n");
@@ -2752,7 +3015,7 @@ export class Crew {
   /** asset.import: a logo is quantized to the palette as a private 16x16 icon and cast; it is never drawn */
   private async importLogo(p: OpenProject, pt: PlanTaskT): Promise<Outcome> {
     const name = pt.asset!;
-    if (p.doc().assets.some((a) => a.id === name)) return { status: "skipped", note: "already in the project" };
+    if (this.drawn(p, name)) return { status: "skipped", note: "already in the project" };
     const t = this.task(p, {
       kind: "asset.import",
       role: "art-director",
@@ -2811,7 +3074,7 @@ export class Crew {
   /** asset.spec: the Art Director's drawing spec (with the reference image when the chain comes from one) */
   private async assetSpec(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const a = this.assetOf(p, pt);
-    if (p.doc().assets.some((x) => x.id === a.name)) return { status: "skipped", note: "already in the project" };
+    if (this.drawn(p, a.name)) return { status: "skipped", note: "already in the project" };
     const { palette, table } = this.palette();
     const tpl = KIND_TEMPLATES[a.kind] ?? KIND_TEMPLATES.icon;
     const ts = this.task(p, {
@@ -2859,7 +3122,8 @@ export class Crew {
   private async assetDraw(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const name = pt.asset!;
     const v = pt.variant ?? 1;
-    if (p.doc().assets.some((x) => x.id === name)) return { status: "skipped", note: "already in the project" };
+    // a stand-in from an earlier judge is not the drawing: a retry draws it (§1.8)
+    if (this.drawn(p, name)) return { status: "skipped", note: "already in the project" };
     const st = this.specOf(p, name);
     if (!st) return { status: "skipped", note: "no spec to draw from" };
     const { palette, table } = this.palette();
@@ -2891,7 +3155,8 @@ export class Crew {
   /** asset.judge: the better variant (the library stands in when neither passed), written and cast */
   private async assetJudge(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const name = pt.asset!;
-    if (p.doc().assets.some((x) => x.id === name)) return { status: "skipped", note: "already in the project" };
+    // a stand-in from an earlier judge is not the drawing: a retry draws it (§1.8)
+    if (this.drawn(p, name)) return { status: "skipped", note: "already in the project" };
     const st = this.specOf(p, name);
     if (!st) return { status: "skipped", note: "no spec" };
     const tpl = KIND_TEMPLATES[st.kind] ?? KIND_TEMPLATES.icon;
@@ -2908,6 +3173,13 @@ export class Crew {
         text: `no variant of ${name} passed the standard; casting the library's ${stand} instead`,
       });
       await this.tool(p, "art-director", st.row, "cast_asset", { name, libraryId: stand });
+      // marked, so a retry knows this is a stand-in and draws the asset (hasArt is false for it)
+      const k = p.doc().assets.findIndex((x) => x.id === name);
+      if (k >= 0)
+        await p.patch([{ op: "add", path: `/assets/${k}/standIn`, value: true }], {
+          reason: `${stand} stands in for ${name}`,
+          author: { kind: "agent", role: "art-director" },
+        });
       return { status: "done", note: `partial: the library's ${stand} stands in`, outcome: "fallback" };
     }
     let best = ok[0];
@@ -2977,11 +3249,13 @@ export class Crew {
     writeFileSync(join(p.dir, "assets", `${name}.json`), `${JSON.stringify(file, null, 1)}\n`);
     writeFileSync(join(p.dir, "assets", `${name}.png`), readFileSync(join(p.dir, "runs", `${name}-v${best.v}.png`)));
     const d = p.doc();
+    // a stand-in cast under this name (an earlier fallback) is replaced in place: one ref per name
+    const at = d.assets.findIndex((x) => x.id === name);
     await p.patch(
       [
         {
-          op: "add",
-          path: "/assets/-",
+          op: at < 0 ? "add" : "replace",
+          path: at < 0 ? "/assets/-" : `/assets/${at}`,
           value: {
             id: name,
             src: `file:assets/${name}.json`,
@@ -3572,7 +3846,8 @@ export class Crew {
       } catch {}
       this.setPlanStatus(p, pt.id, "waiting_person");
       const v = await this.waitGate(p, r, g);
-      if (v.by === "user" && v.verdict !== "changes") r.roughByUser = true;
+      if (v.verdict === "changes") this.changesAsked(p, r, g, v);
+      if (v.by === "user") r.roughByUser = true;
       return { status: "done" };
     }
     await this.atGate(p, r, pt, "g3_rough", [{ label: "Rough cut", ref: "out/contact.png" }]);
@@ -3593,27 +3868,39 @@ export class Crew {
     return { status: "done" };
   }
 
-  /** lib.publish: a new public asset goes into the library only with the person's yes (never a private one) */
+  /**
+   * lib.publish: a new public asset goes into the person's library (settings.paths.library, never the repo's seed)
+   * only with their yes, and never a private one. The answer is stored on the asset (`publish`), so the question is
+   * asked once per asset, never again on a rerun. While it waits, the Librarian's row says so (waiting_user).
+   */
   private async publish(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const a = p.doc().assets.find((x) => x.id === pt.asset);
     if (!a?.src.startsWith("file:")) return { status: "skipped", note: "not a drawn asset" };
+    if (a.publish) return { status: "skipped", note: `already answered (${a.publish})` };
     // the second check (V9 is the first): private, likeness and brand assets never leave the project
     if (a.flags.private || a.flags.likeness || a.flags.brand) return { status: "skipped", note: "private" };
     const file = join(p.dir, a.src.slice(5));
     const asset = JSON.parse(readFileSync(file, "utf8"));
     if (asset.rights?.likeness || asset.rights?.brand || asset.rights?.trademark || asset.rights?.public === false)
       return { status: "skipped", note: "private" };
-    if (existsSync(join(LIBRARY_DIR, a.id))) return { status: "skipped", note: "already in the library" };
+    if (libraryAssetDir(a.id)) return { status: "skipped", note: "already in the library" };
     const auto = p.doc().brief.involvement === "auto";
+    const row = this.task(p, {
+      kind: "lib.publish",
+      role: "librarian",
+      title: auto ? `Publishing ${a.id}` : `Waiting for you: publish ${a.id}?`,
+      ...(auto ? {} : { status: "waiting_user" as const }),
+      ...this.ptOf(pt),
+    });
     let yes = auto;
     if (!auto) {
       const q = p.ask(
         {
           kind: "yesno",
-          question: `Add "${a.id}" to the public asset library?`,
-          why: "Other projects could reuse it. It passed the PAP standard and shows no real person or brand.",
+          question: `Add "${a.id}" to your asset library?`,
+          why: "Your other projects could reuse it. It passed the PAP standard and shows no real person or brand.",
           options: [
-            { id: "yes", label: "Yes, publish it", detail: "" },
+            { id: "yes", label: "Yes, add it", detail: "" },
             { id: "no", label: "Keep it in this project", detail: "" },
           ],
           recommendedId: "yes",
@@ -3625,25 +3912,31 @@ export class Crew {
       );
       this.setPlanStatus(p, pt.id, "waiting_person");
       yes = (await p.waitAnswer(q.id, r.abort.signal)).answer?.optionId === "yes";
+      this.setPlanStatus(p, pt.id, "running");
+      p.upsertTask({ ...row, status: "working", title: `Publishing ${a.id}` });
     }
-    if (!yes) return { status: "done", note: "kept in this project" };
-    const t2 = this.task(p, { kind: "lib.publish", role: "librarian", title: `Publishing ${a.id}`, ...this.ptOf(pt) });
-    mkdirSync(join(LIBRARY_DIR, a.id), { recursive: true });
-    writeFileSync(join(LIBRARY_DIR, a.id, "asset.json"), `${JSON.stringify(asset, null, 1)}\n`);
-    const png = file.replace(/\.json$/, ".png");
-    if (existsSync(png)) writeFileSync(join(LIBRARY_DIR, a.id, "sheet.png"), readFileSync(png));
-    const idxF = join(LIBRARY_DIR, "index.json");
-    const idx = JSON.parse(readFileSync(idxF, "utf8"));
-    idx.assets.push({
-      id: a.id,
-      kind: asset.kind,
-      w: asset.w,
-      h: asset.h,
-      frames: asset.frames.length,
-      tags: asset.tags ?? [],
-    });
-    writeFileSync(idxF, `${JSON.stringify(idx, null, 1)}\n`);
-    this.done(p, t2, { summary: `library/${a.id}` });
+    await this.answerPublish(p, a.id, yes ? "yes" : "no");
+    if (!yes) {
+      this.done(p, row, { title: `Kept ${a.id} in this project`, summary: "kept in this project" });
+      return { status: "done", note: "kept in this project" };
+    }
+    try {
+      const png = file.replace(/\.json$/, ".png");
+      const out = publishAsset(asset, existsSync(png) ? readFileSync(png) : null);
+      this.done(p, row, { title: `Published ${a.id}`, summary: out.dir });
+    } catch (e) {
+      this.failTask(p, row, e);
+      throw e;
+    }
     return { status: "done" };
+  }
+  /** the person's publish answer, on the asset (the question is never asked twice) */
+  private async answerPublish(p: OpenProject, id: string, answer: "yes" | "no") {
+    const k = p.doc().assets.findIndex((x) => x.id === id);
+    if (k < 0) return;
+    await p.patch([{ op: "add", path: `/assets/${k}/publish`, value: answer }], {
+      reason: `the person's answer to publishing ${id}`,
+      author: { kind: "user" },
+    });
   }
 }

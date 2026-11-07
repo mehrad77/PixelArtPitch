@@ -6,10 +6,13 @@
 // pap golden <project>                   check frames against <project>/gen/golden.json
 // pap report <project> [--run <id>|--all] [--notes findings.md] [--picks picks.jsonl] [--out <dir>] [--include-private]
 //                                        the run as one HTML page (docs/REPORT.md)
+// pap library promote <id> [--from <user-library>] [--to <seed>]
+//                                        copy an asset from your library into the repo's public library/
+//                                        (the standard and the rights checks; docs/RIGHTS.md §5)
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
-import { checkGolden, loadProject, openRenderer } from "@pap/render";
+import { checkGolden, loadProject, openRenderer, promoteAsset, userLibraryDir } from "@pap/render";
 import { buildReport } from "@pap/report";
 import { buildRegistry, PAP_HOME, Workspace } from "@pap/tools";
 import { createApp, VERSION } from "./app.ts";
@@ -175,6 +178,21 @@ async function main() {
       process.exit(1);
     }
   }
+  if (cmd === "library") {
+    const [sub, id] = rest;
+    if (sub !== "promote" || !id || id.startsWith("--")) {
+      console.error("usage: pap library promote <id> [--from <user-library>] [--to <seed>]");
+      process.exit(1);
+    }
+    const from = resolve(flag("from") ?? userLibraryDir());
+    const r = promoteAsset(id, { from, ...(flag("to") ? { to: resolve(flag("to")!) } : {}) });
+    if (!r.ok) {
+      console.error(`refused: ${id} stays in ${from}\n${r.reasons.map((x) => `- ${x}`).join("\n")}`);
+      process.exit(1);
+    }
+    console.log(`${r.dir}${r.soft.length ? `\nfor a vision check: ${r.soft.slice(0, 3).join("; ")}` : ""}`);
+    process.exit(0);
+  }
   if (cmd === "still" || cmd === "render") {
     const workspace = new Workspace(() => []);
     const p = workspace.openDir(resolve(rest[0]));
@@ -198,7 +216,7 @@ async function main() {
     process.exit(0);
   }
   console.log(
-    "usage: pap serve [--port 5141] | mcp | render <dir> [--delivery id] | still <dir> <t> | golden <dir> | report <project>",
+    "usage: pap serve [--port 5141] | mcp | render <dir> [--delivery id] | still <dir> <t> | golden <dir> | report <project> | library promote <id>",
   );
   process.exit(cmd ? 1 : 0);
 }

@@ -4,7 +4,19 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { thinSfx } from "@pap/engine/audio";
 import { plainText } from "@pap/engine/core";
-import { encode, loudness, mix, openDoc, openRenderer, sha256File, subtitles, writeMusic, writeSfx } from "@pap/render";
+import {
+  encode,
+  libraryAssetDir,
+  libraryIndex,
+  loudness,
+  mix,
+  openDoc,
+  openRenderer,
+  sha256File,
+  subtitles,
+  writeMusic,
+  writeSfx,
+} from "@pap/render";
 import { Brief, Cue, PatchOp, type ProjectT, type RoleT, SfxType, TimeExpr } from "@pap/schema";
 import { z } from "zod";
 import { fitRuns, speechRuns } from "./align.ts";
@@ -419,8 +431,7 @@ export const renderContact = defineTool({
 });
 
 // ---------------------------------------------------------------- library and assets
-type LibIndex = { assets: { id: string; kind: string; w: number; h: number; frames: number; tags: string[] }[] };
-const libIndex = (dir: string): LibIndex => JSON.parse(readFileSync(join(dir, "index.json"), "utf8"));
+// two layers (docs/PIP-ORCHESTRATION.md §1.9): the person's library first, then the repo's seed (@pap/render library.ts)
 export const librarySearch = defineTool({
   name: "library_search",
   title: "Search the asset library",
@@ -446,12 +457,12 @@ export const librarySearch = defineTool({
   tier: "basic",
   effects: "read",
   project: false,
-  handler: async (i, ctx) => {
+  handler: async (i) => {
     const q = i.query.toLowerCase().split(/\s+/).filter(Boolean);
-    const out = libIndex(ctx.workspace.libraryDir)
+    const out = libraryIndex()
       .assets.filter((a) => !i.kind || a.kind === i.kind)
       .map((a) => {
-        const f = JSON.parse(readFileSync(join(ctx.workspace.libraryDir, a.id, "asset.json"), "utf8"));
+        const f = JSON.parse(readFileSync(join(libraryAssetDir(a.id)!, "asset.json"), "utf8"));
         const hay = `${a.id} ${a.kind} ${a.tags.join(" ")} ${f.description} ${f.frames.join(" ")}`.toLowerCase();
         return { a, f, score: q.reduce((s, w) => s + (hay.includes(w) ? 1 : 0), 0) };
       })
@@ -482,7 +493,7 @@ export const libraryGet = defineTool({
   effects: "read",
   project: false,
   handler: async (i, ctx) => {
-    const dir = join(ctx.workspace.libraryDir, i.id);
+    const dir = libraryAssetDir(i.id) ?? join(ctx.workspace.libraryDir, i.id);
     if (!existsSync(join(dir, "asset.json")))
       return fail("not_found", `no library asset ${i.id}`, { fix: "use library_search" });
     const f = JSON.parse(readFileSync(join(dir, "asset.json"), "utf8"));
@@ -509,7 +520,7 @@ export const castAsset = defineTool({
   handler: async (i, ctx) => {
     const p = P(ctx);
     const d = p.doc();
-    const file = join(ctx.workspace.libraryDir, i.libraryId, "asset.json");
+    const file = join(libraryAssetDir(i.libraryId) ?? join(ctx.workspace.libraryDir, i.libraryId), "asset.json");
     if (!existsSync(file)) return fail("not_found", `no library asset ${i.libraryId}`, { fix: "use library_search" });
     const v = JSON.parse(readFileSync(file, "utf8")).version ?? 1;
     const ref = {

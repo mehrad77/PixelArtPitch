@@ -1,9 +1,10 @@
 // The plan validator (docs/PIP-ORCHESTRATION.md §1.5). It runs on every revision, whoever wrote it. Errors carry a `fix`
 // a small model can follow; warnings go onto the card. A rules or code plan is never rejected for its cost (V6).
+import { RECIPE_MAP } from "@pap/engine/recipes";
 import type { ProjectT, RoleT } from "@pap/schema";
 import { CATALOGUE, CATALOGUE_KINDS, PIP_ADDABLE, type PlanKind } from "./catalogue.ts";
 import { isLive, type PlanEnv, resolveTier } from "./estimate.ts";
-import { jobKey } from "./rules.ts";
+import { jobKey, PLACEHOLDER_SCRIPT } from "./rules.ts";
 import type { PlanTaskT } from "./schema.ts";
 
 export type PlanIssue = { code: string; rule: string; message: string; fix?: string; task?: string };
@@ -21,6 +22,14 @@ export type ValidateCtx = {
   ops?: { op: string; kind?: string; task?: string }[];
   /** scenes per request a redo has already used (V14) */
   redos?: Map<string, number>;
+  /** Pip's own words on the revision (op reasons, the summary, a redo's why): V15 checks the ids they name */
+  texts?: string[];
+  /**
+   * a conductor's revision mid-run (crew_replan, crew_redo, crew_reboard): an asset its own diff adds must be one the
+   * project's script or storyboard names (V4). Pip's first revision, at G0 or Start, may still add the art the brief
+   * needs.
+   */
+  strictNames?: boolean;
 };
 
 export const MAX_TASKS = 80;
@@ -88,10 +97,17 @@ export function validate(tasks: PlanTaskT[], ctx: ValidateCtx): { errors: PlanIs
   // V4 unknown_subject
   const scenes = new Set(ctx.doc.scenes.map((s) => s.id));
   const boarding = tasks.some((t) => t.kind === "director.storyboard" && isLive(t) && !t.scenes);
+  // an asset Pip's own diff adds is known only when the project names it (§1.9): its script or storyboard once there
+  // is one, or it comes from a brief reference
+  const chained = (ts: PlanTaskT[]) =>
+    ts.filter((t) => t.asset && (t.kind === "asset.spec" || t.kind === "asset.import"));
+  const before = pip && ctx.strictNames && ctx.before ? new Set(ctx.before.map((t) => t.id)) : null;
   const assets = new Set([
     ...ctx.doc.assets.map((a) => a.id),
     ...ctx.library,
-    ...tasks.filter((t) => t.asset && (t.kind === "asset.spec" || t.kind === "asset.import")).map((t) => t.asset!),
+    ...chained(tasks)
+      .filter((t) => !before || before.has(t.id) || !!t.fromRef || namedInProject(ctx.doc, t.asset!))
+      .map((t) => t.asset!),
   ]);
   const refs = new Set(ctx.doc.brief.references.map((r) => r.file));
   for (const t of tasks.filter(isLive)) {
@@ -255,6 +271,56 @@ export function validate(tasks: PlanTaskT[], ctx: ValidateCtx): { errors: PlanIs
         `${scene} had ${n} redo rounds in this request; at most ${MAX_REDO_ROUNDS}`,
         "hold and tell the person",
       );
+  // V15 unknown_id: Pip's words name only ids the project has (P4: reasons named owl_reading, growth_coin)
+  if (pip && ctx.texts?.length) {
+    const known = knownIds(ctx.doc, tasks, ctx.library);
+    for (const id of new Set(ctx.texts.flatMap(idsIn)))
+      if (!known.has(id))
+        err(
+          "V15",
+          "unknown_id",
+          `the reason names ${id}, which isn't a scene, asset or task in this project`,
+          `name only ids the project has: scenes ${[...scenes].join(", ")}`,
+        );
+  }
   // warnings: rough estimates, the deadline
   return { errors, warnings };
+}
+
+/** snake_case words in Pip's text: what it means as an id (plain words and kebab-case are left alone) */
+export const idsIn = (text: string) => text.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g) ?? [];
+/** every id a reason may name: scenes, assets (project, library, chains), plan tasks, recipes and their params */
+export function knownIds(doc: ProjectT, tasks: PlanTaskT[], library: Set<string>) {
+  const out = new Set<string>([
+    ...doc.scenes.map((s) => s.id),
+    ...doc.assets.map((a) => a.id),
+    ...library,
+    ...doc.script.cues.map((c) => c.id),
+    ...tasks.flatMap((t) => [t.id, t.instance, ...(t.asset ? [t.asset] : [])]),
+    ...Object.keys(RECIPE_MAP),
+    ...Object.values(RECIPE_MAP).flatMap((r) => Object.keys((r as { params?: object }).params ?? {})),
+  ]);
+  for (const s of doc.scenes)
+    if (s.kind === "decl")
+      for (const r of s.recipes) for (const v of Object.values(r.params ?? {})) if (typeof v === "string") out.add(v);
+  return out;
+}
+/**
+ * the project names this asset: its script or storyboard. Before the Writer has written a script there is nothing to
+ * name it yet, so Pip's first revision (at G0) may add art the brief needs.
+ */
+export function namedInProject(doc: ProjectT, name: string) {
+  const placeholder = doc.script.cues.length <= 1 && PLACEHOLDER_SCRIPT.test(doc.script.cues[0]?.text ?? "");
+  if (placeholder) return true;
+  const words = [
+    ...doc.script.cues.map((c) => c.text),
+    ...doc.scenes.map((s) => s.title ?? ""),
+    ...doc.scenes.flatMap((s) =>
+      s.kind === "decl" ? s.recipes.flatMap((r) => Object.values(r.params ?? {}).map(String)) : [],
+    ),
+  ]
+    .join(" ")
+    .toLowerCase();
+  const as = name.toLowerCase();
+  return words.includes(as) || words.includes(as.replace(/[_-]+/g, " "));
 }

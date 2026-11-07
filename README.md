@@ -47,6 +47,7 @@ More commands:
 | `node apps/server/src/cli.ts render <dir>` | Export a project's video |
 | `node apps/server/src/cli.ts still <dir> <t>` | One frame as a PNG |
 | `node apps/server/src/cli.ts report <project> [--run <id>\|--all] [--notes findings.md] [--picks picks.jsonl] [--out <dir>]` | A run as one HTML page: the crew's timeline, cost by role, failures, the new art ([docs/REPORT.md](docs/REPORT.md)) |
+| `node apps/server/src/cli.ts library promote <id> [--from <your-library>]` | Move a sprite from your own library into the repo's public `library/`, after the PAP standard and the rights checks (likeness, brand, private or unknown rights are refused; [docs/RIGHTS.md](docs/RIGHTS.md) §7) |
 | `pnpm check` | The gate: Biome, `tsc` and every test |
 | `node scripts/banner.ts` | Redraw the banner above with the engine and the library |
 
@@ -65,7 +66,7 @@ A pnpm workspace on Node 24 with type stripping (no build step for the server), 
 | `packages/report` | `pap report`: a project's run files and the ledger as one HTML page |
 | `apps/server` | Hono on 127.0.0.1: the studio API, SSE, MCP and the CLI |
 | `apps/web` | The studio UI (React, Vite, [ShabUI](https://ui.shab.boo)) |
-| `library/` | The public asset library: sprites, tiles, icons and a 5×8 font on the `pap-night` palette |
+| `library/` | The public asset library: sprites, tiles, icons and a 5×8 font on the `pap-night` palette. A read-only seed at run time: the crew publishes to your own library (Settings → paths, default `~/.pixelartpitch/library`) |
 | `docs/` | The crew's ground truth: style, writing, sound, the asset standard, rubrics, rights, one guide per role |
 | `skills/` | The same know-how as Agent Skills, served over MCP |
 

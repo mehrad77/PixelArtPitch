@@ -1,7 +1,8 @@
 // Host side of the render sandbox: starts sandbox-child.ts with Node's permission model and streams frames back.
 import { type ChildProcess, fork } from "node:child_process";
 import { compileDecl } from "@pap/engine/decl";
-import { type LoadedProject, PAP_ROOT, timelineModule } from "./project.ts";
+import { PAP_ROOT } from "./library.ts";
+import { type LoadedProject, timelineModule } from "./project.ts";
 import type { InitMsg } from "./sandbox-child.ts";
 
 export const W = 320;

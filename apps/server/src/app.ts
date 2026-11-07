@@ -10,6 +10,7 @@ import type { DraftConversations } from "@pap/crew/brief/drafts";
 import { lineOf, lineRows, needsCount, needsWords, openNeeds } from "@pap/crew/brief/line";
 import { PHASE } from "@pap/crew/orchestrator";
 import { InstanceKey } from "@pap/crew/plan/instances";
+import { libraryAssetDir, libraryIndex, userLibraryDir } from "@pap/render";
 import type { Registry, ToolContext } from "@pap/tools";
 import { type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { Hono } from "hono";
@@ -285,7 +286,8 @@ export function createApp(o: ServerOpts) {
       token,
       mcpToken,
       cli: new URL("./cli.ts", import.meta.url).pathname,
-      workspace: { roots: [], libraryDir: o.workspace.libraryDir },
+      // where publish writes (the person's library); the repo's seed is read-only
+      workspace: { roots: [], libraryDir: userLibraryDir(), seedDir: o.workspace.libraryDir },
     }),
   );
   const noDrafts = (c: any) =>
@@ -808,13 +810,15 @@ export function createApp(o: ServerOpts) {
   app.get("/api/ledger", (c) =>
     c.json(o.hooks?.ledger?.({ project: c.req.query("project"), limit: Number(c.req.query("limit") ?? 200) }) ?? []),
   );
-  app.get("/api/library", (c) => c.json(JSON.parse(readFileSync(join(o.workspace.libraryDir, "index.json"), "utf8"))));
+  // the library's two layers: the person's own first, then the repo's seed (§1.9); `layer` says which
+  app.get("/api/library", (c) => c.json(libraryIndex()));
+  const libDir = (id: string) => libraryAssetDir(id.replace(/[^a-z0-9_-]/g, "")) ?? join(o.workspace.libraryDir, "_");
   app.get("/api/library/:id", (c) => {
-    const f = join(o.workspace.libraryDir, c.req.param("id").replace(/[^a-z0-9-]/g, ""), "asset.json");
+    const f = join(libDir(c.req.param("id")), "asset.json");
     return existsSync(f) ? c.json(JSON.parse(readFileSync(f, "utf8"))) : c.text("not found", 404);
   });
   app.get("/api/library/:id/sheet.png", (c) => {
-    const f = join(o.workspace.libraryDir, c.req.param("id").replace(/[^a-z0-9-]/g, ""), "sheet.png");
+    const f = join(libDir(c.req.param("id")), "sheet.png");
     return existsSync(f) ? fileResponse(f) : c.text("not found", 404);
   });
 

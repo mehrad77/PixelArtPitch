@@ -74,7 +74,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 ## Routes
 | Method + path | Body / query | Returns |
 |---|---|---|
-| `GET /api/session` | | `{ version, token, workspace: { roots: string[], libraryDir } }` |
+| `GET /api/session` | | `{ version, token, workspace: { roots: string[], libraryDir, seedDir } }`: `libraryDir` is the person's library, where publish writes (`settings.paths.library`); `seedDir` is the repo's read-only `library/` |
 | `GET /api/projects` | | `ProjectSummary[]` |
 | `POST /api/projects` | `{ title, brief, budgetUsd, dir? }` | `{ id }` (a new folder under the first project root unless `dir`) |
 | `POST /api/projects/open` | `{ dir }` | `{ id }` |
@@ -88,9 +88,9 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/p/:id/tools/:name` | `{ input }` | `ToolResult` |
 | `POST /api/p/:id/questions/:qid/answer` | `{ optionId?, value?, note? }` | `QuestionT` |
 | `POST /api/p/:id/notes` | `{ target, category, text?, assignee? }` | `Note` |
-| `POST /api/p/:id/gates/:gate` | `{ verdict: "approve" \| "approve_notes" \| "changes", items?: string[], reasons?: string[] }` | `Gate` |
-| `POST /api/p/:id/crew/run` | `{ stage? }` | `{ ok }`: continues the plan; `stage` reruns it from that stage (finished work from there on runs again as fresh plan tasks) |
-| `POST /api/p/:id/crew/retry` | `{ taskId? }` (a plan task id or a `state.tasks` row id) | `{ ok, started, resumed }`. A held run (PIP-ORCHESTRATION §1.8) goes on (`resumed`). Else a `by: "person"`, `trigger: "retry"` revision: failed plan tasks go back to pending, and `fallback` ones run again as fresh copies with the finished work after them (gates included, never publish); `taskId` limits it to that one task when it is failed or a fallback. With nothing to redo, the current stage reruns. `409 busy` while a run works and isn't held |
+| `POST /api/p/:id/gates/:gate` | `{ verdict: "approve" \| "approve_notes" \| "changes", items?: string[], reasons?: string[] }` | `Gate`. Only a gate that is `open` (or that the crew waits on) takes a verdict: else `409 gate_not_open` with a `fix`, so an old card can't pass a gate a rerun locked again. `changes` is never a pass: its reasons and items become one of the person's notes to the gate's owner, the run ends at the gate, and the change runs (PIP-ORCHESTRATION §1.9) |
+| `POST /api/p/:id/crew/run` | `{ stage? }` | `{ ok }`: continues the plan; `stage` reruns it from that stage (finished work from there on runs again as fresh plan tasks, except art the project already has and publish questions already met; the gates from that stage on are locked again and ask again) |
+| `POST /api/p/:id/crew/retry` | `{ taskId? }` (a plan task id or a `state.tasks` row id) | `{ ok, started, resumed }`. A held run (PIP-ORCHESTRATION §1.8) goes on (`resumed`). Else a `by: "person"`, `trigger: "retry"` revision: failed plan tasks go back to pending, and `fallback` ones run again as fresh copies with the finished work after them (gates included, never publish); `taskId` limits it to that one task when it is failed or a fallback (a judge brings its fallen-back variants: the stand-in is redrawn). The gates from the earliest redone stage on are locked again and ask again. With nothing to redo, the current stage reruns. `409 busy` while a run works and isn't held |
 | `GET /api/p/:id/plan/revisions` | | `PlanRevisionSummary[]` from `runs/plan.jsonl`, oldest first |
 | `GET /api/p/:id/instances/:iid/log` | | `InstanceLog`: the kept log of one crew member (read-only): every attempt row's transcript (thread, tool calls, patches, errors) and its channel messages (briefs, asks, answers, reports from or to its role whose `ref` is its subject, a plan task or a row of it; a singleton also gets its role's messages with no `ref`), merged by time. `404` with a `fix` for an unknown id |
 | `POST /api/p/:id/crew/pause` | `{ mode: "after_step" \| "now" }` | `{ ok }` |
@@ -106,8 +106,8 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/settings/providers/:id/test` | | `{ ok, models: string[], error? }`; `ok` lifts every run held on this provider |
 | `GET /api/models` | | `ModelRow[]` (capability matrix) |
 | `GET /api/ledger` | `?project=&limit=` | ledger rows |
-| `GET /api/library` | | `library/index.json` |
-| `GET /api/library/:id` | | the asset file |
+| `GET /api/library` | | `{ palette, assets: (IndexEntry & { layer: "user" \| "seed" })[] }`: both libraries' `index.json`, the person's own first (it wins on an id both have) |
+| `GET /api/library/:id` | | the asset file, from whichever library has it (the person's first) |
 | `GET /api/library/:id/sheet.png` | | its preview sheet |
 | `GET /api/pip` | `?project=` | `{ items: PipItem[], name: "Pip", model, mode: "agent" \| "menu", busy, summary: PipSummary \| null }` (shapes in `docs/ASSISTANT.md`; a summary carries `freed`) |
 | `POST /api/pip` | `{ project?, text, about?: { instance } }` | `202 { turnId }`; `409` while a turn runs in that conversation; progress as SSE `pip` events. `/undo`, `/budget [usd]`, `/why` answer without a model; `/compact` makes one call. `about` ("Ask Pip about this") puts that instance's record into the turn's context (`docs/ASSISTANT.md`); `400` for a malformed one, `404` for an unknown instance |

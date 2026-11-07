@@ -353,6 +353,11 @@ export function crewRequestChangeTool(onChange: ChangeHandler) {
       { input: { text: "the music is too loud at the end", category: "sound" } },
     ],
     handler: async (i, ctx) => {
+      // a slash command (/context, /budget…) is never a change, even after a scope prefix ("About the moth: /context")
+      if (/^\/[a-z]/i.test(i.text.replace(/^About [^:\n]{1,120}:\s*/i, "").trim()))
+        return fail("not_a_change", "that is a slash command, not a change", {
+          fix: "send it to Pip as a command; crew_request_change takes the person's words about the video",
+        });
       const p = P(ctx);
       const d = p.doc();
       let scene = i.scene;

@@ -258,6 +258,10 @@ export const AssetRef = z.object({
   /** frame names this project uses that the source calls differently: { "sign-divan": "signpost" } */
   frameAlias: z.record(z.string(), z.string()).optional(),
   flags: AssetFlags.default({ private: false }),
+  /** the person's answer to "Add it to the asset library?" (lib.publish asks once per asset, never again) */
+  publish: z.enum(["yes", "no"]).optional(),
+  /** a library asset standing in for art the crew couldn't draw (the judge's fallback): a retry draws it */
+  standIn: z.boolean().optional(),
 });
 
 export const Role = z.enum([

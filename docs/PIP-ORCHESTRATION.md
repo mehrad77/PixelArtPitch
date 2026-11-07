@@ -351,7 +351,7 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
 | V1 | `unknown_kind` | `kind` is in the catalogue; Pip `add` uses only `PIP_ADDABLE` | "use one of: asset.spec, asset.import, scene.tune" |
 | V2 | `role_scope` | `role` is the catalogue's role for the kind. This also rules out Reviewer edits: the Reviewer's only kind is the read-only `review.final` | "scene.tune is the animator's" |
 | V3 | `cycle`, `missing_dep` | dependencies are known ids and form a DAG (Kahn's algorithm) | "t_x depends on unknown t_y" |
-| V4 | `unknown_subject` | each `scene` exists in the doc or comes from an earlier `director.storyboard`; each `asset` is in the doc or library, or comes from an earlier chain; each `fromRef` is a brief reference | "use a scene id: s01, s02" |
+| V4 | `unknown_subject` | each `scene` exists in the doc or comes from an earlier `director.storyboard`; each `asset` is in the doc or either library, or comes from an earlier chain; each `fromRef` is a brief reference. A conductor's revision (`strictNames`: `crew_replan`, `crew_redo`, `crew_reboard`) may add a chain only for an asset the project's script or storyboard names, or one from a brief reference (§1.9) | "use a scene id: s01, s02" |
 | V5 | `gate_missing`, `gate_touched` | code inserts G0–G4 and, before any scene that uses a likeness or brand asset, `rights`, each with its fixed dependencies. A Pip op naming a gate task is an error. **Changed from the brief (D2):** Pip neither writes nor moves gates, so a model can't lose a gate | "gates aren't yours to change" |
 | V6 | `over_cap` | `spent + Σ p50(remaining, non-conditional) ≤ cap − reserveUsd`. A **rules** or **code** plan is never rejected for this: it becomes a card (§1.6). For Pip it is an error | "drop or lighten: est $3.40 > $2.50 available" |
 | V7 | `required_dropped` | only kinds marked droppable may be dropped | – |
@@ -362,6 +362,7 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
 | V12 | `too_big` | ≤ 8 ops per revision, ≤ 80 tasks per plan, ≤ 4 new assets (`StoryboardOut` max), round ≤ 3 | – |
 | V13 | `duplicate` | no two live tasks with the same kind, subject and round | – |
 | V14 | `redo_limit` | a scene gets at most `MAX_REDO` (2) redo rounds per request (as today) | – |
+| V15 | `unknown_id` | Pip's words on a revision (op reasons, the summary, a redo's why or a re-board's direction) name only ids the project has: a snake_case word must be a scene, asset (project, library, chain), cue, task, instance or recipe id or param | "name only ids the project has: scenes grind, quest" |
 
 - **Warnings** (not errors): the p90 total is over `cap − reserve`, the ETA is past the deadline, and `rough` estimates. They go onto the brief card or the revision card.
 - **Repair.** One repair turn: the same conversation plus the error list (`assistant.plan`, the same task id).
@@ -377,7 +378,7 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
   - `approvedUsd` is the p50 total the person last saw and approved:
     - the brief card at Start (`/new`),
     - the G0 verdict (composer projects),
-    - or the last confirmed revision card or change card.
+    - or the last confirmed revision card, change or retry: a person's change or retry sets it to the new plan's p90, the top of the range its card showed (§1.9).
   - Any revision, whoever wrote it, whose new p50 total (spent + remaining) is more than `1.2 × approvedUsd` becomes a revision card (§4.4). Its added tasks wait in `pending` with `plan.pending` set, and everything else keeps running.
   - Confirm sets `approvedUsd` to the new total.
   - Decline writes a `by: "person"`, `trigger: "decline"` revision that drops those tasks. The conductor gets a `stage` trigger saying so.
@@ -423,8 +424,9 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
     - in-scope `scene.tune(s, r + 1)` on the same instance,
     - `director.storyboard{scenes}` and `art.cast{scenes}` for a reboard,
     - for a writer note, every rules task from the script stage on (done tasks outside the scope stay done),
+    - never what the project already has: tunes outside `change.scope`, the chain and rights OK of art in the doc, publish questions already met (`keepOf`, §1.9),
     - then `review.final(r + 1)`, G3, `deliver.export` and G4.
-  - The change card's estimate is this revision's delta (journey step 10: "about $0.12").
+  - The change card's estimate is this revision's delta (journey step 10: "about $0.12"), from `Crew.changeCost`: the same revision on a copy of the plan, nothing written.
   - While the crew works, the note waits as it does today, and the review handler turns it into the same revision.
 - **Conductor decisions become revisions.**
   - `crew_redo` becomes `scene.tune(s, r + 1)` plus a review recheck.
@@ -466,8 +468,8 @@ The P4 run's key went 401 mid-run and every step fell back to a stand-in without
 - **Retry** (`POST /crew/retry { taskId? }`, Pip's "Redo what failed" card, the `crew_retry` tool):
   - a held run: the hold lifts;
   - else one `by: "person"`, `trigger: "retry"` revision (`retryRevision`): failed tasks go back to `pending` in place (their dependents still wait on them), and fallback tasks run again as fresh `rerun` copies with the finished work after them (gates included, so the export waits for the redo; never `lib.publish`). The originals stay `done`, no longer marked fallback;
-  - `taskId` (a plan task id, or a row id mapped through `planTask`) limits it to that task when it is failed or a fallback;
-  - **Known gap (Phase 2):** a redone `asset.draw` or `asset.judge` whose stand-in is already cast is skipped by its handler's "already in the project" guard.
+  - `taskId` (a plan task id, or a row id mapped through `planTask`) limits it to that task when it is failed or a fallback; a judge brings the variants that fell back with it;
+  - a stand-in is not the drawing: the judge's fallback cast is marked `standIn: true` on its ref, the "already in the project" guards don't count it, and a successful judge replaces it in place (one ref per name).
 - **Pip never offers "Start the crew" over a failure.** A `crew_run` card without a stage becomes the "Redo what failed" card when something failed, fell back or is held; the menu has a `retry` intent.
 - **Status hygiene.**
   - `problem` clears on "Your video is ready", a raised cap, a declined overrun, a confirmed or declined plan card, a resume and a lifted hold.
@@ -475,6 +477,44 @@ The P4 run's key went 401 mid-run and every step fell back to a stand-in without
   - The web's `problemOf` ignores a problem while the crew is running, except a held run's own (its line is "Waiting for you: …", live on the `status` event), and drops failed rows that ended before the current run started (`crew.runStartedAt`).
 - **Needs you counts cards.** `openNeeds(p, { cards, plan })` adds the crew's open Pip cards (a revision card while `plan.pending.cardId` is it, the budget card while a run waits on it) and plan tasks in `waiting_person` that no open gate or question already stands for. `GET /api/projects`' `needsYou`, `state.needs` and the Projects line use it. The web counts live: open questions and gates, `plan.pending` (the revision card), `status.waiting === "budget"`, plus `state.needs.waiting` from the last fetch. Confirming a held card after its run ended starts the crew again.
 - **Pip reads live state.** Each turn's summary carries a "Crew now:" line from `Crew.snapshot` (running, idle or held and why, open and passed gates, open questions, a plan-change card, failed and fallback tasks, whether a review is still to come, the last export). A change card says "your note waits for the next review" only while a review is still to come.
+
+
+### 1.9 Revisions, gates and publish (v0.2, after the P4 run)
+
+The P4 run re-added whole chains on every change (the estimate grew to $12.50), passed G3/G4 on an old approval, wrote into the repo's `library/` and asked the same publish question three times, and Pip's conductor sent five revisions in 25 s naming assets that didn't exist.
+
+- **A change re-adds only what it touches.**
+  - `reopenFrom(tasks, from, rev, { keep })`: finished work `keep` names stays done. `exclude` still also keeps a failed task failed; `keep` only skips the copy.
+  - `changeRevision(…, keep)` keeps every `scene.tune` outside `change.scope`.
+  - The orchestrator's `keepOf(p, redraw)`: a chain task (`asset.*`, its `rights` gate) whose asset the doc has as itself (`hasArt`: in the doc, not a stand-in), and every `lib.publish`. A stage rerun (`crew_run {stage}`) uses it too.
+  - A note on an asset (`target.asset`, no scene) scopes the change to the scenes that draw it and redraws that asset: `change.assets` (also in `state.change`), exempt from `keep`, and the handlers' guard lets it through.
+  - The four run-time "already in the project" skips (import, spec, draw, judge) stay as a guard; the plan no longer prices them.
+  - `freshId` keeps a variant's suffix: `t_draw_owl_v1` at rev 4 is `t_draw_owl_v1_v4` (it used to be `t_draw_owl_v4_2`).
+- **Estimates.**
+  - Sprite work is scaled by its size: `estimatePlanTask` passes the kind template's cells (`w × h × frames`, from `assetKind`) to the priors' `sizeFactor`. An icon's draw costs about a fifth of an 8-frame hero's.
+  - A person's change shows its own cost: the change card prices its revision on a copy of the plan (`Crew.changeCost`).
+  - Confirming it (a `by: "person"` revision with trigger `change` or `retry`) sets `approvedUsd` to the new plan's p90, the top of the range the card showed. The 20% rule (§1.6) then compares later code and Pip revisions with that number.
+- **Slash commands are never changes.**
+  - `Pip.ask` strips a leading `About …: ` (the old "Ask Pip about this" prefill) before matching `/context`, `/budget`, `/why`, `/undo` and `/compact`.
+  - `crew_request_change` refuses text that starts with `/` (after that prefix) with `not_a_change`, and Pip's card for it says so.
+  - At a run's end, an open note of the person's that no crew stage owns (`OWNER_STAGE`), or that is a slash command, is closed (`declined`, "no crew stage owns this note"), never rerun.
+- **Conductor discipline.** Every plan change Pip makes (`crew_redo`, `crew_reboard`, `crew_replan`) is checked before it is accepted (`Crew.checkChange`):
+  - its scenes are the project's;
+  - the revision it would make passes the validator (redo and re-board too, not only replan), with V4's `strictNames` and V15 on its words;
+  - it is the only plan change on this trigger (the second gets "one plan change per trigger");
+  - it isn't the same change as Pip's last one (same kind and scenes, or the same ops ignoring reasons) while that one's tasks haven't run yet.
+  - The check runs inside the conductor's loop (`think` ctx `check`): a refusal goes back as the tool call's error, not counted as terminal, so Pip can correct itself in its next step. A refused `crew_replan` counts toward the run's six proposals. `apply()` checks again for the fixed rules' decisions; past the redo limit it still holds the run and tells the person (the 2-redo hold).
+  - Caps are unchanged: `think()` 12 per run, `MAX_PIP_PROPOSALS` 6, `MAX_REVISIONS_PER_RUN` 40, at most 3 conductor steps per trigger.
+- **Gates on a rerun.**
+  - Every rerun path locks the gates at and after the stage it reopens (`relockFrom`): a change (from `reopen()`), a retry (from the earliest redone task's stage) and a run from a stage. A resume never relocks. A copied gate then asks again: at `key`, a rerun's G3 always asks the person, and only its "Looks good" passes G4 with it (D2).
+  - `crew.gate()` takes a verdict only for a gate that is open or that a run waits on; anything else is `409 gate_not_open`.
+  - `changes` is never a pass (`atGate`, `rough()`): its reasons and items become one note of the person's to the gate's owner (G0 producer, G1 writer, G2 director, G3 animator, G4 editor), the run ends at the gate (its task back to `pending`), and the run's end starts that change, which asks at the gate again. With no reasons, the line says "Waiting for you: what to change in the rough cut" until the person says it (Pip's field).
+- **Publish is safe and asked once.**
+  - The library has two layers (`@pap/render` `library.ts`): the repo's `library/` is a read-only seed; the person's own library is `settings.paths.library` (default `<appData>/library`; the server sets it with `setUserLibrary`). `library_search`, `library_get`, `cast_asset`, rendering, Pip's plan prompt, the Director's library list and `GET /api/library` read both; the person's wins on an id both have.
+  - `lib.publish` writes only to the person's library (`publishAsset`), never over an id either library has, never into the seed.
+  - The answer is stored on the asset ref (`publish: "yes" | "no"`); `lib.publish` skips an asset already answered, rev 0 marks it done, and a rerun keeps it.
+  - While it asks, the Librarian has a `waiting_user` row, so the crew shows "needs you".
+  - Moving an asset into the seed is a separate, deliberate `pap library promote <id> [--from <user-library>]` (`promoteAsset`): the PAP standard's hard rules, the rights checks (RIGHTS.md §7: no likeness, brand, private or unknown rights, reference or derivative) and the seed's `index.json`. It never overwrites an id the seed has.
 
 ---
 
