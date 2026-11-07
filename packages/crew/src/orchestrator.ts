@@ -46,6 +46,7 @@ import { CATALOGUE, taskLabel } from "./plan/catalogue.ts";
 import { envOf, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
 import { Executor, type Outcome } from "./plan/executor.ts";
 import { logoIcon } from "./plan/import.ts";
+import { aboutText, type Instance, InstanceTracker } from "./plan/instances.ts";
 import { applyDiff, type PipRevisionResult, pipRevision, planPromptVars } from "./plan/pip.ts";
 import {
   addReboard,
@@ -666,6 +667,55 @@ export class Crew {
   planRevisions(p: OpenProject) {
     return revisionSummaries(p);
   }
+
+  // ---------------------------------------------------------------- crew instances (§2)
+  private trackers = new Map<string, { p: OpenProject; t: InstanceTracker }>();
+  /** the project's instance tracker, folded from its log on first use; from then on it sends `instance` events */
+  private tracker(p: OpenProject): InstanceTracker {
+    const hit = this.trackers.get(p.id);
+    if (hit?.p === p) return hit.t;
+    hit?.t.close();
+    const t = new InstanceTracker(p, {
+      sceneIds: () => p.doc().scenes.map((s) => s.id),
+      humanize: (e, role) => humanize(e, role).text,
+      now: () => ({ plan: this.planNow(p)?.tasks, rows: p.state.tasks }),
+      idle: () => !this.runs.has(p.id),
+    });
+    this.trackers.set(p.id, { p, t });
+    return t;
+  }
+  /** `state.instances` (§4.1); it also starts the `instance` events for the project */
+  instances(p: OpenProject): Instance[] {
+    return this.tracker(p).view();
+  }
+  /** GET /api/p/:id/instances/:iid/log: its attempts' transcripts and its channel messages, by time */
+  instanceLog(p: OpenProject, iid: string) {
+    const t = this.tracker(p);
+    const instance = t.view().find((i) => i.id === iid);
+    if (!instance) return null;
+    const own = t.fold.owned(iid);
+    const role = iid.split(":")[0];
+    const sub = iid.split(":")[1];
+    const refs = new Set([...own.tasks, ...own.rows, ...(sub ? [sub] : [])]);
+    const entries: (
+      | ({ at: string; source: "task"; taskId: string } & Record<string, unknown>)
+      | { at: string; source: "channel"; msg: ChannelMsg }
+    )[] = [];
+    for (const id of own.rows)
+      for (const e of p.transcript(id) as { at: string }[])
+        entries.push({ ...e, at: e.at, source: "task", taskId: id });
+    for (const msg of p.channel())
+      if ((msg.from === role || msg.to === role) && (msg.ref ? refs.has(msg.ref) : own.singleton))
+        entries.push({ at: msg.at, source: "channel", msg });
+    entries.sort((a, b) => a.at.localeCompare(b.at));
+    return { instance, entries };
+  }
+  /** "Ask Pip about this": the instance record for that turn's context, or null for an unknown id */
+  instanceAbout(p: OpenProject, iid: string): { text: string; label: string } | null {
+    const t = this.tracker(p);
+    const i = t.view().find((x) => x.id === iid);
+    return i ? { text: aboutText(i, t.fold.origins(iid), p.doc().budget.capUsd), label: i.label } : null;
+  }
   /** the plan, written as rev 0 from what the project has when it has none yet */
   private ensurePlan(p: OpenProject, r: Run | null): ProductionPlanT {
     const have = this.planNow(p);
@@ -1179,6 +1229,8 @@ export class Crew {
       revisions: 0,
     };
     this.runs.set(p.id, r);
+    // the instance events follow the run from its first event
+    this.tracker(p);
     p.state.startedAt ??= r.startedAt;
     p.state.paused = false;
     p.state.running = true;

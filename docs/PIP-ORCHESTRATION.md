@@ -45,7 +45,8 @@ The person approved both specs (this one and its sibling) with these answers to 
 |---|---|---|
 | P1a | **Built** | the catalogue, schemas, rules planner, validator, estimates, the executor in place of `pipeline()` (slots, budget stop, gates, pause, resume, retry), the stage view, rev 0, expansion, change/redo/re-board/review-round revisions, the rights fix, `state.plan`, SSE `plan`, plan milestones, `crew.slots`, priors re-seeded; tests `plan.test.ts` and `plan-parity.test.ts` |
 | P1b | **Built** | Pip's revision (`plan/pip.ts`, `assistant.plan`, prompt `assistant/plan.md`), one repair then the rules plan, `defaults.pipPlan` (default `shadow`), `crew_replan` with the 6-proposal cap, the 20% revision card (confirm, decline), the overrun card, `defaults.reviewRounds`, `evals/plan.jsonl` (15 items), the scorer (`plan/evals.ts`) and the runner (`evals/plan.ts`); tests `plan-pip.test.ts` |
-| P2–P4 | Not yet | |
+| P2 | **Built** (backend; the UI is the UI builder's) | `plan/instances.ts`: the fold over `events.jsonl` (`InstanceFold`, `foldInstances`), the ghost horizon, the live `InstanceTracker`; the stored `plan_status` event; `state.instances`; SSE `instance`; `GET /api/p/:id/instances/:iid/log`; `about` on `POST /api/pip`; transient SSE events without an `id`; tests `instances.test.ts` over the fixtures in `test/fixtures/instances/` and a whole fake run |
+| P3–P4 | Not yet | |
 
 **What P1a built differently from the text below** (each is also corrected in place):
 
@@ -73,7 +74,18 @@ The person approved both specs (this one and its sibling) with these answers to 
 19. **The conductor's prompt** (`assistant/conduct.md` v2) lists the live plan task ids while `crew_replan` is allowed.
 20. **Eval truth.** The items' `estUsd` ranges are hand-set guesses (no real run has priced these briefs yet); `estErr` is only as good as they are. The rules plan's p50 is about $1.21-1.24 for every cloud brief, because the hero's two Opus drawings dominate it.
 
-**Journey needs (PIP-JOURNEY.md §7.2) after P1a:** N2 (P1b: `whoInstances` on revision cards), N4 (the plan half: `GET /api/p/:id` carries `plan`), N5 (`PlanTaskView.label` in sentence case, `ROLE_LABEL` in `plan/catalogue.ts`), N6 (`crew.slots`) and N10 (`ref` on reports, and on the asks and answers that go through Pip, is the plan task's scene or asset, else its id) are met. N1, N3, N4's instances and N11 with P2; N7–N9 with P3.
+**What P2 built differently** (each is also corrected in place):
+
+21. **The log holds every status.** A status change is still a transient `plan` view, and now also a stored `plan_status` line with just the tasks that moved (`store.ts` `touch`, before the view): `{ rev, tasks: [{ id, status, note?, taskIds? }] }`. Without it a replay can't see `ready`, a task `skipped` with no row, or a swallowed failure that ends `done` (`partial: …`). A log from before it (P1) falls back to the rows, gate events and the `rights` question, with a pending task whose dependencies are done read as `ready`. That fallback can't tell a retry row inside one task from an end: it opens a second life, with no line.
+22. **Live is running or asking (N19).** A member is live while one of its own tasks is `waiting_person` (the Producer's questions, the narration ask, the publish question), and while a pick it asks is next or open: the G1 script pick after the Writer's angles, the `rights` OK after the Art director's import or judge (the gate is unfinished and its dependencies are done). So the face holds from its task to the answer, with no gap while the executor reaches the gate. G0, G2, G3 and G4 keep nobody live.
+23. **Who is an instance.** Every plan task's `instance` key, except placeholders (a kind that needs a subject, without one: there is no "Animator" until the storyboard), the person's tasks, and tasks skipped or dropped before any attempt. The label comes from the key, not `taskLabel`, so the Art director's asset tasks stay "Art director". Rows no plan task can place (work from before the plan, such as scene tunes with no scene on the row) stay with their role's member ("Animator"), so their $ is counted.
+24. **Reasons.** `reason` is the catalogue's spawn line, plus the adding revision's own words when Pip or the person wrote it (or a code redo's reason): "Pip brought in a Pixel artist for the founder: the brief names a founder". Rules, start and expand revisions give the line alone. A return's line (`lives[i].reason`, N1) is "Pip brought the Animator back to fix scene 1: the headline is clipped", "… back for your change: make the hero bigger", "… back to try again" (a `retry` revision) or "Pip brought the Reviewer back to check the fixes". A life opened after idling, or by a retry row with no newer revision, has no line. The revisions' words in full go into `about`.
+25. **Endings.** `endReason`: the last report's `did` (done, partial), the drop op's reason (stopped), `humanize()` (failed). `lastReport`: the latest report on the channel (parsed from `Crew.done`'s text), else the last row (done: its summary or title; failed: partial, with the error as `couldnt`), else the executor's `partial:` note. `outcome`: `failed` while a task of it is failed and not retried, `stopped` when its last attempted task was dropped, `partial` when the last report is partial or blocked, else `done`.
+26. **The tracker.** One per open project, started by `GET /api/p/:id`, the SSE subscription or a run. It folds the log once, lays `runs/plan.json` and the rows as they are now over it (with no run active, `running` and `ready` read as `pending`, as a resume makes them; a restart cancels rows without an event), then follows the stream. Each change goes out as a transient `instance` event right after the event that caused it. `GET` never animates: it is the same fold.
+27. **SSE ids.** A transient event (seq 0) is now sent without an `id`. "id: 0" set the web client's `Last-Event-ID` to `"0"`, so a reconnect replayed the whole log.
+28. **`about`** is stored on the user item as `{ instance, label }`, and later turns see the message as "(About Pixel artist · founder) …". `Instance.tasks` lists row ids for a project from before the plan.
+
+**Journey needs (PIP-JOURNEY.md §7.2) after P1a:** N2 (P1b: `whoInstances` on revision cards), N4 (the plan half: `GET /api/p/:id` carries `plan`), N5 (`PlanTaskView.label` in sentence case, `ROLE_LABEL` in `plan/catalogue.ts`), N6 (`crew.slots`) and N10 (`ref` on reports, and on the asks and answers that go through Pip, is the plan task's scene or asset, else its id) are met. N1, N3, N4's instances, N11 and N19 are met by P2 (items 21–26); N12 stays as written (any one path within 2 hops). N7–N9 with P3.
 
 ## 1. The production plan
 
@@ -175,6 +187,7 @@ export const ProductionPlan = PlanRevision.extend({ // runs/plan.json: the lates
 - **Storage.**
   - `runs/plan.json` is written atomically on every revision and every status change.
   - `runs/plan.jsonl` gets one `PlanRevision` per revision. Status-only changes are never appended there.
+  - `events.jsonl` gets a stored `plan` event per revision and a compact `plan_status` line per status change (P2, item 21); the full status-only view stays transient.
   - Nothing is ever deleted: a dropped task stays in the plan with `status: "dropped"`.
 - **Changed from the brief:** each entry adds `by`, `trigger`, `ops`, `estimate` and `run` to the brief's `{rev, at, reason, tasks}`. Without them, instances and the bounds can't be derived.
 - **The tier resolves to a model, in code.**
@@ -394,12 +407,12 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
 |---|---|
 | Key | `role` for singletons (writer, director, art-director, mixer, editor, reviewer, producer, librarian), `role:scene` for animators, `role:asset` for pixel artists. It is the plan task's `instance` |
 | Label | "Writer", "Animator · scene 3" (the 1-based position in `doc.scenes`), "Pixel Artist · founder" (the asset name). Role words come from `ROLE_WORD` |
-| Spawned | when its first task becomes `running` |
-| Live | while ≥ 1 of its tasks is `running`. **Changed from the brief (D4):** a face means a task is actually running (holding a slot, §1.7), not "spawned at its first task", so the row never shows more than are working |
-| Ghost | a not-yet-spawned or idle instance with a `ready` task, or with a `pending` task within 2 dependency hops of a running or ready task. Gates are transparent. At most 3 ghosts, nearest first. With a local endpoint at concurrency 1, four Animators show as one live and three ghosts (D4) |
-| Ended | when none of its plan tasks is pending, ready, running or waiting |
+| Spawned | when its first task becomes `running` (or, for a project from before the plan, its first row's start) |
+| Live | while ≥ 1 of its tasks is `running`, or while it waits on the person (N19: its own task `waiting_person`, or the G1 pick or `rights` OK it asks, from its task's end to the answer; P2 item 22). **Changed from the brief (D4):** a face means a task is actually running (holding a slot, §1.7), not "spawned at its first task", so the row never shows more than are working |
+| Ghost | a not-yet-spawned or idle instance with a `ready` task, or with a `pending` task within 2 dependency hops of a running or ready task. Gates are transparent (0 hops); done, skipped and dropped tasks aren't walked. Only running and ready tasks start the walk, so an open pick alone shows no ghosts (N11). At most 3 ghosts, nearest first, then plan order. With a local endpoint at concurrency 1, four Animators show as one live and three ghosts (D4) |
+| Ended | when none of its plan tasks is pending, ready, running or waiting, and it asks nothing |
 | Redo | a new task with the same key brings the same instance back: it leaves Finished, a new life opens, and its log continues. **Changed from the brief (D5):** there is never a second "Animator · scene 1"; one member keeps one readable history |
-| Reason | the reason of the revision that added its first task, in Pip's words. Code revisions use catalogue templates: "Pip brought in the Writer for three script angles", "Pip brought in an Animator for scene 2", "Pip brought in a Pixel Artist for the founder" |
+| Reason | the catalogue's spawn line for its first task, plus the words of the revision that added it when Pip or the person wrote it: "Pip brought in the Writer for three script angles", "Pip brought in an Animator for scene 2", "Pip brought in a Pixel artist for the founder: the brief names a founder". Each life after a return carries its own line (N1, P2 item 24) |
 | End reason | done: the last report's `did`; dropped: the dropping revision's reason; failed: `humanize()` text |
 | Outcome | `done` (the last report is done) · `partial` (finished, but the last report was partial or blocked) · `stopped` (dropped, cancelled or paused out) · `failed` (failed and not retried) |
 
@@ -415,7 +428,7 @@ type Instance = {
   running: number;            // its tasks running now (an asset's two drawings at once: 2)
   spawnedAt: string | null;
   endedAt: string | null;
-  lives: { from: string; to: string | null }[];   // D5: a redo opens a new life
+  lives: { from: string; to: string | null; reason?: string }[];   // D5: a redo opens a new life; reason: its line (N1)
   reason: string;             // spawn line, Pip's words
   endReason?: string;
   tasks: string[];            // plan task ids, oldest first
@@ -425,8 +438,8 @@ type Instance = {
 };
 ```
 
-- **The log of a past instance.** `GET /api/p/:id/instances/:iid/log` merges, by time, the transcripts of every attempt row of its tasks with the channel messages from or to its role whose `ref` is its subject or one of its task ids.
-- **"Ask Pip about this."** `POST /api/pip` takes `{project, text, about: {instance: id}}`. The instance record (reason, usd, outcome, lives) goes into that turn's context, so "why did you add a Pixel Artist?" can be answered from the plan revision's reason and the instance's cost.
+- **The log of a past instance.** `GET /api/p/:id/instances/:iid/log` merges, by time, the transcripts of every attempt row of its tasks with the channel messages from or to its role whose `ref` is its subject, one of its plan task ids or one of its row ids; a singleton (no subject) also gets its role's messages with no `ref`.
+- **"Ask Pip about this."** `POST /api/pip` takes `{project, text, about: {instance: id}}`. The instance record (reason, usd against the cap, outcome, lives, and for each task the revision that added it with its `by`, trigger and words) goes into that turn's context, so "why did you add a Pixel Artist?" can be answered from the plan revision's reason and the instance's cost (`docs/ASSISTANT.md`).
 - **Changed from the brief (D3):** there is no Crew lane on the video timeline, because the timeline shows video time and instances live in wall-clock time. The run history lives in the Finished list (`lives`: start time and duration). No backend data exists for a lane.
 
 ---
@@ -581,7 +594,7 @@ export type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"];
   deltaUsd: [number, number] };
 export type Instance = { id: string; role: Role; label: string; subject?: { scene?: string; asset?: string };
   model: string | null; state: "planned" | "live" | "idle" | "finished"; ghost: boolean; running: number;
-  spawnedAt: string | null; endedAt: string | null; lives: { from: string; to: string | null }[];
+  spawnedAt: string | null; endedAt: string | null; lives: { from: string; to: string | null; reason?: string }[];
   reason: string; endReason?: string; tasks: string[]; usd: number;
   outcome: "done" | "partial" | "stopped" | "failed" | null;
   lastReport?: { status: "done" | "partial" | "blocked"; did: string; couldnt?: string } };
@@ -606,7 +619,8 @@ export type WorkspaceLine = { text: string;
 | Stream | Event | Data | Stored? |
 |---|---|---|---|
 | `/api/p/:id/events` | `plan` | `{ view: PlanView; revision?: PlanRevisionSummary }`; `revision` only on a new revision | stored when `revision` is set; status-only ones are transient (id 0) |
-| `/api/p/:id/events` | `instance` | `{ instance: Instance; change: "spawn" \| "ghost" \| "live" \| "idle" \| "end" \| "revive" }` | transient (derived) |
+| `/api/p/:id/events` | `plan_status` | `{ rev; tasks: { id; status; note?; taskIds? }[] }`: the tasks whose status moved, just before the status-only `plan` view (P2) | stored |
+| `/api/p/:id/events` | `instance` | `{ instance: Instance; change: "spawn" \| "ghost" \| "live" \| "idle" \| "end" \| "revive" }`; a `spawn` or `revive` comes before its task's `working` row and an `end` after its last task event (N3) | transient (derived, no `id`) |
 | `/api/p/:id/events` | `milestone` | the `kind: "plan"` milestones: "Plan ready · N tasks to start" (the first revision after G0; N = the non-gate, non-conditional tasks still to do) and "Plan changed: <reason>" (each revision with add, drop, retier or expand ops) | derived, as today |
 | `/api/events` | `pip` | as today, plus `draft?: string` on draft conversations | as today |
 

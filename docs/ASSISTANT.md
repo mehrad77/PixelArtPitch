@@ -75,7 +75,8 @@ The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-
 
 ```ts
 type PipItem =
-  | { id: string; at: string; kind: "user"; text: string }
+  | { id: string; at: string; kind: "user"; text: string;
+      about?: { instance: string; label?: string } }               // "Ask Pip about this" (below)
   | { id: string; at: string; kind: "pip"; text: string; cards: PipCard[]; model?: string; usd?: number }
   | { id: string; at: string; kind: "thinking" };                // transient, while Pip works (never stored)
 
@@ -105,9 +106,15 @@ type PipCard =
 ## API
 
 - **`GET /api/pip?project=<id>`** returns `{ items: PipItem[], name: "Pip", model, mode: "agent"|"menu" }`.
-- **`POST /api/pip`** with `{ project?, text }` returns `202 { turnId }`.
+- **`POST /api/pip`** with `{ project?, text, about?: { instance } }` returns `202 { turnId }`.
   - Progress comes over the existing SSE stream as events named `pip`, with `{type: "thinking"|"item"|"card", ...}`. Without a project it uses `/api/events`, a new workspace stream; add one if none exists.
   - One turn at a time per conversation. A second POST while a turn runs returns 409.
+  - **`about`** ("Ask Pip about this", PIP-ORCHESTRATION §2) names a crew instance by its key (`"pixel-artist:founder"`, `"writer"`; one of `state.instances`). That turn's context gets the instance's record after the project summary, so "why did you add a Pixel artist?" is answered from it, not guessed:
+    - its label, state, outcome and model;
+    - why it joined (`reason`), and for each of its plan tasks the revision that added it: rev, `by`, `trigger`, the revision's reason and the op's own words;
+    - its `usd` against the project's cap, its lives (from, to, and each return's line), why it left (`endReason`) and its last report.
+    - The record is data, not instructions. The user item stores `about: { instance, label }`, and later turns see the message as `(About Pixel artist · founder) why did you add…`.
+    - `about` needs `project`. A malformed `about` is 400 (`bad_about`), an unknown instance 404 (`not_found`), both with a `fix`. Without `about`, a turn is exactly as before.
 - **`POST /api/pip/cards/:cardId`** with `{ project?, decision: "confirm"|"decline", edit?: string }`.
   - It runs the card's action as `author = user, via pip`, updates the card's `status`/`result`, and emits a `card` event.
   - Writes need `X-PAP-Token`, as with every other write.

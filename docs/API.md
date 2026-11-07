@@ -28,7 +28,21 @@ type ProjectState = { doc: Project; rev: number; timeline: Timeline /* cues, sce
     queued: number /* plan tasks ready but waiting for a slot or the budget */;
     slots: Record<string, { size: number; used: number }> /* per endpoint, plus "render" */ };
   plan: PlanView | null /* the production plan; null until a crew first runs (GET never writes one) */;
-  instances: [] /* crew members that come and go: filled in P2 */ };
+  instances: Instance[] /* the crew members that come and go (docs/PIP-ORCHESTRATION.md §2), join order */ };
+// A crew member, derived from the event log (never stored). `id` is its key: "writer", "animator:s03", "pixel-artist:founder".
+type Instance = { id: string; role: Role; label: string /* "Animator · scene 3" */; subject?: { scene?: string; asset?: string };
+  model: string | null /* its latest attempt's */;
+  state: "planned" | "live" /* a task holds a slot, or it waits on your pick */ | "idle" | "finished";
+  ghost: boolean /* the horizon rule: at most 3, nearest first */; running: number /* tasks holding a slot now */;
+  spawnedAt: string | null; endedAt: string | null /* set only while finished */;
+  lives: { from: string; to: string | null; reason?: string /* the line that opened it: spawn or return */ }[];
+  reason: string /* the spawn line: "Pip brought in the Writer for three script angles" */; endReason?: string;
+  tasks: string[] /* its plan task ids (row ids for a project from before the plan) */; usd: number /* every attempt */;
+  outcome: "done" | "partial" | "stopped" | "failed" | null /* null until finished */;
+  lastReport?: { status: "done" | "partial" | "blocked"; did: string; couldnt?: string } };
+type InstanceLog = { instance: Instance; entries: (
+  | { at: string; source: "task"; taskId: string; kind: ActivityKind; title: string; detail?: unknown; thinking?: string; image?: string }
+  | { at: string; source: "channel"; msg: ChannelMsg })[] /* by time */ };
 // The production plan (docs/PIP-ORCHESTRATION.md §4.2). `budget.estTotalUsd` and `time.etaSec` come from it once it exists.
 type PlanTaskView = { id: string; kind: string; role: Role | "person"; gate?: PlanGate; scene?: string; asset?: string;
   round?: number; instance: string; label: string /* "Animator · scene 3", sentence case */; stage: Stage;
@@ -67,6 +81,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/p/:id/crew/run` | `{ stage? }` | `{ ok }`: continues the plan; `stage` reruns it from that stage (finished work from there on runs again as fresh plan tasks) |
 | `POST /api/p/:id/crew/retry` | | `{ ok }`: the failed plan task goes back to pending (a `retry` revision); with none failed, the current stage reruns |
 | `GET /api/p/:id/plan/revisions` | | `PlanRevisionSummary[]` from `runs/plan.jsonl`, oldest first |
+| `GET /api/p/:id/instances/:iid/log` | | `InstanceLog`: the kept log of one crew member (read-only): every attempt row's transcript (thread, tool calls, patches, errors) and its channel messages (briefs, asks, answers, reports from or to its role whose `ref` is its subject, a plan task or a row of it; a singleton also gets its role's messages with no `ref`), merged by time. `404` with a `fix` for an unknown id |
 | `POST /api/p/:id/crew/pause` | `{ mode: "after_step" \| "now" }` | `{ ok }` |
 | `POST /api/p/:id/crew/resume` | | `{ ok }` |
 | `GET /api/p/:id/events` | SSE, `Last-Event-ID` resumes | events below |
@@ -83,7 +98,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `GET /api/library/:id` | | the asset file |
 | `GET /api/library/:id/sheet.png` | | its preview sheet |
 | `GET /api/pip` | `?project=` | `{ items: PipItem[], name: "Pip", model, mode: "agent" \| "menu", busy, summary: PipSummary \| null }` (shapes in `docs/ASSISTANT.md`; a summary carries `freed`) |
-| `POST /api/pip` | `{ project?, text }` | `202 { turnId }`; `409` while a turn runs in that conversation; progress as SSE `pip` events. `/undo`, `/budget [usd]`, `/why` answer without a model; `/compact` makes one call |
+| `POST /api/pip` | `{ project?, text, about?: { instance } }` | `202 { turnId }`; `409` while a turn runs in that conversation; progress as SSE `pip` events. `/undo`, `/budget [usd]`, `/why` answer without a model; `/compact` makes one call. `about` ("Ask Pip about this") puts that instance's record into the turn's context (`docs/ASSISTANT.md`); `400` for a malformed one, `404` for an unknown instance |
 | `PUT /api/pip/summary` | `{ project?, text }` | `{ summary }` (the person's correction; used from the next turn) |
 | `GET /api/p/:id/channel` | | `ChannelMsg[]`: the crew channel ("Behind the scenes") |
 | `POST /api/pip/cards/:cardId` | `{ project?, decision: "confirm" \| "decline", edit? }` | `{ card }` (status `running`/`submitted` at once; the final state comes as a `pip` `card` event); `409` if already decided. A plan card the crew asked for carries `revision?: { rev, ops, fromUsd, toUsd }` and `whoInstances?: { instance, label }[]` (a revision past the 20% line: confirm runs its tasks, decline drops them), or is the overrun's "Raise the cap" card (decline: the crew goes on only with steps that fit) |
@@ -110,8 +125,8 @@ type Cap = "passed" | "claimed" | "failed" | "unknown";
 ```
 
 ## SSE events (`GET /api/p/:id/events`)
-Each event has `id` (event-log seq), `event` name and JSON `data`:
-`patch` (PatchEntry), `task` (Task), `question` (QuestionT), `note` (Note), `gate` (Gate), `ledger` ({ usd, spentUsd, reservedUsd, model, role }), `digest` ({ text }), `render` ({ kind: "proxy" | "still" | "final", url }), `log` ({ level, text, role? }), `stage` ({ stage }), `pip` ({ type: "thinking" } (transient, id 0) | { type: "item", item: PipItem } | { type: "card", itemId, card: PipCard } | { type: "summary", summary: PipSummary }), `channel` (ChannelMsg), `plan` ({ view: PlanView; revision?: PlanRevisionSummary }: stored when it carries a revision; a status-only change is transient, id 0), `milestone` ({ id, at, kind: "gate" \| "answer" \| "stage" \| "export" \| "change" \| "plan", text }; the ones derived from other events are sent live with id 0, and `ProjectState.milestones` derives them all from the log). The `plan` milestones are "Plan ready · N tasks to start" (when G0 passes) and "Plan changed: <reason>" (each revision with ops). The Producer's own milestone is now "Brief read".
+Each stored event has `id` (event-log seq), `event` name and JSON `data`; a transient one (seq 0) is sent with no `id`, so it never moves the client's `Last-Event-ID`:
+`patch` (PatchEntry), `task` (Task), `question` (QuestionT), `note` (Note), `gate` (Gate), `ledger` ({ usd, spentUsd, reservedUsd, model, role }), `digest` ({ text }), `render` ({ kind: "proxy" | "still" | "final", url }), `log` ({ level, text, role? }), `stage` ({ stage }), `pip` ({ type: "thinking" } (transient, id 0) | { type: "item", item: PipItem } | { type: "card", itemId, card: PipCard } | { type: "summary", summary: PipSummary }), `channel` (ChannelMsg), `plan` ({ view: PlanView; revision?: PlanRevisionSummary }: stored when it carries a revision; a status-only change is transient, id 0), `plan_status` ({ rev, tasks: { id, status, note?, taskIds? }[] }: stored, just before that transient view: the plan tasks whose status moved, so the instances replay from the log; the UI may ignore it), `instance` ({ instance: Instance; change: "spawn" \| "ghost" \| "live" \| "idle" \| "end" \| "revive" }: transient, derived; a `spawn` or `revive` comes before its task's `working` row, an `end` after its last task event), `milestone` ({ id, at, kind: "gate" \| "answer" \| "stage" \| "export" \| "change" \| "plan", text }; the ones derived from other events are sent live with id 0, and `ProjectState.milestones` derives them all from the log). The `plan` milestones are "Plan ready · N tasks to start" (when G0 passes) and "Plan changed: <reason>" (each revision with ops). The Producer's own milestone is now "Brief read".
 
 ## `/new` as a conversation (the mock answers these now; the server from P3)
 

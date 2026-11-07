@@ -88,7 +88,14 @@ export type PipTrace = {
   promptVersion: string;
 };
 export type PipItem =
-  | { id: string; at: string; kind: "user"; text: string }
+  | {
+      id: string;
+      at: string;
+      kind: "user";
+      text: string;
+      /** "Ask Pip about this" (PIP-ORCHESTRATION §2): the crew instance the message is about */
+      about?: { instance: string; label?: string };
+    }
   | {
       id: string;
       at: string;
@@ -244,6 +251,8 @@ export type PipDeps = {
   home?: string;
   /** daily cap for workspace-level turns (default $1) */
   workspaceCapUsd?: number;
+  /** "Ask Pip about this": a crew instance's record (reason, cost, outcome, lives) for the turn's context, or null */
+  instanceAbout?: (p: OpenProject, instance: string) => { text: string; label: string } | null;
   /** a crew card was decided: a plan revision past the 20% line, or the budget overrun */
   crewDecide?: (p: OpenProject, what: "pending" | "overrun", decision: "confirm" | "decline") => void;
 };
@@ -639,11 +648,34 @@ export class Pip {
     return v;
   }
 
-  /** start a turn; 409 (PipBusy) while one runs for the same conversation. Slash commands are parsed here. */
-  ask(projectId: string | undefined, text: string): { turnId: string; done: Promise<PipItem> } {
+  /** the instance record a turn is about ("Ask Pip about this"), by conversation key, while that turn runs */
+  private about = new Map<string, string>();
+
+  /**
+   * Start a turn; 409 (PipBusy) while one runs for the same conversation. Slash commands are parsed here.
+   * `about` names a crew instance: its record goes into this turn's context (unknown: 404 with a fix).
+   */
+  ask(
+    projectId: string | undefined,
+    text: string,
+    opts: { about?: { instance: string } } = {},
+  ): { turnId: string; done: Promise<PipItem> } {
     const key = projectId ?? WORKSPACE;
     const p = this.project(projectId);
     const t = text.trim().slice(0, 4000);
+    let about: { text: string; label: string } | null = null;
+    if (opts.about) {
+      if (!p)
+        throw new StoreError("no_project", "a crew member belongs to a project", "send `project` with `about`", 400);
+      about = this.deps.instanceAbout?.(p, opts.about.instance) ?? null;
+      if (!about)
+        throw new StoreError(
+          "not_found",
+          `no crew member ${opts.about.instance} in this project`,
+          "use an id from the project's state.instances",
+          404,
+        );
+    }
     // /context leaves nothing in the history: no message, no reply, nothing toward the window
     if (/^\/context\b/i.test(t))
       return { turnId: "", done: this.context(projectId).then((c) => ({ kind: "context", ...c }) as any) };
@@ -652,13 +684,23 @@ export class Pip {
     this.busy.add(key);
     const log = this.log(p);
     const history = log.all();
-    const user: StoredItem = { id: rid("u"), at: now(), kind: "user", text: t };
+    const user: StoredItem = {
+      id: rid("u"),
+      at: now(),
+      kind: "user",
+      text: t,
+      ...(about && opts.about ? { about: { instance: opts.about.instance, label: about.label } } : {}),
+    };
     log.append(user);
+    if (about) this.about.set(key, about.text);
     this.emit(p, { type: "item", item: publicItem(user) });
     const cmd = /^\/(undo|budget|why|compact)\b\s*(.*)$/i.exec(t);
     const done = (
       cmd ? this.command(p, cmd[1].toLowerCase(), cmd[2], history) : this.turn(p, t, history, user.id)
-    ).finally(() => this.busy.delete(key));
+    ).finally(() => {
+      this.busy.delete(key);
+      this.about.delete(key);
+    });
     return { turnId: user.id, done };
   }
 
@@ -901,7 +943,9 @@ export class Pip {
 
   /** the project summary for the prompt, with Pip's memory of the earlier conversation */
   private situation(p: OpenProject | undefined, memory?: string) {
-    const now = summary(p, this.deps, this.deps.workspace);
+    const base = summary(p, this.deps, this.deps.workspace);
+    const about = this.about.get(p?.id ?? WORKSPACE);
+    const now = about ? `${base}\n\n${about}` : base;
     return memory
       ? `${now}\n\nEarlier in this conversation (your summary; the person may have edited it):\n${memory}`
       : now;
@@ -912,7 +956,11 @@ export class Pip {
       .filter((it) => it.kind !== "summary")
       .slice(-HISTORY)
       .map((it): ChatMessage => {
-        if (it.kind === "user") return { role: "user", content: it.text };
+        if (it.kind === "user")
+          return {
+            role: "user",
+            content: it.about ? `(About ${it.about.label ?? it.about.instance}) ${it.text}` : it.text,
+          };
         const cards = (it.cards ?? [])
           .map((c) =>
             c.type === "plan"

@@ -7,16 +7,21 @@ import { extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { Pip } from "@pap/crew/assistant";
 import { PHASE } from "@pap/crew/orchestrator";
+import { InstanceKey } from "@pap/crew/plan/instances";
 import type { Registry, ToolContext } from "@pap/tools";
 import { type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
+import { z } from "zod";
 import type { Connections } from "./connections.ts";
 import { McpSession } from "./mcp.ts";
 
 export const VERSION = "0.1.0";
 const WEB_DIST = new URL("../../web/dist/", import.meta.url).pathname;
+
+/** POST /api/pip's `about` ("Ask Pip about this", docs/PIP-ORCHESTRATION.md §2) */
+const PipAbout = z.object({ instance: InstanceKey }).strict().optional();
 
 export interface CrewApi {
   run(p: OpenProject, opts: { stage?: string; retry?: boolean }): Promise<void>;
@@ -38,6 +43,10 @@ export interface CrewApi {
   planView?(p: OpenProject): unknown;
   /** every plan revision, as summaries */
   planRevisions?(p: OpenProject): unknown[];
+  /** the crew instances (§2); the first call starts the project's `instance` events */
+  instances?(p: OpenProject): unknown[];
+  /** one instance's kept log, or null for an unknown id */
+  instanceLog?(p: OpenProject, iid: string): unknown | null;
   gate(
     p: OpenProject,
     gate: string,
@@ -222,9 +231,9 @@ export function createApp(o: ServerOpts) {
       // what happened, as markers in Pip's chat: derived from the event log, with the events' own times
       milestones: p.markers(),
       sceneStatus: p.state.sceneStatus,
-      // the production plan (null until a crew first runs); instances arrive with P2
+      // the production plan (null until a crew first runs) and the crew members that come and go (N4)
       plan: o.crew?.planView?.(p) ?? null,
-      instances: [],
+      instances: o.crew?.instances?.(p) ?? [],
     };
   };
 
@@ -370,6 +379,25 @@ export function createApp(o: ServerOpts) {
   app.get("/api/p/:id/channel", (c) => c.json(proj(c.req.param("id")).channel()));
   // the production plan's revisions (runs/plan.jsonl), oldest first
   app.get("/api/p/:id/plan/revisions", (c) => c.json(o.crew?.planRevisions?.(proj(c.req.param("id"))) ?? []));
+  // a crew member's kept log (read-only): its attempts' transcripts and its channel messages, by time
+  app.get("/api/p/:id/instances/:iid/log", (c) => {
+    const p = proj(c.req.param("id"));
+    const iid = c.req.param("iid");
+    const log = InstanceKey.safeParse(iid).success ? o.crew?.instanceLog?.(p, iid) : null;
+    if (!log)
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: "not_found",
+            message: `no crew member ${iid.slice(0, 60)} in this project`,
+            fix: "use an id from the project's state.instances, such as writer or animator:s01",
+          },
+        },
+        404,
+      );
+    return c.json(log);
+  });
   app.get("/api/p/:id/tasks/:tid/transcript", (c) => c.json(proj(c.req.param("id")).transcript(c.req.param("tid"))));
   app.post("/api/p/:id/crew/retry", async (c) => {
     if (!o.crew) return c.json({ ok: false, error: { code: "no_crew", message: "the crew is not configured" } }, 503);
@@ -409,11 +437,18 @@ export function createApp(o: ServerOpts) {
   app.get("/api/p/:id/events", (c) => {
     const p = proj(c.req.param("id"));
     const last = Number(c.req.header("last-event-id") ?? c.req.query("since") ?? 0);
+    // the instance events start with the project's tracker
+    o.crew?.instances?.(p);
+    // a transient event (seq 0) has no id: an "id: 0" would make the client's reconnect replay the whole log
+    const sse = (e: { seq: number; event: string; data: unknown }) => ({
+      ...(e.seq ? { id: String(e.seq) } : {}),
+      event: e.event,
+      data: JSON.stringify(e.data),
+    });
     return streamSSE(c, async (stream) => {
-      for (const e of p.eventsSince(last))
-        await stream.writeSSE({ id: String(e.seq), event: e.event, data: JSON.stringify(e.data) });
+      for (const e of p.eventsSince(last)) await stream.writeSSE(sse(e));
       const on = (e: { seq: number; event: string; data: unknown }) => {
-        stream.writeSSE({ id: String(e.seq), event: e.event, data: JSON.stringify(e.data) }).catch(() => {});
+        stream.writeSSE(sse(e)).catch(() => {});
       };
       p.events.on("event", on);
       const ping = setInterval(() => stream.writeSSE({ event: "ping", data: "{}" }).catch(() => {}), 20000);
@@ -445,7 +480,25 @@ export function createApp(o: ServerOpts) {
     const project = projectArg(b.project);
     // /context is measured, not said: nothing is stored
     if (/^\s*\/context\b/i.test(String(b.text ?? ""))) return c.json({ context: await o.pip.context(project) });
-    const { turnId, done } = o.pip.ask(project, String(b.text ?? ""));
+    // "Ask Pip about this": the instance's record goes into this turn's context
+    const about = PipAbout.safeParse(b.about);
+    if (b.about !== undefined && !about.success)
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: "bad_about",
+            message: "about is { instance: <an instance id> }",
+            fix: 'send about: { instance: "pixel-artist:founder" } with an id from state.instances, or leave it out',
+          },
+        },
+        400,
+      );
+    const { turnId, done } = o.pip.ask(
+      project,
+      String(b.text ?? ""),
+      about.success && about.data ? { about: about.data } : {},
+    );
     done.catch((e) => console.error(`pip: ${e?.message ?? e}`));
     return c.json({ turnId }, 202);
   });

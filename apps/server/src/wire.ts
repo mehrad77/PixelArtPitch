@@ -168,6 +168,7 @@ export async function wireCrew(deps: {
     gateway,
     crewRunning: (p) => crew.status(p).crew.running,
     crewStatus: (p) => crew.status(p),
+    instanceAbout: (p, id) => crew.instanceAbout(p, id),
     external: deps.external ?? connections,
     lend: (p, role, tools) => crew.lend(p, role, tools),
     resolveLend: (ref) => connections.resolve(ref)?.name,

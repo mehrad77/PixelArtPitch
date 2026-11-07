@@ -1,7 +1,8 @@
 // The plan on disk and on the wire (docs/PIP-ORCHESTRATION.md §1.2 "Storage", §4.3): runs/plan.json is written
 // atomically on every revision and status change; runs/plan.jsonl gets one line per revision. A revision is a stored
 // SSE `plan` event (with its summary) and, when it has ops, a "Plan changed: …" milestone; a status change is a
-// transient `plan` event (id 0).
+// stored `plan_status` line (just the tasks that moved, so the crew instances replay from events.jsonl, §2) and a
+// transient `plan` event (id 0) with the whole view.
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RoleT } from "@pap/schema";
@@ -131,8 +132,33 @@ export function revisionSummaries(p: OpenProject): PlanRevisionSummary[] {
   return all.map((r, i) => summaryOf(p, r, i ? all[i - 1].estimate : null));
 }
 
+/** the statuses events.jsonl last recorded, per project (seeded from runs/plan.json, which every change saves) */
+const recorded = new WeakMap<OpenProject, Map<string, string>>();
+function recordedOf(p: OpenProject) {
+  let m = recorded.get(p);
+  if (!m) {
+    m = new Map((loadPlan(p)?.tasks ?? []).map((t) => [t.id, `${t.status}|${t.note ?? ""}`]));
+    recorded.set(p, m);
+  }
+  return m;
+}
+
 /** the stable fields of a status change: re-estimate the plan and send it as a transient event */
 export function touch(p: OpenProject, plan: ProductionPlanT, env: PlanEnv, spentUsd: number, pip?: PlanView["pip"]) {
+  // what moved goes into the log first (stored), so a replay of events.jsonl sees every status, `ready` included
+  const was = recordedOf(p);
+  const moved = plan.tasks.filter((t) => was.get(t.id) !== `${t.status}|${t.note ?? ""}`);
+  for (const t of moved) was.set(t.id, `${t.status}|${t.note ?? ""}`);
+  if (moved.length)
+    p.emit("plan_status", {
+      rev: plan.rev,
+      tasks: moved.map((t) => ({
+        id: t.id,
+        status: t.status,
+        ...(t.note ? { note: t.note } : {}),
+        ...(t.taskIds.length ? { taskIds: t.taskIds } : {}),
+      })),
+    });
   plan.estimate = planEstimate(plan.tasks, spentUsd, env);
   savePlan(p, plan);
   const ts = new Date().toISOString();
@@ -178,6 +204,7 @@ export function revise(
   };
   appendFileSync(log(p), `${JSON.stringify(revision)}\n`);
   savePlan(p, next);
+  recorded.set(p, new Map(next.tasks.map((t) => [t.id, `${t.status}|${t.note ?? ""}`])));
   const summary = summaryOf(p, revision, plan?.estimate ?? null);
   p.emit("plan", { view: viewOf(p, next, env, pip), revision: summary });
   if (r.ops.length) p.milestone(`plan.r${rev}`, `Plan changed: ${revision.reason}`);
