@@ -202,6 +202,7 @@ The side rail becomes three groups. Each group is a list of buttons with `aria-c
   - No message box. In its place, one button, "Ask Pip about this". It selects Pip in the same drawer, with "About the Pixel artist · founder: " in Pip's field and focus there, because the person pressed it. The turn is sent with `about: {instance}`.
   - The log comes from `GET /api/p/:id/instances/:iid/log`.
 - Esc closes the drawer and returns focus to the face or the counter that opened it.
+- **The Project picker** (the header's Crew button, with more than one project) sits in the head row, on one line between the title and the ×: a small muted "Project" label, then the select (about 17rem, at the inline end). The kit Dialog takes no head content and its head is a `<form method="dialog">`, so the picker stays in the body (no nested form) and is laid over the head, which keeps its height. Under 40rem it takes a second line under the title, full width, and the head's rule moves under it. It mirrors in RTL.
 
 ### 3.4 Studio, the Crew tab (`CrewRow`)
 
@@ -284,7 +285,7 @@ Buttons: **Start** (primary) · **Show all options** (quiet).
 
 ### 3.6 Projects
 
-- **The head**: `<h1>Projects</h1>`, Pip's line with Pip's face, and one primary button, **"New video"**, which goes to `/new`. With no projects at all, Projects goes straight to `/new` (replaceState).
+- **The head**: Pip's line with Pip's face, then one primary button, **"New video"**, which goes to `/new`. There is no visible "Projects" heading (the app header's Projects item names the page); the page's one `<h1>Projects</h1>` is visually hidden, for screen readers. With no projects at all, Projects goes straight to `/new` (replaceState).
 - **Pip's line** is `WorkspaceLine.text` from `GET /api/workspace/line`, built on the server from state.
   - At most 3 clauses, ordered finished → working → waiting, so it ends on what needs the person: "QuestDay teaser is finished. Lantern is waiting on one pick from you."
   - Each `part` makes its project's title a link to that project.
@@ -636,7 +637,7 @@ Checked against `docs/PIP-ORCHESTRATION.md` as it stands today. The first list i
 | N3 | Ordering: an `instance` `spawn` or `revive` before its task's `working` event, and an `end` after its last task event, in stream order | the row would flash a face with no work, or a working task with no face | not stated |
 | N4 | `GET /api/p/:id` carries `plan` and `instances`, so a reconnect re-baselines without animating | §3.1 never animates what loads | implied by `ProjectState` |
 | N5 | Role words in sentence case ("Pixel artist", "Art director") in `label` and `reason` | the kit and `ROLE_LABEL` (C14) | `ROLE_WORD` "Pixel Artist" |
-| N6 | `crew.slots` in state | the ghost popover: "Waiting for a free slot. 3 are working." | slots exist in the executor; not on the wire |
+| N6 | `crew.slots` in state | the ghost popover: "Waiting for a free slot. 3 are working." | on the wire since the backend's P1 (`crew.slots`, per endpoint plus "render"); the UI reads it in P2 |
 | N7 | `PATCH /api/drafts/:id {fields}` | the composer's "‹ Back to the conversation" keeps its edits without a model call | no draft fields write |
 | N8 | Draft creation on the first send or drop, not on opening `/new` | an opened-and-left `/new` must not leave an empty draft | `POST /api/drafts` returns Pip's first item; the UI calls it late |
 | N9 | Per-field labels in the card may be Pip's wording: "Investors", "Users", "A launch post" | the brief's step 3 copy | allowed ("only the label wording is Pip's"); the mock uses these |

@@ -351,12 +351,62 @@
   gap: var(--space-1) var(--space-2);
 }
 /* the header's Crew button: which project */
-.activity-picker {
-  padding: var(--space-2) var(--space-5);
-  border-block-end: 1px solid var(--stroke-subtle);
+/* the project picker sits in the head row, between the title and the close button, on one line: a small muted
+   "Project", then the select. The kit Dialog takes no head content and its head is a form method="dialog", so the
+   picker stays in the body (no nested form) and is laid over the head, which keeps its height. Under 40rem it takes
+   a second line under the title, full width, and the head's rule moves under it. */
+.dialog.activity[data-shab-dialog] {
+  --picker-w: 17rem;
 }
-.activity-picker .field {
-  max-inline-size: 24rem;
+.activity-picker {
+  position: absolute;
+  inset-block-start: var(--space-4);
+  inset-inline-end: calc(var(--space-5) + var(--control-h-sm) + var(--space-4));
+  z-index: var(--z-raised);
+  display: flex;
+  align-items: center;
+  inline-size: min(var(--picker-w), 100% - 2 * var(--space-5));
+  block-size: var(--control-h-sm);
+}
+.activity-picker .field[data-shab-field] {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  margin: 0;
+}
+.activity-picker .field[data-shab-field] > label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--step--1);
+  white-space: nowrap;
+}
+.activity-picker .field[data-shab-field] > .select {
+  flex: 1;
+  min-inline-size: 0;
+}
+.dialog.activity[data-shab-dialog]:has(.activity-picker) .dialog-head[data-shab-dialog] h2 {
+  flex: 1;
+  min-inline-size: 0;
+  margin-inline-end: var(--picker-w);
+}
+@media (max-width: 40rem) {
+  /* the title may wrap here, so the picker flows: it continues the head (the head's rule moves under it) */
+  .dialog.activity[data-shab-dialog]:has(.activity-picker) .dialog-head[data-shab-dialog] {
+    padding-block-end: var(--space-2);
+    border-block-end: 0;
+  }
+  .dialog.activity[data-shab-dialog]:has(.activity-picker) .dialog-head[data-shab-dialog] h2 {
+    margin-inline-end: 0;
+  }
+  .activity-picker {
+    position: static;
+    inline-size: auto;
+    block-size: auto;
+    padding: 0 var(--space-5) var(--space-3);
+    border-block-end: 1px dashed var(--stroke);
+  }
 }
 
 /* steering a member: Ask Pip first; talking to it directly is one disclosure away */

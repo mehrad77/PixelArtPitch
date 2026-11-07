@@ -292,8 +292,9 @@ export function instanceNews(prev: Map<string, Instance>, next: Instance[]): str
     const wasFinished = was.state === "finished";
     if (i.state === "live" && was.state === "planned") spawned.push(i);
     else if (wasFinished && i.state !== "finished") {
+      // a return is said when its new life opens (N1); one back only as a ghost says nothing yet
       const life = i.lives.at(-1);
-      out.push(`${life?.reason ?? i.reason}.`);
+      if (life && life.to === null && life.reason) out.push(`${life.reason}.`);
     } else if (i.state === "finished" && !wasFinished)
       out.push(
         i.outcome === "partial" && i.lastReport?.couldnt

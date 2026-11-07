@@ -275,10 +275,9 @@
   margin: 0;
   font-family: var(--font-serif);
 }
-@media (max-width: 40rem) {
-  .projects-head > h1 {
-    flex-basis: 100%;
-  }
+.projects-head {
+  align-items: center;
+  margin-block-end: var(--space-3);
 }
 .pcard[data-kind="draft"] {
   border-style: dashed;

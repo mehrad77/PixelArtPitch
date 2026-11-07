@@ -50,7 +50,8 @@ function Route({ path, view, adopted }: { path: string; view: View; adopted: Ado
   if (m && isStage(m.stage)) return <WorkspacePage key={m.id} id={m.id} stage={m.stage} />;
   // the project's own address opens the simple view, or Studio when the person last chose it; a stage is Studio
   m = match("/p/:id", path);
-  if (m && m.id === adopted.projectId)
+  // the project the stage just made keeps the stage, until the person switches to Studio (or back)
+  if (m && m.id === adopted.projectId && view === adopted.view)
     return <ProjectStage key={stageKey} draftId={adopted.draftId} projectId={m.id} />;
   if (m)
     return view === "studio" ? (

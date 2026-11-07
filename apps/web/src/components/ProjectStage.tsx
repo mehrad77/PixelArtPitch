@@ -10,7 +10,7 @@ import { channelSummary, useChannel } from "../lib/channel.ts";
 import { client } from "../lib/client.ts";
 import { usePublishProject } from "../lib/current.ts";
 import { isControlTarget, type ProjectView, useProject, useThrottled } from "../lib/hooks.ts";
-import { crewStateOf, effectOf, humanStatus, PHASES, phaseOf, plainUsd } from "../lib/human.ts";
+import { crewStateOf, currentView, effectOf, humanStatus, PHASES, phaseOf, plainUsd } from "../lib/human.ts";
 import { adoptConv, askPip, NEW_TALK, seedConv, usePip, usePipOpenRequest } from "../lib/pip.ts";
 import { usePlayback } from "../lib/playback.ts";
 import { Link, navigate } from "../lib/router.tsx";
@@ -78,7 +78,7 @@ export function ProjectStage({
   useEffect(() => {
     if (!started || !draftId) return;
     adoptConv(draftId, started);
-    adopt({ draftId, projectId: started });
+    adopt({ draftId, projectId: started, view: currentView() });
     navigate(`/p/${encodeURIComponent(started)}`, { replace: true });
   }, [started, draftId]);
 
@@ -418,8 +418,7 @@ function StageTalk({
   // what Pip and the crew said to each other lately, in one plain sentence
   const behind = channelSummary(useChannel(projectId));
   // while nobody has started yet, a few big faces keep the person company; never on the stage, where Pip is alone
-  const starting =
-    !!state && !hasInstances(state) && !state.plan && !state.tasks.some((t) => t.startedAt) && st?.tone !== "needs";
+  const starting = !!state && !hasInstances(state) && !state.tasks.some((t) => t.startedAt) && st?.tone !== "needs";
   return (
     <div className="sp-status">
       <PipLine>

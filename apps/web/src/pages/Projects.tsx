@@ -61,7 +61,8 @@ export function ProjectsPage() {
   return (
     <main id="main" className="page" aria-busy={loading ? "true" : undefined}>
       <div className="page-head projects-head">
-        <h1>Projects</h1>
+        {/* the app header's Projects item names the page; the h1 stays for screen readers */}
+        <h1 className="visually-hidden">Projects</h1>
         {line.data && <PipSays line={line.data} projects={data ?? []} />}
         <LinkButton href="/new" variant="primary">
           New video
@@ -226,7 +227,7 @@ function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: n
         <div className="pcard-foot">
           <Faces p={p} kind={kind} step={step} />
           <span className="pcard-meta">
-            <span>{eta ? `${money} · ${eta}` : money}</span>
+            <span dir="auto">{eta ? `${money} · ${eta}` : money}</span>
             <span>
               Updated <time dateTime={p.updatedAt}>{ago(p.updatedAt)}</time>
             </span>
@@ -281,7 +282,7 @@ function PipSays({ line, projects }: { line: WorkspaceLine; projects: ProjectSum
   return (
     <div className="projects-pip">
       <PipFace mood="idle" size="sm" />
-      <p className="projects-pip-line">
+      <p className="projects-pip-line" dir="auto">
         {line.parts.length
           ? line.parts.map((part, i) => (
               <Fragment key={`${part.projectId}-${part.kind}`}>

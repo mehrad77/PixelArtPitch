@@ -2,9 +2,12 @@
 // /new, /new/:draftId and that one /p/:projectId render the same ProjectStage under one key, and the thread, the
 // field and the focus survive the two replaceStates (the first send, then Start).
 import { useSyncExternalStore } from "react";
+import type { View } from "./human.ts";
 
 /** `n` counts fresh /new visits: the stage's key, so a new video never inherits the last one's field or files */
-export type Adopted = { draftId: string | null; projectId: string | null; n: number };
+/** `view` is the Simple / Studio choice when the stage adopted its project: toggling it leaves the stage for the usual
+ * page */
+export type Adopted = { draftId: string | null; projectId: string | null; n: number; view?: View };
 let adopted: Adopted = { draftId: null, projectId: null, n: 0 };
 const listeners = new Set<() => void>();
 
