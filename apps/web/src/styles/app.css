@@ -15,6 +15,10 @@ body {
   min-block-size: 100svh;
 }
 .topbar {
+  /* stays on screen while a long page (Pip's thread, Docs) scrolls */
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   gap: var(--space-4);
