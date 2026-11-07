@@ -29,7 +29,7 @@
   "source": "drawn",
   "by": "claude-code",
   "method": "code recipe",
-  "recipe": "w1-sky.mjs",
+  "recipe": "scripts/library-pack/w1-sky.mjs",
   "role": "pixel-artist",
   "origin": "common library pack, authored in code (2026-11-08)",
   "sourceAssets": [],

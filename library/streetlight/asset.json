@@ -28,7 +28,7 @@
   "source": "drawn",
   "by": "claude-code",
   "method": "code recipe",
-  "recipe": "w2-big.mjs",
+  "recipe": "scripts/library-pack/w2-big.mjs",
   "role": "pixel-artist",
   "origin": "common library pack, authored in code (2026-11-08)",
   "sourceAssets": [],
