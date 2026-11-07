@@ -440,6 +440,22 @@
     "animal",
     "startup"
    ]
+  },
+  {
+   "id": "moth",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 8,
+   "tags": [
+    "character",
+    "moth",
+    "insect",
+    "bug",
+    "night",
+    "wings",
+    "cute"
+   ]
   }
  ]
 }
