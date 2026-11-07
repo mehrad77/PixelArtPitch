@@ -47,7 +47,23 @@ async function main() {
     const workspace = new Workspace(roots);
     const registry = buildRegistry();
     const wired = await wireCrew({ workspace, registry });
-    const { app, token, mcpToken } = createApp({ port, workspace, registry, dev: rest.includes("--dev"), ...wired });
+    // keep the tokens across restarts so an open studio tab and MCP clients stay signed in
+    const AUTH = join(PAP_HOME, "auth.json");
+    let saved: { token?: string; mcpToken?: string } = {};
+    try {
+      saved = JSON.parse(readFileSync(AUTH, "utf8"));
+    } catch {}
+    const { app, token, mcpToken } = createApp({
+      port,
+      workspace,
+      registry,
+      dev: rest.includes("--dev"),
+      token: saved.token,
+      mcpToken: saved.mcpToken,
+      ...wired,
+    });
+    writeFileSync(AUTH, JSON.stringify({ token, mcpToken }));
+    chmodSync(AUTH, 0o600);
     const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
     writeFileSync(SERVER_FILE, JSON.stringify({ port, pid: process.pid, token, mcpToken, version: VERSION }));
     chmodSync(SERVER_FILE, 0o600);

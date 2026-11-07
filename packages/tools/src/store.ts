@@ -68,6 +68,9 @@ export type Task = {
   lastImage?: string;
   parent?: string;
   transcript?: string;
+  /** a later task of the same role and kind replaced this one (a retry); human views hide it */
+  supersededBy?: string;
+  attempt?: number;
 };
 export type GateId = "g0_brief" | "g1_script" | "g2_animatic" | "g3_rough" | "g4_final";
 export type Gate = {
@@ -97,6 +100,17 @@ export type RuntimeState = {
   startedAt: string | null;
   paused: boolean;
   files: { name: string; bytes: number; kind: string }[];
+  /** what a person reads: one plain line, the phase (0-4), and an unrecovered problem if any */
+  status: {
+    line: string;
+    phase: number;
+    problem?: { text: string; action: "retry" | "change_model" | "add_budget"; taskId?: string };
+  };
+  milestones: { id: string; at: string; text: string; image?: string }[];
+  sceneStatus: Record<
+    string,
+    { version: "slate" | "board" | "animatic" | "render"; state: "planned" | "drafting" | "ready" | "stale" }
+  >;
 };
 
 const GATE_ITEMS: Record<GateId, string> = {
@@ -110,7 +124,7 @@ const freshState = (): RuntimeState => ({
   stage: "brief",
   gates: (Object.keys(GATE_ITEMS) as GateId[]).map((id) => ({
     id,
-    status: id === "g0_brief" ? "open" : "locked",
+    status: "locked",
     items: [{ label: GATE_ITEMS[id] }],
   })),
   tasks: [],
@@ -120,6 +134,9 @@ const freshState = (): RuntimeState => ({
   startedAt: null,
   paused: false,
   files: [],
+  status: { line: "Waiting to start", phase: 0 },
+  milestones: [],
+  sceneStatus: {},
 });
 
 export class StoreError extends Error {
@@ -432,8 +449,19 @@ export class OpenProject {
   }
   upsertTask(t: Task) {
     const i = this.state.tasks.findIndex((x) => x.id === t.id);
-    if (i < 0) this.state.tasks.push(t);
-    else this.state.tasks[i] = t;
+    if (i < 0) {
+      // a new attempt at the same job supersedes earlier failed ones
+      const prev = this.state.tasks.filter(
+        (x) => x.role === t.role && x.kind === t.kind && (x.parent ?? "") === (t.parent ?? ""),
+      );
+      t.attempt = prev.length + 1;
+      for (const x of prev)
+        if (x.status === "failed" && !x.supersededBy) {
+          x.supersededBy = t.id;
+          this.emit("task", x);
+        }
+      this.state.tasks.push(t);
+    } else this.state.tasks[i] = t;
     this.saveState();
     this.emit("task", t);
     return t;
@@ -442,6 +470,24 @@ export class OpenProject {
     this.state.stage = stage;
     this.saveState();
     this.emit("stage", { stage });
+  }
+  setStatus(patch: Partial<RuntimeState["status"]>) {
+    this.state.status = { ...this.state.status, ...patch };
+    if ("problem" in patch && !patch.problem) delete this.state.status.problem;
+    this.saveState();
+    this.emit("status", this.state.status);
+  }
+  milestone(id: string, text: string, image?: string) {
+    if (this.state.milestones.some((m) => m.id === id)) return;
+    const m = { id, at: new Date().toISOString(), text, ...(image ? { image } : {}) };
+    this.state.milestones.push(m);
+    this.saveState();
+    this.emit("milestone", m);
+  }
+  setSceneStatus(id: string, v: RuntimeState["sceneStatus"][string]) {
+    this.state.sceneStatus[id] = v;
+    this.saveState();
+    this.emit("scene", { id, ...v });
   }
   setDigest(text: string) {
     this.state.digest = text;

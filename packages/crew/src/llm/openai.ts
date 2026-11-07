@@ -256,6 +256,12 @@ export class OpenAICompatProvider implements Provider {
         json_schema: { name: req.json.name, schema: s.schema, strict: s.strictOk },
       };
     } else if (req.jsonMode) body.response_format = { type: "json_object" };
+    // local servers (LM Studio, Ollama, llama.cpp) take reasoning_effort for reasoning models; others ignore it
+    if (
+      req.effort &&
+      (this.config.kind === "lmstudio" || this.config.kind === "ollama" || this.config.kind === "llamacpp")
+    )
+      body.reasoning_effort = req.effort === "xhigh" || req.effort === "high" ? "medium" : req.effort;
     if (req.effort && this.config.kind === "openai")
       body.reasoning_effort = req.effort === "xhigh" ? "high" : req.effort;
     if (req.effort && this.config.kind === "openrouter")

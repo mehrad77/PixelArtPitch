@@ -7,9 +7,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkAsset } from "@pap/engine/standard";
-import { contactSheet, LIBRARY_DIR } from "@pap/render";
-// @ts-expect-error vendored JS
-import { renderSheet } from "@pap/render/vendor/png.mjs";
+import { contactSheet, LIBRARY_DIR, renderSheet } from "@pap/render";
 import type { RoleT } from "@pap/schema";
 import type { GateId, OpenProject, Registry, Stage, Task, ToolContext, Workspace } from "@pap/tools";
 import { z } from "zod";
@@ -39,6 +37,143 @@ const img = (data: Uint8Array): ContentPart => ({
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 
 class Paused extends Error {}
+
+const ROLE_WORD: Record<string, string> = {
+  producer: "producer",
+  writer: "writer",
+  director: "director",
+  "art-director": "art director",
+  "pixel-artist": "artist",
+  animator: "animator",
+  "sound-designer": "sound designer",
+  mixer: "mixer",
+  editor: "editor",
+  reviewer: "reviewer",
+  librarian: "librarian",
+};
+/** a failure in plain words, and the one thing the person can do about it */
+export function humanize(e: any, role = "crew"): { text: string; action: "retry" | "change_model" | "add_budget" } {
+  const who = `The ${ROLE_WORD[role] ?? role}`;
+  const msg = String(e?.message ?? e);
+  if (e?.code === "budget" || /budget:/.test(msg))
+    return { text: "The crew reached your budget.", action: "add_budget" };
+  if (/schema-valid|max_tokens|garbled|JSON/i.test(msg))
+    return { text: `${who}'s answer came back garbled.`, action: "change_model" };
+  if (/ECONNREFUSED|fetch failed|unreachable|no provider|turned off/i.test(msg))
+    return { text: "The crew can't reach its model. Is the model server running?", action: "retry" };
+  if (/missing required prop|unknown prop|invalid_recipe|scene_set_recipes/i.test(msg))
+    return { text: `${who} got stuck on a scene setting.`, action: "retry" };
+  return { text: `${who} got stuck.`, action: "retry" };
+}
+const PHASE: Record<string, number> = {
+  brief: 0,
+  script: 1,
+  storyboard: 1,
+  art: 2,
+  animate: 2,
+  narrate: 3,
+  sound: 3,
+  review: 4,
+  deliver: 4,
+};
+const STAGE_LINE: Record<string, string> = {
+  brief: "Reading your idea",
+  script: "Writing the script",
+  storyboard: "Planning the scenes",
+  art: "Drawing the art",
+  animate: "Animating the scenes",
+  narrate: "Waiting for the narration",
+  sound: "Adding sound and music",
+  review: "Checking for mistakes",
+  deliver: "Exporting your video",
+};
+const MILESTONE: Record<string, string> = {
+  "producer.plan": "Plan ready",
+  "writer.angles": "Script written",
+  "director.storyboard": "Storyboard ready",
+  "asset.judge": "Hero drawn",
+  "sound.mix": "Sound mixed",
+  "review.final": "Checked for mistakes",
+  "deliver.export": "Your video is ready",
+};
+
+/**
+ * The storyboard a weak Director falls back to: the hook on a walk-in with a block bump, the middle cues as item
+ * collection, a flag raise for the payoff, and the end card. Every recipe with only its required params.
+ */
+export function baselineBoard(cueIds: string[], card: { title: string; url?: string } = { title: "PRESS START" }) {
+  const n = cueIds.length;
+  type Sc = { id: string; title: string; cues: string[]; recipes: { id: string; params: Record<string, unknown> }[] };
+  const scenes: Sc[] = [];
+  const take = (a: number, b: number) => cueIds.slice(a, b);
+  const R = (...ids: string[]) => ids.map((id) => ({ id, params: {} }));
+  const endCard = {
+    id: "end_card_loop",
+    params: { title: card.title.slice(0, 24), ...(card.url ? { url: card.url } : {}) },
+  };
+  if (n === 1) scenes.push({ id: "end", title: "End card", cues: take(0, 1), recipes: [endCard] });
+  else {
+    const mid = Math.max(1, n - 2);
+    scenes.push({
+      id: "hook",
+      title: "The hook",
+      cues: take(0, 1),
+      recipes: R("backdrop_night", "walk_in", "block_bump"),
+    });
+    if (mid > 1)
+      scenes.push({
+        id: "quest",
+        title: "The quest",
+        cues: take(1, mid),
+        recipes: R("backdrop_night", "walk_in", "item_collect"),
+      });
+    if (n > 2)
+      scenes.push({
+        id: "payoff",
+        title: "The payoff",
+        cues: take(mid, n - 1),
+        recipes: R("backdrop_night", "flag_raise", "crowd_cheer"),
+      });
+    scenes.push({ id: "end", title: "End card", cues: take(n - 1, n), recipes: [endCard] });
+  }
+  // walk_in and block_bump default to an actor named "hero", which the art stage draws
+  const newAssets: { name: string; kind: "character" | "prop" | "icon" | "decor"; description: string }[] =
+    n > 1
+      ? [
+          {
+            name: "hero",
+            kind: "character",
+            description:
+              "The friendly hero of the video: a small adventurer with a scarf and a backpack, bright readable colours against the night sky.",
+          },
+        ]
+      : [];
+  return { scenes, newAssets };
+}
+
+/** a word sequence repeated 3+ times: the run-away loop small models fall into */
+const loops = (s: string) => /(\b\w+(?:\s+\w+){0,3}\b)(?:[\s,.]+\1\b){2,}/i.test(s);
+/** keep the usable angles of a weak model's answer: at most 3, no loops, short cues */
+function saneAngles(raw: unknown) {
+  const r = raw as { angles?: { name?: unknown; approach?: unknown; cues?: unknown }[]; recommended?: unknown };
+  const angles = (Array.isArray(r?.angles) ? r.angles : [])
+    .filter((a) => typeof a?.name === "string" && Array.isArray(a.cues) && a.cues.length >= 2)
+    .map((a) => ({
+      name: String(a.name).slice(0, 60),
+      approach: String(a.approach ?? "").slice(0, 200),
+      cues: (a.cues as unknown[]).map(String).map((c) => c.trim()),
+    }))
+    .filter(
+      (a) =>
+        !loops(`${a.approach} ${a.cues.join(" ")}`) &&
+        a.cues.every((c) => c.length >= 2 && c.length <= 120 && words(c) <= 14) &&
+        a.name.toLowerCase() !== "recommended",
+    )
+    .slice(0, 3);
+  if (!angles.length) return null;
+  const rec = typeof r.recommended === "number" && r.recommended < angles.length ? r.recommended : 0;
+  return { angles, recommended: rec };
+}
 
 type Run = {
   abort: AbortController;
@@ -112,12 +247,17 @@ export class Crew {
     p.state.startedAt ??= r.startedAt;
     p.state.paused = false;
     p.saveState();
+    p.setDigest("The crew is working.");
+    p.setStatus({ line: "The crew is working", problem: undefined });
     try {
       await this.pipeline(p, r, (opts.stage as Stage) ?? p.state.stage);
     } catch (e: any) {
       if (e instanceof Paused || r.abort.signal.aborted) p.emit("log", { level: "info", text: "crew stopped" });
       else {
         p.emit("log", { level: "error", text: String(e?.message ?? e) });
+        const failed = [...p.state.tasks].reverse().find((x) => x.status === "failed" && !x.supersededBy);
+        const h = humanize(e, failed?.role);
+        p.setStatus({ line: h.text, problem: { ...h, taskId: failed?.id } });
         p.setDigest(`The crew stopped: ${String(e?.message ?? e).slice(0, 200)}${e?.fix ? ` Fix: ${e.fix}` : ""}`);
       }
       throw e;
@@ -163,6 +303,8 @@ export class Crew {
     });
   }
   private done(p: OpenProject, t: Task, patch: Partial<Task> = {}) {
+    const m = MILESTONE[t.kind];
+    if (m) p.milestone(t.kind, m, patch.lastImage ?? t.lastImage);
     return p.upsertTask({ ...t, status: "done", endedAt: new Date().toISOString(), ...patch });
   }
   private failTask(p: OpenProject, t: Task, e: any) {
@@ -207,6 +349,7 @@ export class Crew {
       images?: { caption: string; data: Uint8Array }[];
       history?: ChatMessage[];
       extra?: ContentPart[];
+      normalize?: (raw: unknown) => T | null;
     },
   ): Promise<{ data: T; messages: ChatMessage[] }> {
     const [role, name] = o.prompt.split("/");
@@ -232,6 +375,7 @@ export class Crew {
       effort: c.effort,
       model: this.deps.gateway.modelFor(o.role, doc.crew.models),
       signal: r.abort.signal,
+      normalize: o.normalize,
     });
     t.usd += out.result.usd;
     t.model = out.model;
@@ -266,16 +410,21 @@ export class Crew {
     for (const stage of order.slice(order.indexOf(from))) {
       await this.checkpoint(p, r);
       p.setStage(stage);
+      p.setStatus({ phase: PHASE[stage] ?? 0, line: STAGE_LINE[stage] ?? "Working" });
       if (stage === "brief") await this.brief(p, r, auto);
       if (stage === "script") await this.script(p, r, auto);
       if (stage === "storyboard") await this.storyboard(p, r, auto);
       if (stage === "art") await this.art(p, r);
-      if (stage === "animate") await this.animate(p, r);
+      if (stage === "animate") {
+        await this.animate(p, r);
+        await this.narrateMilestone(p);
+      }
       if (stage === "narrate") await this.narrate(p, r);
       if (stage === "sound") await this.sound(p);
       if (stage === "review") await this.review(p, r, auto);
       if (stage === "deliver") await this.deliver(p, r, auto);
     }
+    p.setStatus({ phase: 4, line: "Your video is ready" });
     p.setDigest(
       `Done: ${
         p
@@ -354,6 +503,7 @@ export class Crew {
           mustSay: d.brief.mustSay.length ? `Must say: ${d.brief.mustSay.join("; ")}` : "",
         },
         schema: AnglesOut,
+        normalize: saneAngles,
       });
       // one repair turn if any angle breaks the word rules
       const problems = (a: typeof out.data) =>
@@ -380,7 +530,8 @@ export class Crew {
           history: out.messages,
         });
       }
-      const { angles, recommended } = out.data;
+      const { angles } = out.data;
+      const recommended = Math.min(out.data.recommended, angles.length - 1);
       let pick = recommended;
       this.done(p, t, {
         summary: angles.map((a, i) => `${i === recommended ? "★ " : ""}${a.name}: ${a.cues[0]}`).join(" / "),
@@ -451,13 +602,22 @@ export class Crew {
     try {
       const { recipeCatalog, checkRecipeParams } = await import("@pap/engine/recipes");
       const d = p.doc();
-      const catalog = recipeCatalog().map((x: any) => ({
-        id: x.id,
-        for: x.description,
-        minSec: x.minDurationSec,
-        params: x.params.properties,
-        required: x.params.required,
-      }));
+      // one compact line per recipe: small models drown in a full JSON catalogue
+      const catalog = recipeCatalog()
+        .map((x: any) => {
+          const ps = Object.entries<any>(x.params.properties)
+            .filter(
+              ([k]) =>
+                x.params.required.includes(k) ||
+                ["text", "title", "url", "word", "items", "actor", "hero", "at"].includes(k),
+            )
+            .map(
+              ([k, v]) =>
+                `${k}${x.params.required.includes(k) ? "*" : ""}: ${v.type}${v.default !== undefined ? ` = ${JSON.stringify(v.default)}` : ""}`,
+            );
+          return `- ${x.id} (min ${x.minDurationSec}s): ${x.description}${ps.length ? ` Params: ${ps.join("; ")}` : ""}`;
+        })
+        .join("\n");
       const libNames = this.libraryList();
       const vars = {
         idea: d.brief.idea,
@@ -465,38 +625,70 @@ export class Crew {
         recipes: catalog,
         assets: libNames.join("\n"),
       };
-      let out = await this.ask(p, r, t, {
-        role: "director",
-        kind: "director.storyboard",
-        prompt: "director/storyboard",
-        vars,
-        schema: StoryboardOut,
-      });
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const issues = this.checkBoard(p, out.data, checkRecipeParams);
-        if (!issues.length) break;
-        p.emit("log", {
-          level: "warn",
+      let board: z.infer<typeof StoryboardOut> | null = null;
+      let why = "";
+      try {
+        let out = await this.ask(p, r, t, {
           role: "director",
-          text: `storyboard needs fixes: ${issues.slice(0, 3).join("; ")}`,
-        });
-        out = await this.ask(p, r, t, {
-          role: "director",
-          kind: "director.repair",
+          kind: "director.storyboard",
           prompt: "director/storyboard",
-          vars: {
-            ...vars,
-            idea: `${d.brief.idea}\n\nYour last answer had these problems; fix them and return the whole storyboard:\n- ${issues.join("\n- ")}`,
-          },
+          vars,
           schema: StoryboardOut,
-          history: out.messages,
         });
-        if (attempt === 1 && this.checkBoard(p, out.data, checkRecipeParams).length)
-          throw Object.assign(
-            new Error(`storyboard still invalid: ${this.checkBoard(p, out.data, checkRecipeParams).join("; ")}`),
-            { fix: "rerun the storyboard stage or edit the scenes by hand" },
-          );
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const issues = this.checkBoard(p, out.data, checkRecipeParams);
+          if (!issues.length) {
+            board = out.data;
+            break;
+          }
+          why = issues.slice(0, 3).join("; ");
+          p.emit("log", { level: "warn", role: "director", text: `storyboard needs fixes: ${why}` });
+          out = await this.ask(p, r, t, {
+            role: "director",
+            kind: "director.repair",
+            prompt: "director/storyboard",
+            vars: {
+              ...vars,
+              idea: `${d.brief.idea}\n\nYour last answer had these problems; fix them and return the whole storyboard:\n- ${issues.join("\n- ")}`,
+            },
+            schema: StoryboardOut,
+            history: out.messages,
+          });
+          if (!this.checkBoard(p, out.data, checkRecipeParams).length) board = out.data;
+        }
+      } catch (e: any) {
+        if (r.abort.signal.aborted) throw e;
+        why = String(e?.message ?? e).slice(0, 160);
       }
+      if (!board) {
+        // a weak model could not do it: the baseline storyboard keeps the crew moving, and the user can see why
+        const url = /\b[a-z0-9-]+(\.[a-z0-9-]+)+(\/[^\s]*)?/i.exec(
+          d.brief.ask || d.brief.idea.split(/call to action:?/i)[1] || "",
+        )?.[0];
+        const name = /^([A-Z][A-Za-z0-9]+)/.exec(d.brief.idea)?.[1] ?? d.title.split(/\s+/)[0];
+        board = baselineBoard(
+          d.script.cues.map((c) => c.id),
+          { title: name.toUpperCase(), url },
+        );
+        p.emit("log", { level: "warn", role: "director", text: `using the baseline storyboard (${why})` });
+        await p.patch(
+          [
+            {
+              op: "add",
+              path: "/notes/-",
+              value: {
+                by: "producer",
+                text: `assumption: the baseline storyboard was used because the Director model's answer was unusable (${why})`,
+              },
+            },
+          ],
+          {
+            reason: "record the storyboard fallback",
+            author: { kind: "agent", role: "producer", task: t.id },
+          },
+        );
+      }
+      const out = { data: board };
       await this.applyBoard(p, t, out.data);
       this.done(p, t, {
         summary: out.data.scenes.map((s) => `${s.title} (${s.recipes.map((x) => x.id).join(", ")})`).join(" → "),
@@ -506,6 +698,7 @@ export class Crew {
       const sheet = await contactSheet(ren, { every: 1 });
       writeFileSync(join(p.dir, "out", "animatic-contact.png"), sheet);
       p.emit("render", { kind: "still", url: `/api/p/${p.id}/files/animatic-contact.png` });
+      for (const sc of p.doc().scenes) p.setSceneStatus(sc.id, { version: "animatic", state: "ready" });
       await this.atGate(
         p,
         "g2_animatic",
@@ -530,6 +723,22 @@ export class Crew {
     if (JSON.stringify(seen) !== JSON.stringify(ids))
       issues.push(`scenes must carry every cue exactly once and in order: ${ids.join(", ")}; got ${seen.join(", ")}`);
     if (new Set(b.scenes.map((s) => s.id)).size !== b.scenes.length) issues.push("scene ids must be unique");
+    // icon-first: show it, don't write it
+    const VISUAL = new Set(["walk_in", "block_bump", "item_collect", "spawn_join", "crowd_cheer", "flag_raise"]);
+    const titles = b.scenes.filter((s) => s.recipes.some((r) => r.id === "title_card")).length;
+    if (titles > 1)
+      issues.push(
+        `${titles} scenes use title_card; use it at most once (the opening), and show the other cues with walk_in, item_collect, block_bump, spawn_join, crowd_cheer or flag_raise`,
+      );
+    b.scenes.forEach((s, k) => {
+      const last = k === b.scenes.length - 1;
+      if (!last && k > 0 && !s.recipes.some((r) => VISUAL.has(r.id)))
+        issues.push(
+          `scene ${s.id} shows nothing: add a visual recipe (walk_in, item_collect, block_bump, spawn_join, crowd_cheer or flag_raise)`,
+        );
+    });
+    if (!b.scenes.at(-1)?.recipes.some((r) => r.id === "end_card_loop"))
+      issues.push("the last scene must use end_card_loop");
     const known = new Set([
       ...this.libraryList().map((l) => l.split(":")[0]),
       ...b.newAssets.map((a) => a.name),
@@ -590,6 +799,7 @@ export class Crew {
     // remember what needs drawing
     const pending = b.newAssets.filter((a) => !p.doc().assets.some((x) => x.id === a.name));
     writeFileSync(join(p.dir, "runs", "new-assets.json"), JSON.stringify(pending, null, 1));
+    for (const sc of b.scenes) p.setSceneStatus(sc.id, { version: "board", state: "ready" });
   }
 
   private async art(p: OpenProject, r: Run) {
@@ -635,10 +845,16 @@ export class Crew {
         ),
       );
       const ok = results.filter((x): x is NonNullable<typeof x> => !!x);
-      if (!ok.length)
-        throw Object.assign(new Error(`no variant of ${a.name} passed the standard`), {
-          fix: "rerun the art stage or pick a library asset instead",
+      if (!ok.length) {
+        const stand = a.kind === "character" ? "mentor-ai" : "items";
+        p.emit("log", {
+          level: "warn",
+          role: "art-director",
+          text: `no variant of ${a.name} passed the standard; casting the library's ${stand} instead`,
         });
+        await this.tool(p, "art-director", ts.id, "cast_asset", { name: a.name, libraryId: stand });
+        continue;
+      }
       let best = ok[0];
       if (ok.length > 1) {
         const tj = this.task(p, { kind: "asset.judge", role: "art-director", title: `Choosing the best ${a.name}` });
@@ -742,6 +958,7 @@ export class Crew {
           tpl.frames.map((n) => fr.frames.find((f) => f.name === n)?.rows ?? []),
           {
             colours,
+            gap: 1,
             scale: Math.max(4, Math.min(10, Math.floor(900 / (Math.min(4, tpl.frames.length) * (tpl.w + 2))))),
             columns: Math.min(4, tpl.frames.length),
             bg: palette.sky,
@@ -862,7 +1079,8 @@ export class Crew {
     await Promise.all(
       scenes.map(async (s) => {
         await this.checkpoint(p, r);
-        const t = this.task(p, { kind: "scene.tune", role: "animator", title: `Tuning ${s.title || s.id}` });
+        const t = this.task(p, { kind: "scene.tune", role: "animator", title: `Animating ${s.title || s.id}` });
+        p.setSceneStatus(s.id, { version: "animatic", state: "drafting" });
         try {
           const d = p.doc();
           const sc = d.scenes.find((x) => x.id === s.id)!;
@@ -928,12 +1146,23 @@ export class Crew {
           this.done(p, t, {
             summary: data.changes.length ? data.changes.map((c) => c.why).join("; ") : "no changes needed",
           });
-        } catch (e) {
+          p.setSceneStatus(s.id, { version: "render", state: "ready" });
+        } catch (e: any) {
+          if (r.abort.signal.aborted) throw e;
+          // a weak model failing here costs nothing: the scene keeps its recipes as they are
           this.failTask(p, t, e);
-          throw e;
+          p.emit("log", {
+            level: "warn",
+            role: "animator",
+            text: `${s.id}: kept as built (${String(e?.message ?? e).slice(0, 120)})`,
+          });
         }
       }),
     );
+  }
+
+  private async narrateMilestone(p: OpenProject) {
+    p.milestone("scenes.animated", "Scenes animated");
   }
 
   private async narrate(p: OpenProject, r: Run) {
@@ -1028,9 +1257,16 @@ export class Crew {
           })
         ).data;
         this.done(p, t, { summary: `${rev.verdict}: ${rev.summary}` });
-      } catch (e) {
+      } catch (e: any) {
+        if (r.abort.signal.aborted) throw e;
+        // no usable review from this model: the lints already passed, so the cut goes on to the gate as it is
         this.failTask(p, t, e);
-        throw e;
+        p.emit("log", {
+          level: "warn",
+          role: "reviewer",
+          text: `review unavailable (${String(e?.message ?? e).slice(0, 120)}); continuing on lints only`,
+        });
+        break;
       }
       for (const b of rev.blockers)
         p.addNote({

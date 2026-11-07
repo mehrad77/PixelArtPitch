@@ -31,8 +31,10 @@ export const AnglesOut = z.object({
         cues: z.array(z.string().min(2).max(120)).min(2).max(40),
       }),
     )
-    .length(3),
-  recommended: z.number().int().min(0).max(2),
+    .min(1)
+    .max(3),
+  /** index of the angle to ship; weak models sometimes leave it out */
+  recommended: z.number().int().min(0).max(2).default(0),
 });
 
 export const StoryboardOut = z.object({

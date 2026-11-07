@@ -172,6 +172,9 @@ export function createApp(o: ServerOpts) {
       files: p.files().map((f) => ({ ...f, url: `/api/p/${p.id}/files/${encodeURIComponent(f.name)}` })),
       digest: p.state.digest,
       paused: p.state.paused,
+      status: p.state.status,
+      milestones: p.state.milestones,
+      sceneStatus: p.state.sceneStatus,
     };
   };
 
@@ -294,6 +297,14 @@ export function createApp(o: ServerOpts) {
     const b = await c.req.json().catch(() => ({}));
     const p = proj(c.req.param("id"));
     o.crew.run(p, { stage: b.stage }).catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
+    return c.json({ ok: true });
+  });
+  app.post("/api/p/:id/crew/retry", async (c) => {
+    if (!o.crew) return c.json({ ok: false, error: { code: "no_crew", message: "the crew is not configured" } }, 503);
+    const p = proj(c.req.param("id"));
+    o.crew
+      .run(p, { stage: p.state.stage })
+      .catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
     return c.json({ ok: true });
   });
   app.post("/api/p/:id/crew/pause", async (c) => {

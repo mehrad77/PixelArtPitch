@@ -11,7 +11,7 @@ Hard rules:
 1. Total words must not exceed the word budget. Count them.
 2. Every cue: one idea, at most 12 words, no line breaks, no stage directions, no emoji.
 3. Shape: hook, who, what, why it matters, the ask, a call to action. Short pitches merge steps.
-4. Write exactly 3 angles that differ in approach (e.g. problem-first, story-first, bold-claim-first), not just wording.
+4. Write 3 angles that differ in approach (e.g. problem-first, story-first, bold-claim-first), not just wording.
 5. recommended is the index (0, 1 or 2) of the angle you would ship.
 Return only the JSON object.
 

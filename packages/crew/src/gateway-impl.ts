@@ -32,7 +32,39 @@ const DEFAULT_CAPS: Caps = {
   local: false,
 } as Caps;
 
+/** at most n calls at once per endpoint; local model servers handle one request at a time */
+class Lanes {
+  private active = 0;
+  private queue: (() => void)[] = [];
+  private n: number;
+  constructor(n: number) {
+    this.n = n;
+  }
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.active >= this.n) await new Promise<void>((res) => this.queue.push(res));
+    this.active++;
+    try {
+      return await fn();
+    } finally {
+      this.active--;
+      this.queue.shift()?.();
+    }
+  }
+}
+
 export class ModelGateway implements Gateway {
+  private lanes = new Map<string, Lanes>();
+  private lane(providerId: string) {
+    let l = this.lanes.get(providerId);
+    if (!l) {
+      const local = ["lmstudio", "ollama", "llamacpp"].includes(
+        this.settings.providers.find((p) => p.id === providerId)?.kind ?? "",
+      );
+      l = new Lanes(local ? 1 : Math.max(1, this.settings.defaults?.concurrency ?? 4));
+      this.lanes.set(providerId, l);
+    }
+    return l;
+  }
   readonly ledger: Ledger;
   readonly secrets: SecretStore;
   private settings: Settings;
@@ -97,16 +129,29 @@ export class ModelGateway implements Gateway {
         role: spec.role,
         promptVersion: spec.promptVersion,
       });
-      const res = await chatJson(
-        prov,
-        { model, system: spec.system, messages: spec.messages, maxOut: spec.maxOut, effort: spec.effort, cache: true },
-        spec.schema,
-        {
-          caps: this.caps(model) ?? undefined,
-          signal: spec.signal,
-          onEvent: spec.onEvent,
-          normalize: spec.normalize as any,
-        },
+      const res = await this.lane(providerId).run(() =>
+        chatJson(
+          prov,
+          {
+            model,
+            system: spec.system,
+            messages: spec.messages,
+            // a local model that runs away should fail fast so the fallback takes over
+            maxOut: providerId === "anthropic" ? spec.maxOut : Math.min(spec.maxOut, 6000),
+            // local reasoning models can think through a whole output budget: keep them brief
+            effort: providerId === "anthropic" ? spec.effort : "low",
+            cache: true,
+            // small local models loop at their default temperature
+            ...(providerId === "anthropic" ? {} : { temperature: 0.4 }),
+          },
+          spec.schema,
+          {
+            caps: this.caps(model) ?? undefined,
+            signal: spec.signal,
+            onEvent: spec.onEvent,
+            normalize: spec.normalize as any,
+          },
+        ),
       );
       return { data: res.json as T, result: res, model };
     };
