@@ -32,24 +32,17 @@ const CALM: Record<string, string> = {
   editor: "= =",
   reviewer: "° °",
 };
-/** each member's one small mark of the trade, drawn in whole cells ("#" filled), smaller than Pip's crown: the
-    Producer's bow tie, the Writer's pencil, the Artist's beret, the Animator's speed lines, the Sound's headphones,
-    the Editor's scissors, the Reviewer's magnifier. Where it sits is in CrewStrip.css (`data-detail`). */
+/** each member's one small mark of the trade, drawn in whole cells ("#" filled) inside its own disc, under the eyes
+    and in the eyes' ink: the Producer's bow tie, the Writer's pencil, the Artist's palette, the Animator's play
+    button, the Sound's note, the Editor's scissors, the Reviewer's magnifier. Pip's crown is the only mark outside. */
 const DETAIL: Record<string, string[]> = {
-  producer: ["##...##", "#######", "##...##"],
-  writer: [".....##", "....###", "...###.", "..###..", ".###...", ".##....", "#......"],
-  artist: ["...#...", ".#####.", "#######", ".#####."],
-  animator: ["####", "....", ".###", "....", "####"],
-  sound: [
-    ".....#####.....",
-    "...##.....##...",
-    "..#.........#..",
-    ".#...........#.",
-    "##...........##",
-    "##...........##",
-  ],
-  editor: ["#.....#", ".#...#.", "..#.#..", "...#...", ".##.##.", ".##.##."],
-  reviewer: [".###...", "#...#..", "#...#..", ".###...", "....##.", ".....##"],
+  producer: ["#...#", "#####", "#...#"],
+  writer: ["#.####..", "#.######", "#.####.."],
+  artist: [".####.", "##.###", "######", ".###.."],
+  animator: ["#...", "##..", "###.", "##..", "#..."],
+  sound: ["..##", "..#.", "..#.", "###.", "###."],
+  editor: ["##.##", "##.##", ".#.#.", "..#..", ".#.#."],
+  reviewer: [".##..", "#..#.", "#..#.", ".##..", "...##"],
 };
 /** one rect per run of filled cells in a row */
 const cellsPath = (rows: string[]) =>
