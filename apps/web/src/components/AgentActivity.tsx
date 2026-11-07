@@ -349,6 +349,7 @@ export function AgentActivity({
                       entries={g.entries}
                       loading={g.loading}
                       failed={g.failed}
+                      headModel={nowModel}
                     />
                   ))}
                 </div>
@@ -468,6 +469,7 @@ function TaskGroup({
   entries,
   loading,
   failed,
+  headModel,
 }: {
   task: Task;
   tries: number;
@@ -475,8 +477,11 @@ function TaskGroup({
   entries: ActivityEntry[];
   loading: boolean;
   failed: boolean;
+  /** the model the member's header already names: a task on the same one doesn't repeat it */
+  headModel?: string;
 }) {
   const st = TASK_STATUS[task.status];
+  const ownModel = task.model && task.model !== "mixed" && task.model !== headModel ? task.model : undefined;
   const from = Date.parse(task.startedAt ?? "");
   // a run without an end time is still going, or stopped at its last line
   const to =
@@ -493,7 +498,7 @@ function TaskGroup({
         <span className="activity-group-title">
           {task.title}
           {meta.length > 0 && <span className="muted"> · {meta.join(" · ")}</span>}
-          {task.model && task.model !== "mixed" && <span className="muted"> · {modelShort(task.model)}</span>}
+          {ownModel && <span className="muted"> · {modelShort(ownModel)}</span>}
         </span>
         <span className="activity-group-side">
           <Badge tone={st.tone} variant="text" size="sm" live={task.status === "working"}>
@@ -560,12 +565,19 @@ function Bubble({ entry: e, task, last }: { entry: ActivityEntry; task: Task; la
       const prompt = promptOf(e.detail);
       body = (
         <>
+          {/* the model is in the member's header; a call only names it when it went elsewhere (an escalation) */}
           <p>
-            I asked{" "}
-            <span className="muted mono" translate="no" title={task.model}>
-              {model}
-            </span>{" "}
-            for help
+            {model && task.model && modelShort(task.model) !== modelShort(model) ? (
+              <>
+                Asked{" "}
+                <span className="muted mono" translate="no" title={model}>
+                  {model}
+                </span>{" "}
+                instead
+              </>
+            ) : (
+              "Sent the prompt"
+            )}
           </p>
           {prompt && <Lazy summary="Show prompt">{() => <Code text={card ? `${card}\n\n${prompt}` : prompt} />}</Lazy>}
         </>
