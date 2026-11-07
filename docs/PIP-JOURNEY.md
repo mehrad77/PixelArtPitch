@@ -671,6 +671,10 @@ Checked against `docs/PIP-ORCHESTRATION.md` as it stands today. The first list i
 | N17 | A user item may carry the names of the files sent with it: `PipItem.files?: string[]` (kind `user`) | the thread shows the message "with its file chip" (step 2) | no field |
 | N19 | An instance stays live while one of its tasks waits on the person (`waiting_user`), and isn't finished until it is answered | the member who asks keeps its face, in the "needs you" mood, with its pick under Pip's line; folding it away while it waits reads as if nobody asked | **met (P2)**: live while its own task is `waiting_person`, and while the G1 pick or the `rights` OK it asks is next or open, so the Writer and the Art director keep their faces until answered; G0, G2, G3 and G4 keep nobody (ORCHESTRATION P2 item 22) |
 | N18 | Draft ids start with `draft_` | the UI keys a draft's conversation by its id and tells drafts from projects by the prefix | §4.1 lists drafts as `draft_<id>`; the mock's ids are `draft_1` |
+| N20 | `GET /api/settings` names every role's model, the defaults included (Pip's too) | Settings › Roles shows the model a role really runs on; today a role left unset (Pip, on a fresh install) is missing from `roles`, and the UI assumes the gateway's default, `anthropic/claude-sonnet-5-5` (`DEFAULT_MODEL` in `pages/SettingsRoles.tsx`) | `roles` lists only what was saved |
+| N21 | A way to check one model's skills: `POST /api/models/:id/probe` → `ModelRow` | a "Not checked" row could offer "Check it now"; today it points to Providers › Test, which checks a whole provider | only `POST /api/providers/:id/test` |
+| N22 | The profiles' assignments: `GET /api/settings/profiles` → `Record<Profile, Record<Role, {model, fallback?}>>` | each profile's "about $X per 60 s video" and the "What changes" list are computed in the UI (`pickFor`), which may pick differently from the server's `rolesForProfile` | not on the wire |
+| N23 | The fallback covers chat turns too, or says it doesn't | the gateway escalates to a role's fallback only for structured (`json`) calls; Pip's tool turns (`chat`) never fall back, so the warning on Pip's row can promise less than it says | `gateway-impl.ts` `json()` only |
 
 ## 8. Open questions for the person
 
@@ -698,3 +702,21 @@ The UI half of P1 runs in mock only (`?mock=1`); `/new` stays the composer again
 | P2: Studio's Crew tab: instance rows in Working / Up next / Finished · N, and "Plan · rev N" (`GET …/plan/revisions`) | `components/CrewRow.tsx` (`InstancePanel`) | built (mock) |
 | P2: no Crew lane on the video timeline (D3) | `components/TrackTimeline.tsx` has none | confirmed |
 | "Make another like this", the server's drafts, the brief read by a model | | P3 |
+
+## 10. Settings › Roles (`/settings/roles`)
+
+The roles page follows the crew as people see it (`pages/SettingsRoles.tsx`).
+
+- **Pip leads**, on its own row at the top with its crown face and "plans the video, runs the crew and answers you". Its model is `roles.assistant`; left unset it shows "Default (Claude Sonnet 5.5)", the gateway's default (N20). Its fallback, left unset, reads "The Producer's (…)", the gateway's rule.
+- **Then the crew**, under "The crew", in `CREW` order with the crew row's faces and trade marks: Producer, Writer, Artist, Animator, Sound, Editor, Reviewer. A member covering more than one role shows each role as a sub-row with its own face (the §3.1 glyphs) and sentence-case name: the Writer covers Writer and Director; the Artist covers Art director, Pixel artist and Librarian; the Animator covers Animator and Scene coder; the Sound covers Sound designer and Mixer. Every role stays settable.
+- **Each row**: what the role needs in words ("Needs to see pictures and return structured output."), the model, the fallback, and the cost: "About $1.08 and 5 min per 60 s video" ("Free on this Mac and 2 min per 60 s video", "No price known", ", time not measured yet").
+- **The model list** has three groups: "Can do this role", "Not checked yet" (each marked "not checked") and "Can't do this role" (each marked with what it can't do: "can't see pictures"). The fallback list offers only models that can do the role.
+- **An incapable model is never the silent choice.** The chosen model's mark stays in the select, and the row says so under it, with an icon and a word on a tint:
+  - failed a need: "⚠ Can't: this model can't see pictures. If a task fails on it, the crew falls back to Claude Sonnet 5.5." or "…, the role stops: it has no fallback." (or "its fallback, X, can't do it either");
+  - untested: "? Not checked: nobody has tested whether this model can return structured output. …", in the info tint;
+  - one button, "Use {the best capable model}" (the Best profile's pick for that role).
+- **One quiet line** under the list replaces the per-select "7 hidden" hints: "Each list puts the models that can do the role first; the ones nobody has checked yet, and the ones that can't, come after, marked." plus, when any chosen model is unchecked, "Check a model's skills from Providers (Test)."
+- **The total**, under the list: "With these models: about $2.73 and 20 min per 60 s video." (roles with no price known are named after it).
+- **Profiles** stay Best, Balanced, Local and Custom, each chip with its whole crew's price per 60 s video ("Balanced about $2.19"; a "+" when some role has no price). A profile picks capable models only, priced ones first (N22).
+- **375 px**: under 48rem of room each row is a card, its parts stacked. **RTL**: logical properties throughout; model names in `<bdi>`, the English lines `dir="auto"`.
+- The per-60-s numbers are the page's own rough token table (`TOKENS`) times the model's price and measured speed, as before.

@@ -1,0 +1,128 @@
+/* Settings › Roles: Pip's lead row, then the crew by member, each role a row; under 40rem of room each row is a card.
+   Kit semantic tokens and logical properties only. */
+.roles {
+  container-type: inline-size;
+}
+.roles-group {
+  display: grid;
+  gap: var(--space-2);
+}
+.roles-crew-label {
+  margin: var(--space-2) 0 0;
+}
+.roles-crew-member + .roles-crew-member {
+  margin-block-start: var(--space-3);
+}
+.roles-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  font-size: var(--step-0);
+}
+.roles-member .crew-face {
+  --face: 2rem;
+  flex: none;
+}
+.roles-member-what {
+  font-weight: 400;
+  font-size: var(--step--1);
+}
+.roles-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* a row: what the role needs, its model, its fallback, the cost; a warning under it, full width */
+.roles-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.roles-row[data-sub] {
+  margin-inline-start: var(--space-5);
+}
+.roles-name {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.roles-role {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+.roles-role .crew-face {
+  --face: 1.75rem;
+  flex: none;
+}
+.roles-model,
+.roles-fallback {
+  min-inline-size: 0;
+  margin: 0;
+}
+/* a select is as wide as its longest option unless told otherwise */
+.roles-row select {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.roles-cost {
+  margin: 0;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* the plain warning: an icon and a word, a tint, never colour alone */
+.roles-warn {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-inline-start: 3px solid var(--status-warning);
+  border-radius: var(--radius);
+  background: var(--status-warning-fill);
+}
+.roles-warn[data-kind="unchecked"] {
+  border-inline-start-color: var(--status-info);
+  background: var(--status-info-fill);
+}
+.roles-warn p {
+  flex: 1 1 18rem;
+  margin: 0;
+  font-size: var(--step--1);
+}
+.roles-warn-mark {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--icon-sm);
+  block-size: var(--icon-sm);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  font-size: var(--step--2);
+  font-weight: 700;
+}
+.roles-total {
+  margin: 0;
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--stroke);
+}
+/* narrow: each row is a card, its parts stacked */
+@container (max-width: 48rem) {
+  .roles-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .roles-row[data-sub] {
+    margin-inline-start: 0;
+  }
+}
