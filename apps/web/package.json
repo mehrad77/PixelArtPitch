@@ -1,0 +1,17 @@
+{
+  "name": "@pap/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@pap/engine": "workspace:*",
+    "@pap/schema": "workspace:*",
+    "@shabboo/kit": "^0.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

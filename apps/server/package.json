@@ -1,0 +1,19 @@
+{
+  "name": "@pap/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pap": "./src/cli.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "@pap/crew": "workspace:*",
+    "@pap/engine": "workspace:*",
+    "@pap/render": "workspace:*",
+    "@pap/schema": "workspace:*",
+    "@pap/tools": "workspace:*",
+    "hono": "^4.13.16",
+    "zod": "^4.6.7"
+  }
+}

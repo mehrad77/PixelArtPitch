@@ -1,0 +1,606 @@
+// The project store: opens project folders, applies validated patches (with history and undo), keeps the runtime state
+// the UI shows (stage, gates, tasks, questions, notes, digest) and an event log the UI follows over SSE.
+// One process writes a project at a time: a lock file in the folder holds the writer's pid.
+import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { basename, join, resolve } from "node:path";
+import { LIBRARY_DIR, type LoadedProject, openDoc, openRenderer, png, type Renderer } from "@pap/render";
+import {
+  applyPatch,
+  overlaps,
+  type PatchEntryT,
+  type PatchOpT,
+  Project,
+  type ProjectT,
+  resolveTimeline,
+} from "@pap/schema";
+import { Question, QuestionInput, type QuestionT } from "./registry.ts";
+
+export const PAP_HOME = process.env.PAP_HOME ?? join(homedir(), ".pixelartpitch");
+
+export type Stage = "brief" | "script" | "storyboard" | "art" | "animate" | "narrate" | "sound" | "review" | "deliver";
+export const STAGES: Stage[] = [
+  "brief",
+  "script",
+  "storyboard",
+  "art",
+  "animate",
+  "narrate",
+  "sound",
+  "review",
+  "deliver",
+];
+export type TaskStatus =
+  | "upcoming"
+  | "queued"
+  | "working"
+  | "waiting_user"
+  | "waiting"
+  | "done"
+  | "failed"
+  | "cancelled";
+export type Task = {
+  id: string;
+  kind: string;
+  role: string;
+  title: string;
+  status: TaskStatus;
+  model?: string;
+  usd: number;
+  estUsd?: number;
+  etaSec?: number;
+  startedAt?: string;
+  endedAt?: string;
+  summary?: string;
+  error?: { message: string; fix?: string };
+  lastImage?: string;
+  parent?: string;
+  transcript?: string;
+};
+export type GateId = "g0_brief" | "g1_script" | "g2_animatic" | "g3_rough" | "g4_final";
+export type Gate = {
+  id: GateId;
+  status: "locked" | "open" | "passed" | "changes";
+  items: { label: string; ref?: string }[];
+  verdict?: { by: string; verdict: string; reasons?: string[]; note?: string; at: string };
+};
+export type Note = {
+  id: string;
+  target: { scene?: string; cue?: string; asset?: string; range?: [number, number]; track?: string };
+  category: "too_fast" | "too_slow" | "unclear" | "art" | "sound" | "text" | "other";
+  text: string;
+  assignee: string;
+  status: "open" | "picked_up" | "proposed" | "done" | "declined";
+  reason?: string;
+  createdAt: string;
+  by: string;
+};
+export type RuntimeState = {
+  stage: Stage;
+  gates: Gate[];
+  tasks: Task[];
+  questions: QuestionT[];
+  notes: Note[];
+  digest: string;
+  startedAt: string | null;
+  paused: boolean;
+  files: { name: string; bytes: number; kind: string }[];
+};
+
+const GATE_ITEMS: Record<GateId, string> = {
+  g0_brief: "Brief and budget",
+  g1_script: "Script",
+  g2_animatic: "Animatic (pacing before art)",
+  g3_rough: "Rough cut",
+  g4_final: "Final cut",
+};
+const freshState = (): RuntimeState => ({
+  stage: "brief",
+  gates: (Object.keys(GATE_ITEMS) as GateId[]).map((id) => ({
+    id,
+    status: id === "g0_brief" ? "open" : "locked",
+    items: [{ label: GATE_ITEMS[id] }],
+  })),
+  tasks: [],
+  questions: [],
+  notes: [],
+  digest: "",
+  startedAt: null,
+  paused: false,
+  files: [],
+});
+
+export class StoreError extends Error {
+  readonly code: string;
+  readonly fix?: string;
+  readonly status: number;
+  constructor(code: string, message: string, fix?: string, status = 400) {
+    super(message);
+    this.code = code;
+    this.fix = fix;
+    this.status = status;
+  }
+}
+
+const atomicWrite = (file: string, data: string | Uint8Array) => {
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, data);
+  renameSync(tmp, file);
+};
+
+/** a tiny async mutex: one patch at a time per project */
+class Mutex {
+  private p: Promise<void> = Promise.resolve();
+  run<T>(fn: () => Promise<T> | T): Promise<T> {
+    const next = this.p.then(fn, fn) as Promise<T>;
+    this.p = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+}
+
+export type PapEvent = { seq: number; event: string; data: unknown; ts: string };
+
+export class OpenProject {
+  readonly id: string;
+  readonly dir: string;
+  private _doc: ProjectT;
+  private loaded: LoadedProject | null = null;
+  private renderer: Promise<Renderer> | null = null;
+  private rendererRev = -1;
+  private stills = new Map<string, Uint8Array>();
+  private mutex = new Mutex();
+  private seqHist: number;
+  private evSeq: number;
+  private waiters = new Map<string, (q: QuestionT) => void>();
+  readonly events = new EventEmitter();
+  state: RuntimeState;
+
+  constructor(dir: string, id: string) {
+    this.dir = dir;
+    this.id = id;
+    this._doc = Project.parse(JSON.parse(readFileSync(join(dir, "pitch.json"), "utf8")));
+    mkdirSync(join(dir, "history"), { recursive: true });
+    mkdirSync(join(dir, "runs"), { recursive: true });
+    mkdirSync(join(dir, "out"), { recursive: true });
+    this.seqHist = this.readHistory().at(-1)?.seq ?? 0;
+    const sf = join(dir, "runs", "state.json");
+    this.state = existsSync(sf) ? { ...freshState(), ...JSON.parse(readFileSync(sf, "utf8")) } : freshState();
+    // tasks that were running when the last process died are not running now
+    for (const t of this.state.tasks) if (t.status === "working" || t.status === "queued") t.status = "cancelled";
+    this.evSeq = this.lastEventSeq();
+    this.events.setMaxListeners(50);
+  }
+
+  doc() {
+    return this._doc;
+  }
+  rev() {
+    return this._doc.rev;
+  }
+  timeline() {
+    return resolveTimeline(this._doc);
+  }
+  project(): LoadedProject {
+    if (!this.loaded || this.loaded.doc.rev !== this._doc.rev) this.loaded = openDoc(this.dir, this._doc);
+    return this.loaded;
+  }
+
+  // ---- events ----
+  private lastEventSeq() {
+    const f = join(this.dir, "runs", "events.jsonl");
+    if (!existsSync(f)) return 0;
+    const lines = readFileSync(f, "utf8").trimEnd().split("\n");
+    const last = lines.at(-1);
+    return last ? (JSON.parse(last).seq ?? 0) : 0;
+  }
+  emit(event: string, data: unknown) {
+    const e: PapEvent = { seq: ++this.evSeq, event, data, ts: new Date().toISOString() };
+    if (event !== "log" && event !== "progress")
+      appendFileSync(join(this.dir, "runs", "events.jsonl"), `${JSON.stringify(e)}\n`);
+    this.events.emit("event", e);
+    return e;
+  }
+  eventsSince(seq: number): PapEvent[] {
+    const f = join(this.dir, "runs", "events.jsonl");
+    if (!existsSync(f)) return [];
+    return readFileSync(f, "utf8")
+      .trimEnd()
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as PapEvent)
+      .filter((e) => e.seq > seq);
+  }
+  saveState() {
+    atomicWrite(join(this.dir, "runs", "state.json"), JSON.stringify(this.state, null, 1));
+  }
+
+  // ---- patches ----
+  readHistory(): PatchEntryT[] {
+    const f = join(this.dir, "history", "patches.jsonl");
+    if (!existsSync(f)) return [];
+    return readFileSync(f, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+  }
+  async history(since = 0) {
+    return this.readHistory().filter((h) => h.seq > since);
+  }
+
+  patch(
+    ops: PatchOpT[],
+    opts: {
+      reason: string;
+      author: PatchEntryT["author"];
+      baseRev?: number;
+      opId?: string;
+      note?: string;
+      undoes?: number;
+    },
+  ): Promise<{ rev: number; seq: number }> {
+    return this.mutex.run(() => {
+      const hist = this.readHistory();
+      if (opts.opId) {
+        const prev = hist.find((h) => h.opId === opts.opId);
+        if (prev) return { rev: prev.baseRev + 1, seq: prev.seq };
+      }
+      if (opts.baseRev !== undefined && opts.baseRev < this._doc.rev) {
+        const later = hist.filter((h) => h.baseRev >= opts.baseRev!);
+        const clash = later.find((h) => overlaps(h.ops, ops));
+        if (clash)
+          throw new StoreError(
+            "stale",
+            `the document changed since rev ${opts.baseRev} (${clash.author.role ?? clash.author.kind}: ${clash.reason})`,
+            "read the project again and redo the change on the current version",
+            409,
+          );
+      }
+      const forbidden = ops.find((o) => o.path === "/rev" || o.path === "/pap" || o.path === "" || o.path === "/id");
+      if (forbidden) throw new StoreError("forbidden_path", `can't change ${forbidden.path || "the whole document"}`);
+      let next: any;
+      let inverse: PatchOpT[];
+      try {
+        ({ doc: next, inverse } = applyPatch(this._doc, ops));
+      } catch (e: any) {
+        throw new StoreError("bad_patch", e.message, e.fix ?? `check that ${e.path} exists (read it first)`);
+      }
+      next.rev = this._doc.rev + 1;
+      const parsed = Project.safeParse(next);
+      if (!parsed.success) {
+        const iss = parsed.error.issues.slice(0, 8);
+        throw new StoreError(
+          "invalid_document",
+          `the change would make the project invalid: ${iss.map((i) => `/${i.path.join("/")}: ${i.message}`).join("; ")}`,
+          "fix the listed fields; values must match the project schema",
+        );
+      }
+      try {
+        resolveTimeline(parsed.data);
+      } catch (e: any) {
+        throw new StoreError("bad_time", e.message, e.fix);
+      }
+      const entry: PatchEntryT = {
+        seq: ++this.seqHist,
+        opId: opts.opId ?? randomUUID(),
+        ts: new Date().toISOString(),
+        baseRev: this._doc.rev,
+        author: opts.author,
+        reason: opts.reason,
+        ops,
+        inverse,
+        ...(opts.undoes !== undefined ? { undoes: opts.undoes } : {}),
+        ...(opts.note ? { note: opts.note } : {}),
+      };
+      atomicWrite(join(this.dir, "pitch.json"), `${JSON.stringify(parsed.data, null, 2)}\n`);
+      appendFileSync(join(this.dir, "history", "patches.jsonl"), `${JSON.stringify(entry)}\n`);
+      this._doc = parsed.data;
+      this.stills.clear();
+      this.emit("patch", entry);
+      return { rev: this._doc.rev, seq: entry.seq };
+    });
+  }
+
+  async undo(seq: number, reason: string, author: PatchEntryT["author"]) {
+    const e = this.readHistory().find((h) => h.seq === seq);
+    if (!e) throw new StoreError("not_found", `no change #${seq}`);
+    return this.patch(e.inverse, { reason: `undo #${seq}: ${reason}`, author, undoes: seq });
+  }
+
+  // ---- rendering ----
+  private async ren(): Promise<Renderer> {
+    if (this.renderer && this.rendererRev === this._doc.rev) return this.renderer;
+    const old = this.renderer;
+    this.rendererRev = this._doc.rev;
+    this.renderer = openRenderer(this.project());
+    old?.then((r) => r.close()).catch(() => {});
+    return this.renderer;
+  }
+  async still(t: number, scale = 4): Promise<Uint8Array> {
+    const key = `${this._doc.rev}:${t.toFixed(3)}:${scale}`;
+    const hit = this.stills.get(key);
+    if (hit) return hit;
+    const r = await this.ren();
+    const img = png(await r.frame(t), scale);
+    if (this.stills.size > 400) this.stills.clear();
+    this.stills.set(key, img);
+    return img;
+  }
+  async renderer_(): Promise<Renderer> {
+    return this.ren();
+  }
+  close() {
+    this.renderer?.then((r) => r.close()).catch(() => {});
+  }
+
+  // ---- questions ----
+  ask(input: QuestionInput, by: string): QuestionT {
+    const q = Question.parse({
+      ...QuestionInput.parse(input),
+      id: `q${this.state.questions.length + 1}`,
+      askedAt: new Date().toISOString(),
+      status: "open",
+    });
+    if (!q.options.some((o) => o.id === q.recommendedId))
+      throw new StoreError(
+        "bad_question",
+        `recommendedId ${q.recommendedId} is not one of the options`,
+        "set recommendedId to an option id",
+      );
+    q.from = by;
+    this.state.questions.push(q);
+    this.saveState();
+    this.emit("question", q);
+    if (q.timeoutSec)
+      setTimeout(
+        () => this.answer(q.id, { optionId: q.recommendedId }, "timeout").catch(() => {}),
+        q.timeoutSec * 1000,
+      ).unref();
+    return q;
+  }
+  waitAnswer(id: string, signal?: AbortSignal): Promise<QuestionT> {
+    const q = this.state.questions.find((x) => x.id === id);
+    if (q && q.status !== "open") return Promise.resolve(q);
+    return new Promise((res, rej) => {
+      this.waiters.set(id, res);
+      signal?.addEventListener("abort", () => {
+        this.waiters.delete(id);
+        rej(new Error("cancelled"));
+      });
+    });
+  }
+  async answer(id: string, a: { optionId?: string; value?: unknown; note?: string }, by: string) {
+    const q = this.state.questions.find((x) => x.id === id);
+    if (!q) throw new StoreError("not_found", `no question ${id}`);
+    if (q.status !== "open") return q;
+    if (a.optionId && !q.options.some((o) => o.id === a.optionId))
+      throw new StoreError(
+        "bad_answer",
+        `unknown option ${a.optionId}`,
+        `options: ${q.options.map((o) => o.id).join(", ")}`,
+      );
+    q.status = by === "timeout" ? "defaulted" : "answered";
+    q.answer = { ...a, by };
+    this.saveState();
+    this.emit("question", q);
+    this.waiters.get(id)?.(q);
+    this.waiters.delete(id);
+    return q;
+  }
+
+  // ---- notes, gates, tasks ----
+  addNote(n: Omit<Note, "id" | "status" | "createdAt">) {
+    const note: Note = {
+      ...n,
+      id: `n${this.state.notes.length + 1}`,
+      status: "open",
+      createdAt: new Date().toISOString(),
+    };
+    this.state.notes.push(note);
+    this.saveState();
+    this.emit("note", note);
+    return note;
+  }
+  updateNote(id: string, patch: Partial<Note>) {
+    const n = this.state.notes.find((x) => x.id === id);
+    if (!n) throw new StoreError("not_found", `no note ${id}`);
+    Object.assign(n, patch);
+    this.saveState();
+    this.emit("note", n);
+    return n;
+  }
+  setGate(id: GateId, patch: Partial<Gate>) {
+    const g = this.state.gates.find((x) => x.id === id)!;
+    Object.assign(g, patch);
+    this.saveState();
+    this.emit("gate", g);
+    return g;
+  }
+  upsertTask(t: Task) {
+    const i = this.state.tasks.findIndex((x) => x.id === t.id);
+    if (i < 0) this.state.tasks.push(t);
+    else this.state.tasks[i] = t;
+    this.saveState();
+    this.emit("task", t);
+    return t;
+  }
+  setStage(stage: Stage) {
+    this.state.stage = stage;
+    this.saveState();
+    this.emit("stage", { stage });
+  }
+  setDigest(text: string) {
+    this.state.digest = text;
+    this.saveState();
+    this.emit("digest", { text });
+  }
+  files() {
+    const out = join(this.dir, "out");
+    if (!existsSync(out)) return [];
+    return readdirSync(out)
+      .filter((f) => !f.startsWith("."))
+      .map((name) => {
+        const kind = /\.mp4$/.test(name)
+          ? "video"
+          : /\.(srt|vtt)$/.test(name)
+            ? "subtitles"
+            : /\.wav$/.test(name)
+              ? "audio"
+              : "image";
+        return { name, bytes: statSync(join(out, name)).size, kind };
+      });
+  }
+}
+
+/** All projects this process knows: the roots it scans plus folders opened by path. */
+export class Workspace {
+  readonly libraryDir = LIBRARY_DIR;
+  private open = new Map<string, OpenProject>();
+  private known = new Map<string, string>(); // id -> dir
+  private roots: () => string[];
+  constructor(roots: () => string[]) {
+    this.roots = roots;
+    const recent = join(PAP_HOME, "projects.json");
+    if (existsSync(recent)) for (const d of JSON.parse(readFileSync(recent, "utf8")) as string[]) this.remember(d);
+    this.scan();
+  }
+  private persist() {
+    mkdirSync(PAP_HOME, { recursive: true });
+    writeFileSync(join(PAP_HOME, "projects.json"), JSON.stringify([...this.known.values()], null, 1));
+  }
+  private remember(dir: string) {
+    dir = resolve(dir);
+    if (!existsSync(join(dir, "pitch.json"))) return null;
+    try {
+      const id0 = JSON.parse(readFileSync(join(dir, "pitch.json"), "utf8")).id ?? basename(dir);
+      for (const [id, d] of this.known) if (d === dir) return id;
+      let id = id0;
+      for (let n = 2; this.known.has(id); n++) id = `${id0}_${n}`;
+      this.known.set(id, dir);
+      return id;
+    } catch {
+      return null;
+    }
+  }
+  scan() {
+    for (const root of this.roots()) {
+      if (!existsSync(root)) continue;
+      if (existsSync(join(root, "pitch.json"))) this.remember(root);
+      for (const d of readdirSync(root, { withFileTypes: true }))
+        if (d.isDirectory() && existsSync(join(root, d.name, "pitch.json"))) this.remember(join(root, d.name));
+    }
+  }
+  list() {
+    this.scan();
+    return [...this.known.entries()].map(([id, dir]) => {
+      try {
+        const d = JSON.parse(readFileSync(join(dir, "pitch.json"), "utf8"));
+        return { id, dir, title: d.title as string, rev: d.rev as number, capUsd: d.budget?.capUsd ?? 0 };
+      } catch {
+        return { id, dir, title: "(unreadable)", rev: 0, capUsd: 0 };
+      }
+    });
+  }
+  get(id: string): OpenProject {
+    const hit = this.open.get(id);
+    if (hit) return hit;
+    const dir = this.known.get(id);
+    if (!dir) throw new StoreError("not_found", `no project ${id}`, `known: ${[...this.known.keys()].join(", ")}`, 404);
+    lock(dir);
+    const p = new OpenProject(dir, id);
+    this.open.set(id, p);
+    return p;
+  }
+  openDir(dir: string): OpenProject {
+    const id = this.remember(dir);
+    if (!id) throw new StoreError("not_found", `no pitch.json in ${dir}`);
+    this.persist();
+    return this.get(id);
+  }
+  create(input: { title: string; brief: ProjectT["brief"]; budgetUsd: number; dir?: string }): OpenProject {
+    const slug =
+      input.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 40) || "pitch";
+    const root = this.roots()[0] ?? join(PAP_HOME, "projects");
+    let dir = input.dir ?? join(root, slug);
+    for (let n = 2; !input.dir && existsSync(dir); n++) dir = join(root, `${slug}_${n}`);
+    if (existsSync(join(dir, "pitch.json"))) throw new StoreError("exists", `a project already lives in ${dir}`);
+    mkdirSync(join(dir, "assets"), { recursive: true });
+    const id = /^[a-z]/.test(slug) ? slug : `p_${slug}`;
+    const doc = Project.parse({
+      pap: 1,
+      rev: 0,
+      id,
+      title: input.title,
+      canvas: { w: 320, h: 180, fps: 30, palette: "pap-night@1" },
+      brief: input.brief,
+      script: { cues: [{ id: "c01", text: "Placeholder: the Writer replaces this." }], timing: { mode: "estimate" } },
+      composition: { hold: 1, endHold: 3, duration: "E(c01)+endHold" },
+      scenes: [
+        {
+          id: "s01",
+          title: "Placeholder",
+          kind: "decl",
+          from: 0,
+          to: "duration",
+          recipes: [{ id: "backdrop_night", params: {} }],
+        },
+      ],
+      audio: { sfx: {}, music: { generator: "chip-bed" } },
+      delivery: [{ id: "hd", scale: 6, crf: 16, out: `${slug}.mp4` }],
+      assets: [{ id: "font", src: "lib:font-5x8@1" }],
+      budget: { capUsd: input.budgetUsd },
+    });
+    writeFileSync(join(dir, "pitch.json"), `${JSON.stringify(doc, null, 2)}\n`);
+    writeFileSync(join(dir, ".gitignore"), "out/\nruns/\nprivate/\nhistory/blobs/\n");
+    return this.openDir(dir);
+  }
+  closeAll() {
+    for (const [, p] of this.open) {
+      p.close();
+      unlock(p.dir);
+    }
+  }
+}
+
+// ---- single-writer lock ----
+const LOCK = ".pap-lock";
+function lock(dir: string) {
+  const f = join(dir, LOCK);
+  if (existsSync(f)) {
+    const pid = Number(readFileSync(f, "utf8").split("\n")[0]);
+    let alive = false;
+    try {
+      process.kill(pid, 0);
+      alive = pid !== process.pid;
+    } catch {}
+    if (alive)
+      throw new StoreError(
+        "locked",
+        `another PixelArtPitch process (pid ${pid}) has this project open`,
+        "use that server (MCP over HTTP) or close it",
+        423,
+      );
+  }
+  writeFileSync(f, `${process.pid}\n`);
+}
+function unlock(dir: string) {
+  rmSync(join(dir, LOCK), { force: true });
+}
