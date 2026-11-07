@@ -133,7 +133,11 @@ export type RuntimeState = {
       taskId?: string;
       /** the provider the problem is with ("anthropic", "lmstudio") */
       provider?: string;
+      /** the failure kind behind it (errorKind: auth, credit, unreachable, …) */
+      kind?: string;
     };
+    /** the crew waits on a card in Pip's thread (not a problem): the plan change, or the budget */
+    waiting?: "plan" | "budget";
   };
   milestones: { id: string; at: string; text: string; image?: string }[];
   /** a person's change the crew is making (kept across restarts, so a resumed run still reports on it) */

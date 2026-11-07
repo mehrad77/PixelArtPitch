@@ -461,7 +461,7 @@ The P4 run's key went 401 mid-run and every step fell back to a stand-in without
   - settles the cards that handed work to the run (`onRunEnd` with `waiting`).
 
   Tasks already running finish, or hold the same way (only the first one speaks). Nothing new starts. The run stays alive.
-- **The hold lifts** when that provider's key is saved (`PUT /api/settings/providers/:id/key`), its test passes (`POST …/test`), the person presses Try again (`/crew/retry`) or Resume. `Crew.providerFixed(id)` lifts every run held on it, and starts again a project held on it whose run ended (a restart). The problem and the "Waiting for you" line clear, and the run goes on from where it stopped.
+- **The hold lifts** when that provider's key is saved (`PUT /api/settings/providers/:id/key`), its test passes (`POST …/test`; not for a `credit` hold, since listing models needs no credit), the person presses Try again (`/crew/retry`) or Resume. `Crew.providerFixed(id)` lifts every run held on it, and resumes a project held on it whose run ended (a restart: `run({ resume: true })`, as `resumeInterrupted` does). The problem and the "Waiting for you" line clear, and the run goes on from where it stopped. Pip's own key failing inside a run holds it the same way; outside a run (`ask_pip` from a tool) it doesn't.
 - **Partial is a status of its own.** A fallback task ends `done` with `outcome: "fallback"` (its note says which stand-in); its `state.tasks` row is `partial`. Neither counts as a failure in the web's `problemOf`.
 - **Retry** (`POST /crew/retry { taskId? }`, Pip's "Redo what failed" card, the `crew_retry` tool):
   - a held run: the hold lifts;
@@ -471,9 +471,9 @@ The P4 run's key went 401 mid-run and every step fell back to a stand-in without
 - **Pip never offers "Start the crew" over a failure.** A `crew_run` card without a stage becomes the "Redo what failed" card when something failed, fell back or is held; the menu has a `retry` intent.
 - **Status hygiene.**
   - `problem` clears on "Your video is ready", a raised cap, a declined overrun, a confirmed or declined plan card, a resume and a lifted hold.
-  - The overrun and a card's hold are waits ("Waiting for you: …", tone `needs` in the web), not problems.
-  - The web's `problemOf` ignores a problem while the crew is running (a held run is paused, so its own problem still shows) and drops failed rows that ended before the current run started (`crew.runStartedAt`).
-- **Needs you counts cards.** `openNeeds(p, { cards, plan })` adds the crew's open Pip cards (a revision card while `plan.pending.cardId` is it, the budget card while a run waits on it) and plan tasks in `waiting_person` that no open gate or question already stands for. `GET /api/projects`' `needsYou`, `state.needs` and the Projects line use it. Confirming a held card after its run ended starts the crew again.
+  - The overrun and a card's hold are waits ("Waiting for you: …", tone `needs` in the web, `status.waiting: "budget" | "plan"`), not problems.
+  - The web's `problemOf` ignores a problem while the crew is running, except a held run's own (its line is "Waiting for you: …", live on the `status` event), and drops failed rows that ended before the current run started (`crew.runStartedAt`).
+- **Needs you counts cards.** `openNeeds(p, { cards, plan })` adds the crew's open Pip cards (a revision card while `plan.pending.cardId` is it, the budget card while a run waits on it) and plan tasks in `waiting_person` that no open gate or question already stands for. `GET /api/projects`' `needsYou`, `state.needs` and the Projects line use it. The web counts live: open questions and gates, `plan.pending` (the revision card), `status.waiting === "budget"`, plus `state.needs.waiting` from the last fetch. Confirming a held card after its run ended starts the crew again.
 - **Pip reads live state.** Each turn's summary carries a "Crew now:" line from `Crew.snapshot` (running, idle or held and why, open and passed gates, open questions, a plan-change card, failed and fallback tasks, whether a review is still to come, the last export). A change card says "your note waits for the next review" only while a review is still to come.
 
 ---

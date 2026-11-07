@@ -236,9 +236,9 @@ export function createApp(o: ServerOpts) {
       tasks: { kind: string; status: string; gate?: string }[];
       pending?: { cardId: string };
     } | null;
-    const running = o.crew?.status(p).crew?.running ?? false;
+    const budget = (o.crew?.status(p).crew?.running ?? false) && p.state.status.waiting === "budget";
     return {
-      cards: o.pip?.crewCards(p, { pendingCardId: plan?.pending?.cardId, running }) ?? [],
+      cards: o.pip?.crewCards(p, { pendingCardId: plan?.pending?.cardId, budget }) ?? [],
       plan: plan?.tasks ?? null,
     };
   };
@@ -269,8 +269,12 @@ export function createApp(o: ServerOpts) {
       // the production plan (null until a crew first runs) and the crew members that come and go (N4)
       plan: o.crew?.planView?.(p) ?? null,
       instances: o.crew?.instances?.(p) ?? [],
-      // "Needs you": the count and its words, cards included
-      needs: { count: needsCount(needs), words: needsWords(needs.questions, needs.gates, needs.cards, needs.waiting) },
+      // "Needs you": the count and its words, cards included (the web adds its live questions and gates to `waiting`)
+      needs: {
+        count: needsCount(needs),
+        words: needsWords(needs.questions, needs.gates, needs.cards, needs.waiting),
+        waiting: needs.waiting,
+      },
     };
   };
 

@@ -164,10 +164,11 @@ export const unrecoveredFailures = (s: ProjectState) => {
 };
 /**
  * The server's problem when it sends one, else the newest failure no later try recovered. While the crew is
- * running nothing is a problem: a held run is paused, so its own problem still shows.
+ * running nothing is a problem, except a held run's own ("Waiting for you: Your key was rejected", live on `status`).
  */
 export function problemOf(s: ProjectState): Problem | undefined {
-  if (crewRunning(s) && !s.crew?.held) return undefined;
+  const held = !!s.crew?.held || (!!s.status?.problem && /^Waiting for you/.test(s.status.line ?? ""));
+  if (crewRunning(s) && !held) return undefined;
   if (s.status?.problem) return s.status.problem;
   const f = unrecoveredFailures(s).at(-1);
   if (!f) return undefined;

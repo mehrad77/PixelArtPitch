@@ -573,7 +573,7 @@ export class Crew {
       return await this.conductor.think(p, tr, { change: r.change, redos: r.redos, replan });
     } catch (e: any) {
       // Pip's own key or provider failing holds the run the same way a crew member's does
-      if (holdsRun(e) && this.holdRun(p, r, e, null)) return [];
+      if (holdsRun(e) && this.runs.get(p.id) === r && this.holdRun(p, r, e, null)) return [];
       p.emit("log", { level: "warn", text: `Pip couldn't decide (${String(e?.message ?? e).slice(0, 120)}); holding` });
       return [{ kind: "hold", why: "Pip couldn't reach its model to decide what to do next" }];
     }
@@ -953,7 +953,7 @@ export class Crew {
   private unwait(p: OpenProject, r: Run | undefined) {
     if (r?.held) return;
     const line = /^Waiting for you/.test(p.state.status.line) ? { line: STAGE_LINE[p.state.stage] ?? "Working" } : {};
-    p.setStatus({ ...line, problem: undefined });
+    p.setStatus({ ...line, problem: undefined, waiting: undefined });
   }
   /** start the crew again on a project whose plan still has work, when nothing runs and the person didn't pause it */
   private restartIdle(p: OpenProject) {
@@ -1241,8 +1241,10 @@ export class Crew {
         text: h.text,
         action: h.action,
         taskId: row?.id ?? t?.id ?? "",
+        kind: r.hold.kind,
         ...(h.provider ? { provider: h.provider } : {}),
       },
+      waiting: undefined,
     });
     p.emit("log", { level: "error", text: `crew held: ${String((e as any)?.message ?? e).slice(0, 200)}` });
     p.say({ from: "pip", to: "crew", kind: "brief", text: `Hold: ${h.text}`, ...(t ? { ref: t.id } : {}) });
@@ -1273,20 +1275,21 @@ export class Crew {
     r.paused = false;
     p.state.paused = false;
     p.saveState();
-    p.setStatus({ line: STAGE_LINE[p.state.stage] ?? "The crew is working", problem: undefined });
+    p.setStatus({ line: STAGE_LINE[p.state.stage] ?? "The crew is working", problem: undefined, waiting: undefined });
     p.say({ from: "pip", to: "crew", kind: "brief", text: "Back to work: the hold is lifted." });
     r.resume?.();
     r.exec?.wake();
   }
   /**
    * A provider's key was saved, or its test passed (`PUT /api/settings/providers/:id/key`, `POST …/test`): runs held
-   * on it go on, and a project held on it whose run ended (a restart) starts again. Without an id, every hold lifts.
+   * on it go on, and a project held on it whose run ended (a restart) resumes. Without an id, every hold lifts. A
+   * passing test doesn't lift a credit hold (listing models works with no credit): a saved key or Try again does.
    */
-  providerFixed(provider?: string): string[] {
+  providerFixed(provider?: string, o: { test?: boolean } = {}): string[] {
     const out: string[] = [];
-    const mine = (x?: string) => !provider || !x || x === provider;
+    const mine = (x?: string, kind?: string) => (!provider || !x || x === provider) && !(o.test && kind === "credit");
     for (const [id, r] of this.runs)
-      if (r.hold && mine(r.hold.provider))
+      if (r.hold && mine(r.hold.provider, r.hold.kind))
         try {
           this.liftHold(this.deps.workspace.get(id), r);
           out.push(id);
@@ -1296,11 +1299,14 @@ export class Crew {
       try {
         const p = this.deps.workspace.get(id);
         const pr = p.state.status.problem;
-        if (!pr || !(pr.action === "fix_key" || (pr.action === "retry" && pr.provider)) || !mine(pr.provider)) continue;
+        if (!pr || !(pr.action === "fix_key" || (pr.action === "retry" && pr.provider)) || !mine(pr.provider, pr.kind))
+          continue;
         p.state.paused = false;
         p.saveState();
-        p.setStatus({ line: "Picking up where the crew left off", problem: undefined });
-        this.run(p, {}).catch(() => {});
+        p.setStatus({ line: "Picking up where the crew left off", problem: undefined, waiting: undefined });
+        // as after a restart: the held run's running and waiting tasks start again
+        const { startedAt: _s, ...change } = p.state.change ?? ({} as any);
+        this.run(p, { resume: true, ...(p.state.change ? { change } : {}) }).catch(() => {});
         out.push(id);
       } catch {}
     }
@@ -1508,7 +1514,7 @@ export class Crew {
     p.state.running = true;
     p.saveState();
     p.setDigest("The crew is working.");
-    p.setStatus({ line: "The crew is working", problem: undefined });
+    p.setStatus({ line: "The crew is working", problem: undefined, waiting: undefined });
     // the run's bounds in the log: a life never outlasts the run it belonged to (PIP-JOURNEY N24)
     p.emit("run", { id: r.id, status: "start" });
     let finished = false;
@@ -1676,13 +1682,13 @@ export class Crew {
         const key = held.map((t) => t.id).join(",");
         if (r.held || key === waitedOn) return;
         waitedOn = key;
-        p.setStatus({ line: "Waiting for you: the plan change in Pip's thread" });
+        p.setStatus({ line: "Waiting for you: the plan change in Pip's thread", waiting: "plan" });
       },
     });
     r.exec = exec;
     await exec.run();
     if (r.abort.signal.aborted) return;
-    p.setStatus({ phase: 4, line: "Your video is ready", problem: undefined });
+    p.setStatus({ phase: 4, line: "Your video is ready", problem: undefined, waiting: undefined });
     p.setDigest(
       `Done: ${
         p
@@ -1718,7 +1724,7 @@ export class Crew {
       ? `Waiting for you: ${Math.round(b.askAtFraction * 100)}% of the $${b.capUsd} cap is spent. Raise it to $${suggestUsd.toFixed(2)} to finish?`
       : `Waiting for you: the next step could cost $${t.estUsd[1].toFixed(2)} and $${Math.max(0, b.capUsd - spentUsd).toFixed(2)} is left`;
     // a wait for the person, not a problem: the budget card is in Pip's thread (the status line names it)
-    p.setStatus({ line });
+    p.setStatus({ line, waiting: "budget" });
     p.say({
       from: "pip",
       to: "crew",

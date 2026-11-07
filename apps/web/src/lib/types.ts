@@ -186,6 +186,8 @@ export type ProjectStatus = {
   phase: number;
   etaSec?: number;
   problem?: { text: string; action: ProblemAction; taskId: string; provider?: string };
+  /** the crew waits on a card in Pip's thread (not a problem): the plan change, or the budget */
+  waiting?: "plan" | "budget";
 };
 export type Milestone = {
   id: string;
@@ -233,8 +235,9 @@ export type ProjectState = {
   /** PIP-ORCHESTRATION §4.1: the production plan and the crew instances (optional until the server sends them) */
   plan?: PlanView | null;
   instances?: Instance[];
-  /** what waits on the person, cards included (the server's count; older servers send none) */
-  needs?: { count: number; words: string | null };
+  /** what waits on the person, cards included, as last fetched (older servers send none); `waiting` is the plan's
+   * waits on the person that no gate or question stands for */
+  needs?: { count: number; words: string | null; waiting?: number };
 };
 
 export type Session = { version: string; token: string; workspace: { roots: string[]; libraryDir: string } };

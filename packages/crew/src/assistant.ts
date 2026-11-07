@@ -2046,16 +2046,17 @@ export class Pip {
 
   /**
    * The crew cards still waiting on the person (§1.8, "Needs you"): a revision card while the plan still holds its
-   * tasks, and the budget card while a run waits on it. Older proposed cards don't count.
+   * tasks, and the budget card while the crew waits on the budget (`status.waiting`). Older proposed cards don't
+   * count.
    */
-  crewCards(p: OpenProject, o: { pendingCardId?: string; running: boolean }): CrewCardNeed[] {
+  crewCards(p: OpenProject, o: { pendingCardId?: string; budget: boolean }): CrewCardNeed[] {
     const out: CrewCardNeed[] = [];
     for (const it of this.log(p).all()) {
       if (it.kind !== "pip") continue;
       for (const c of it.cards) {
         if (c.type !== "plan" || c.status !== "proposed" || !c.action?.crew) continue;
         if (c.action.crew === "pending" && c.id === o.pendingCardId) out.push("plan");
-        else if (c.action.crew === "overrun" && o.running) out.push("budget");
+        else if (c.action.crew === "overrun" && o.budget) out.push("budget");
       }
     }
     return out;

@@ -33,8 +33,10 @@ type ProjectState = { doc: Project; rev: number; timeline: Timeline /* cues, sce
     held: string | null /* the run is held for the person, and why (a rejected key, Pip's hold) */ };
   status: { line: string; phase: number;
     problem?: { text: string; action: "retry" | "change_model" | "add_budget" | "fix_key"; taskId?: string;
-      provider?: string /* fix_key: the provider to fix in Settings → Providers */ } };
-  needs: { count: number; words: string | null } /* "Needs you": questions, gates, the crew's open Pip cards (a plan
+      provider?: string /* fix_key: the provider to fix in Settings → Providers */;
+      kind?: "auth" | "credit" | "unreachable" | "rate" | "budget" | "other" };
+    waiting?: "plan" | "budget" /* the crew waits on a card in Pip's thread: a wait, not a problem */ };
+  needs: { count: number; words: string | null; waiting: number /* plan waits no gate or question stands for */ } /* "Needs you": questions, gates, the crew's open Pip cards (a plan
     change, the budget) and the plan's other waits, each once; also ProjectSummary.needsYou */;
   plan: PlanView | null /* the production plan; null until a crew first runs (GET never writes one) */;
   instances: Instance[] /* the crew members that come and go (docs/PIP-ORCHESTRATION.md §2), join order */ };

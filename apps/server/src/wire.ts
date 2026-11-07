@@ -433,8 +433,8 @@ export async function wireCrew(deps: {
           const list = await createProvider({ ...cfg, enabled: true }, gateway.secrets).listModels(
             AbortSignal.timeout(8000),
           );
-          // the provider answers again: runs held on it go on
-          crew.providerFixed(cfg.id);
+          // the provider answers again: runs held on it go on (not a credit hold: listing models needs no credit)
+          crew.providerFixed(cfg.id, { test: true });
           return { ok: true, models: list.map((m) => m.id) };
         } catch (e: any) {
           return { ok: false, models: [], error: String(e?.message ?? e) };

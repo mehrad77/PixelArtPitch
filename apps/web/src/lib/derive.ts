@@ -137,10 +137,16 @@ export const STAGE_STATE_WORD: Record<StageState, string> = {
   needs: "Needs you",
 };
 
-/** the server's count when it sends one (it counts the crew's cards too), else open questions and gates */
+/**
+ * What waits on you, live: open questions and gates, a plan-change card while the plan holds its tasks, the budget
+ * card while the crew waits on it (`status.waiting`), and the plan's other waits from the last fetch.
+ */
 export const needsYouCount = (s: ProjectState) =>
-  s.needs?.count ??
-  s.questions.filter((q) => q.status === "open").length + s.gates.filter((g) => g.status === "open").length;
+  s.questions.filter((q) => q.status === "open").length +
+  s.gates.filter((g) => g.status === "open").length +
+  (s.plan?.pending ? 1 : 0) +
+  (s.status?.waiting === "budget" ? 1 : 0) +
+  (s.needs?.waiting ?? 0);
 
 export const NOTE_CATEGORY: Record<NoteCategory, string> = {
   too_fast: "Too fast",
