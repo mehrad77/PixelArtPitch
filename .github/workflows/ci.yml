@@ -46,12 +46,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: studio-web
           path: studio-web
       - run: tar -czf studio-web.tar.gz -C studio-web .
+      - name: Take the tag's section of CHANGELOG.md as the notes
+        run: |
+          awk -v tag="$GITHUB_REF_NAME" '/^## /{on = index($0, "## " tag " ") == 1 || $0 == "## " tag; next} on' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section for $GITHUB_REF_NAME"; exit 1; }
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" studio-web.tar.gz --repo "$GITHUB_REPOSITORY" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" studio-web.tar.gz --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file notes.md

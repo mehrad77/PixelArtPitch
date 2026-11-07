@@ -43,6 +43,8 @@ These are the instructions for **coding agents working on this repo**. Crew-memb
 
 Node ≥ 24.21 runs `.ts` directly (type stripping). ffmpeg must be on the PATH for renders.
 
+**Releasing.** Add a `## vX.Y.Z (date)` section to `CHANGELOG.md`, set `version` in the root `package.json`, commit, then push a `vX.Y.Z` tag. CI runs the gate, then publishes the GitHub release with that section as its notes and the built studio UI attached. It fails if the changelog has no section for the tag. Screenshots live in `docs/screenshots/`. They show the mock only, never a real project, and carry no metadata.
+
 ## Conventions
 
 **TypeScript**
