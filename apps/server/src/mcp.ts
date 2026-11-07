@@ -67,6 +67,35 @@ const PROMPTS = [
   },
 ];
 
+/** the tools as MCP's tools/list gives them: zod → JSON Schema (input side), `project_id` first on project tools, and
+ * the effect hints. The Docs page (`GET /api/docs/tools`) lists the same thing. */
+export function mcpToolList(registry: Registry) {
+  return registry.list().map((t) => {
+    const schema: any = registry.inputSchema(t.name);
+    if (t.project) {
+      schema.properties = {
+        project_id: { type: "string", description: "id from project_list" },
+        ...(schema.properties ?? {}),
+      };
+      schema.required = ["project_id", ...(schema.required ?? [])];
+    }
+    delete schema.$schema;
+    return {
+      name: t.name,
+      title: t.title,
+      description: t.description,
+      inputSchema: schema as Record<string, unknown>,
+      annotations: {
+        title: t.title,
+        readOnlyHint: t.effects === "read",
+        destructiveHint: t.effects === "destructive",
+        idempotentHint: t.effects === "read",
+        openWorldHint: false,
+      },
+    };
+  });
+}
+
 export class McpSession {
   private deps: McpDeps;
   initialized = false;
@@ -76,30 +105,7 @@ export class McpSession {
   }
 
   private toolList() {
-    return this.deps.registry.list().map((t) => {
-      const schema: any = this.deps.registry.inputSchema(t.name);
-      if (t.project) {
-        schema.properties = {
-          project_id: { type: "string", description: "id from project_list" },
-          ...(schema.properties ?? {}),
-        };
-        schema.required = ["project_id", ...(schema.required ?? [])];
-      }
-      delete schema.$schema;
-      return {
-        name: t.name,
-        title: t.title,
-        description: t.description,
-        inputSchema: schema,
-        annotations: {
-          title: t.title,
-          readOnlyHint: t.effects === "read",
-          destructiveHint: t.effects === "destructive",
-          idempotentHint: t.effects === "read",
-          openWorldHint: false,
-        },
-      };
-    });
+    return mcpToolList(this.deps.registry);
   }
 
   private async callTool(name: string, args: any) {
