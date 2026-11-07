@@ -57,6 +57,25 @@
   .crew-btn-word {
     display: none;
   }
+  .topbar-end {
+    gap: var(--space-2);
+    min-inline-size: 0;
+  }
+}
+/* the narrowest phones: the mock badge keeps its accessible name but shows as a dot */
+@media (max-width: 26rem) {
+  .topbar-end > .badge {
+    font-size: 0;
+    padding: 0;
+    inline-size: var(--space-2);
+    block-size: var(--space-2);
+    min-inline-size: 0;
+    border-radius: var(--radius-pill);
+    overflow: hidden;
+  }
+  .topbar-end > .badge > * {
+    display: none;
+  }
 }
 /* Pip leads the faces: the host, then the crew */
 .crew-btn .pip-face {

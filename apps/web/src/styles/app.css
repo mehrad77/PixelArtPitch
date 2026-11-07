@@ -42,6 +42,27 @@ body {
 .topnav a[aria-current="page"] {
   border-block-end-color: var(--stroke-strong);
 }
+/* a phone: brand and controls on the first row, the navigation on its own row under them */
+@media (max-width: 40rem) {
+  .topbar {
+    flex-wrap: wrap;
+    block-size: auto;
+    min-block-size: var(--topbar-h);
+    row-gap: 0;
+    column-gap: var(--space-2);
+    padding-block: var(--space-1);
+  }
+  .topnav {
+    order: 3;
+    flex: 1 0 100%;
+    gap: var(--space-4);
+  }
+  .topnav a {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--target-min);
+  }
+}
 .page {
   inline-size: min(100% - 2 * var(--gutter), var(--wide));
   margin-inline: auto;
