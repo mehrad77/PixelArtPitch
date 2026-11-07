@@ -513,3 +513,78 @@
     max-block-size: 10rem;
   }
 }
+
+/* ---- instances (PIP-JOURNEY §3.3): Pip, then Working, Up next and Finished, each a list of buttons ---- */
+.activity-who[aria-current="true"] {
+  border-color: var(--stroke);
+  background: var(--state-selected);
+}
+.activity-group-list {
+  display: grid;
+  gap: var(--space-1);
+  margin-block-start: var(--space-3);
+}
+.activity-rows {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.activity-rows .activity-who {
+  inline-size: 100%;
+}
+/* an up-next face is dashed and muted, as in the row */
+.activity-who[data-kind="upNext"] .crew-face {
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+  outline: 1px dashed var(--stroke-control);
+  outline-offset: -1px;
+}
+.activity-reason {
+  font-style: italic;
+}
+/* a return in the kept log: a hairline and the time */
+.activity-return {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-4) var(--space-2);
+}
+.activity-return::before,
+.activity-return::after {
+  content: "";
+  flex: 1;
+  border-block-start: 1px solid var(--stroke);
+}
+.activity-behind-kept {
+  margin-block-start: var(--space-5);
+}
+/* narrow: the groups sit above the pane, full text (a finished row keeps its two lines) */
+@container (max-width: 34rem) {
+  .activity-layout[data-instances] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .activity-layout[data-instances] .activity-crew {
+    max-block-size: 14rem;
+    border-inline-end: 0;
+    border-block-end: 1px dashed var(--stroke);
+  }
+  .activity-layout[data-instances] .activity-who {
+    justify-content: start;
+    padding: var(--space-2);
+  }
+  .activity-layout[data-instances] .activity-who-text {
+    position: static;
+    inline-size: auto;
+    block-size: auto;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+  .activity-layout[data-instances] .activity-who-line {
+    white-space: normal;
+  }
+}

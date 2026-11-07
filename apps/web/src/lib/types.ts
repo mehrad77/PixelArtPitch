@@ -168,6 +168,8 @@ export type CrewInfo = {
   stage?: Stage;
   lastActiveAt?: string | null;
   queued?: number;
+  /** docs/API.md: the slots per endpoint, plus "render" (PIP-JOURNEY N6: the ghost popover's "3 are working") */
+  slots?: Record<string, { size: number; used: number }>;
 };
 export type ProblemAction = "retry" | "change_model" | "add_budget";
 /** extension: the one sentence the person sees, and the one problem the crew can't fix alone */
@@ -580,6 +582,11 @@ export interface Client {
   draftComposer(id: string): Promise<DraftComposer>;
   /** GET /api/workspace/line: Pip's line on Projects, built from state */
   workspaceLine(): Promise<WorkspaceLine>;
+  // ---- Pip runs the show, P2 (PIP-ORCHESTRATION §4.5) ----
+  /** GET /api/p/:id/instances/:iid/log: a member's kept log; null when the server has none (404) */
+  instanceLog(id: string, iid: string): Promise<InstanceLog | null>;
+  /** GET /api/p/:id/plan/revisions: every plan revision, oldest first; [] when the server has none */
+  planRevisions(id: string): Promise<PlanRevisionSummary[]>;
 }
 
 // ---- Pip runs the show (PIP-ORCHESTRATION §4.2, the wire contract; PIP-JOURNEY for what the UI does with it) ----
@@ -713,3 +720,8 @@ export type WorkspaceLine = {
 };
 /** a `pip` event on /api/events carries the draft it belongs to (PIP-ORCHESTRATION §4.3) */
 export type PipEventOnWire = PipEvent & { draft?: string };
+/** GET /api/p/:id/instances/:iid/log (PIP-ORCHESTRATION §4.5): its tasks' transcripts and its messages with Pip */
+export type InstanceLogEntry =
+  | ({ at: string; source: "task"; taskId: string } & ActivityEntry)
+  | { at: string; source: "channel"; msg: ChannelMsg };
+export type InstanceLog = { instance: Instance; entries: InstanceLogEntry[] };

@@ -16,6 +16,7 @@ import type {
   Gate,
   GateId,
   GateVerdict,
+  InstanceLog,
   LibraryIndex,
   ModelRow,
   Note,
@@ -29,6 +30,7 @@ import type {
   PipDecision,
   PipItem,
   PipSummary,
+  PlanRevisionSummary,
   ProjectState,
   ProjectSummary,
   QuestionT,
@@ -253,6 +255,23 @@ export class HttpClient implements Client {
   }
   pipSummary(project: string | undefined, text: string) {
     return this.req<PipSummary>("PUT", "/api/pip/summary", project ? { project, text } : { text });
+  }
+  async instanceLog(id: string, iid: string) {
+    try {
+      return await this.get<InstanceLog>(`/api/p/${enc(id)}/instances/${enc(iid)}/log`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
+  }
+  async planRevisions(id: string) {
+    try {
+      const res = await this.get<PlanRevisionSummary[]>(`/api/p/${enc(id)}/plan/revisions`);
+      return Array.isArray(res) ? res : [];
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return [];
+      throw e;
+    }
   }
   async channel(project: string) {
     try {

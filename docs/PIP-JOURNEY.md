@@ -2,7 +2,7 @@
 
 This is the UI half of "Pip runs the show". `docs/PIP-ORCHESTRATION.md` owns the wire contract (plan, instances, executor). This file owns what the person sees, hears and presses. Where they differ, the contract wins and this file is updated. §7 lists what the UI relies on and what it still asks for, so the two can be reconciled.
 
-The canonical run is "Make a 30-second pitch for my todo app". The product is QuestDay, which is fictional (`examples/questday`). Every number below comes from the **roster** (§2). The mock plays the same roster (§6), so the strings, the counter and the tests all agree.
+The canonical run is "Make a 30-second pitch for my todo app". The product is QuestDay, which is fictional (`examples/questday`). Every number below comes from the **roster** (§2). The mock plays the same roster (§6), so the strings, the finished count and the tests all agree.
 
 Words used here:
 - **instance**: one crew member brought in for part of the plan ("Animator · scene 3").
@@ -34,7 +34,7 @@ This file now matches those answers: the roster (§2), C7–C12, the brief card 
 | C5 | The Projects line is built from state, with no model call (D7): `GET /api/workspace/line` | Free, instant, and the same on any model. |
 | C6 | An unstarted `/new` leaves a draft, listed on Projects and removable (D8) | Nothing is lost. Only the conversation is on disk. |
 | C7 | "about 11 crew members", not "about 7 people" | 10 rev 1 instances plus the new drawing's placeholder (§2). People see faces, so we count faces. |
-| C8 | "+11 finished", the brief's count | Rev 2 turns the placeholder into Pixel artist · founder: 10 + 1. The redos add none (C3). (With the sign, before Decision 1, it was +12.) |
+| C8 | "11 have finished", the brief's count | Rev 2 turns the placeholder into Pixel artist · founder: 10 + 1. The redos add none (C3). (With the sign, before Decision 1, it was 12.) |
 | C9 | Milestone "Plan ready · 11 tasks to start", not "6 tasks to start" | N is the non-gate tasks of rev 1 (§2), counted as the backend does. The picks are on the brief card. |
 | C10 | One pick is added: the logo (the `rights` node), right after the import at step 5 | RIGHTS.md §3: using a brand asset "is always the user's call". Decision 2 settles the rest: under "Only the key picks" G2 passes in code and the G3 press passes G4, so the person picks 3 times (the script, the logo, the rough cut). |
 | C11 | Scene 4 animates beside the founder's drawing; when it is drawn, two of scenes 1–3 start and the third is a ghost "waiting for a free slot" | `defaults.concurrency` is 3, and D4. Scene 4 (the end card, with the logo toast) needs no new art, so it doesn't wait for the drawing (ORCHESTRATION §1.3, expansion). |
@@ -72,7 +72,7 @@ This file now matches those answers: the roster (§2), C7–C12, the brief card 
 - Rev 1 has 10 instances and 11 tasks ("Plan ready · 11 tasks to start"; 10 without a logo). The brief card counts the new drawing's placeholder as one more crew member: "about 11 crew members".
 - Under "Only the key picks" (Decision 2) the person picks 3 times: the script (G1), the logo (`rights`) and the rough cut (G3). G2 passes in code, and "Looks good" at G3 also passes G4. Start (G0) is the brief card's button.
 - The crew spends $1.65 and Pip's own six metered turns $0.12 (the revision after Start, the answer to scene 3, the rough cut, the change card, the export, the why), so the run costs **$1.77**. That is inside the brief card's $1.40–2.20, under the $3 cap. The change is $0.11 (Animator $0.08, Reviewer $0.03) plus Pip's card, "about $0.12".
-- **The final counter is "+11 finished".**
+- **The final line under the row is "11 have finished · See who worked".**
 
 **Dependencies** (they decide the ghosts; gates are written `[G1]`):
 - `writer.angles` and `asset.import` (the logo), both right after G0
@@ -86,32 +86,32 @@ This file now matches those answers: the roster (§2), C7–C12, the brief card 
 
 **The row at each checkpoint**, by the horizon rule (C2), with `slots=3`. The node test asserts these rows, in this order.
 
-| Checkpoint | Live | Ghosts | Counter |
+| Checkpoint | Live | Ghosts | Finished |
 |---|---|---|---|
 | 5: the crew comes in | Writer, Art director | Director, Animator · scene 4, Mixer | – |
 | 5: the logo pick open (the Art director asks) | Writer, Art director | Director | – |
 | 5: the logo picked, Writer working | Writer | Art director, Director | – |
 | 6: G1 open (the Writer asks) | Writer | – | – |
-| 7a: Director working | Director | Art director, Animator · scene 1, 2 | +1 |
-| 7b: Art director casting | Art director | Animator · scene 1, 2, 3 | +2 |
-| 7b: after rev 2 | Art director | Pixel artist · founder, Animator · scene 1, 2 | +2 |
-| 7b: the founder drawn, scene 4 animated | Pixel artist · founder, Animator · scene 4 | Animator · scene 1, 2, 3 | +3 |
-| 7c: the founder done | Animator · scene 4, 1, 2 | Animator · scene 3 (free slot), Mixer, Reviewer | +4 |
-| 7c: scene 4 done | Animator · scene 1, 2, 3 | Mixer, Reviewer | +5 |
-| 7c: scene 1 done | Animator · scene 2, 3 | Mixer, Reviewer | +6 |
-| 7c: scene 2 done | Animator · scene 3 | Mixer, Reviewer | +7 |
-| 8: Mixer working | Mixer | Reviewer, Editor | +8 |
-| 9: Reviewer working | Reviewer | Editor | +9 |
-| 9: scene 1 back | Animator · scene 1 | Reviewer (idle, round 2 pending), Editor | +8 |
-| 9: round 2 | Reviewer | Editor | +9 |
-| 9: G3 open | – | – | +10 |
-| 10: scene 2 back | Animator · scene 2 | Reviewer, Editor | +8 |
-| 10: round 3 | Reviewer | Editor | +9 |
-| 10: G3 open again | – | – | +10 |
-| 11: Editor working | Editor | – | +10 |
-| 11: the final passed, and after | – | – | +11 |
+| 7a: Director working | Director | Art director, Animator · scene 1, 2 | 1 |
+| 7b: Art director casting | Art director | Animator · scene 1, 2, 3 | 2 |
+| 7b: after rev 2 | Art director | Pixel artist · founder, Animator · scene 1, 2 | 2 |
+| 7b: the founder drawn, scene 4 animated | Pixel artist · founder, Animator · scene 4 | Animator · scene 1, 2, 3 | 3 |
+| 7c: the founder done | Animator · scene 4, 1, 2 | Animator · scene 3 (free slot), Mixer, Reviewer | 4 |
+| 7c: scene 4 done | Animator · scene 1, 2, 3 | Mixer, Reviewer | 5 |
+| 7c: scene 1 done | Animator · scene 2, 3 | Mixer, Reviewer | 6 |
+| 7c: scene 2 done | Animator · scene 3 | Mixer, Reviewer | 7 |
+| 8: Mixer working | Mixer | Reviewer, Editor | 8 |
+| 9: Reviewer working | Reviewer | Editor | 9 |
+| 9: scene 1 back | Animator · scene 1 | Reviewer (idle, round 2 pending), Editor | 8 |
+| 9: round 2 | Reviewer | Editor | 9 |
+| 9: G3 open | – | – | 10 |
+| 10: scene 2 back | Animator · scene 2 | Reviewer, Editor | 8 |
+| 10: round 3 | Reviewer | Editor | 9 |
+| 10: G3 open again | – | – | 10 |
+| 11: Editor working | Editor | – | 10 |
+| 11: the final passed, and after | – | – | 11 |
 
-- A member whose task waits on the person stays live, its face in the "needs you" mood, with its pick under Pip's line; it is finished only once answered (N19). So the Art director stays while the logo pick is open, and the Writer stays through the G1 pick; the counter reaches +1 when the script is picked.
+- A member whose task waits on the person stays live, its face in the "needs you" mood, with its pick under Pip's line; it is finished only once answered (N19). So the Art director stays while the logo pick is open, and the Writer stays through the G1 pick; the finished count reaches 1 when the script is picked.
 - Without a logo (the draft had no logo file) there is no import, no logo pick and no logo toast: the Art director first joins to cast at 7b, rev 1 has 10 tasks ("Plan ready · 10 tasks to start"), the person picks twice (the script and the rough cut), and the run still ends at +11 and $1.77 (the import costs $0). The test plays both.
 - The first row lasts one tick (the import). Animator · scene 4 and the Mixer are ghosts there because the horizon walks `asset.import` → [rights] → s4 → mix, though s4 also waits on G2, far off. That is the rule as ORCHESTRATION §2 states it; §7.2 N12 asks whether a pending task should need all its dependencies within reach.
 - With `slots=1` the Animators run one at a time: when the founder is done, one Animator is live and the other three are ghosts (§6, test 4).
@@ -120,16 +120,16 @@ This file now matches those answers: the roster (§2), C7–C12, the brief card 
 
 ### 3.1 The crew row (simple view, `CrewStrip`)
 
-The order is Pip first, then live faces in join order, then ghosts, then the finished counter. The row wraps and never scrolls sideways.
+The order is Pip first, then live faces in join order, then ghosts. The row holds only those. Who has finished is one quiet line under the row, not a face or a chip among the faces. The row wraps and never scrolls sideways.
 
 | State | When | Face | Accessible name (button) | Visible |
 |---|---|---|---|---|
 | **live** | the instance has a task `working` | the role's calm glyphs, blinking as today; `lg` size | "Animator · scene 3, working" | the caption under the face |
-| **stuck** | its task `failed` and `problemOf` names it | `x x` | "…, stuck" | the caption; it stays until the problem is fixed, and is never folded |
+| **stuck** | its task `failed` and `problemOf` names it | `x x` | "…, stuck" | the caption; it stays until the problem is fixed, and never leaves the row |
 | **needs** | its task is `waiting_user` | `' '`, looking up | "…, waiting for you" | the caption |
 | **ghost** | `instance.ghost` is true and nothing is running for it (the server's horizon rule, C2) | `· ·`, a dashed `--stroke-control` edge, `--text-muted` ink, no hue fill | "Director, up next", or "Animator · scene 4, waiting for a free slot" (its task is ready) | the caption, muted |
-| **finishing** | for `FINISH_HOLD_MS = 2000` after its last task ends | done: `^ ^` with a ✓ mark. stopped (dropped or cancelled): `– –` with a ■ mark | "Writer, done", or "…, stopped" | the caption plus the word "done" or "stopped" |
-| **finished counter** | at least one instance has ended | none: a chip | "11 finished. Show who worked" | `+<bdi>11</bdi> finished` |
+| **finishing** | for `FINISH_HOLD_MS = 2000` after its last task ends | done: `^ ^` with a ✓ badge on the disc's block-end inline-end edge. stopped (dropped or cancelled): `– –` with a ■ badge. The trade mark stays inside the disc | "Writer, done", or "…, stopped" | the caption, and the word "done" or "stopped" on its own line under it |
+| **finished line** | at least one instance has ended (hidden while nobody has) | none: one muted line under the row, at the row's start, in body size; "See who worked" is a link-style button | "See who worked, 11 have finished" (the button) | `<bdi>11</bdi> have finished · See who worked` ("1 has finished") |
 
 - **Ghost cap.** At most 3, nearest first, as the server sends them. The rest show only in the drawer's "Up next". A finished instance whose new task is pending (D5) leaves Finished and shows as a ghost if it is on the horizon.
 - **Caption.** The qualifier after " · " ("scene 1", "founder"), in `--step--2` mono, `max-inline-size: 8ch`, with an ellipsis. The full label is in the name and the popover. An instance without a qualifier has no caption.
@@ -150,8 +150,8 @@ The order is Pip first, then live faces in join order, then ghosts, then the fin
   | reviewer | `° °` | 7 |
   | producer | `o o` | 1 |
 
-- **Popover** (pressing a face): label, Pip's reason for bringing it in ("Brought in for three script angles"), the line about it, its last picture, "Ask Pip about this", "See what it's doing". A ghost's popover says "Starts after the script pick" or "Waiting for a free slot. 3 are working".
-- **Counter.** Pressing it opens the crew drawer with Finished selected.
+- **Popover** (pressing a face): label, Pip's reason for bringing it in ("Brought in the Writer for three script angles."), the line about it, its last picture, "Ask Pip about this", "See what it's doing". A ghost's popover says "Starts after the script pick" or "Waiting for a free slot. 3 are working".
+- **The finished line.** "See who worked" opens the crew drawer on its Finished group (the newest finished member selected). The count counts a member as soon as its ✓ hold ends, so it ticks up while the face fades.
 
 **Motion.** Faces are pixel UI, so every move is stepped. Durations come from the kit tokens.
 
@@ -160,12 +160,14 @@ The order is Pip first, then live faces in join order, then ghosts, then the fin
 | Enter (a face first shows in the row, live or as a ghost) | It enters from Pip's side: an inline offset of −8px (+8px under `:dir(rtl)`) → 0, scale 0.5 → 1, opacity 0 → 1, all on `--ease-dither` over `calc(var(--dur-step) * 4)`. Several in one batch stagger by `--dur-step`. | It appears in place |
 | Ghost → live (`spawn` or `live` on a face already shown) | The edge turns from dashed to solid and the hue fills, `--ease-step` over `--dur-step`. Nothing moves. | instant |
 | Ghost leaves the horizon (a pick opens) | opacity → 0 in place, `--ease-dither`, `calc(var(--dur-step) * 4)` | gone |
-| Finish (`end`) | The glyphs swap to `^ ^ ✓` (a whole step). After 2 s it folds: scale 1 → 0.5 and opacity → 0 toward the counter (+8px inline), `--ease-dither`, `calc(var(--dur-step) * 4)`. Then the row reflows in one step, and the counter digit swaps. | The ✓ still holds for 2 s, then the face is gone |
-| Return (`revive`, D5) | the fold in reverse: it enters from the counter's side (+8px inline → 0); the counter goes down by one | appears |
+| Finish (`end`) | The glyphs swap to `^ ^ ✓` (a whole step). After 2 s it fades and shrinks out in place: scale 1 → 0.5 and opacity → 0, no slide, `--ease-dither`, `calc(var(--dur-step) * 4)`. The count in the line under the row ticks up as it goes; then the row reflows in one step. | The ✓ still holds for 2 s, then it fades out in place (no shrink) |
+| Return (`revive`, D5) | as an entrance: it comes back into the row from Pip's side (−8px inline → 0); the finished count goes down by one | appears |
 | Pip conducting | once per batch that has a `spawn` or a `revive` (§3.2) | a still baton for 1.2 s |
 
 - Only live changes animate, never what loads. Take a baseline of the instances on mount and again on every reconnect (`conn` back to `open`), as `useThoughts` does, and animate only what changed against it.
 - No layout tweening: the siblings never slide.
+- A face that holds focus, or whose popover is open, stays in the row until focus leaves it; only then does it fade or go.
+- Each move ends on its `animationend`; a page in the background never sends one, so a timer settles it too.
 
 **Announcements** (one region owns them): the existing polite region in `CrewStrip`, fed by `useThoughts`.
 - One sentence per spawn, return or dismissal. A ghost appearing or leaving is never announced.
@@ -188,7 +190,7 @@ The side rail becomes three groups. Each group is a list of buttons with `aria-c
 |---|---|
 | Pip | as today: Pip's pane with Behind the scenes |
 | **Working** · N | each live, stuck or needs instance: face, label |
-| **Up next** · N | every not-started instance in the plan, in plan order, each with a dashed face. Nothing is capped here. |
+| **Up next** · N | every not-started instance in the plan, and every idle one (the Art director between the logo and the cast, the Reviewer between rounds), in plan order, each with a dashed face and its ghost line ("Starts after the script pick."). Nothing is capped here. |
 | **Finished** · N | ended instances, newest `endedAt` first. One line each: face (`^ ^` or `– –`), label, model, time alive, $, outcome |
 
 - **A Finished row**, at 375px on two lines:
@@ -204,15 +206,16 @@ The side rail becomes three groups. Each group is a list of buttons with `aria-c
   - A return shows as a hairline marker: "Back for a fix · 21:12".
   - No message box. In its place, one button, "Ask Pip about this". It selects Pip in the same drawer, with "About the Pixel artist · founder: " in Pip's field and focus there, because the person pressed it. The turn is sent with `about: {instance}`.
   - The log comes from `GET /api/p/:id/instances/:iid/log`.
-- Esc closes the drawer and returns focus to the face or the counter that opened it.
+- Esc closes the drawer and returns focus to the face, or the "See who worked" button, that opened it.
+- A working member's pane is its live thread (its tasks' transcripts) with "Ask Pip about this" and the message box one step away (`DirectControls`), as before.
 - **The Project picker** (the header's Crew button, with more than one project) sits in the head row, on one line between the title and the ×: a small muted "Project" label, then the select (about 17rem, at the inline end). The kit Dialog takes no head content and its head is a `<form method="dialog">`, so the picker stays in the body (no nested form) and is laid over the head, which keeps its height. Under 40rem it takes a second line under the title, full width, and the head's rule moves under it. It mirrors in RTL.
 
 ### 3.4 Studio, the Crew tab (`CrewRow`)
 
 - Pip stays pinned first.
-- The department rows become instance rows, grouped Working, Up next, then a **Finished · N** Disclosure. It is open while nothing is live, and closed otherwise.
+- The department rows become instance rows, grouped Working, Up next, then a **Finished · N** Disclosure. It is open while nothing is live, and closed otherwise, until the person toggles it; then it stays as they left it.
 - **Instance row**: face, label, model chip, status badge (word), $, time, "Ask Pip", "Details". Details opens the crew drawer on that instance; no more TaskDrawer for instances.
-- **A "Plan · rev 4" Disclosure** at the end: one line per revision, newest first ("rev 2 · 21:06 · Pip: added a Pixel artist for the founder. The library had no founder sprite.").
+- **A "Plan · rev 4" Disclosure** at the end: one line per revision, newest first ("rev 2 · 21:06 · Pip: added a Pixel artist for the founder: the library had no founder sprite."). The author word is "Rules", "Pip" (Pip's and code's revisions) or "You"; the reason is the revision's, its first letter lowered.
 - No Crew lane on the timeline (C1). The stage nav stays as it is: a stage is a view over the plan tasks of its kinds.
 
 ### 3.5 `/new`: the empty stage
@@ -308,11 +311,11 @@ Buttons: **Start** (primary) · **Show all options** (quiet).
 
 | Screen | 375px | RTL (fa) |
 |---|---|---|
-| Crew row | The row wraps. The faces stay `md`, a live face `lg`. The captions clamp at 8ch. The counter goes to a new line if it must. | The order mirrors with the flow. The spawn offset flips under `:dir(rtl)`. Bubbles use the layout's existing `rtl` branch. |
+| Crew row | The row wraps. The faces stay `md`, a live face `lg`. The captions clamp at 8ch. The finished line sits under the row at its start. | The order mirrors with the flow. The spawn offset flips under `:dir(rtl)`. Bubbles use the layout's existing `rtl` branch. |
 | Pip's line and thread | the existing simple view | every text node `dir="auto"` |
 | Question card | The fields stack, and the radios run in one column. The file row wraps: name, then the chips. | The file name is in `<bdi class="ltr" translate="no">` |
 | Brief card | The `dl` turns into label-above-value pairs | Money, durations, counts and times in `<bdi>`, numbers through `Intl` for the page's `lang` |
-| Drawer | full width; the rail becomes a horizontal group list above the pane | the rail sits at the inline-start edge |
+| Drawer | full width; the groups sit in a list above the pane (at most 14rem, it scrolls), each row with its full text | the rail sits at the inline-start edge |
 | Finished row | two lines (§3.3) | `<bdi>` around the model, the time and the $ |
 | Projects | one column of cards; the Pip line above the button | The project titles are `<bdi>` inside Pip's sentence |
 
@@ -401,22 +404,22 @@ Each step lists:
 - **Screen**:
   - The Writer's work is done, but it waits on the person: its face stays, in the "needs you" mood (`' '`, looking up), and its task row reads "Waiting for you to pick an angle" (N19).
   - Nothing is running now, so the ghosts fade (C2). The row is Pip and the Writer.
-  - When the person picks, the Writer shows `^ ^ ✓` for 2 s, then folds into "+1 finished" (step 7a).
+  - When the person picks, the Writer shows `^ ^ ✓` for 2 s, then fades out in place, and the line under the row reads "1 has finished" (step 7a).
   - The G1 pick (NeedsYou, the Pip variant) sits under Pip's line, after the logo pick if that is still open.
 - **Text**:
   - The pick: "Which script should the crew make?", with ◉ The walker (Recommended), ○ The quest board, ○ The numbers.
 - **SR**: the status region (10 s throttle) gives Pip's line; "Writer finished." comes with the pick.
 - **Focus**: unchanged. `Q` jumps to the pick, as today.
-- **RM**: the face stays still; after the pick the ✓ holds for 2 s, then the face is gone and the counter reads +1.
+- **RM**: the face stays still; after the pick the ✓ holds for 2 s, then the face fades out in place and the line reads "1 has finished".
 
 ### Step 7. The crew grows and shrinks
 
 The faces at each moment are the §2 checkpoint table.
 
 **7a. Story.**
-- The person picks The walker. The Writer finishes and folds (+1). The Director slides out from Pip, followed by three ghosts: Art director, Animator · scene 1 and 2.
+- The person picks The walker. The Writer finishes and fades out (1 has finished). The Director slides out from Pip, followed by three ghosts: Art director, Animator · scene 1 and 2.
 - Bubble over Pip: "Brought in the Director to board 4 scenes".
-- The Director finishes and folds (+2).
+- The Director finishes and fades out (2).
 - SR: "Director finished."
 
 **7b. Art.**
@@ -424,26 +427,26 @@ The faces at each moment are the §2 checkpoint table.
 - The Art director reports `partial`: "No founder sprite in the library."
 - Plan rev 2 (by code, the expansion), a milestone in the thread: "Plan changed: added a Pixel artist for the founder: the library had no founder sprite."
 - Pixel artist · founder enters as a ghost.
-- The cast ends (+3) and G2 passes in code (Decision 2). Two faces turn live together, and Pip conducts:
+- The cast ends (3) and G2 passes in code (Decision 2). Two faces turn live together, and Pip conducts:
   - Pixel artist · founder, drawing;
   - Animator · scene 4, the end card with the logo toast, which needs no new art.
   - Bubble over Pip: "Brought in a Pixel artist for the founder. Brought in an Animator for scene 4" (merged).
   - The ghosts are Animator · scene 1, 2 and 3, which wait on the founder.
 - **Changed from the brief**: no pacing pick; G2 passes in code under "Only the key picks" (Decision 2).
-- SR, merged: "Art director finished." then "Pip brought in a Pixel artist for the founder. Pip brought in an Animator for scene 4."
+- SR, merged: "Art director is partly done: No founder sprite" (its last report was partial) then "Pip brought in a Pixel artist for the founder. Pip brought in an Animator for scene 4."
 
 **7c. Motion.**
-- The founder is drawn (+4). Pip conducts: Animator · scene 1 and 2 turn live beside scene 4.
+- The founder is drawn (4). Pip conducts: Animator · scene 1 and 2 turn live beside scene 4.
 - Animator · scene 3 stays a ghost, "waiting for a free slot". The Mixer and the Reviewer are ghosts too ("up next").
-- Scene 4 finishes and folds (+5), and Animator · scene 3 turns live.
-- Scene 1 finishes and folds (+6), then scene 2 (+7).
+- Scene 4 finishes and fades out (5), and Animator · scene 3 turns live.
+- Scene 1 finishes and fades out (6), then scene 2 (7).
 - The row never holds more faces than there are running tasks. The ghosts are labelled as ghosts.
 - **Changed from the brief**: scene 4 runs beside the drawing, and the third of scenes 1–3 waits for a slot (C11).
 - SR: "Pip brought in 2 Animators, one per scene." "Pixel artist · founder finished." "Animator · scene 4 finished." …
 
 **Focus** in 7a to 7c: unchanged throughout. The picks are reached by Tab or `Q`.
 
-**RM**: no slides and no folds. The ✓ holds for 2 s.
+**RM**: no slides and no shrinking. The ✓ holds for 2 s, then the face fades out in place.
 
 ### Step 8. A member hits a wall
 
@@ -451,8 +454,8 @@ The faces at each moment are the §2 checkpoint table.
   - Animator · scene 3 reports `partial`. Its bubble: "No recipe for two people talking."
   - In Behind the scenes, Pip answers with an `answer` message: "Use a toast for the line and keep both characters left of the box."
   - Bubble over Pip: "Told the Animator · scene 3: use a toast for the line".
-  - The Animator stays live, tries again (`attempt: 2`, the same task), finishes and folds: +8.
-  - The Mixer turns live; the Reviewer and the Editor are ghosts. Then the Mixer folds (+9).
+  - The Animator stays live, tries again (`attempt: 2`, the same task), finishes and fades out: 8.
+  - The Mixer turns live; the Reviewer and the Editor are ghosts. Then the Mixer fades out (9).
 - **Text**: Pip's line: the status sentence ("Adding music and sound"). There is no question to the person.
 - **SR**: "Animator · scene 3 is partly done: No recipe for two people talking." Then "Mixer finished."
 - **Focus**: unchanged.
@@ -462,10 +465,10 @@ The faces at each moment are the §2 checkpoint table.
 
 - **Screen**:
   - The Reviewer ghost turns live, with the Editor as a ghost. It finds one blocker: "The headline is clipped in scene 1".
-  - Code adds review round 2 (rev 3). The Reviewer goes idle and shows as a ghost; it isn't finished, so the counter doesn't move.
-  - Animator · scene 1 **returns from Finished**: it enters from the counter's side, and the counter goes to +8.
+  - Code adds review round 2 (rev 3). The Reviewer goes idle and shows as a ghost; it isn't finished, so the finished count doesn't move.
+  - Animator · scene 1 **returns from Finished**: it comes back into the row from Pip's side, and the count goes to 8.
     - Bubble over Pip: "Brought the Animator back to fix the scene 1 headline".
-  - It finishes and folds (+9). The Reviewer turns live for round 2, finds it clean, and folds (+10).
+  - It finishes and fades out (9). The Reviewer turns live for round 2, finds it clean, and fades out (10).
 - **Text**:
   - Milestone: "Plan changed: scene 1 goes back to the Animator for the headline" (rev 3).
   - Pip: "The rough cut is ready. One fix was made on scene 1."
@@ -480,8 +483,8 @@ The faces at each moment are the §2 checkpoint table.
   - The person types "make the hero bigger in scene 2".
   - Pip's plan card: title "Make the hero bigger in scene 2". Who: the Animator · scene 2 and Reviewer faces with their labels (`whoInstances`, N2). Detail: "Animator · scene 2 tunes the size, then the Reviewer checks." "About $0.12 · about 2 minutes". Effects: "Reopens scene 2. Scenes 1, 3 and 4 stay as they are." Confirm label "Ask the crew".
   - On confirm: plan rev 4 (milestone "Plan changed: scene 2 goes back to the Animator for a bigger hero"). G3 locks again.
-    - Animator · scene 2 returns from the counter's side. The Reviewer leaves Finished with its new pending task, and it and the Editor show as ghosts (+8).
-    - Scene 2 finishes (+9). The Reviewer turns live, checks, and folds (+10).
+    - Animator · scene 2 comes back into the row from Pip's side. The Reviewer leaves Finished with its new pending task, and it and the Editor show as ghosts (8).
+    - Scene 2 finishes (9). The Reviewer turns live, checks, and fades out (10).
   - The card settles: "✓ Scene 2 redone; the hero is 2× now."
   - G3 comes back under Pip's line, and Pip says: "The rough cut is ready again, with your change."
 - **Changed from the brief**: C12.
@@ -492,10 +495,10 @@ The faces at each moment are the §2 checkpoint table.
 ### Step 11. Done
 
 - **Screen**:
-  - "Looks good" passes G3, and with it G4 (Decision 2). The Editor slides out from Pip (no ghost: the pick had emptied the horizon), exports, and folds: **+11**.
+  - "Looks good" passes G3, and with it G4 (Decision 2). The Editor slides out from Pip (no ghost: the pick had emptied the horizon), exports, and fades out: **11 have finished**.
   - G4 passes as the export ends; no "Approve the final" card under "Only the key picks". ("Every step" keeps it.)
   - The files card: Download (`questday-pitch.mp4`), Subtitles (`questday-pitch.srt`, `.vtt`).
-  - The crew row is Pip and "+11 finished".
+  - The crew row is Pip alone, with "11 have finished · See who worked" under it.
 - **Text**:
   - Pip: "Your video is ready. A new video is exported, with scene 2's change."
   - Pip's line: "Your video is ready."
@@ -508,13 +511,13 @@ The faces at each moment are the §2 checkpoint table.
 ### Step 12. Looking back
 
 - **Screen**:
-  - The person presses "+11 finished". The crew drawer opens with Finished selected, newest first: Editor, Reviewer, Animator · scene 2, …
+  - The person presses "See who worked". The crew drawer opens on its Finished group, the newest selected, newest first: Editor, Reviewer, Animator · scene 2, …
   - The Pixel artist · founder row reads: "Pixel artist · founder · Opus 5 · 4 s · $0.31 · ✓ done" (in mock, the compressed time).
   - Opening it shows the kept log (§3.3), with Joined "Pip brought in a Pixel artist for the founder" and Left "Drawn and approved."
   - "Ask Pip about this" puts the person in Pip's field. They ask "why did you add a Pixel artist?".
 - **Text**: Pip: "The library had no founder sprite, so I added one drawing. It was $0.31 of your $3."
 - **SR**: `PipLive` announces the reply.
-- **Focus**: opening the drawer goes into the dialog, as the kit Drawer does. "Ask Pip about this" goes to the field. Esc returns to the counter.
+- **Focus**: opening the drawer goes into the dialog, as the kit Drawer does. "Ask Pip about this" goes to the field. Esc returns to "See who worked".
 - **RM**: the drawer opens without the slide.
 
 ## 5. Every string, by place
@@ -523,13 +526,19 @@ The faces at each moment are the §2 checkpoint table.
 |---|---|
 | Spawn bubble (over Pip) | `instance.reason` with its leading "Pip " dropped and the first letter capitalized: "Pip brought in the Writer for three script angles" → "Brought in the Writer for three script angles". The reason is the server's, in Pip's words or the catalogue template. It uses the role word with an article, never the qualified label. |
 | Return bubble | the reason of the life that opened, made the same way: "Brought the Animator back to fix the scene 1 headline" |
+| Batch bubble | one bubble over Pip per change, its reasons joined by ". ": "Brought in a Pixel artist for the founder. Brought in an Animator for scene 4"; one role over scenes: "Brought in 2 Animators, one per scene" |
+| Pip's answer bubble | over Pip: "Told the {label}: {text, first letter lowered}" ("Told the Animator · scene 3: use a toast for the line …"); a crew report floats over its own face |
+| Pip conducting | the face's name "Pip, bringing in the crew. Ask Pip" |
 | SR, spawn and return | the reason verbatim, plus "." A batch of one role over scenes merges to "Pip brought in {n} {Role}s, one per scene." |
 | SR, leave | "{label} finished." · "{label} stopped." · "{label} is partly done: {lastReport.couldnt}" (here the qualified label) |
 | Ghost names | "{label}, up next" · "{label}, waiting for a free slot" |
-| Ghost popover | "Starts after {the script pick / the pacing pick / …}" · "Waiting for a free slot. {n} are working." |
-| Counter | "+{n} finished" · name "{n} finished. Show who worked" |
+| Ghost popover | "Starts after {the script pick / the pacing pick / your logo pick / the rough cut pick / the final pick}." (a pick the person has, or will have under this involvement) · else "Starts after the {label}." (the nearest member still at work) · "Waiting for a free slot. {n} are working." ("1 is working") |
+| Face popover | the label; Pip's reason as a bubble ("Brought in the Writer for three script angles."); one line (its task, "Waiting for you.", the problem, or its end reason); its last picture; "Ask Pip about this" · "See what it's doing" |
+| Finished line | "{n} have finished · See who worked" ("1 has finished") · the button's name "See who worked, {n} have finished" |
 | Drawer groups | "Working" · "Up next" · "Finished" |
 | Outcomes | "✓ done" · "◐ partly done" · "■ stopped" · "✕ failed" |
+| Drawer, Finished row | "{model} · {time alive} · {$} · {outcome}" |
+| Studio, Plan | "Plan · rev {n}" · "rev {n} · {time} · {Rules / Pip / You}: {reason}." · "Loading the plan's changes…" · "No changes kept for this plan." |
 | Kept log | "Joined {time}" · "Left {time}" · "Back for a fix · {time}" · "Ask Pip about this" |
 | Milestones (server, `kind: "plan"`) | "Plan ready · {n} tasks to start" · "Plan changed: {revision.reason}", the reason verbatim with its first letter lowered |
 | `/new` | "What are we making?" · "Your idea" · "Add files" · "Drop to add to this video" · "Your video shows here" · "Show all options" |
@@ -601,16 +610,20 @@ The Tick column counts from that row's trigger. A row with no trigger keeps coun
 The `ledger` events follow each task's `usd` from §2 as it ends. Pip's six metered turns are $0.02 each, $0.12 in all.
 
 **The node test** (`apps/web/test/journey.test.ts`) plays the run through `applyEvent`, with `auto=1` unless it says otherwise. It checks:
-1. the row passes every §2 checkpoint, in order: live set, ghost set and counter, read from the table in this file;
+1. the row passes every §2 checkpoint, in order: live set, ghost set and finished count, read from the table in this file;
 2. at every tick, live faces = instances with a `working` or `waiting_user` task, never more than 3 ghosts, and no face both live and a ghost;
 3. every `spawn` or `revive` comes before its task's `working`, and no `end` comes while one of its tasks works (N3);
 4. with `slots=1`, never more than one `working`, and once one live Animator with three Animator ghosts;
 5. animator:s01 and animator:s02 keep their ids through their returns (each ends with two lives), and no label is ever on two instances;
-6. the final counter is 11, the run reaches step 12, and G4 is passed;
+6. the final finished count is 11, the run reaches step 12, and G4 is passed;
 7. spend is $1.77 ± 0.01 (the crew $1.65);
 8. with `auto` off and nobody answering, the run waits on the script pick and the logo: G1 never passes and q_rights stays open; scene 4 never starts before the logo pick; G2 passes in code; G4 passes only with the G3 press; every answer is `by: "user"`;
 9. every milestone and every reason (spawn and return) matches its §5 template, and every label is in sentence case (N5);
-10. the picks follow the draft: 3 with a logo, 2 without, and without one there is no import, no logo pick and no rights node.
+10. the picks follow the draft: 3 with a logo, 2 without, and without one there is no import, no logo pick and no rights node;
+11. each role's glyphs and hue match the §3.1 table (read from this file), and the Writer and the Director differ;
+12. the row's sentences and Pip's bubbles follow §5 (a batch over scenes merges, a return says its life's reason, one sentence per leave), and Pip conducts exactly when it brings someone in;
+13. the drawer's groups: no instance in two, Up next uncapped in plan order, Finished newest first; time alive is the sum of the lives; the ghost lines ("Waiting for a free slot. 3 are working.", "Starts after the script pick.");
+14. a channel message finds its instance by role and `ref`, and the plan revisions read as one line each.
 
 ## 7. Needs from the backend
 
@@ -621,7 +634,7 @@ Checked against `docs/PIP-ORCHESTRATION.md` as it stands today. The first list i
 - `ProjectState.plan: PlanView | null` and SSE `plan {view, revision?}` (§4.2, §4.3). The stage nav and the "Plan · rev N" disclosure read from `GET /api/p/:id/plan/revisions`.
 - `ProjectState.instances: Instance[]` and SSE `instance {instance, change}`.
   - The UI uses `state`, `ghost`, `running`, `label`, `subject`, `model`, `lives`, `reason`, `endReason`, `usd`, `outcome` and `lastReport`.
-  - Each `change` maps to the motion in §3.1: `ghost` = enter as a ghost, `spawn` = enter live (or ghost → live), `live` and `idle` = solidify or go dashed, `end` = the finish hold and fold, `revive` = enter from the counter.
+  - Each `change` maps to the motion in §3.1: `ghost` = enter as a ghost, `spawn` = enter live (or ghost → live), `live` and `idle` = solidify or go dashed, `end` = the finish hold, then the fade out in place, `revive` = enter from Pip's side.
 - `Task.instance`, `Task.planTask`.
 - The `kind: "plan"` milestones: "Plan ready · N tasks to start" and "Plan changed: <reason>".
 - The `rights` plan node as a person question, never auto-passed (their C2). The UI shows it with NeedsYou as "Your logo in an achievement toast. Use it in the video?", with "Use it" · "Leave it out", the 16 px icon as its picture, and no "Let the crew decide" (N15).
@@ -644,7 +657,7 @@ Checked against `docs/PIP-ORCHESTRATION.md` as it stands today. The first list i
 | N3 | Ordering: an `instance` `spawn` or `revive` before its task's `working` event, and an `end` after its last task event, in stream order | the row would flash a face with no work, or a working task with no face | not stated |
 | N4 | `GET /api/p/:id` carries `plan` and `instances`, so a reconnect re-baselines without animating | §3.1 never animates what loads | implied by `ProjectState` |
 | N5 | Role words in sentence case ("Pixel artist", "Art director") in `label` and `reason` | the kit and `ROLE_LABEL` (C14) | `ROLE_WORD` "Pixel Artist" |
-| N6 | `crew.slots` in state | the ghost popover: "Waiting for a free slot. 3 are working." | on the wire since the backend's P1 (`crew.slots`, per endpoint plus "render"); the UI reads it in P2 |
+| N6 | `crew.slots` in state | the ghost popover: "Waiting for a free slot. 3 are working." | on the wire since the backend's P1 (`crew.slots`, per endpoint plus "render"); P2 types it (`CrewInfo.slots`) but counts n from the plan's `running` tasks, which the mock and the server both send |
 | N7 | `PATCH /api/drafts/:id {fields}` | the composer's "‹ Back to the conversation" keeps its edits without a model call | no draft fields write |
 | N8 | Draft creation on the first send or drop, not on opening `/new` | an opened-and-left `/new` must not leave an empty draft | `POST /api/drafts` returns Pip's first item; the UI calls it late |
 | N9 | Per-field labels in the card may be Pip's wording: "Investors", "Users", "A launch post" | the brief's step 3 copy | allowed ("only the label wording is Pip's"); the mock uses these |
@@ -679,6 +692,9 @@ The UI half of P1 runs in mock only (`?mock=1`); `/new` stays the composer again
 | Projects: Pip's line from state, "New video", Drafts · N with Remove draft | `pages/Projects.tsx` | built |
 | The draft API and the line in mock | `mock/drafts.ts`, `mock/client.ts` | built (P3 builds the server side) |
 | The journey and its node test | `mock/journey.ts`, `test/journey.test.ts` | built |
-| The crew row: live faces in join order, up to 3 ghosts (dashed, muted, "up next" or "waiting for a free slot"), captions, "+N finished", one polite sentence per spawn, return or finish | `components/CrewStrip.tsx` (`InstanceStrip`, chosen when `state.instances` is present) | the seam; P2 finishes it |
-| Per-role glyphs, the face popover, the stepped enter, fold and return motion, Pip conducting, spawn bubbles, the counter opening the drawer, the drawer's Working / Up next / Finished groups and the kept log, Studio's instance rows and the Plan disclosure | | P2 |
+| The crew row: live faces in join order, up to 3 ghosts (dashed, muted, "up next" or "waiting for a free slot"), captions, one polite sentence per spawn, return or finish | `components/CrewStrip.tsx` (`InstanceStrip`, chosen when `state.instances` is present) | built (P1), finished in P2 |
+| P2: per-role glyphs and hues (the trade marks kept inside the disc), the ✓ / ■ end badge, the face popover, the stepped enter, hold-and-fade and return motion, Pip conducting (`PipFace` mood `conducting`, `ConductContext`), spawn and return bubbles over Pip, task and channel bubbles over each instance, the finished line under the row opening the drawer on Finished | `lib/instances.ts` (the pure half: glyphs, words, groups, ghost lines), `components/CrewStrip.tsx`, `PipFace.tsx`, `Thoughts.tsx` (instance keys, `say`) | built (mock) |
+| P2: the crew drawer's Working / Up next / Finished groups, the kept log (`GET …/instances/:iid/log`, read-only, "Back for a fix" markers, "Ask Pip about this" sending `about: {instance}`) | `components/CrewDrawer.tsx`, `AgentActivity.tsx` (dispatches), `lib/pip.ts` (`about` on the draft) | built (mock); the real endpoint is the backend's P2 |
+| P2: Studio's Crew tab: instance rows in Working / Up next / Finished · N, and "Plan · rev N" (`GET …/plan/revisions`) | `components/CrewRow.tsx` (`InstancePanel`) | built (mock) |
+| P2: no Crew lane on the video timeline (D3) | `components/TrackTimeline.tsx` has none | confirmed |
 | "Make another like this", the server's drafts, the brief read by a model | | P3 |

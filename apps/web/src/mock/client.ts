@@ -2,6 +2,7 @@
 // runs a project only while something subscribes to it (ref-counted, so React's StrictMode double effects are safe).
 // The simulation never seeks, scrolls or opens anything: it only emits events, like the server would.
 import { humanStatus, PHASES, phaseOf, problemOf, STAGE_WORD } from "../lib/human.ts";
+import { msgsOf } from "../lib/instances.ts";
 import { applyEvent } from "../lib/reducer.ts";
 import type {
   ActivityEntry,
@@ -19,6 +20,8 @@ import type {
   Gate,
   GateId,
   GateVerdict,
+  InstanceLog,
+  InstanceLogEntry,
   LibraryIndex,
   Milestone,
   ModelRow,
@@ -28,6 +31,7 @@ import type {
   PatchOpT,
   PipDecision,
   PipItem,
+  PlanRevisionSummary,
   ProjectState,
   ProjectStatus,
   ProjectSummary,
@@ -1860,6 +1864,31 @@ export class MockClient implements Client {
   }
   pipContext(project?: string) {
     return be().pip.context(project);
+  }
+  async instanceLog(id: string, iid: string): Promise<InstanceLog | null> {
+    await wait(80);
+    const b = be();
+    if (!b.projects.has(id)) return null;
+    const s = b.get(id).state;
+    const instance = s.instances?.find((i) => i.id === iid);
+    if (!instance) return null;
+    const all = s.instances ?? [];
+    const entries: InstanceLogEntry[] = [
+      ...s.tasks
+        .filter((t) => t.instance === iid)
+        .flatMap((t) => (s.activity?.[t.id] ?? []).map((e) => ({ ...e, source: "task" as const, taskId: t.id }))),
+      ...msgsOf(instance, b.channels.get(id) ?? [], all).map((msg) => ({
+        at: msg.at,
+        source: "channel" as const,
+        msg,
+      })),
+    ].sort((a, z) => Date.parse(a.at) - Date.parse(z.at));
+    return clone({ instance, entries });
+  }
+  async planRevisions(id: string): Promise<PlanRevisionSummary[]> {
+    await wait(60);
+    const b = be();
+    return b.projects.has(id) ? clone(b.get(id).journey?.revisions ?? []) : [];
   }
   async channel(project: string) {
     await wait(60);

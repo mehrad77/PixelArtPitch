@@ -117,7 +117,7 @@ export function ProjectStage({
   };
 
   const send = useCallback(
-    async (text: string): Promise<boolean> => {
+    async (text: string, about?: { instance: string }): Promise<boolean> => {
       let id: string;
       try {
         id = await ensureDraft();
@@ -135,7 +135,7 @@ export function ProjectStage({
         setDraftError(`A file didn't upload: ${(e as Error).message}`);
         return false;
       }
-      return askPip(id, text, { files: files.map((f) => f.name) });
+      return askPip(id, text, { files: files.map((f) => f.name), ...(about ? { about } : {}) });
     },
     [ensureDraft, pending],
   );
@@ -256,7 +256,7 @@ function Stage({
   dragging: boolean;
   draftError: string | null;
   attach?: Attach;
-  send?: (text: string) => Promise<boolean>;
+  send?: (text: string, about?: { instance: string }) => Promise<boolean>;
   allOptions?: () => void;
 }) {
   const pb = usePlayback(state?.timeline.duration ?? 30, projectId ?? "_new");
@@ -344,6 +344,7 @@ function Stage({
           <CrewStrip
             projectId={projectId}
             state={state}
+            conn={view.conn}
             lead={<PipCrewFace project={projectId} state={state} />}
             pipProject={projectId}
           />
@@ -409,7 +410,7 @@ function StageTalk({
   onNeeds: () => void;
   draftError: string | null;
   attach?: Attach;
-  send?: (text: string) => Promise<boolean>;
+  send?: (text: string, about?: { instance: string }) => Promise<boolean>;
   allOptions?: () => void;
 }) {
   const st = state ? humanStatus(state) : null;

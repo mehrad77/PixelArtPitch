@@ -32,13 +32,18 @@ function past(t: Task, s: ProjectState): string {
 export type Change = { member: string; text: string };
 
 /** the changes between two snapshots of the tasks, one per member at most (the newest wins) */
-export function taskChanges(prev: Map<string, Task>, s: ProjectState): Change[] {
+export function taskChanges(
+  prev: Map<string, Task>,
+  s: ProjectState,
+  /** whose face it floats over: the department by default, the instance in the instance row */
+  keyOf: (t: Task) => string = (t) => memberOf(t.role).id,
+): Change[] {
   const out = new Map<string, string>();
   for (const t of s.tasks) {
     const was = prev.get(t.id);
     if (was && was.status === t.status) continue;
     if (!was && (t.status === "upcoming" || t.status === "queued")) continue;
-    const member = memberOf(t.role).id;
+    const member = keyOf(t);
     const title = plainTitle(t, s);
     let text = "";
     if (t.status === "working")

@@ -40,7 +40,7 @@ export type Conv = {
   model?: string;
   summary?: PipSummary | null;
   /** a prefilled, editable question ("About the animator's work: "), bumped each time someone asks for one */
-  draft?: { text: string; n: number };
+  draft?: { text: string; n: number; about?: { instance: string } };
 };
 
 const EMPTY: Conv = {
@@ -313,9 +313,9 @@ export async function decidePip(
 // ---- the default path: ask Pip, not the crew member ----
 const OPEN_EVENT = "pap:pip-open";
 /** open Pip's conversation with a draft the person can edit and send; whoever shows Pip opens it */
-export function askPipAbout(project: string | null | undefined, text: string) {
+export function askPipAbout(project: string | null | undefined, text: string, about?: { instance: string }) {
   const key = keyOf(project);
-  set(key, (s) => ({ ...s, draft: { text, n: (s.draft?.n ?? 0) + 1 } }));
+  set(key, (s) => ({ ...s, draft: { text, n: (s.draft?.n ?? 0) + 1, ...(about ? { about } : {}) } }));
   window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { key } }));
 }
 /** put words in a conversation's field without opening anything (the /new examples: they fill, never send) */
@@ -354,7 +354,8 @@ export function rememberDirect(on: boolean) {
 }
 
 // ---- Pip's face and words ----
-export type PipMood = "idle" | "listening" | "thinking" | "happy" | "sorry";
+/** `conducting` is never derived here: the crew row sets it while Pip brings members in (PIP-JOURNEY §3.2) */
+export type PipMood = "idle" | "listening" | "thinking" | "happy" | "sorry" | "conducting";
 export function pipMood(c: Conv, state: ProjectState | null): PipMood {
   if (c.thinking) return "thinking";
   const last = [...c.items].reverse().find((i) => i.kind !== "thinking");

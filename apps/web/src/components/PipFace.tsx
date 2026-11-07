@@ -12,6 +12,7 @@ const GLYPH: Record<PipMood, string> = {
   thinking: "◠ ◠",
   happy: "^ ^",
   sorry: "; ;",
+  conducting: "◠ ◠",
 };
 // thinking: the big face glances up and to each side; the small ones only blink, so nothing moves in a 24px disc
 const THINK = ["◠ ◠", "◠ ◠", "- -", "◠ ◠"];
@@ -24,7 +25,10 @@ export const PIP_MOOD_WORD: Record<PipMood, string> = {
   thinking: "thinking",
   happy: "",
   sorry: "",
+  conducting: "bringing in the crew",
 };
+/** conducting: a 3×3-cell baton at the top inline-end corner, stepping between two frames (PIP-JOURNEY §3.2) */
+const BATON = ["M2 0h1v1H2zM1 1h1v1H1zM0 2h1v1H0z", "M0 1h3v1H0z"];
 
 export function useReducedMotion() {
   const query = () => (typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null);
@@ -75,6 +79,22 @@ export function PipFace({
         </svg>
       </span>
       <span className="pip-face-glyphs">{glyphs}</span>
+      {mood === "conducting" && (
+        <span className="pip-face-baton">
+          {BATON.map((d, i) => (
+            <svg
+              key={d}
+              data-frame={i}
+              viewBox="0 0 3 3"
+              shapeRendering="crispEdges"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path fill="currentColor" d={d} />
+            </svg>
+          ))}
+        </span>
+      )}
       {dot && <span className="pip-face-dot" />}
     </span>
   );

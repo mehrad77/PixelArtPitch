@@ -42,7 +42,9 @@ function plainSummary(s: string | undefined): string | undefined {
   return `${words[m[1].toLowerCase() as keyof typeof words]}. ${s.slice(m[0].length)}`;
 }
 
+import { hasInstances } from "../lib/instances.ts";
 import { BehindTheScenes } from "./Channel.tsx";
+import { CrewDrawer } from "./CrewDrawer.tsx";
 import { CrewFace, crewRows, MOOD_WORD, useStep } from "./CrewStrip.tsx";
 import { DirectControls } from "./DirectControls.tsx";
 import { PipComposer, PipThread } from "./Pip.tsx";
@@ -52,19 +54,10 @@ import "./AgentActivity.css";
 const startOf = (t: Task) => Date.parse(t.startedAt ?? "") || Number.POSITIVE_INFINITY;
 const article = (m: Member) => `the ${m.label}`;
 
-export function AgentActivity({
-  projectId,
-  state,
-  memberId,
-  focusTask,
-  currentScene,
-  onClose,
-  picker,
-  pipProject,
-}: {
+export type ActivityProps = {
   projectId: string;
   state: ProjectState;
-  /** the member to open on (a CREW id) */
+  /** the member to open on: a CREW id; with instances also an instance id, "pip" or "finished" */
   memberId: string;
   /** a task to show even when it is a retried attempt (Studio's Details) */
   focusTask?: string;
@@ -75,7 +68,24 @@ export function AgentActivity({
   picker?: ReactNode;
   /** Pip, pinned first: whose conversation it shows (null: the workspace); undefined: this project's */
   pipProject?: string | null;
-}) {
+};
+
+/** the crew drawer: the members that come and go once the server sends instances (PIP-JOURNEY §3.3), else the
+    departments */
+export function AgentActivity(props: ActivityProps) {
+  return hasInstances(props.state) ? <CrewDrawer {...props} /> : <DepartmentActivity {...props} />;
+}
+
+function DepartmentActivity({
+  projectId,
+  state,
+  memberId,
+  focusTask,
+  currentScene,
+  onClose,
+  picker,
+  pipProject,
+}: ActivityProps) {
   const rows = crewRows(state);
   // the model each role is set to for its next step; the drawer is the place that names models
   const settings = useLoad(() => client.settings(), []);
@@ -393,7 +403,7 @@ export function AgentActivity({
 }
 
 /** Pip's one line in the list, like the crew's */
-function pipLine(c: Conv): string {
+export function pipLine(c: Conv): string {
   if (c.thinking) return "Thinking…";
   const last = [...c.items].reverse().find((i) => i.kind === "pip");
   if (
@@ -406,7 +416,7 @@ function pipLine(c: Conv): string {
 }
 
 /** Pip in the drawer's right pane: the same header, a thread, and the field at the bottom */
-function PipPane({
+export function PipPane({
   projectId,
   state,
   conv,
@@ -462,7 +472,7 @@ function PipPane({
   );
 }
 
-function TaskGroup({
+export function TaskGroup({
   task,
   tries,
   showTry,
@@ -662,7 +672,7 @@ function Bubble({ entry: e, task, last }: { entry: ActivityEntry; task: Task; la
   );
 }
 
-function Compose({
+export function Compose({
   projectId,
   member,
   role,

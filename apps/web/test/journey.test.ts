@@ -4,8 +4,19 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import {
+  crewGroups,
+  ghostLine,
+  instanceNews,
+  instanceOfMsg,
+  OUTCOME_WORD,
+  ROLE_GLYPH,
+  ROLE_HUE,
+  revisionLine,
+  timeAlive,
+} from "../src/lib/instances.ts";
 import { applyEvent } from "../src/lib/reducer.ts";
-import type { Instance, ProjectState, ServerEvent } from "../src/lib/types.ts";
+import type { Instance, ProjectState, Role, ServerEvent } from "../src/lib/types.ts";
 import { JOURNEY, Journey } from "../src/mock/journey.ts";
 
 const BASE = Date.UTC(2026, 10, 7, 21, 0, 0);
@@ -264,4 +275,117 @@ test("the picks follow the draft: 3 with a logo, 2 without (no import, no logo p
   assert.ok(flat.some((e) => e.event === "milestone" && e.data.text === "Plan ready · 10 tasks to start"));
   assert.equal(rowOf(without.final).counter, 11);
   assert.ok(Math.abs(without.final.budget.spentUsd - 1.77) <= 0.01);
+});
+
+// ---- P2: the faces, the words and the groups (lib/instances.ts) ----
+
+test("each role's calm glyphs and hue follow the §3.1 table, and no two crew roles look alike", () => {
+  const doc = readFileSync(new URL("../../../docs/PIP-JOURNEY.md", import.meta.url), "utf8");
+  const start = doc.indexOf("| Role | Glyphs | Hue |");
+  assert.ok(start > 0, "§3.1 has the glyph table");
+  const rows: string[] = [];
+  for (const l of doc.slice(start).split("\n").slice(2)) {
+    if (!/^\s*\|/.test(l)) break;
+    rows.push(l);
+  }
+  assert.ok(rows.length >= 12, `the table has its rows (${rows.length})`);
+  for (const line of rows) {
+    const [role, glyphs, hue] = line
+      .split("|")
+      .slice(1, -1)
+      .map((c) => c.trim().replace(/`/g, ""));
+    assert.equal(ROLE_GLYPH[role as Role], glyphs, `${role}'s glyphs`);
+    assert.equal(ROLE_HUE[role as Role], Number(hue), `${role}'s hue`);
+  }
+  assert.notEqual(ROLE_GLYPH.writer, ROLE_GLYPH.director, "the Writer and the Director differ");
+});
+
+test("the row's sentences and Pip's words follow §5, once per change", () => {
+  const { states } = play(3);
+  const said: string[] = [];
+  const pip: string[] = [];
+  let prev = new Map<string, Instance>();
+  for (const s of states) {
+    const news = instanceNews(prev, s.instances ?? []);
+    said.push(...news.said);
+    if (news.pip) pip.push(news.pip);
+    assert.equal(news.conduct, news.pip !== "", "Pip conducts exactly when it brings someone in");
+    prev = new Map((s.instances ?? []).map((i) => [i.id, i]));
+  }
+  for (const line of said)
+    assert.match(
+      line,
+      /^(Pip brought (in|the) .+\.|Pip brought in \d+ [A-Z][a-z]+s, one per scene\.|.+ (finished|stopped|failed)\.|.+ is partly done: .+)$/,
+      line,
+    );
+  assert.ok(said.includes("Pip brought in the Writer for three script angles."));
+  assert.ok(said.includes("Pip brought in 2 Animators, one per scene."), "a batch of one role merges");
+  assert.ok(
+    said.includes("Pip brought the Animator back to fix the scene 1 headline."),
+    "a return says its life's reason",
+  );
+  assert.ok(said.includes("Animator · scene 3 is partly done: No recipe for two people talking."));
+  assert.equal(said.filter((l) => l === "Pixel artist · founder finished.").length, 1, "one sentence per leave");
+  for (const w of pip) assert.ok(!/^Pip /.test(w) && /^[A-Z]/.test(w), `Pip's bubble drops "Pip ": ${w}`);
+  assert.ok(pip.includes("Brought in the Director to board 4 scenes"));
+  assert.ok(pip.some((w) => w.includes("Brought in a Pixel artist for the founder")));
+});
+
+test("the drawer's groups: Working, Up next in plan order, Finished newest first; time alive adds up", () => {
+  const { states, final } = play(3);
+  // 7c, scene 3 waits for a free slot: its ghost line says so
+  const slot = states.find((s) =>
+    (s.plan?.tasks ?? []).some((t) => t.instance === "animator:s03" && t.status === "ready"),
+  );
+  assert.ok(slot, "scene 3 waits for a slot");
+  assert.equal(ghostLine("animator:s03", slot as ProjectState), "Waiting for a free slot. 3 are working.");
+  // 5, the Director waits on the script pick
+  const first = states[0];
+  assert.equal(ghostLine("director", first), "Starts after the script pick.");
+  for (const s of states) {
+    const g = crewGroups(s);
+    const ids = [...g.working, ...g.upNext, ...g.finished].map((i) => i.id);
+    assert.equal(new Set(ids).size, ids.length, "no instance in two groups");
+  }
+  const g = crewGroups(final);
+  assert.equal(g.working.length, 0);
+  assert.equal(g.upNext.length, 0);
+  assert.equal(g.finished.length, 11);
+  assert.equal(g.finished[0].label, "Editor", "newest first");
+  const s01 = g.finished.find((i) => i.id === "animator:s01") as Instance;
+  const spans = s01.lives.reduce((a, l) => a + (Date.parse(l.to ?? "") - Date.parse(l.from)) / 1000, 0);
+  assert.equal(timeAlive(s01), spans);
+  assert.ok(
+    s01.lives.length === 2 &&
+      timeAlive(s01) > (Date.parse(s01.lives[0].to ?? "") - Date.parse(s01.lives[0].from)) / 1000,
+  );
+  assert.equal(OUTCOME_WORD[s01.outcome ?? "done"], "✓ done");
+  // midway, Up next lists every planned member, uncapped, in plan order
+  const mid = states.find((s) =>
+    (s.instances ?? []).some((i) => i.id === "director" && i.state === "live"),
+  ) as ProjectState;
+  const next = crewGroups(mid).upNext.map((i) => i.id);
+  assert.ok(next.length > 3, `Up next is not capped (${next.length})`);
+  const order = (mid.plan?.tasks ?? []).map((t) => t.instance);
+  assert.deepEqual(
+    next,
+    [...next].sort((a, b) => order.indexOf(a) - order.indexOf(b)),
+  );
+});
+
+test("Pip's messages float over the member they are about; plan revisions read as one line each", () => {
+  const { final, sim } = play(3);
+  const all = final.instances ?? [];
+  const msg = (from: string, to: string, ref?: string) =>
+    ({ id: "x", at: "", from, to, kind: "answer", text: "", ...(ref ? { ref } : {}) }) as const;
+  assert.equal(instanceOfMsg(msg("pip", "animator", "s03"), all), "animator:s03");
+  assert.equal(instanceOfMsg(msg("art-director", "pip", "t_cast"), all), "art-director");
+  assert.equal(instanceOfMsg(msg("animator", "pip"), all), null, "an animator message without a ref is nobody's");
+  const lines = sim.revisions.map((r) => revisionLine(r, () => "21:06"));
+  assert.equal(lines.length, 4);
+  assert.equal(
+    lines[1],
+    "rev 2 · 21:06 · Pip: added a Pixel artist for the founder: the library had no founder sprite.",
+  );
+  assert.match(lines[3], /^rev 4 · 21:06 · You: scene 2 goes back/);
 });

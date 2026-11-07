@@ -70,7 +70,46 @@
   background: var(--text-signal);
   box-shadow: 0 0 0 2px var(--surface);
 }
+/* conducting: a baton at the top inline-end corner; still (its first frame) under reduced motion */
+.pip-face-baton {
+  position: absolute;
+  inset-block-start: calc(var(--pip) * -0.12);
+  inset-inline-end: calc(var(--pip) * -0.12);
+  inline-size: max(9px, calc(var(--pip) * 0.27));
+  aspect-ratio: 1;
+  color: var(--text-accent);
+  filter: drop-shadow(0 1px 0 var(--surface));
+}
+.pip-face-baton svg {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+}
+.pip-face-baton svg[data-frame="1"] {
+  visibility: hidden;
+}
+.pip-face-baton svg:dir(rtl) {
+  scale: -1 1;
+}
 @media (prefers-reduced-motion: no-preference) {
+  /* six whole steps between the two frames, then it rests */
+  .pip-face-baton svg[data-frame="0"] {
+    animation: pip-baton-a calc(var(--dur-step) * 2) steps(1) 3;
+  }
+  .pip-face-baton svg[data-frame="1"] {
+    animation: pip-baton-b calc(var(--dur-step) * 2) steps(1) 3;
+  }
+  @keyframes pip-baton-a {
+    50% {
+      visibility: hidden;
+    }
+  }
+  @keyframes pip-baton-b {
+    50% {
+      visibility: visible;
+    }
+  }
   .pip-face-glyphs {
     transition: translate var(--dur-step, 120ms) steps(1);
   }

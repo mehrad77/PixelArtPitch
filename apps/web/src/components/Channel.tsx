@@ -5,7 +5,7 @@ import { Disclosure } from "@shabboo/kit/react";
 import { headOf, isPip, useChannel, withMember } from "../lib/channel.ts";
 import { clock } from "../lib/format.ts";
 import { memberOf } from "../lib/human.ts";
-import type { RoleT } from "../lib/types.ts";
+import type { ChannelMsg, RoleT } from "../lib/types.ts";
 import "./Channel.css";
 import { CrewFace } from "./CrewStrip.tsx";
 import { PipFace } from "./PipFace.tsx";
@@ -14,17 +14,20 @@ export function BehindTheScenes({
   projectId,
   roles,
   label,
+  only,
 }: {
   projectId: string | null;
   /** only this member's messages with Pip */
   roles?: string[];
   label?: string;
+  /** exactly these messages (one instance's, PIP-JOURNEY §3.3) */
+  only?: ChannelMsg[];
 }) {
   const all = useChannel(projectId);
   if (!projectId) return null;
-  const msgs = roles ? withMember(all, roles) : all;
-  if (roles && !msgs.length) return null;
-  const title = label ?? (roles ? "With Pip" : "Behind the scenes");
+  const msgs = only ?? (roles ? withMember(all, roles) : all);
+  if ((roles || only) && !msgs.length) return null;
+  const title = label ?? (roles || only ? "With Pip" : "Behind the scenes");
   return (
     <Disclosure size="sm" summary={`${title}${msgs.length ? ` (${msgs.length})` : ""}`} className="channel">
       {msgs.length === 0 ? (

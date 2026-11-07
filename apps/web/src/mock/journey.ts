@@ -415,12 +415,15 @@ export class Journey {
     };
   }
   revBy: PlanView["by"] = "rules";
+  /** every revision, oldest first (GET /api/p/:id/plan/revisions) */
+  revisions: PlanRevisionSummary[] = [];
   revReason = "The rules plan for a 30 s pitch";
   private revision(by: PlanView["by"], trigger: string, reason: string, ops: PlanRevisionSummary["ops"], d: number) {
     this.rev++;
     this.revBy = by;
     this.revReason = reason;
     const revision: PlanRevisionSummary = { rev: this.rev, at: this.at(), by, trigger, reason, ops, deltaUsd: [d, d] };
+    this.revisions.push(revision);
     this.emit({ event: "plan", data: { view: this.view(), revision } });
     this.milestone(`Plan changed: ${reason.charAt(0).toLowerCase()}${reason.slice(1)}`);
   }
@@ -678,6 +681,7 @@ export class Journey {
       ops: [],
       deltaUsd: [0, 0],
     };
+    this.revisions.push(revision);
     this.emit({ event: "plan", data: { view: this.view(), revision } });
     const n = this.nodes.filter((x) => !isGate(x) && x.status !== "done").length;
     this.milestone(`Plan ready · ${n} tasks to start`);

@@ -211,14 +211,95 @@
   outline: 1px dashed var(--stroke-control);
   outline-offset: -1px;
 }
-.crew-finished {
-  align-self: center;
-  padding-block: var(--space-1);
-  padding-inline: var(--space-3);
-  border-radius: var(--radius-pill);
-  background: var(--surface-sunken);
+.crew-strip[data-instances] {
+  display: grid;
+  justify-content: center;
+}
+/* who has finished: one quiet line under the row, at its start; muted, body size, a link-style button */
+.crew-finished-line {
+  justify-self: stretch;
+  margin: var(--space-2) 0 0;
   color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--step--1);
-  white-space: nowrap;
+  text-align: start;
+}
+.crew-finished-btn.linkish {
+  min-block-size: var(--target-min);
+  color: var(--text-muted);
+  font-size: inherit;
+}
+/* the end mark: ✓ done or ■ stopped, a small badge on the disc's block-end inline-end edge; the trade mark stays */
+.crew-face-end {
+  position: absolute;
+  inset-block-end: calc(var(--face) * -0.06);
+  inset-inline-end: calc(var(--face) * -0.06);
+  display: grid;
+  place-items: center;
+  inline-size: calc(var(--face) * 0.36);
+  block-size: calc(var(--face) * 0.36);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: 0 0 0 2px var(--surface);
+  font-size: calc(var(--face) * 0.2);
+}
+.crew-face[data-mood="stopped"] {
+  background: var(--fill-disabled, var(--surface-raised));
+  color: var(--text-muted);
+}
+/* a dismissed face fades out in place, also under reduced motion; with motion it shrinks too (below) */
+.crew-inst[data-phase="fold"] {
+  animation: crew-leave calc(var(--dur-step) * 4) var(--ease-dither) forwards;
+}
+/* the moves (PIP-JOURNEY §3.1): stepped, from the kit's pixel motion tokens; with reduced motion nothing moves */
+@media (prefers-reduced-motion: no-preference) {
+  .crew-strip[data-instances] .crew-face {
+    transition:
+      background-color var(--dur-step) var(--ease-step),
+      outline-color var(--dur-step) var(--ease-step);
+  }
+  .crew-inst[data-phase="enter"] {
+    animation: crew-enter calc(var(--dur-step) * 4) var(--ease-dither) both;
+    animation-delay: calc(var(--dur-step) * var(--enter-i, 0));
+  }
+  /* a redo comes back from Pip's side, like a first entrance (D5) */
+  .crew-inst[data-phase="return"] {
+    animation: crew-enter calc(var(--dur-step) * 4) var(--ease-dither) both;
+  }
+  .crew-inst[data-phase="fold"] {
+    animation: crew-fold calc(var(--dur-step) * 4) var(--ease-dither) forwards;
+  }
+  .crew-inst[data-phase="leave"] {
+    animation: crew-leave calc(var(--dur-step) * 4) var(--ease-dither) forwards;
+  }
+  /* Pip's side is the inline start */
+  @keyframes crew-enter {
+    from {
+      translate: calc(var(--space-2) * -1 * var(--flow, 1)) 0;
+      scale: 0.5;
+      opacity: 0;
+    }
+  }
+  @keyframes crew-fold {
+    to {
+      scale: 0.5;
+      opacity: 0;
+    }
+  }
+}
+@keyframes crew-leave {
+  to {
+    opacity: 0;
+  }
+}
+.crew-inst:dir(rtl) {
+  --flow: -1;
+}
+/* the header's small faces keep only the glyphs */
+.crew-btn-faces .crew-face-end {
+  display: none;
+}
+/* the word under a face that holds its end: "done" or "stopped", on its own line so the caption never clips it */
+.crew-inst-end {
+  margin-block-start: calc(var(--space-1) * -1);
+  color: var(--text);
 }

@@ -10,6 +10,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -37,7 +38,7 @@ import {
 import { Link } from "../lib/router.tsx";
 import type { PipCard, PipFile, PipItem, PipSummary, ProjectState, RefType, RoleT } from "../lib/types.ts";
 import { BriefCard, BriefFieldsCard, briefLines, settledFields } from "./BriefCards.tsx";
-import { CrewFace } from "./CrewStrip.tsx";
+import { ConductContext, CrewFace } from "./CrewStrip.tsx";
 import { McpForm, McpResult } from "./McpForm.tsx";
 import { ContextDialog } from "./PipContext.tsx";
 import { PipFace } from "./PipFace.tsx";
@@ -767,7 +768,7 @@ function Composer({
   /** the field sits above the thread (the simple view): the command list opens below it */
   menuBelow?: boolean;
   /** sends instead of asking Pip directly (/new makes the draft first); false keeps the words in the field */
-  onSend?: (text: string) => Promise<boolean>;
+  onSend?: (text: string, about?: { instance: string }) => Promise<boolean>;
   /** files to send with the message: chips in the field and an Add files button */
   attach?: Attach;
 }) {
@@ -780,10 +781,13 @@ function Composer({
   const field = inputRef ?? own;
   // a draft from "Ask Pip about this": fill the field, and focus it when this field is the one on top
   const draft = conv.draft;
+  // "Ask Pip about this" on a crew member: the turn goes with `about: {instance}` while its words are in the field
+  const about = useRef<{ instance: string; text: string } | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per new draft
   useEffect(() => {
     if (!draft) return;
     setText(draft.text);
+    about.current = draft.about ? { ...draft.about, text: draft.text } : null;
     requestAnimationFrame(() => {
       const el = field.current;
       if (!el?.offsetParent) return;
@@ -817,8 +821,12 @@ function Composer({
     onSent?.();
     setText("");
     setDismissed(false);
-    const ok = onSend ? await onSend(body) : await askPip(project, body);
-    if (!ok) setText(body);
+    const on = about.current && body.startsWith(about.current.text.trim()) ? about.current : null;
+    const ok = onSend
+      ? await onSend(body, on ? { instance: on.instance } : undefined)
+      : await askPip(project, body, on ? { about: { instance: on.instance } } : {});
+    if (ok) about.current = null;
+    else setText(body);
   };
   const pick = (i: number) => {
     const c = matches[i];
@@ -1087,7 +1095,7 @@ export function PipAsk({
   starters?: string[];
   /** a quiet line under the chips ("Show all options") */
   under?: ReactNode;
-  onSend?: (text: string) => Promise<boolean>;
+  onSend?: (text: string, about?: { instance: string }) => Promise<boolean>;
   attach?: Attach;
   emptyNote?: string | null;
   skip?: (it: PipItem) => boolean;
@@ -1201,12 +1209,14 @@ export function PipAsk({
 export function PipCrewFace({ project, state }: { project: string; state: ProjectState | null }) {
   const conv = usePip(project);
   const news = hasNews(conv);
-  const mood = pipMood(conv, state);
+  // the crew row says when Pip is bringing members in (PIP-JOURNEY §3.2)
+  const mood = useContext(ConductContext) ? "conducting" : pipMood(conv, state);
+  const doing = mood === "thinking" ? ", thinking" : mood === "conducting" ? ", bringing in the crew" : "";
   return (
     <button
       type="button"
       className="pip-face-btn"
-      aria-label={`Pip${mood === "thinking" ? ", thinking" : ""}${news ? ", has something for you" : ""}. Ask Pip`}
+      aria-label={`Pip${doing}${news ? ", has something for you" : ""}. Ask Pip`}
       title="Pip"
       aria-controls="pip-sheet"
       onClick={() => {

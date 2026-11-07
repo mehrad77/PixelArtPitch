@@ -19,7 +19,23 @@ const GAP = 6;
 export type Bubble = { id: number; member: string; text: string; left: number; leaving: boolean };
 const nameOf = (member: string) => (member === "pip" ? "Pip" : (CREW.find((m) => m.id === member)?.label ?? member));
 
-export function useThoughts(state: ProjectState | null, pip?: Conv | null, channelOf?: string | null) {
+export type ThoughtOpts = {
+  /** whose face a task's words float over (the instance row keys them by instance) */
+  taskKey?: (t: Task) => string;
+  /** whose face a channel message floats over, and its words; null drops it */
+  msgKey?: (m: ChannelMsg) => { key: string; text: string } | null;
+  /** the face's name in the region; the region is fed by `say` alone when `announce` is false */
+  announce?: boolean;
+};
+
+export function useThoughts(
+  state: ProjectState | null,
+  pip?: Conv | null,
+  channelOf?: string | null,
+  opts: ThoughtOpts = {},
+) {
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [live, setLive] = useState("");
   const held = useRef(new Set<string>());
@@ -29,7 +45,7 @@ export function useThoughts(state: ProjectState | null, pip?: Conv | null, chann
   const push = useCallback((member: string, text: string) => {
     if (!text) return;
     const id = ++seq.current;
-    queue.current.push(`${nameOf(member)}: ${text}`);
+    if (optsRef.current.announce !== false) queue.current.push(`${nameOf(member)}: ${text}`);
     setBubbles((bs) => {
       const rest = bs.filter((b) => b.member !== member);
       const next = [...rest, { id, member, text, left: SHOW_MS, leaving: false }];
@@ -47,7 +63,7 @@ export function useThoughts(state: ProjectState | null, pip?: Conv | null, chann
       prev.current = snapshot(tasks);
       return;
     }
-    const changes = taskChanges(prev.current, state);
+    const changes = taskChanges(prev.current, state, optsRef.current.taskKey);
     prev.current = snapshot(tasks);
     for (const c of changes) push(c.member, c.text);
   }, [tasks, push]);
@@ -69,7 +85,13 @@ export function useThoughts(state: ProjectState | null, pip?: Conv | null, chann
   }, [pipKey, loaded]);
 
   // the crew channel: a brief, report, ask or answer floats over the sender's face
-  const onChannel = useCallback((m: ChannelMsg) => push(memberIdOf(m.from), bubbleOf(m)), [push]);
+  const onChannel = useCallback(
+    (m: ChannelMsg) => {
+      const at = optsRef.current.msgKey ? optsRef.current.msgKey(m) : { key: memberIdOf(m.from), text: bubbleOf(m) };
+      if (at) push(at.key, at.text);
+    },
+    [push],
+  );
   useChannelLive(channelOf, onChannel);
 
   // the clock: held bubbles wait; the rest count down, fade, then go
@@ -97,10 +119,20 @@ export function useThoughts(state: ProjectState | null, pip?: Conv | null, chann
   useEffect(() => {
     const t = setInterval(() => {
       if (!queue.current.length) return;
-      setLive(queue.current.slice(-3).join(". "));
+      setLive(
+        `${queue.current
+          .slice(-3)
+          .map((l) => l.replace(/\.$/, ""))
+          .join(". ")}.`,
+      );
       queue.current = [];
     }, 5000);
     return () => clearInterval(t);
+  }, []);
+
+  /** sentences for the region only (the instance row's spawns, returns and leaves), no bubble */
+  const say = useCallback((lines: string[]) => {
+    queue.current.push(...lines);
   }, []);
 
   const hold = useCallback((member: string, on: boolean) => {
@@ -108,7 +140,7 @@ export function useThoughts(state: ProjectState | null, pip?: Conv | null, chann
     else held.current.delete(member);
   }, []);
 
-  return { bubbles, hold, live };
+  return { bubbles, hold, live, push, say };
 }
 
 type Spot = { x: number; y: number; tail: number; rtl: boolean; w: number };
