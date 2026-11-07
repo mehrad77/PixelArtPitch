@@ -65,7 +65,7 @@ export function humanize(e: any, role = "crew"): { text: string; action: "retry"
     return { text: `${who} got stuck on a scene setting.`, action: "retry" };
   return { text: `${who} got stuck.`, action: "retry" };
 }
-const PHASE: Record<string, number> = {
+export const PHASE: Record<string, number> = {
   brief: 0,
   script: 1,
   storyboard: 1,

@@ -34,7 +34,8 @@ export function phaseOf(s: ProjectState): number {
   const busy = s.tasks.some((t) => t.status === "working" || t.status === "queued");
   if (hasVideo(s) && s.stage === "deliver" && !busy) return PHASES.length;
   const p = s.status?.phase;
-  return p != null && p >= 0 && p < PHASES.length ? p : phaseOfStage(s.stage);
+  // a project made before status tracking has phase 0 but a later stage: trust the further of the two
+  return Math.max(p != null && p >= 0 && p < PHASES.length ? p : 0, phaseOfStage(s.stage));
 }
 
 // ---- recovered failures ----

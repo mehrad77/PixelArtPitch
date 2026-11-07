@@ -10,6 +10,7 @@ import { type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
+import { PHASE } from "@pap/crew/orchestrator";
 import { McpSession } from "./mcp.ts";
 
 export const VERSION = "0.1.0";
@@ -210,7 +211,8 @@ export function createApp(o: ServerOpts) {
             running: st?.crew?.running ?? false,
             paused: p.state.paused,
             status: p.state.status,
-            phase: p.state.status?.phase ?? 0,
+            // projects made before status tracking only have a stage
+            phase: Math.max(p.state.status?.phase ?? 0, PHASE[p.state.stage] ?? 0),
             milestones: p.state.milestones.length,
             finished: p.files().some((f) => f.kind === "video"),
             working: p.state.tasks.filter((t) => t.status === "working").map((t) => t.role),
