@@ -9,6 +9,9 @@ const upsert = <T extends { id: string }>(list: T[], item: T): T[] => {
   return next;
 };
 
+/** how many live activity lines to keep per task */
+export const ACTIVITY_KEEP = 500;
+
 /** returns the next state, or the same object when the event needs a refetch (patch) or changes nothing here */
 export function applyEvent(s: ProjectState, e: ServerEvent): ProjectState {
   switch (e.event) {
@@ -42,6 +45,11 @@ export function applyEvent(s: ProjectState, e: ServerEvent): ProjectState {
       return { ...s, status: e.data };
     case "milestone":
       return { ...s, milestones: upsert(s.milestones ?? [], e.data) };
+    case "activity": {
+      const { task, ...entry } = e.data;
+      const list = [...(s.activity?.[task] ?? []), entry].slice(-ACTIVITY_KEEP);
+      return { ...s, activity: { ...s.activity, [task]: list } };
+    }
     case "x-state":
       return { ...s, ...e.data };
     default:

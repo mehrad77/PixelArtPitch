@@ -1,0 +1,333 @@
+/* The agent activity sheet: the crew down the start edge, a calm thread, a message box. Kit tokens only. */
+.dialog.activity[data-shab-dialog][data-placement="end"] {
+  inline-size: min(100% - var(--gutter), 56rem);
+}
+.dialog.activity[data-shab-dialog][data-placement="end"] .dialog-body[data-shab-dialog] {
+  display: flex;
+  min-block-size: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--text);
+  /* the narrow layout below asks this box, not the viewport */
+  container-type: inline-size;
+}
+.activity-layout {
+  display: grid;
+  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+/* the switcher: face, name, one line, like a chat list */
+.activity-crew {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2);
+  overflow-y: auto;
+  border-inline-end: 1px dashed var(--stroke);
+}
+.activity-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-block-size: var(--target-min);
+  padding: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.activity-who:hover {
+  background: var(--state-hover);
+}
+.activity-who[aria-selected="true"] {
+  border-color: var(--stroke);
+  background: var(--state-selected);
+}
+.activity-who:focus-visible {
+  outline: var(--focus-ring, 2px solid var(--stroke-strong));
+  outline-offset: 2px;
+}
+.activity-who .crew-face {
+  --face: 2.5rem;
+  flex: none;
+}
+.activity-who-text {
+  display: grid;
+  min-inline-size: 0;
+}
+.activity-who-name {
+  font-weight: 600;
+  font-size: var(--step--1);
+}
+.activity-who-line {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--step--2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* the chosen member */
+.activity-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+.activity-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-block-end: 1px dashed var(--stroke);
+}
+.activity-head-text {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+.activity-name {
+  margin: 0;
+  font-size: var(--step-1);
+}
+.activity-now {
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--step--1);
+}
+.activity-retries {
+  flex: none;
+}
+
+/* the thread */
+.activity-thread-wrap {
+  position: relative;
+  flex: 1;
+  min-block-size: 0;
+  display: flex;
+}
+.activity-thread {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  padding: var(--space-4) var(--space-5) var(--space-6);
+}
+.activity-empty {
+  margin: var(--space-6) 0;
+  text-align: center;
+}
+.activity-group + .activity-group {
+  margin-block-start: var(--space-5);
+}
+.activity-group-head {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-raised);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding-block: var(--space-2);
+  border-block-end: 1px solid var(--stroke);
+  background: var(--surface-raised);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+.activity-group-side {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-weight: 400;
+}
+.activity-bubbles {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.activity-bubble-inner {
+  position: relative;
+  max-inline-size: min(100%, 36rem);
+  padding: var(--space-2) var(--space-3) var(--space-2);
+  border: 1px solid var(--stroke);
+  border-inline-start: 3px solid var(--who-hue, var(--stroke-strong));
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--step--1);
+}
+.activity-bubble-inner > p {
+  margin: 0;
+}
+.activity-bubble[data-kind="step"] .activity-bubble-inner {
+  border-color: transparent;
+  border-inline-start-color: transparent;
+  background: none;
+  padding-block: 0;
+  color: var(--text-muted);
+}
+.activity-bubble[data-kind="error"] .activity-bubble-inner {
+  border-inline-start-color: var(--status-error);
+}
+.activity-time {
+  display: block;
+  margin-block-start: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--step--2);
+  text-align: end;
+}
+
+/* a tool call: a compact card */
+.activity-tool {
+  display: grid;
+  gap: var(--space-2);
+}
+.activity-tool-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+.activity-tool-line > :last-child {
+  margin-inline-start: auto;
+}
+.activity-tool-mark {
+  font-weight: 700;
+  color: var(--status-success);
+}
+.activity-tool[data-ok="false"] .activity-tool-mark {
+  color: var(--status-error);
+}
+.activity-image {
+  display: block;
+  inline-size: min(100%, 16rem);
+  border: 1px solid var(--stroke);
+  background: var(--surface-sunken);
+}
+
+/* what sits behind a click */
+.activity-more {
+  margin-block-start: var(--space-1);
+  border-block-end: 0;
+}
+.activity-reasoning {
+  color: var(--text-muted);
+}
+.activity-code {
+  max-block-size: 16rem;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.activity-thinking {
+  margin: var(--space-2) 0 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 1px dashed var(--stroke);
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: pre-wrap;
+}
+.activity .mono {
+  font-family: var(--font-mono);
+}
+
+.activity-fresh {
+  position: absolute;
+  inset-block-end: var(--space-3);
+  inset-inline-start: 50%;
+  translate: calc(-50% * var(--inline-sign, 1)) 0;
+  z-index: var(--z-raised);
+}
+
+/* the message box */
+.activity-compose {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-3);
+  border-block-start: 1px dashed var(--stroke);
+  background: var(--surface-raised);
+}
+.activity-compose-field {
+  margin: 0;
+}
+.activity-compose-field label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.activity-sent {
+  grid-column: 1 / -1;
+  min-block-size: 1lh;
+  margin: 0;
+  color: var(--text-muted);
+}
+.activity-sent[data-ok="true"] {
+  color: var(--status-success);
+}
+.activity-sent[data-ok="false"] {
+  color: var(--status-error);
+}
+
+/* narrow: the switcher keeps only the faces */
+@container (max-width: 34rem) {
+  .activity-layout {
+    grid-template-columns: min-content minmax(0, 1fr);
+  }
+  .activity-crew {
+    padding-inline: var(--space-1);
+  }
+  .activity-who {
+    justify-content: center;
+    padding: var(--space-1);
+  }
+  .activity-who .crew-face {
+    --face: 2.25rem;
+  }
+  .activity-who-text {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .activity-head .crew-face {
+    --face: 3rem;
+  }
+  .activity-head,
+  .activity-thread,
+  .activity-compose {
+    padding-inline: var(--space-3);
+  }
+}
+
+/* the popover's quiet way in */
+.crew-face-watch {
+  justify-self: start;
+  color: var(--text-muted);
+  font-size: var(--step--1);
+}

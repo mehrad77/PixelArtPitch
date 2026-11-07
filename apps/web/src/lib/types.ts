@@ -141,6 +141,17 @@ export type ProjectStatus = {
   problem?: { text: string; action: ProblemAction; taskId: string };
 };
 export type Milestone = { id: string; at: string; text: string; image?: string };
+/** one line of a task's transcript (GET …/tasks/:tid/transcript, and live as the `activity` event) */
+export type ActivityKind = "step" | "model" | "tool" | "patch" | "answer" | "error";
+export type ActivityEntry = {
+  at: string;
+  kind: ActivityKind;
+  title: string;
+  detail?: unknown;
+  thinking?: string;
+  /** a data: URL */
+  image?: string;
+};
 
 export type ProjectState = {
   doc: ProjectT;
@@ -162,6 +173,8 @@ export type ProjectState = {
   crew?: { state: CrewState };
   status?: ProjectStatus;
   milestones?: Milestone[];
+  /** client only: live activity per task id, the newest ~500 each */
+  activity?: Record<string, ActivityEntry[]>;
 };
 
 export type Session = { version: string; token: string; workspace: { roots: string[]; libraryDir: string } };
@@ -230,6 +243,8 @@ export type ServerEvent =
   | { event: "status"; data: ProjectStatus }
   /** extension: one more thing finished, in plain words */
   | { event: "milestone"; data: Milestone }
+  /** one more transcript line for a task, as it happens (no persisted id) */
+  | { event: "activity"; data: ActivityEntry & { task: string } }
   /** extension: merge these top-level fields (the mock uses it for sceneStatus, findings, art, crew, files, time) */
   | { event: "x-state"; data: Partial<ProjectState> };
 
@@ -270,6 +285,8 @@ export interface Client {
   crewRetry(id: string, taskId: string, stage?: Stage): Promise<void>;
   /** extension: the agent transcript of a task; null when the server has none */
   transcript(id: string, taskId: string): Promise<string | null>;
+  /** a task's transcript as entries, oldest first; null when the server keeps none */
+  taskTranscript(id: string, taskId: string): Promise<ActivityEntry[] | null>;
   uploadVo(id: string, body: Blob, take: string): Promise<{ file: string }>;
   align(id: string, file: string): Promise<{ proposal: { cue: string; start: number; end: number }[] }>;
   settings(): Promise<Settings>;

@@ -8,10 +8,11 @@ import { type CSSProperties, useEffect, useState } from "react";
 import { leadTask } from "../lib/derive.ts";
 import { CREW, type Member, plainTitle, problemOf, visibleTasks } from "../lib/human.ts";
 import type { ProjectState, Task } from "../lib/types.ts";
+import { AgentActivity } from "./AgentActivity.tsx";
 import "./CrewStrip.css";
 
 export type Mood = "idle" | "working" | "needs" | "stuck" | "done" | "later";
-const MOOD_WORD: Record<Mood, string> = {
+export const MOOD_WORD: Record<Mood, string> = {
   idle: "waiting",
   working: "working",
   needs: "waiting for you",
@@ -32,7 +33,7 @@ const CALM: Record<string, string> = {
 /** working: look, blink, look, think */
 const WORK_FRAMES = (calm: string) => [calm, calm, "- -", calm, "> <"];
 
-function moodOf(tasks: Task[], stuckIds: Set<string>): { mood: Mood; lead?: Task } {
+export function moodOf(tasks: Task[], stuckIds: Set<string>): { mood: Mood; lead?: Task } {
   const lead = leadTask(tasks);
   if (!lead) return { mood: "later" };
   if (lead.status === "failed") return { mood: stuckIds.has(lead.id) ? "stuck" : "idle", lead };
@@ -43,8 +44,32 @@ function moodOf(tasks: Task[], stuckIds: Set<string>): { mood: Mood; lead?: Task
   return { mood: "idle", lead };
 }
 
+/** each member's tasks (retries the crew recovered left out), its mood and the one line about it */
+export function crewRows(state: ProjectState) {
+  const p = problemOf(state);
+  const stuck = new Set(p ? [p.taskId] : []);
+  return CREW.map((m) => {
+    const tasks = visibleTasks(state.tasks.filter((t) => m.roles.includes(t.role)));
+    const img = [...tasks].reverse().find((t) => t.lastImage)?.lastImage;
+    const { mood, lead } = moodOf(tasks, stuck);
+    const line =
+      mood === "working" && lead
+        ? plainTitle(lead, state)
+        : mood === "needs"
+          ? "Waiting for you."
+          : mood === "stuck"
+            ? (p?.text ?? "Stuck.")
+            : mood === "done"
+              ? "Done for now."
+              : mood === "later"
+                ? "Joins later."
+                : "Waiting for the others.";
+    return { m, img, mood, lead, line, tasks };
+  });
+}
+
 /** the shared clock for blinking faces: a whole step every 900 ms */
-function useStep(on: boolean) {
+export function useStep(on: boolean) {
   const [n, setN] = useState(0);
   useEffect(() => {
     if (!on) return;
@@ -95,35 +120,28 @@ export function CrewFace({
   );
 }
 
-export function CrewStrip({ state }: { state: ProjectState }) {
-  const p = problemOf(state);
-  const stuck = new Set(p ? [p.taskId] : []);
-  const rows = CREW.map((m) => {
-    const tasks = visibleTasks(state.tasks.filter((t) => m.roles.includes(t.role)));
-    const img = [...tasks].reverse().find((t) => t.lastImage)?.lastImage;
-    return { m, img, ...moodOf(tasks, stuck) };
-  });
+export function CrewStrip({ projectId, state }: { projectId: string; state: ProjectState }) {
+  const rows = crewRows(state);
   const step = useStep(rows.some((r) => r.mood === "working"));
+  // hidden by default: the activity view opens only when the person asks for it from a face
+  const [watching, setWatching] = useState<string | null>(null);
+  const watch = (id: string) => {
+    document.getElementById(`crew-face-${id}`)?.hidePopover?.();
+    setWatching(id);
+  };
+  const stopWatching = () => {
+    const id = watching;
+    setWatching(null);
+    if (id) requestAnimationFrame(() => document.getElementById(`crew-face-btn-${id}`)?.focus());
+  };
   return (
     <section className="crew-strip" aria-labelledby="crew-strip-h">
       <h2 id="crew-strip-h" className="visually-hidden">
         The crew
       </h2>
       <ul className="crew-faces">
-        {rows.map(({ m, mood, lead, img }, i) => {
+        {rows.map(({ m, mood, img, line }, i) => {
           const name = `${m.label}, ${MOOD_WORD[mood]}`;
-          const line =
-            mood === "working" && lead
-              ? plainTitle(lead, state)
-              : mood === "needs"
-                ? "Waiting for you."
-                : mood === "stuck"
-                  ? (p?.text ?? "Stuck.")
-                  : mood === "done"
-                    ? "Done for now."
-                    : mood === "later"
-                      ? "Joins later."
-                      : "Waiting for the others.";
           return (
             <li key={m.id} style={{ "--face-i": i } as CSSProperties}>
               <Popover
@@ -132,18 +150,22 @@ export function CrewStrip({ state }: { state: ProjectState }) {
                 variant="quiet"
                 size="sm"
                 trigger={<CrewFace member={m} mood={mood} step={step + i} size={mood === "working" ? "lg" : "md"} />}
-                triggerProps={{ className: "crew-face-btn", title: name }}
+                triggerProps={{ className: "crew-face-btn", title: name, id: `crew-face-btn-${m.id}` }}
               >
                 <div className="crew-face-panel">
                   <p className="label">{m.label}</p>
                   <p>{line}</p>
                   {img && <img className="pixelated" src={img} alt={`Latest from the ${m.label.toLowerCase()}`} />}
+                  <button type="button" className="linkish crew-face-watch" onClick={() => watch(m.id)}>
+                    See what it's doing
+                  </button>
                 </div>
               </Popover>
             </li>
           );
         })}
       </ul>
+      {watching && <AgentActivity projectId={projectId} state={state} memberId={watching} onClose={stopWatching} />}
     </section>
   );
 }

@@ -51,6 +51,8 @@ export function Viewer({
   const scene = tl.scenes.find((s) => pb.t >= s.from && pb.t < s.to) ?? tl.scenes.at(-1);
   const status = scene ? state.sceneStatus?.[scene.id] : undefined;
   const cue = tl.cues.find((c) => pb.t >= c.start && pb.t <= c.end);
+  // captions burned into the pixels already show the cue; the overlay is only a stand-in when they are off
+  const burned = (state.doc as any).composition?.captions?.enabled !== false;
   const sceneTitle = scene ? state.doc.scenes.find((s) => s.id === scene.id)?.title || scene.id : "";
   const [proxyOk, setProxyOk] = useState(true);
   // a new proxy URL gets a fresh chance to play
@@ -181,7 +183,7 @@ export function Viewer({
               <div className="ov-safe-title" />
             </div>
           )}
-          {overlays.captions && cue && (
+          {overlays.captions && !burned && cue && (
             <p className="ov-caption" aria-hidden="true">
               {cue.text}
             </p>
@@ -260,9 +262,11 @@ export function Viewer({
             <Button size="sm" variant="ghost" aria-pressed={overlays.safe} onClick={() => toggle("safe")}>
               Safe area
             </Button>
-            <Button size="sm" variant="ghost" aria-pressed={overlays.captions} onClick={() => toggle("captions")}>
-              Captions
-            </Button>
+            {!burned && (
+              <Button size="sm" variant="ghost" aria-pressed={overlays.captions} onClick={() => toggle("captions")}>
+                Captions
+              </Button>
+            )}
             <Button size="sm" variant="ghost" aria-pressed={overlays.grid} onClick={() => toggle("grid")}>
               Pixel grid
             </Button>

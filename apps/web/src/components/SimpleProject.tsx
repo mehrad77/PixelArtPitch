@@ -112,7 +112,7 @@ function SimpleProject({ id, state, view }: { id: string; state: ProjectState; v
       </div>
       <StatusLine projectId={id} state={state} />
       <NeedsYouCard projectId={id} state={state} />
-      <CrewStrip state={state} />
+      <CrewStrip projectId={id} state={state} />
       <SoFar state={state} />
       <footer className="sp-foot">
         <button

@@ -5,14 +5,25 @@ import { useEffect, useState } from "react";
 import { client } from "../lib/client.ts";
 import { DEPARTMENTS, type Department, leadTask, ROLE_LABEL, TASK_STATUS, taskProgress } from "../lib/derive.ts";
 import { duration, usd } from "../lib/format.ts";
-import { retriesOf, visibleTasks } from "../lib/human.ts";
+import { memberOf, retriesOf, visibleTasks } from "../lib/human.ts";
 import type { ProjectState, Task } from "../lib/types.ts";
+import { AgentActivity } from "./AgentActivity.tsx";
 import "./CrewRow.css";
 
 const modelName = (m?: string) => (m ? (m.split("/").pop() ?? m) : "Model picked when it starts");
 
-export function CrewPanel({ projectId, state }: { projectId: string; state: ProjectState }) {
+export function CrewPanel({
+  projectId,
+  state,
+  currentScene,
+}: {
+  projectId: string;
+  state: ProjectState;
+  /** the scene at the playhead, for a message sent from the activity view */
+  currentScene?: () => string | undefined;
+}) {
   const [open, setOpen] = useState<Task | null>(null);
+  const [watch, setWatch] = useState<Task | null>(null);
   const [, force] = useState(0);
   // progress bars read elapsed time; repaint them every few seconds without moving anything
   useEffect(() => {
@@ -32,6 +43,20 @@ export function CrewPanel({ projectId, state }: { projectId: string; state: Proj
           state={state}
           task={state.tasks.find((t) => t.id === open.id) ?? open}
           onClose={() => setOpen(null)}
+          onWatch={(t) => {
+            setOpen(null);
+            setWatch(t);
+          }}
+        />
+      )}
+      {watch && (
+        <AgentActivity
+          projectId={projectId}
+          state={state}
+          memberId={memberOf(watch.role).id}
+          focusTask={watch.id}
+          currentScene={currentScene}
+          onClose={() => setWatch(null)}
         />
       )}
     </div>
@@ -133,11 +158,13 @@ function TaskDrawer({
   state,
   task,
   onClose,
+  onWatch,
 }: {
   projectId: string;
   state: ProjectState;
   task: Task;
   onClose: () => void;
+  onWatch: (t: Task) => void;
 }) {
   const [transcript, setTranscript] = useState<string | null | undefined>(undefined);
   const decisions = state.questions.filter((q) => q.from === task.role);
@@ -199,6 +226,11 @@ function TaskDrawer({
             <p className="muted">No decisions asked by this role.</p>
           )}
         </section>
+        <p>
+          <Button size="sm" variant="ghost" onClick={() => onWatch(task)}>
+            See what it's doing
+          </Button>
+        </p>
         <Disclosure
           summary="Transcript"
           onToggle={(e) => {

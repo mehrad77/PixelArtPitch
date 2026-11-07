@@ -4,6 +4,7 @@
 import { humanStatus, PHASES, phaseOf, problemOf } from "../lib/human.ts";
 import { applyEvent } from "../lib/reducer.ts";
 import type {
+  ActivityEntry,
   AnswerInput,
   ArtAsset,
   Client,
@@ -34,6 +35,7 @@ import type {
   Task,
   TimelineJSON,
 } from "../lib/types.ts";
+import { type Beat, closing, failure, middle, opening, wholeRun } from "./activity.ts";
 import { drawFrame, drawSheet } from "./art.ts";
 import {
   CUES_ANGLE,
@@ -64,6 +66,8 @@ type MockProject = {
   pauseIn: number | null;
   reopen: { gate: GateId; at: number } | null;
   transcripts: Map<string, string[]>;
+  /** ticks each working task has spent, to pace its live activity */
+  beatClock: Map<string, number>;
   /** a first try's id → the id of its newest retry, so the script keeps addressing the live task */
   alias: Map<string, string>;
   /** the script waits while a problem only the person can fix is open */
@@ -185,6 +189,9 @@ function newProject(
     crew: { state: "running" },
     milestones: seeded ? [{ id: "m_plan", at: iso(-840), text: "Plan ready" }] : [],
   };
+  // the plan ran before this visit: its whole transcript is already on record
+  const planned = state.tasks.find((t) => t.id === "t_producer");
+  if (seeded && planned) state.activity = { t_producer: wholeRun(planned) };
   const history: PatchEntryT[] = seeded
     ? [
         entry(
@@ -225,6 +232,7 @@ function newProject(
     pauseIn: null,
     reopen: null,
     transcripts: new Map(),
+    beatClock: new Map(),
     alias: new Map(),
     hold: false,
     lastStatus: "",
@@ -317,6 +325,25 @@ class MockBackend {
     if (patch.status === "done") next.endedAt = iso();
     this.emit(p, { event: "task", data: next });
     this.log(p, role, `${next.title}: ${next.status}`);
+    // what the server logs on the way: the step and the model call, then the change and the answer, or the error
+    if (patch.status && patch.status !== old?.status) {
+      const beats: Beat[] =
+        patch.status === "working"
+          ? old?.status === "waiting_user"
+            ? [{ kind: "step", title: "Picked up your answer and carried on" }]
+            : opening(next)
+          : patch.status === "done"
+            ? closing(next)
+            : patch.status === "failed"
+              ? failure(next)
+              : patch.status === "waiting_user"
+                ? [{ kind: "step", title: `Asked you a question: ${next.title}` }]
+                : [];
+      for (const b of beats) this.activity(p, id, b);
+    }
+  }
+  activity(p: MockProject, taskId: string, b: Beat) {
+    this.emit(p, { event: "activity", data: { task: taskId, at: iso(), ...b } });
   }
   /** start a new try of a failed task: the old one points at it, and the script follows the new id */
   retry(p: MockProject, first: string, extra: Partial<Task> = {}) {
@@ -443,6 +470,10 @@ class MockBackend {
         event: "task",
         data: { ...t, usd: +(t.usd + rate).toFixed(4), etaSec: Math.max(1, (t.etaSec ?? 10) - 1) },
       });
+      // a tool call every few seconds while it works
+      const c = (p.beatClock.get(t.id) ?? 0) + 1;
+      p.beatClock.set(t.id, c);
+      if (c % 3 === 2) this.activity(p, t.id, middle(p.state.tasks.find((x) => x.id === t.id) ?? t, (c - 2) / 3));
     }
     if (burned) {
       const reserved = p.state.tasks
@@ -1087,6 +1118,12 @@ export class MockClient implements Client {
       `tool read_project → rev ${p.state.rev}, ${p.state.doc.script.cues.length} cues`,
       ...lines,
     ].join("\n");
+  }
+  async taskTranscript(id: string, taskId: string): Promise<ActivityEntry[] | null> {
+    await wait();
+    const p = be().get(id);
+    if (!p.state.tasks.some((t) => t.id === taskId)) return null;
+    return clone(p.state.activity?.[taskId] ?? []);
   }
   async uploadVo(id: string, body: Blob, take: string) {
     await wait(400);

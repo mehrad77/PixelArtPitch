@@ -262,7 +262,7 @@ function Workspace({
             hidden={tab !== "crew"}
             className="tab-panel"
           >
-            <CrewPanel projectId={id} state={state} />
+            <CrewPanel projectId={id} state={state} currentScene={() => sceneAt(pb.t)?.id} />
           </section>
           <section
             id="panel-inbox"

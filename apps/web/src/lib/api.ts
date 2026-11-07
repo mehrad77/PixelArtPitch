@@ -1,6 +1,7 @@
 // The HTTP client for the studio server (docs/API.md). Typed fetch, the X-PAP-Token header on every mutation (read
 // once from GET /api/session), and an SSE subscription over fetch so it can send Last-Event-ID and reconnect.
 import type {
+  ActivityEntry,
   AnswerInput,
   ApiErrorBody,
   Client,
@@ -142,6 +143,18 @@ export class HttpClient implements Client {
       return res.ok ? await res.text() : null;
     } catch {
       return null;
+    }
+  }
+  async taskTranscript(id: string, taskId: string) {
+    try {
+      const j = await this.get<ActivityEntry[] | { entries?: ActivityEntry[] }>(
+        `/api/p/${enc(id)}/tasks/${enc(taskId)}/transcript`,
+      );
+      const list = Array.isArray(j) ? j : j?.entries;
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
     }
   }
   uploadVo(id: string, body: Blob, take: string) {

@@ -62,7 +62,8 @@ export function useProject(id: string): ProjectView {
   const load = useCallback(() => {
     client.project(id).then(
       (s) => {
-        setState(s);
+        // live activity is client-only: a refetched state must not drop it
+        setState((prev) => ({ ...s, activity: s.activity ?? prev?.activity }));
         setError(null);
       },
       (e: Error) => setError(e),
@@ -88,7 +89,14 @@ export function useProject(id: string): ProjectView {
       if (e.event === "patch") {
         setHistory((h) => (h.some((x) => x.seq === e.data.seq) ? h : [...h, e.data]));
         if (refetch.current) clearTimeout(refetch.current);
-        refetch.current = setTimeout(() => client.project(id).then(setState, () => {}), 250);
+        refetch.current = setTimeout(
+          () =>
+            client.project(id).then(
+              (s) => setState((prev) => ({ ...s, activity: s.activity ?? prev?.activity })),
+              () => {},
+            ),
+          250,
+        );
         return;
       }
       if (e.event === "render") {

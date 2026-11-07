@@ -5,7 +5,6 @@ import {
   Callout,
   CodeBlock,
   CopyButton,
-  Disclosure,
   Field,
   Fieldset,
   Radio,
