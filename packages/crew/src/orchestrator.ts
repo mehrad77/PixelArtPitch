@@ -873,6 +873,13 @@ export class Crew {
         recipes: s.recipes,
         reason: `recipes for ${s.title}`,
       });
+    // the compiled scenes draw fixed-id assets no param names (flag_raise's castle, the backdrop's moon, skyline and
+    // tiles): cast every one the library has, or frame() draws a placeholder box
+    const { missingAssets } = await import("@pap/engine/lints");
+    const planned = new Set(b.newAssets.map((a) => a.name));
+    for (const m of missingAssets(p.doc(), p.timeline().at, lib))
+      if (m.libraryId && !planned.has(m.id) && !p.doc().assets.some((a) => a.id === m.id))
+        await this.tool(p, "art-director", t.id, "cast_asset", { name: m.id, libraryId: m.libraryId });
     // remember what needs drawing
     const pending = b.newAssets.filter((a) => !p.doc().assets.some((x) => x.id === a.name));
     writeFileSync(join(p.dir, "runs", "new-assets.json"), JSON.stringify(pending, null, 1));
@@ -1149,7 +1156,7 @@ export class Crew {
 
   private async animate(p: OpenProject, r: Run) {
     const { recipeCatalog } = await import("@pap/engine/recipes");
-    const { lintProject } = await import("@pap/engine/lints");
+    const { lintFrames, lintProject } = await import("@pap/engine/lints");
     const cat = recipeCatalog();
     const d0 = p.doc();
     // on a resume, scenes an animator already finished are not redone
@@ -1178,8 +1185,17 @@ export class Crew {
         if (sc.kind !== "decl") return this.done(p, t);
         const tl = p.timeline();
         const w = tl.scenes.find((x) => x.id === s.id)!;
-        const lints = lintProject(d, tl)
+        // exact text widths, real actor boxes and drawn frames need the project's assets and palette
+        const lp = p.project();
+        const ren = await p.renderer_();
+        const lints = [
+          ...lintProject(d, tl, { assets: lp.assets, colours: lp.palette.colours, sky: lp.palette.sky }),
+          ...(await lintFrames(tl, (x) => ren.frame(x), 1, { sky: lp.palette.sky, fadeOut: d.composition.fadeOut })),
+        ]
           .filter((l: any) => l.scene === s.id)
+          .filter(
+            (l: any, i: number, all: any[]) => all.findIndex((o) => o.rule === l.rule && o.message === l.message) === i,
+          )
           .map((l: any) => `${l.severity}: ${l.message} (fix: ${l.fix})`);
         const notes = p.state.notes.filter((n) => n.target.scene === s.id && n.status === "open");
         const { data } = await this.ask(p, r, t, {

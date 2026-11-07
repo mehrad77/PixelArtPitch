@@ -17,9 +17,11 @@ A recipe is a ready-made beat. Pick one, fill a few params, and the engine draws
 - **Times are cue-anchored strings:** `"S(c02)"` (cue start), `"E(c02)+0.3"` (cue end + 0.3 s), `"@land"` (a named event), `"grind.to"` (a scene edge). Never write raw seconds like `2.5`. The `raw-seconds` lint flags them.
 - **`t0`** is the first moment worth animating: scene start + 0.35 s, after the pixel dissolve. In the first scene it is 0.2 s.
 - **Layering:** recipe layers are drawn under the scene's own `layers`, in list order. Later recipes can use earlier ones. For example, `block_bump` makes `walk_in`'s hero jump.
+- **One hero per character:** `walk_in`, `item_collect`, `flag_raise` and `end_card_loop` reuse an actor an earlier recipe in the scene drew with the same asset (it walks on, collects, cheers) instead of drawing a twin. Pass `"second": true` to draw another copy on purpose.
+- **Text fits:** banners wrap to two lines or drop a scale, toasts widen, `fit` titles wrap; what still does not fit ends in "...". Typographic dashes, quotes, ellipses and non-breaking spaces are drawn as their plain ASCII glyphs.
 - **Layer ids** are `<recipe id>_<part>` (`walk_in_hero`, `block_bump_block`). A recipe used twice in one scene gets `walk_in2_hero`.
 - **Default backdrop:** a scene with no backdrop gets the night sky, ground, lamp and bush automatically. Use `backdrop_night` to change them.
-- **Asset slots** (`hero`, `crowd`, `items`...) are asset ids from the project's `assets`. The `missing-asset` lint names the library source to add, e.g. `{ "id": "hero", "src": "lib:mentor-ai@1" }`.
+- **Asset slots** (`hero`, `crowd`, `items`...) are asset ids from the project's `assets`. Some recipes also draw fixed ids (`castle`, `moon`, `skyline`, `tiles`); the crew casts those from the library after the storyboard. The `missing-asset` lint names the `cast_asset` call and library source to add, e.g. `{ "id": "hero", "src": "lib:mentor-ai@1" }`.
 - **Art direction:** `faces` says which way the hero art looks. It defaults to `"left"`, like every library character. Set `"faces": "right"` for art drawn looking right.
 - **Screen layout:** 320×180 px. The ground top is y=148. Captions sit below y=146, so keep words above that.
 
@@ -77,6 +79,7 @@ The hero walks in from an edge at whole pixels, kicks up footstep dust, slows to
 | arrive | time | at + 60% of the scene, max 3 s | | they stop |
 | wave | bool | true | | wave 0.3 s after stopping |
 | label | text | "" | | name tag above the head |
+| second | bool | false | | draw a second copy even if the scene already has this hero |
 
 ```json
 { "id": "walk_in", "params": { "faces": "left", "x": 140, "arrive": "E(c01)-0.8" } }
@@ -115,12 +118,13 @@ Items pop up above the hero one by one and fly on arcs into HUD slots at the top
 | hero | asset | "hero" | | |
 | faces | right/left | left | | |
 | walk | bool | false | | false: pop above the hero; true: walk over them |
-| x | num | 112 | 16–304 | where the hero stands |
+| x | num | 112 | 16–304 | where the hero stands (a hero already in the scene stays where it stopped) |
 | at | time | t0 + 0.1 s | | first item |
 | until | time | scene end − 0.6 s | | last item is in its slot |
 | hudX, hudY | num | 4, 4 | | HUD corner |
 | slots | int | 0 (one per item) | 0–8 | |
 | filled | frames | [] | | slots already full (carried from an earlier scene) |
+| second | bool | false | | draw a second hero instead of reusing walk_in's |
 
 ```json
 { "id": "item_collect", "params": { "items": ["star", "star", "heart", "star"], "faces": "left" } }
@@ -181,7 +185,7 @@ A big two-scale word panel slides down from the top, flashes, then leaves.
 ```json
 { "id": "banner", "params": { "text": "LEVEL UP", "at": "E(c02)-1" } }
 ```
-**Mistakes:** more than about 12 characters at scale 2 (it gets wide); putting it over an item flight.
+**Mistakes:** more than about 12 characters at scale 2 (it wraps to two lines, then shrinks); putting it over an item flight.
 
 ## crowd_cheer
 A small crowd stands on the ground and bursts into a cheer, with sparkles over their heads.
@@ -213,8 +217,9 @@ A flagpole beside a castle. The flag climbs to the top, then a flash, fireworks,
 | castleX | num | x + 22 | −60–320 | castle left edge |
 | flagAsset | asset | "props" | | |
 | fireworks | bool | true | | flash and fireworks at the top |
-| hero | asset | "" | | "" for none |
+| hero | asset | "" | | "" for none; reuses the scene's hero with that asset |
 | faces | right/left | left | | |
+| second | bool | false | | draw a second copy instead |
 
 ```json
 { "id": "flag_raise", "params": { "hero": "hero", "faces": "left", "at": "S(c03)+0.5" } }
@@ -234,8 +239,9 @@ The end card. The title drops in, PRESS START bounces in and pulses, and a URL l
 | swapAfter | num | 4 | 0.5–60 | seconds after the URL appears |
 | at | time | t0 | | title drops |
 | colour | colour | "B" | | title colour |
-| hero | asset | "" | | "" for none |
+| hero | asset | "" | | "" for none; reuses the scene's hero with that asset |
 | faces | right/left | left | | |
+| second | bool | false | | draw a second copy instead |
 
 ```json
 { "id": "end_card_loop", "params": { "title": "QUESTDAY", "url": "questday.example", "url2": "play.questday.example", "swapAfter": 2, "hero": "hero", "faces": "left" } }
@@ -250,7 +256,11 @@ The end card. The title drops in, PRESS START bounces in and pulses, and a URL l
 - cues that are too long or too short
 - scenes that overlap or leave a gap
 - recipe params out of range
-- missing assets
+- missing assets (with the `cast_asset` call that fills them)
 - sprites that vanish into the sky
+- two copies of one character in a scene (`duplicate-actor`)
+- a prop over a character's face (`covers-face`)
+- banners and toasts off the frame (`text-clipped`)
+- frames that are almost all black (`empty-frame`; `lintFrames` checks rendered frames, cuts included)
 
 `examples/questday/pitch.json` is a complete project built only from recipes, and lints clean.

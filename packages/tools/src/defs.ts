@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { thinSfx } from "@pap/engine/audio";
+import { plainText } from "@pap/engine/core";
 import { encode, loudness, mix, openDoc, openRenderer, sha256File, subtitles, writeMusic, writeSfx } from "@pap/render";
 import { Brief, Cue, PatchOp, type ProjectT, SfxType, TimeExpr } from "@pap/schema";
 import { z } from "zod";
@@ -204,7 +205,8 @@ export const scriptSetCues = defineTool({
     const d = P(ctx).doc();
     const cues = i.cues.map((c, k) => ({
       id: c.id ?? d.script.cues[k]?.id ?? `c${String(k + 1).padStart(2, "0")}`,
-      text: c.text.trim(),
+      // writer models emit typographic dashes, quotes and spaces the pixel font lacks: store the plain ones
+      text: plainText(c.text).replace(/\s+/g, " ").trim(),
     }));
     const ids = new Set(cues.map((c) => c.id));
     if (ids.size !== cues.length)

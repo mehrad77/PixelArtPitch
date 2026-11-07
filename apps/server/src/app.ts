@@ -5,12 +5,12 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
+import { PHASE } from "@pap/crew/orchestrator";
 import type { Registry, ToolContext } from "@pap/tools";
 import { type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
-import { PHASE } from "@pap/crew/orchestrator";
 import { McpSession } from "./mcp.ts";
 
 export const VERSION = "0.1.0";

@@ -1,8 +1,9 @@
 // Deterministic checks over a project document and its timeline, for agents and the studio. Every finding names a
 // rule, a severity, where and when, what is wrong and how to fix it. Host-side (may use zod and the painter checks).
 import { type ProjectT, refsOf, type Timeline } from "@pap/schema";
-import { createEngine, type Frames } from "./core.ts";
-import { type CompiledScene, compileDecl, DeclError, type Inspected, inspectDecl } from "./decl.ts";
+import { captions, transitions } from "./compose.ts";
+import { createEngine, type Engine, type Frames, hexToRgb } from "./core.ts";
+import { type CompiledScene, compileDecl, DeclError, drawDecl, type Inspected, inspectDecl } from "./decl.ts";
 import { CAPTION_TOP } from "./decl-spec.ts";
 import { checkRecipeParams, RECIPE_MAP } from "./recipes.ts";
 import { silhouetteContrast } from "./standard.ts";
@@ -33,7 +34,49 @@ const LIB_DEFAULTS: Record<string, string> = {
 };
 const LIB_IDS = ["castle", "moon", "skyline", "tiles", "qblock", "powerups", "props", "items", "map", "gamers"];
 
+/** the library asset a project asset id usually points at, or null */
+export function libraryIdFor(id: string, library?: Set<string>): string | null {
+  const src = LIB_DEFAULTS[id] ?? (LIB_IDS.includes(id) ? `lib:${id}@1` : null);
+  const lib = src ? src.slice(4).split("@")[0] : library?.has(id) ? id : null;
+  return lib && (!library || library.has(lib)) ? lib : null;
+}
+
+/** every asset a decl scene draws (after its recipes expand) that the project has no asset for, with the library
+ * asset that fills it (null when the library has none). Scenes that do not compile are skipped. */
+export function missingAssets(
+  doc: ProjectT,
+  at: Timeline["at"],
+  library?: Set<string>,
+): { scene: string; id: string; libraryId: string | null }[] {
+  const known = new Set(doc.assets.map((a) => a.id));
+  const out: { scene: string; id: string; libraryId: string | null }[] = [];
+  doc.scenes.forEach((s, si) => {
+    if (s.kind !== "decl") return;
+    let cs: CompiledScene;
+    try {
+      cs = compileDecl(s, at, { path: `scenes[${si}]` });
+    } catch {
+      return;
+    }
+    for (const id of cs.assets) if (!known.has(id)) out.push({ scene: s.id, id, libraryId: libraryIdFor(id, library) });
+  });
+  return out;
+}
+
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+const lum = (c: number[]) => c[0] + c[1] + c[2];
+const overlap = (a: Inspected, b: { x: number; y: number; w: number; h: number }) =>
+  Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) *
+  Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+
+/** share of the frame above the caption zone darker than halfway from the sky to black (a dissolve's blocks) */
+export function darkShare(f: Uint8Array, sky: string, black = "#090c0a", w = 320) {
+  const cut = (lum(hexToRgb(sky)) + lum(hexToRgb(black))) / 2;
+  let dark = 0;
+  const n = w * CAPTION_TOP;
+  for (let i = 0; i < n; i++) if (f[i * 3] + f[i * 3 + 1] + f[i * 3 + 2] <= cut) dark++;
+  return dark / n;
+}
 const r2 = (t: number) => Math.round(t * 100) / 100;
 
 /** time-typed fields of a decl scene as written in the doc: [path, value] */
@@ -158,6 +201,7 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
 
   const known = new Set(doc.assets.map((a) => a.id));
   const contrastDone = new Set<string>();
+  const compiled: (CompiledScene | null)[] = doc.scenes.map(() => null);
   doc.scenes.forEach((s, si) => {
     if (s.kind !== "decl") return;
     // ---- raw seconds
@@ -220,20 +264,43 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
         });
       return;
     }
+    compiled[si] = cs;
     // ---- assets the scene draws must be in the project
     for (const id of cs.assets)
       if (!known.has(id)) {
-        const src = LIB_DEFAULTS[id] ?? (LIB_IDS.includes(id) ? `lib:${id}@1` : null);
+        const lib = libraryIdFor(id);
         add({
           rule: "missing-asset",
           severity: "error",
           scene: s.id,
-          message: `the scene draws asset "${id}" but the project has no asset with that id`,
-          fix: src
-            ? `add { "id": "${id}", "src": "${src}" } to assets`
+          message: `the scene draws asset "${id}" but the project has no asset with that id (it renders as a placeholder box)`,
+          fix: lib
+            ? `cast it: cast_asset { "name": "${id}", "libraryId": "${lib}" } (adds { "id": "${id}", "src": "lib:${lib}@1" } to assets)`
             : `add an asset with id "${id}" or change the layer to an asset the project has`,
         });
       }
+    // ---- one character, drawn twice
+    const actors = new Map<string, string[]>();
+    const walkA = (ls: CompiledScene["layers"]) => {
+      for (const l of ls) {
+        if (l.kind === "actor" && typeof l.props.asset === "string")
+          actors.set(l.props.asset, [...(actors.get(l.props.asset) ?? []), l.id]);
+        walkA(l.children);
+      }
+    };
+    walkA(cs.layers);
+    const twinsMeant = (s.recipes ?? []).some(
+      (r) => (r.params as Record<string, unknown> | undefined)?.second === true,
+    );
+    for (const [a, ids] of actors)
+      if (ids.length > 1 && !twinsMeant)
+        add({
+          rule: "duplicate-actor",
+          severity: "error",
+          scene: s.id,
+          message: `${ids.length} copies of "${a}" in one scene (${ids.join(", ")})`,
+          fix: "let the later recipe reuse the scene's hero (drop its own hero layer), or pass second: true if two are meant",
+        });
     // ---- sprite edge contrast against the sky
     const drawn = new Set<string>();
     const walkL = (ls: CompiledScene["layers"]) => {
@@ -265,6 +332,8 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
     const clipRun = new Map<string, number>();
     const clipped = new Set<string>();
     const lowSeen = new Set<string>();
+    const faceRun = new Map<string, number>();
+    const faced = new Set<string>();
     for (let t = cs.from + 0.001; t < cs.to; t += every) {
       let seen: Inspected[];
       try {
@@ -293,7 +362,12 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
         });
       }
       for (const x of seen) {
-        const isText = x.kind === "text" || x.widget === "counter" || x.widget === "nameTag";
+        const isText =
+          x.kind === "text" ||
+          x.widget === "counter" ||
+          x.widget === "nameTag" ||
+          x.widget === "banner" ||
+          x.widget === "toast";
         if (isText) {
           const off = x.x < 0 || x.y < 0 || x.x + x.w > 320 || x.y + x.h > 180;
           const run = off ? (clipRun.get(x.id) ?? 0) + every : 0;
@@ -308,6 +382,28 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
               message: `${x.id} ("${x.text}") runs off the frame (${x.x},${x.y} ${x.w}x${x.h})`,
               fix: "shorten it, lower its scale, set fit: true, or move it inside 0..320 x 0..180",
             });
+          }
+        }
+        // a prop drawn over a character's face (the top 40% of its box)
+        if (x.kind === "actor") {
+          const head = { x: x.x, y: x.y, w: x.w, h: Math.ceil(x.h * 0.4) };
+          for (const o of seen.slice(seen.indexOf(x) + 1)) {
+            if (o.kind !== "sprite" || o.w > 40 || o.h > 40) continue;
+            const key = `${o.id}>${x.id}`;
+            const hit = overlap(o, head) >= 4;
+            const run = hit ? (faceRun.get(key) ?? 0) + every : 0;
+            faceRun.set(key, run);
+            if (run >= 0.2 - 1e-9 && !faced.has(key)) {
+              faced.add(key);
+              add({
+                rule: "covers-face",
+                severity: "error",
+                scene: s.id,
+                t: r2(t),
+                message: `${o.id} is drawn over the head of ${x.id} for ${r2(run)} s`,
+                fix: "pop it above the head with a gap, or hold it at the hand",
+              });
+            }
           }
         }
         const important =
@@ -331,16 +427,107 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
       }
     }
   });
+  out.push(...emptyFrames(doc, tl, engine, compiled, opts.sky ?? "#0f1411", colours.k ?? "#090c0a"));
   return out;
 }
 
-/** Sampled-frame checks with a frame source (e.g. the renderer): flags frames that are a single flat colour. */
+/** frames worth sampling for emptiness: each scene's cut and the two frames after it, then every half second,
+ * leaving out the final fade to black */
+function emptySamples(tl: Timeline, fadeOut: number, fps = 30) {
+  const ts: { t: number; scene: string }[] = [];
+  for (const w of tl.scenes) {
+    for (const t of [w.from, w.from + 1 / fps, w.from + 2 / fps]) ts.push({ t, scene: w.id });
+    for (let t = w.from + 0.25; t < w.to; t += 0.5) ts.push({ t, scene: w.id });
+  }
+  return ts.filter((x) => x.t < tl.duration - fadeOut - 1e-6);
+}
+
+/** decl scenes drawn like the renderer draws them (dissolve and captions included), flagging frames that are almost
+ * all black: a dissolve over nothing, a scene drawing nothing yet */
+function emptyFrames(
+  doc: ProjectT,
+  tl: Timeline,
+  e: Engine,
+  compiled: (CompiledScene | null)[],
+  sky: string,
+  black: string,
+): Lint[] {
+  const out: Lint[] = [];
+  const cc = {
+    cues: tl.cues,
+    scenes: tl.scenes,
+    duration: tl.duration,
+    captions: doc.composition.captions,
+    dissolveIn: doc.composition.dissolveIn,
+    fadeOut: doc.composition.fadeOut,
+  };
+  const last = new Map<number, Uint8Array>();
+  const done = new Set<string>();
+  for (const { t, scene } of emptySamples(tl, doc.composition.fadeOut)) {
+    const k = tl.scenes.findIndex((w) => w.id === scene);
+    const cs = compiled[k];
+    if (!cs || done.has(scene)) continue;
+    let prev: Uint8Array | undefined;
+    const inDissolve = k > 0 && t - cs.from < cc.dissolveIn;
+    // a code scene goes out under this dissolve: only real frames (lintFrames) can tell
+    if (inDissolve && !compiled[k - 1]) continue;
+    if (inDissolve && compiled[k - 1]) {
+      prev = last.get(k - 1);
+      if (!prev) {
+        drawDecl(e, compiled[k - 1]!, compiled[k - 1]!.to - 1e-4);
+        prev = Uint8Array.from(e.buf);
+        last.set(k - 1, prev);
+      }
+    }
+    try {
+      drawDecl(e, cs, t);
+    } catch {
+      continue;
+    }
+    transitions(e, cc, t, prev);
+    if (doc.composition.captions.by === "host") captions(e, cc, t);
+    const d = darkShare(e.buf, sky, black, e.W);
+    if (d >= 0.9) {
+      done.add(scene);
+      out.push({
+        rule: "empty-frame",
+        severity: "error",
+        scene,
+        t: r2(t),
+        message: `the frame is ${Math.round(d * 100)}% black: nothing but the caption shows`,
+        fix: "start the scene's recipes inside its window and check the dissolve has the outgoing scene under it",
+      });
+    }
+  }
+  return out;
+}
+
+/** Sampled-frame checks with a frame source (e.g. the renderer): flags frames that are a single flat colour, and
+ * (given the sky) frames that are almost all black, sampling every cut too. */
 export async function lintFrames(
   tl: Timeline,
   sample: (t: number) => Uint8Array | Promise<Uint8Array>,
   every = 1,
+  opts: { sky?: string; black?: string; fadeOut?: number } = {},
 ): Promise<Lint[]> {
   const out: Lint[] = [];
+  if (opts.sky) {
+    const done = new Set<string>();
+    for (const { t, scene } of emptySamples(tl, opts.fadeOut ?? 0)) {
+      if (done.has(scene)) continue;
+      const d = darkShare(await sample(t), opts.sky, opts.black);
+      if (d < 0.9) continue;
+      done.add(scene);
+      out.push({
+        rule: "empty-frame",
+        severity: "error",
+        scene,
+        t: r2(t),
+        message: `the frame is ${Math.round(d * 100)}% black: nothing but the caption shows`,
+        fix: "start the scene's recipes inside its window and check the dissolve has the outgoing scene under it",
+      });
+    }
+  }
   for (let t = every / 2; t < tl.duration; t += every) {
     const f = await sample(t);
     const first = (f[0] << 16) | (f[1] << 8) | f[2];

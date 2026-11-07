@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderMusic, renderSfx, type SfxEvent, thinSfx, wav16 } from "@pap/engine/audio";
+import { plainText } from "@pap/engine/core";
 import type { LoadedProject } from "./project.ts";
 import type { Renderer } from "./renderer.ts";
 
@@ -126,8 +127,8 @@ export function subtitles(p: LoadedProject) {
   const { hold, cues } = p.timeline;
   const post = p.doc.composition.captions.post;
   const srt = cues
-    .map((c, i) => `${i + 1}\n${ts(c.start + hold, ",")} --> ${ts(c.end + hold + post, ",")}\n${c.text}\n`)
+    .map((c, i) => `${i + 1}\n${ts(c.start + hold, ",")} --> ${ts(c.end + hold + post, ",")}\n${plainText(c.text)}\n`)
     .join("\n");
-  const vtt = `WEBVTT\n\n${cues.map((c) => `${ts(c.start + hold, ".")} --> ${ts(c.end + hold + post, ".")}\n${c.text}\n`).join("\n")}`;
+  const vtt = `WEBVTT\n\n${cues.map((c) => `${ts(c.start + hold, ".")} --> ${ts(c.end + hold + post, ".")}\n${plainText(c.text)}\n`).join("\n")}`;
   return { srt, vtt };
 }

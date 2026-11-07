@@ -903,9 +903,11 @@ function drawLayer(e: Engine, l: CLayer, env: Env, ox: number, oy: number, am: n
       const str = String(st.text ?? p.text);
       let scale = Math.round(st.scale ?? p.scale);
       if (p.fit) while (scale > 1 && e.measure(str, scale) > 304) scale--;
-      const lines = p.maxW ? e.wrap(str, p.maxW, scale) : [str];
+      // fit: true never clips: still too wide at scale 1, it wraps (and, past two lines, ends in "...")
+      const fitWrap = p.fit && !p.maxW && e.measure(str, scale) > 304;
+      const lines = fitWrap ? fitLines(e, str, 304, 1, 2).lines : p.maxW ? e.wrap(str, p.maxW, scale) : [str];
       const w = Math.max(...lines.map((s) => e.measure(s, scale)));
-      const lh = p.maxW ? p.lineH * scale : 8 * scale;
+      const lh = p.maxW || fitWrap ? p.lineH * scale : 8 * scale;
       const x = p.align === "center" ? sx - w / 2 : p.align === "right" ? sx - w : sx;
       const sh = p.shadow ? scale : 0;
       box = { x: Math.round(x), y: sy, w: w + sh, h: (lines.length - 1) * lh + 8 * scale + sh };
@@ -1008,6 +1010,27 @@ function drawLayer(e: Engine, l: CLayer, env: Env, ox: number, oy: number, am: n
   }
 }
 
+/** str cut to maxW px with a trailing "..." (unchanged when it fits) */
+export function clipText(e: Engine, str: string, maxW: number, scale = 1) {
+  if (e.measure(str, scale) <= maxW) return str;
+  const cs = [...str];
+  while (cs.length && e.measure(`${cs.join("").trimEnd()}...`, scale) > maxW) cs.pop();
+  return `${cs.join("").trimEnd()}...`;
+}
+/** lines and scale that fit maxW: one line, else wrapped to maxLines, at the largest scale from `scale` down to 1;
+ * failing that, wrapped at scale 1 with the last line cut by clipText */
+export function fitLines(e: Engine, str: string, maxW: number, scale: number, maxLines: number) {
+  for (let k = scale; k >= 1; k--) {
+    if (e.measure(str, k) <= maxW) return { lines: [str], scale: k };
+    const ls = e.wrap(str, maxW, k);
+    if (ls.length <= maxLines && ls.every((l) => e.measure(l, k) <= maxW)) return { lines: ls, scale: k };
+  }
+  const ls = e.wrap(str, maxW, 1);
+  const keep = ls.slice(0, maxLines).map((l) => clipText(e, l, maxW));
+  if (ls.length > maxLines) keep[maxLines - 1] = clipText(e, `${keep[maxLines - 1]}...`, maxW);
+  return { lines: keep, scale: 1 };
+}
+
 export function dissolveHash(x: number, y: number) {
   let s = (Math.imul(x + 11, 374761393) + Math.imul(y + 7, 668265263)) >>> 0;
   s = Math.imul(s ^ (s >>> 13), 1274126177) >>> 0;
@@ -1106,18 +1129,22 @@ function drawWidget(e: Engine, l: CLayer, env: Env, sx: number, sy: number, alph
       const s = t - p.at;
       if (s < 0 || s > p.dur) return null;
       const a = s < 0.12 ? s / 0.12 : s > p.dur - 0.25 ? (p.dur - s) / 0.25 : 1;
-      const w = e.measure(p.text, p.scale) + 16;
+      // never clipped: a line too wide wraps to two, then drops a scale, then ends in "..."
+      const fit = fitLines(e, p.text, e.W - 24, p.scale, 2);
+      const w = Math.max(...fit.lines.map((l) => e.measure(l, fit.scale))) + 16;
       const y = p.y + Math.round((1 - easeFn("outCubic", s / 0.2)) * -40);
-      const h = 8 * p.scale + 6;
+      const h = fit.lines.length * 8 * fit.scale + (fit.lines.length - 1) * 2 * fit.scale + 6;
       const x = Math.round(e.W / 2 - w / 2);
       if (!dry) {
         const c = col(e, p.colour, "O");
         e.panel(x, y, w, h, { border: c });
-        e.text(p.text, e.W / 2, y + 4, {
-          align: "center",
-          scale: p.scale,
-          colour: fpsN(s, 2, 8) ? c : col(e, "P"),
-          alpha: a * alpha,
+        fit.lines.forEach((l, i) => {
+          e.text(l, e.W / 2, y + 4 + i * 10 * fit.scale, {
+            align: "center",
+            scale: fit.scale,
+            colour: fpsN(s, 2, 8) ? c : col(e, "P"),
+            alpha: a * alpha,
+          });
         });
       }
       return { x, y, w: w + 2, h: h + 2 };
@@ -1125,15 +1152,20 @@ function drawWidget(e: Engine, l: CLayer, env: Env, sx: number, sy: number, alph
     case "toast": {
       const s = t - p.at;
       if (s < 0 || s > p.dur) return null;
-      const w = p.w;
+      // widen to fit its words (up to the frame), and cut what still does not fit with "..."
+      const room = e.W - 12;
+      const need = Math.max(e.measure(p.title), p.sub ? e.measure(p.sub) : 0) + 26;
+      const w = need > p.w ? Math.min(room, need) : p.w;
+      const title = clipText(e, p.title, w - 26);
+      const sub = p.sub ? clipText(e, p.sub, w - 26) : p.sub;
       const out = s > p.dur - 0.3 ? easeFn("outCubic", (s - (p.dur - 0.3)) / 0.3) * (w + 10) : 0;
       const x = Math.round(e.W - 6 - w + (1 - easeFn("outCubic", s / 0.25)) * (w + 10) + out);
       if (!dry) {
         const c = col(e, p.colour, "B");
         e.panel(x, p.y, w, 22, { border: c });
         if (e.asset(p.iconAsset)) e.sprite(e.frame(p.iconAsset, p.icon, [12, 12]), x + 5, p.y + 5, { outline: "k" });
-        e.text(p.title, x + 22, p.y + (p.sub ? 3 : 7), { colour: c });
-        if (p.sub) e.text(p.sub, x + 22, p.y + 12, { colour: col(e, "P") });
+        e.text(title, x + 22, p.y + (sub ? 3 : 7), { colour: c });
+        if (sub) e.text(sub, x + 22, p.y + 12, { colour: col(e, "P") });
       }
       return x < e.W ? { x, y: p.y, w: Math.min(w + 2, e.W - x), h: 24 } : null;
     }

@@ -3,6 +3,7 @@
 // Every time param is a TimeExpr resolved through at(); a recipe called with only its required params looks finished.
 // Runs inside the render sandbox's import graph: no zod, no eval, no Math.random.
 import type { LayerT } from "@pap/schema";
+import { plainText } from "./core.ts";
 import { type At, checkSpec, type DeclIssue } from "./decl-check.ts";
 import { GROUND, hudSlot, type PSpec, walkPlan } from "./decl-spec.ts";
 
@@ -37,6 +38,8 @@ export type H = RecipeCtx & {
   cue: (i: number) => [number, number] | null;
   /** an actor layer from an earlier recipe (by id, else the last one) */
   actor: (id?: string) => LayerT | null;
+  /** the last actor an earlier recipe drew with this asset, so a recipe reuses it instead of drawing a twin */
+  same: (asset: string) => LayerT | null;
 };
 export type RParam = PSpec & {
   /** default computed from the scene (times, positions); `defDoc` says what it is */
@@ -78,6 +81,44 @@ function arrival(l: LayerT): { t: number; x: number } | null {
   const plan = walkPlan(Number(l.props.x ?? 0), p);
   return { t: w.at + plan.dur, x: p.to };
 }
+
+/** where an actor stands once its walks are done (its x when it never walks) */
+function standX(l: LayerT): number {
+  let x = Number(l.props.x ?? 0);
+  for (const b of l.behaviors ?? [])
+    if (b.kind === "walk" && typeof (b.params as any)?.to === "number") x = (b.params as any).to;
+  return x;
+}
+/** when an actor's last walk ends (or -Infinity) */
+function walkEnd(l: LayerT): number {
+  let x = Number(l.props.x ?? 0);
+  let end = Number.NEGATIVE_INFINITY;
+  for (const b of l.behaviors ?? []) {
+    if (b.kind !== "walk" || typeof b.at !== "number") continue;
+    const p = { speed: 30, decel: 0.3, ...b.params } as { to: number; speed: number; decel: number };
+    end = b.at + walkPlan(x, p).dur;
+    x = p.to;
+  }
+  return end;
+}
+/** add state keys to a reused actor: its own keys from `from` on give way to the new ones */
+function mergeState(l: LayerT, from: number, add: { t: number; v: string }[]) {
+  const old = ((l.keys?.state ?? []) as { t: number | string; v: string }[]).filter(
+    (k) => typeof k.t !== "number" || k.t < from,
+  );
+  const lastOld = old[old.length - 1];
+  const bridge = lastOld && lastOld.v !== "auto" && add.length ? [{ t: from, v: "auto" }] : [];
+  l.keys = { ...(l.keys ?? {}), state: [...old, ...bridge, ...add] as any };
+}
+/** a walk speed inside the walk behaviour's range (a reused hero far away just arrives a little late) */
+const walkSpeed = (v: number) => Math.max(10, Math.min(200, v));
+/** the asset height the library characters share: a recipe keeps props clear of a 16x24 hero's head */
+const HERO_H = 24;
+const second: RParam = {
+  t: "bool",
+  d: false,
+  doc: "true: draw a second character even when an earlier recipe in this scene already has one with this asset",
+};
 
 const asset = (d: string, lib: string, doc: string): RParam => ({ t: "str", d, lib, doc });
 const time = (defDoc: string, def: RParam["def"], doc: string): RParam => ({ t: "time", def, defDoc, doc });
@@ -215,8 +256,26 @@ export const RECIPES: Recipe[] = [
       ),
       wave: { t: "bool", d: true, doc: "wave after stopping" },
       label: { t: "str", d: "", doc: "optional name tag above the head (1-2 words)" },
+      second,
     },
     expand(p, h) {
+      const again = p.second ? null : h.same(p.hero);
+      if (again) {
+        // the scene already has this hero: walk it on to x instead of drawing a twin
+        const dur = Math.max(0.3, p.arrive - p.at);
+        const decel = Math.min(0.3, dur / 2);
+        const dist = Math.abs(p.x - standX(again));
+        again.behaviors = [
+          ...(again.behaviors ?? []),
+          B("walk", p.at, { to: p.x, speed: walkSpeed(dist / Math.max(0.01, dur - decel / 2)), decel }),
+        ];
+        if (p.wave)
+          mergeState(again, p.at, [
+            { t: p.arrive + 0.3, v: "wave" },
+            { t: p.arrive + 1.2, v: "auto" },
+          ]);
+        return { layers: [] };
+      }
       const dir = p.from === "left" ? 1 : -1;
       const dur = Math.max(0.3, p.arrive - p.at);
       const decel = Math.min(0.3, dur / 2);
@@ -362,13 +421,27 @@ export const RECIPES: Recipe[] = [
         d: false,
         doc: "false: the hero stands and items pop above it; true: it walks over items on the ground",
       },
-      x: { t: "num", d: 112, min: 16, max: 304, doc: "where the hero stands (walk: false)" },
-      at: time("t0 + 0.1 s", (h) => h.t0 + 0.1, "when the first item appears"),
+      x: {
+        t: "num",
+        d: 112,
+        min: 16,
+        max: 304,
+        doc: "where the hero stands (walk: false); a hero already in the scene stays where it stopped",
+      },
+      at: time(
+        "t0 + 0.1 s, or 0.2 s after a hero already in the scene stops walking",
+        (h, p) => {
+          const a = p.second ? null : h.same(p.hero);
+          return Math.max(h.t0 + 0.1, a ? walkEnd(a) + 0.2 : 0);
+        },
+        "when the first item appears",
+      ),
       until: time("scene end - 0.6 s", (h) => h.to - 0.6, "by when the last item must be in its slot"),
       hudX: { t: "num", d: 4, min: 0, max: 250, doc: "HUD left" },
       hudY: { t: "num", d: 4, min: 0, max: 120, doc: "HUD top" },
       slots: { t: "int", d: 0, min: 0, max: 8, doc: "slot count (0: one per item)" },
       filled: { t: "strs", d: [], doc: "frames already in the first slots (carried from an earlier scene)" },
+      second,
     },
     expand(p, h) {
       const items: string[] = p.items;
@@ -393,7 +466,9 @@ export const RECIPES: Recipe[] = [
       const hover = 0.25;
       const span = Math.max(0.2, p.until - p.at - fly - hover);
       const gap = n > 1 ? Math.min(0.9, span / (n - 1)) : 0;
-      const hero = h.id("hero");
+      // reuse the hero an earlier recipe (walk_in) drew with this asset rather than drawing a twin over it
+      const again = p.second ? null : h.same(p.hero);
+      const hero = again?.id ?? h.id("hero");
       const layers: LayerT[] = [];
       const hudItems: { asset: string; frame: string; at: number }[] = pre.map((f) => ({
         asset: p.itemAsset,
@@ -401,18 +476,20 @@ export const RECIPES: Recipe[] = [
         at: h.from,
       }));
       const heroB: NonNullable<LayerT["behaviors"]> = [];
-      let heroX = p.x;
+      let heroX = again ? Math.round(standX(again)) : p.x;
       if (p.walk) {
         // items lie on the ground ahead; the hero walks over them at a speed that fits the window
-        const x0 = 24;
-        const xs = items.map((_, i) => Math.round(80 + (i * 160) / Math.max(1, n - 1)));
-        const stop = xs[n - 1] + 30;
+        const x0 = again ? heroX : 24;
+        const dir = x0 <= 160 ? 1 : -1;
+        const [a, b] = again ? [x0 + dir * 40, dir > 0 ? 280 : 40] : [80, 240];
+        const xs = items.map((_, i) => Math.round(a + (i * (b - a)) / Math.max(1, n - 1)));
+        const stop = Math.max(16, Math.min(304, xs[n - 1] + dir * 30));
         const last = p.until - fly;
-        const speed = Math.min(80, Math.max(20, (xs[n - 1] - x0) / Math.max(0.3, last - p.at)));
+        const speed = Math.min(80, Math.max(20, Math.abs(xs[n - 1] - x0) / Math.max(0.3, last - p.at)));
         heroX = x0;
         heroB.push(B("walk", p.at, { to: stop, speed, decel: 0.3 }));
         items.forEach((f, i) => {
-          const tp = p.at + (xs[i] - x0) / speed;
+          const tp = p.at + Math.abs(xs[i] - x0) / speed;
           const slot = hudSlot(p.hudX, p.hudY, pre.length + i);
           layers.push(
             L(
@@ -435,18 +512,21 @@ export const RECIPES: Recipe[] = [
         items.forEach((f, i) => {
           const tp = p.at + i * gap;
           const slot = hudSlot(p.hudX, p.hudY, pre.length + i);
-          const top = G - 24 - 18;
-          heroB.push(B("jumpArc", tp - 0.05, { height: 6, dur: 0.3, sfx: false, squash: false }));
+          // the item pops out clear of the head: its bottom stays 2 px above the head at the top of the hop
+          const hop = 6;
+          const pop = G - HERO_H - hop - 2 - 12;
+          const top = pop - 12;
+          heroB.push(B("jumpArc", tp - 0.05, { height: hop, dur: 0.3, sfx: false, squash: false }));
           layers.push(
             L(
               h.id(`item${i}`),
               "sprite",
-              { asset: p.itemAsset, frame: f, x: p.x - 6, y: top, outline: "k" },
+              { asset: p.itemAsset, frame: f, x: heroX - 6, y: top, outline: "k" },
               {
                 z: 12,
                 keys: {
                   y: [
-                    { t: tp, v: top + 14 },
+                    { t: tp, v: pop },
                     { t: tp + hover, v: top, ease: "outCubic" },
                   ],
                 },
@@ -461,15 +541,23 @@ export const RECIPES: Recipe[] = [
           hudItems.push({ asset: p.itemAsset, frame: f, at: tp + hover + fly });
         });
       }
-      layers.push(L(hero, "actor", { asset: p.hero, x: heroX, artFaces: p.faces }, { z: 10, behaviors: heroB }));
       const done = hudItems[hudItems.length - 1].at;
-      if (!p.walk)
-        layers[layers.length - 1].keys = {
-          state: [
-            { t: done + 0.1, v: "wave" },
-            { t: done + 1.1, v: "auto" },
-          ],
-        };
+      const wave = [
+        { t: done + 0.1, v: "wave" },
+        { t: done + 1.1, v: "auto" },
+      ];
+      if (again) {
+        again.behaviors = [...(again.behaviors ?? []), ...heroB];
+        mergeState(again, p.at - 0.1, p.walk ? [] : wave);
+      } else
+        layers.push(
+          L(
+            hero,
+            "actor",
+            { asset: p.hero, x: heroX, artFaces: p.faces },
+            { z: 10, behaviors: heroB, ...(p.walk ? {} : { keys: { state: wave } }) },
+          ),
+        );
       layers.push(
         L(
           h.id("hud"),
@@ -705,11 +793,27 @@ export const RECIPES: Recipe[] = [
         doc: 'character that walks to the pole and cheers ("" for none)',
       },
       faces: { t: "enum", of: ["right", "left"], d: "left", doc: "which way the hero art looks" },
+      second,
     },
     expand(p, h) {
       const top = p.at + p.dur;
       const hero: LayerT[] = [];
-      if (p.hero) {
+      const again = p.hero && !p.second ? h.same(p.hero) : null;
+      if (again) {
+        // the hero is already in the scene: it walks on to the foot of the pole and cheers
+        const stop = p.x - 12;
+        const startT = Math.max(h.from, p.at - 1.6, walkEnd(again) + 0.1);
+        const dist = Math.abs(stop - standX(again));
+        again.behaviors = [
+          ...(again.behaviors ?? []),
+          B("walk", startT, { to: stop, speed: walkSpeed(dist / Math.max(0.3, p.at - startT - 0.15)), decel: 0.3 }),
+          B("jumpArc", top + 0.05, { height: 14, dur: 0.45 }),
+        ];
+        mergeState(again, startT, [
+          { t: top + 0.6, v: "wave" },
+          { t: top + 1.6, v: "auto" },
+        ]);
+      } else if (p.hero) {
         // walks in from the left and reaches the foot of the pole as the flag starts to climb
         const stop = p.x - 12;
         const startT = Math.max(h.from, p.at - 1.6);
@@ -784,6 +888,7 @@ export const RECIPES: Recipe[] = [
         doc: 'character that stands and waves under the card ("" for none)',
       },
       faces: { t: "enum", of: ["right", "left"], d: "left", doc: "which way the hero art looks" },
+      second,
     },
     expand(p, h) {
       const land = p.at + 0.35;
@@ -862,7 +967,12 @@ export const RECIPES: Recipe[] = [
           );
         sfx.push({ t: urlAt, type: "select" });
       }
-      if (p.hero) {
+      const again = p.hero && !p.second ? h.same(p.hero) : null;
+      if (again) {
+        const state: { t: number; v: string }[] = [];
+        for (let t = press + 0.5; t < h.to; t += 6) state.push({ t, v: "wave" }, { t: t + 1.2, v: "auto" });
+        mergeState(again, press + 0.5, state);
+      } else if (p.hero) {
         const state: { t: number; v: string }[] = [];
         for (let t = press + 0.5; t < h.to; t += 6) state.push({ t, v: "wave" }, { t: t + 1.2, v: "auto" });
         layers.push(
@@ -902,6 +1012,7 @@ function helpers(ctx: RecipeCtx): H {
       const actors = ctx.layers.filter((l) => l.kind === "actor");
       return (id ? actors.find((l) => l.id === id) : actors[actors.length - 1]) ?? null;
     },
+    same: (asset) => ctx.layers.findLast((l) => l.kind === "actor" && l.props.asset === asset) ?? null,
   };
 }
 
@@ -911,6 +1022,8 @@ export function expandRecipe(r: Recipe, params: Record<string, unknown>, ctx: Re
   const before = ctx.issues.length;
   const p = checkSpec(`${ctx.path}.params`, r.params, params, ctx.issues, ctx.at);
   if (ctx.issues.length > before) return null;
+  // typographic dashes, quotes and spaces a writer model emits become the plain ones the font draws
+  for (const [k, s] of Object.entries(r.params)) if (s.t === "str" && typeof p[k] === "string") p[k] = plainText(p[k]);
   for (const [k, s] of Object.entries(r.params)) if (p[k] === undefined && s.def) p[k] = s.def(h, p);
   const out = r.expand(p, h);
   return ctx.issues.length > before ? null : out;

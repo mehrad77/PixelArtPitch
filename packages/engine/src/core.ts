@@ -149,6 +149,13 @@ export function createEngine(init: EngineInit) {
     }
     return glyphs;
   }
+  const has = (ch: string) => font().has(ch) || font().has(ch.toUpperCase());
+  /** typographic characters the font lacks, swapped for the plain ones it has (others pass through unchanged) */
+  function norm(str: string) {
+    let out = "";
+    for (const ch of str) out += has(ch) ? ch : (TYPO[ch] ?? ch);
+    return out;
+  }
   /** glyph advance: its inked width + 1 (min 2), space 4 */
   function glyphW(ch: string) {
     if (ch === " ") return 4;
@@ -162,7 +169,7 @@ export function createEngine(init: EngineInit) {
     return Math.max(2, w + 1);
   }
   function measure(str: string, scale = 1) {
-    return [...str].reduce((s, ch) => s + glyphW(ch), 0) * scale - scale;
+    return [...norm(str)].reduce((s, ch) => s + glyphW(ch), 0) * scale - scale;
   }
   type TextOpts = {
     colour?: Colour;
@@ -174,6 +181,7 @@ export function createEngine(init: EngineInit) {
   /** text at (x, y) top-left; align "left" | "center" | "right"; shadow draws a 1 px dark drop shadow */
   function text(str: string, x: number, y: number, opts: TextOpts = {}) {
     const { colour = "P", scale = 1, align = "left", shadow = true, alpha = 1 } = opts;
+    str = norm(str);
     const w = measure(str, scale);
     let cx = Math.round(align === "center" ? x - w / 2 : align === "right" ? x - w : x);
     const col = rgbOf(colour);
@@ -240,6 +248,49 @@ export function createEngine(init: EngineInit) {
   };
 }
 export type Engine = ReturnType<typeof createEngine>;
+
+/** typographic characters a writer model may emit, mapped to the plain ASCII the 5x8 font draws */
+export const TYPO: Record<string, string> = {
+  "\u2010": "-",
+  "\u2011": "-",
+  "\u2012": "-",
+  "\u2013": "-",
+  "\u2014": "-",
+  "\u2015": "-",
+  "\u2212": "-",
+  "\u00ad": "",
+  "\u2018": "'",
+  "\u2019": "'",
+  "\u201a": "'",
+  "\u201b": "'",
+  "\u2032": "'",
+  "\u201c": '"',
+  "\u201d": '"',
+  "\u201e": '"',
+  "\u201f": '"',
+  "\u2033": '"',
+  "\u00ab": '"',
+  "\u00bb": '"',
+  "\u2039": "'",
+  "\u203a": "'",
+  "\u2026": "...",
+  "\u00a0": " ",
+  "\u2007": " ",
+  "\u2009": " ",
+  "\u200a": " ",
+  "\u202f": " ",
+  "\u2002": " ",
+  "\u2003": " ",
+  "\u200b": "",
+  "\u2060": "",
+  "\ufeff": "",
+  "\u2022": "*",
+  "\u00b7": "*",
+  "\u00d7": "x",
+};
+const TYPO_RE = new RegExp(`[${Object.keys(TYPO).join("")}]`, "gu");
+/** plain-ASCII punctuation for stored text (captions, SRT, the doc): dashes, quotes, ellipsis, odd spaces */
+export const plainText = (s: string) => s.replace(TYPO_RE, (c) => TYPO[c] ?? c);
 
 // ---- helpers (pure) ----
 export const clamp = (v: number, a = 0, b = 1) => Math.max(a, Math.min(b, v));

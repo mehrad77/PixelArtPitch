@@ -6,7 +6,7 @@
 // import "pap:engine" and "pap:timeline" (the first video's "./engine.mjs" and "./timeline.mjs" are aliases).
 // Frames go out on stdout as raw 320x180 RGB, one after another.
 import vm from "node:vm";
-import { type ComposeCtx, captions, sceneAt, transitions } from "@pap/engine/compose";
+import { type ComposeCtx, captions, dissolving, sceneAt, transitions } from "@pap/engine/compose";
 import { createEngine, ENGINE_EXPORTS, type Engine, type Frames } from "@pap/engine/core";
 import { type CompiledScene, drawDecl } from "@pap/engine/decl";
 
@@ -73,15 +73,36 @@ async function loadBundle(b: InitMsg["bundles"][number]): Promise<Bundle> {
   return { ctx, ns, draw: new vm.Script("__pap_draw(__pap_t)"), fullFrame: b.fullFrame, sfx: b.sfx };
 }
 
-function drawAt(t: number) {
-  const sc = sceneAt(init.scenes, t);
+function drawScene(sc: (typeof init.scenes)[number], t: number) {
   if (sc.kind === "code") {
     const b = bundles.get(sc.bundle)!;
     (b.ctx as any).__pap_t = t;
     b.draw.runInContext(b.ctx, { timeout: init.frameTimeoutMs ?? 250 });
-    if (b.fullFrame) return;
-  } else drawDecl(engine, sc.compiled, t);
-  transitions(engine, init.compose, t);
+    return b.fullFrame;
+  }
+  drawDecl(engine, sc.compiled, t);
+  return false;
+}
+
+/** the outgoing scene's last frame, which the dissolve into the next scene reveals it over */
+const lastFrames = new Map<string, Uint8Array>();
+function lastFrame(sc: (typeof init.scenes)[number]) {
+  let f = lastFrames.get(sc.id);
+  if (!f) {
+    drawScene(sc, sc.to - 1e-4);
+    f = Uint8Array.from(engine.buf);
+    lastFrames.set(sc.id, f);
+  }
+  return f;
+}
+
+function drawAt(t: number) {
+  const sc = sceneAt(init.scenes, t);
+  const full = sc.kind === "code" && bundles.get(sc.bundle)!.fullFrame;
+  const k = init.scenes.indexOf(sc);
+  const prev = !full && k > 0 && dissolving(init.compose, t) ? lastFrame(init.scenes[k - 1]) : undefined;
+  if (drawScene(sc, t)) return;
+  transitions(engine, init.compose, t, prev);
   if (init.compose.captionsByHost) captions(engine, init.compose, t);
 }
 
@@ -92,6 +113,7 @@ process.on("message", async (m: Msg) => {
   try {
     if (m.cmd === "init") {
       init = m;
+      lastFrames.clear();
       engine = createEngine({
         colours: m.colours,
         sky: m.sky,

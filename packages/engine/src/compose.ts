@@ -29,13 +29,30 @@ export function captions(e: Engine, c: ComposeCtx, t: number) {
   });
 }
 
-/** dissolve into every scene but the first, fade out at the end */
-export function transitions(e: Engine, c: ComposeCtx, t: number) {
+/** true while t is inside the dissolve into a scene other than the first */
+export function dissolving(c: ComposeCtx, t: number) {
+  const sc = sceneAt(c.scenes, t);
+  return sc !== c.scenes[0] && c.dissolveIn > 0 && t - sc.from < c.dissolveIn;
+}
+
+/** dissolve into every scene but the first, fade out at the end. `prev` is the outgoing scene's last frame: its
+ * blocks give way to the new scene. Without it the blocks are black, and the cut frame itself is all black. */
+export function transitions(e: Engine, c: ComposeCtx, t: number, prev?: Uint8Array) {
   const sc = sceneAt(c.scenes, t);
   const s = t - sc.from;
   if (sc !== c.scenes[0] && c.dissolveIn > 0 && s < c.dissolveIn) {
     for (let by = 0; by < e.H; by += 10)
-      for (let bx = 0; bx < e.W; bx += 10) if (rnd(bx * 31 + by * 7) > s / c.dissolveIn) e.rect(bx, by, 10, 10, "k");
+      for (let bx = 0; bx < e.W; bx += 10) {
+        if (rnd(bx * 31 + by * 7) <= s / c.dissolveIn) continue;
+        if (!prev) {
+          e.rect(bx, by, 10, 10, "k");
+          continue;
+        }
+        for (let y = by; y < Math.min(by + 10, e.H); y++) {
+          const i = (y * e.W + bx) * 3;
+          e.buf.set(prev.subarray(i, i + Math.min(10, e.W - bx) * 3), i);
+        }
+      }
   }
   if (c.fadeOut > 0 && t > c.duration - c.fadeOut)
     e.rect(0, 0, e.W, e.H, "k", (t - (c.duration - c.fadeOut)) / c.fadeOut);
