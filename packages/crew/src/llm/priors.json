@@ -1,5 +1,5 @@
 {
-  "_about": "Per-task-kind priors seeded from the proof of concept's 411 logged calls (aggregates only). Tokens are per call; usd is repriced at the bundled Opus 5.5 rates. size: output tokens ~ (cells / refCells)^exponent, fitted on sprite draws with known sizes. assistant.turn and subtitles.translate are declared guesses (n: 0) until the ledger has samples.",
+  "_about": "Per-task-kind priors (aggregates only, no project ids). Seeded from the proof of concept's 411 logged calls, then (2026-11-07) producer.plan, writer.angles, director.storyboard, scene.tune, review.final and assistant.turn re-seeded read-only from a copy of the person's ledger (tokens per call, any model). usd is repriced at the bundled Opus 5.5 rates. size: output tokens ~ (cells / refCells)^exponent, fitted on sprite draws with known sizes. Kinds with n: 0 (asset.spec, assistant.conduct, assistant.plan, assistant.brief, subtitles.translate) are declared guesses until the ledger has samples; estimates from n < 5 are marked rough.",
   "source": {
     "model": "claude-opus-5-5",
     "calls": 411
@@ -162,37 +162,37 @@
       }
     },
     "review.final": {
-      "n": 3,
+      "n": 12,
       "effort": "high",
       "tokens": {
         "in": {
-          "p50": 45900,
-          "p90": 46075
+          "p50": 7603,
+          "p90": 7794
         },
         "cacheWrite": {
           "p50": 0,
-          "p90": 0
+          "p90": 772
         },
         "cacheWrite1h": {
           "p50": 0,
           "p90": 0
         },
         "cacheRead": {
-          "p50": 0,
-          "p90": 0
+          "p50": 772,
+          "p90": 772
         },
         "out": {
-          "p50": 64000,
-          "p90": 115200
+          "p50": 1950,
+          "p90": 2407
         },
         "thinking": {
-          "p50": 64000,
-          "p90": 115200
+          "p50": 640,
+          "p90": 1289
         }
       },
       "usd": {
-        "p50": 1.4636,
-        "p90": 2.4883
+        "p50": 0.0696,
+        "p90": 0.0833
       }
     },
     "direct.plan": {
@@ -298,37 +298,37 @@
       }
     },
     "assistant.turn": {
-      "n": 0,
+      "n": 8,
       "effort": "medium",
       "tokens": {
         "in": {
-          "p50": 6000,
-          "p90": 24000
+          "p50": 1389,
+          "p90": 2304
         },
         "cacheWrite": {
-          "p50": 0,
-          "p90": 0
+          "p50": 1637,
+          "p90": 1637
         },
         "cacheWrite1h": {
           "p50": 0,
           "p90": 0
         },
         "cacheRead": {
-          "p50": 0,
-          "p90": 0
+          "p50": 5119,
+          "p90": 5119
         },
         "out": {
-          "p50": 400,
-          "p90": 2000
+          "p50": 160,
+          "p90": 171
         },
         "thinking": {
           "p50": 0,
-          "p90": 0
+          "p90": 34
         }
       },
       "usd": {
-        "p50": 0.04,
-        "p90": 0.17
+        "p50": 0.018,
+        "p90": 0.0218
       }
     },
     "subtitles.translate": {
@@ -363,6 +363,278 @@
       "usd": {
         "p50": 0.0225,
         "p90": 0.07
+      }
+    },
+    "producer.plan": {
+      "n": 3,
+      "effort": "medium",
+      "tokens": {
+        "in": {
+          "p50": 468,
+          "p90": 6536
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 340,
+          "p90": 5999
+        },
+        "thinking": {
+          "p50": 0,
+          "p90": 0
+        }
+      },
+      "usd": {
+        "p50": 0.0087,
+        "p90": 0.1461
+      }
+    },
+    "writer.angles": {
+      "n": 10,
+      "effort": "medium",
+      "tokens": {
+        "in": {
+          "p50": 486,
+          "p90": 1460
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 888,
+          "p90": 7999
+        },
+        "thinking": {
+          "p50": 0,
+          "p90": 0
+        }
+      },
+      "usd": {
+        "p50": 0.0197,
+        "p90": 0.1658
+      }
+    },
+    "director.storyboard": {
+      "n": 6,
+      "effort": "medium",
+      "tokens": {
+        "in": {
+          "p50": 1646,
+          "p90": 5978
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 11999,
+          "p90": 11999
+        },
+        "thinking": {
+          "p50": 11997,
+          "p90": 11997
+        }
+      },
+      "usd": {
+        "p50": 0.2466,
+        "p90": 0.2639
+      }
+    },
+    "scene.tune": {
+      "n": 15,
+      "effort": "medium",
+      "tokens": {
+        "in": {
+          "p50": 1993,
+          "p90": 2664
+        },
+        "cacheWrite": {
+          "p50": 591,
+          "p90": 591
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 591
+        },
+        "out": {
+          "p50": 216,
+          "p90": 5999
+        },
+        "thinking": {
+          "p50": 0,
+          "p90": 5997
+        }
+      },
+      "usd": {
+        "p50": 0.0152,
+        "p90": 0.1337
+      }
+    },
+    "asset.spec": {
+      "n": 0,
+      "effort": "low",
+      "tokens": {
+        "in": {
+          "p50": 2500,
+          "p90": 5000
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 600,
+          "p90": 1800
+        },
+        "thinking": {
+          "p50": 0,
+          "p90": 0
+        }
+      },
+      "usd": {
+        "p50": 0.022,
+        "p90": 0.056
+      }
+    },
+    "assistant.conduct": {
+      "n": 0,
+      "effort": "low",
+      "tokens": {
+        "in": {
+          "p50": 3000,
+          "p90": 6000
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 300,
+          "p90": 900
+        },
+        "thinking": {
+          "p50": 0,
+          "p90": 0
+        }
+      },
+      "usd": {
+        "p50": 0.018,
+        "p90": 0.042
+      }
+    },
+    "assistant.plan": {
+      "n": 0,
+      "effort": "low",
+      "tokens": {
+        "in": {
+          "p50": 5000,
+          "p90": 10000
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 500,
+          "p90": 1500
+        },
+        "thinking": {
+          "p50": 0,
+          "p90": 0
+        }
+      },
+      "usd": {
+        "p50": 0.03,
+        "p90": 0.07
+      }
+    },
+    "assistant.brief": {
+      "n": 0,
+      "effort": "low",
+      "tokens": {
+        "in": {
+          "p50": 2500,
+          "p90": 5000
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 400,
+          "p90": 1200
+        },
+        "thinking": {
+          "p50": 0,
+          "p90": 0
+        }
+      },
+      "usd": {
+        "p50": 0.018,
+        "p90": 0.044
       }
     }
   }

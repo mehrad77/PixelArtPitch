@@ -200,7 +200,14 @@ There are four. All but `/compact` run without a model call (instant, free, the 
 
 ## Pip as the orchestrator (the crew channel)
 
-Pip directs the crew. The stage machine stays, as Pip's rails: it runs the default pipeline step by step, so routine work costs no extra model calls. Pip steps in whenever something needs judgment.
+Pip directs the crew. The rules plan is Pip's rails: code writes today's stage machine out as a production plan (`runs/plan.json`, [`PIP-ORCHESTRATION.md`](PIP-ORCHESTRATION.md)), and the executor runs its tasks as their dependencies finish, so routine work costs no extra model calls. Pip steps in whenever something needs judgment.
+
+**What Pip's decisions do to the plan**
+- `crew_redo` adds `scene.tune(s, round + 1)` on the same instance (the same "Animator · scene N" comes back). Whatever waited on the scene's last tune waits on the redo too.
+- `crew_reboard` adds a scoped `director.storyboard` and `art.cast` over those scenes, then a tune for each.
+- After a review, a redo is followed by a review round that checks the fixes before the rough cut. With `defaults.reviewRounds: 1` there is no second round.
+- Each of these is a plan revision (`by: "pip"`, `trigger: "conductor"`), shown as a "Plan changed: …" marker. The fixed rules write the same revision with `by: "code"`.
+- The end-of-stage check ("on track?") runs when the plan's stage view moves past a stage: the stage of the earliest unfinished task.
 
 **Messages**
 - They live in one channel per project, `runs/channel.jsonl`, shown to people as "Behind the scenes".
@@ -236,7 +243,9 @@ Routine "done" reports are not triggers.
 
 **Hard limits**
 - Each scene gets at most 2 redo rounds per request. After that, Pip stops and tells the person what's still wrong.
-- Pip can't approve the gates that are always the person's call (brief, script, likeness and brand assets, final).
+- Pip can't approve the gates that are always the person's call (brief, script, likeness and brand assets, final). Gates are inserted by code: no plan revision may add, drop or move one.
+- The likeness or logo OK (`rights` in the plan) is a question from Pip ("Use it" · "Redraw", or "Leave it out" for a logo). It never passes by itself, at any involvement.
+- At most 40 plan revisions per crew run; past that the crew holds and Pip tells the person.
 - Every Pip decision is a channel message with its reason, so the person can see why.
 
 **On weak or local models**

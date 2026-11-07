@@ -20,6 +20,9 @@ Places where this spec departs from the person's brief are marked **Changed from
 | `packages/crew/src/brief/registry.ts` | The brief field registry (§3.2) |
 | `packages/crew/src/brief/read.ts` | Reading the idea (§3.3) |
 | `packages/tools/src/drafts.ts` | The draft store (§3.1) |
+| `packages/crew/src/plan/estimate.ts` | Tiers and estimates (§1.1 "Estimates", §1.2 tiers) **(added in P1a)** |
+| `packages/crew/src/plan/store.ts` | `runs/plan.json`, `runs/plan.jsonl`, views, the `plan` events **(added in P1a)** |
+| `packages/crew/src/plan/import.ts` | The logo import: a small PNG reader, a box downscale, the quantize **(added in P1a)** |
 
 The stage methods in `orchestrator.ts` become per-kind handlers. Their bodies stay as they are wherever possible.
 
@@ -35,6 +38,32 @@ The person approved both specs (this one and its sibling) with these answers to 
 4. **`rights` stays a question node in the plan,** answered only by the person, never passed automatically. It is not a new `GateId`.
 5. **The $1.50 e2e uses a Sonnet Reviewer with one review round** (`reviewRounds: 1`).
 6. The C1–C8 (backend) and C1–C16 (journey) departures are accepted as written, except where 1–2 above change them. The journey's §7.2 needs (N1–N11) are to be met by the backend as part of the phase that uses them.
+
+## Build status
+
+| Phase | State | What it contains |
+|---|---|---|
+| P1a | **Built** | the catalogue, schemas, rules planner, validator, estimates, the executor in place of `pipeline()` (slots, budget stop, gates, pause, resume, retry), the stage view, rev 0, expansion, change/redo/re-board/review-round revisions, the rights fix, `state.plan`, SSE `plan`, plan milestones, `crew.slots`, priors re-seeded; tests `plan.test.ts` and `plan-parity.test.ts` |
+| P1b | Not yet | Pip's revision (`assistant.plan`), `crew_replan`, the 20% card, `pipPlan`, `reviewRounds`, evals |
+| P2–P4 | Not yet | |
+
+**What P1a built differently from the text below** (each is also corrected in place):
+
+1. **Schema.** `PlanTask` gains `assetKind`, `description` (for a chain that doesn't come from the storyboard) and `note` (why it ended as it did: "skipped: already in the project", "partial: …"). `asset` takes the `AssetRef` id pattern (`^[a-z0-9][a-z0-9_-]*$`), and `count` may be 0. `round` counts within one crew run (a request), so it never passes 3 across requests; ids stay unique with a `_v<rev>` suffix on reruns.
+2. **Rights flags are objects.** `AssetFlags.likeness` and `brand` are `{person, refs}` and `{owner, trademark}` in the schema, not booleans. A drawing from a likeness writes `{private: true, likeness: {person: "the person in the reference", refs: [file]}}`; an imported logo writes `{private: true, brand: {owner: "the person", trademark: true}}`.
+3. **The reference file is named in the task transcript**, not the ledger row: the ledger has no column for it. The reference goes to the model only in `asset.spec` and `asset.draw`.
+4. **`art.cast` has its own `state.tasks` row** ("Casting the library art"), so the Art Director shows in the journey. `castFor()` now runs after `scene_set_recipes` and skips names the plan will draw or import.
+5. **A run from a stage** (`crew_run {stage}`, a resume without `plan.json`, a change) is a `by: "code"`, `trigger: "start"` revision (`change` for a person's): unfinished work before the stage is `skipped`, finished work from the stage on runs again as **fresh copies** (the originals stay `done`), failed tasks go back to `pending`, and a scene already rendered keeps its tune. `crew_run` with no stage continues the plan, or reruns from the current stage when nothing is left (today's behaviour).
+6. **Placeholders** before the storyboard are `t_spec_new`, `t_draw_new` (count 2 × E[assets]), `t_judge_new`, `t_tune_scenes` and the conditional `t_publish_new`; expansion marks them `skipped` (note "expanded") and logs one `expand` op each. A likeness reference gets its own chain from the start (asset id from the file name), and the Director sees it, and any imported logo, in its asset list. A reference with `unsure` rights is left out of the plan.
+7. **Review rounds are tasks.** `review.final(r1)` adds the redo tunes and `review.final(r2)` itself when blockers come back (Pip decides in a change run, as before); the last round (`reviewRounds()`, 2 until P1b's setting) adds nothing. G3 holds the change-run check ("still wrong in …").
+8. **`ready` is a real status:** a pending task whose dependencies are done but that waits for a slot or the budget.
+9. **Overrun in P1a** stops starts and sets the status line and `problem: add_budget`; the `/budget` card comes with P1b (`Crew.onOverrun`). A raised cap (any `/budget` patch) wakes the executor.
+10. **D2** is in `atGate`: under `key`, G2 passes by itself, and "Looks good" at G3 passes G4 (`verdict.by: "user"`, note "with the rough cut"). G0 stays a key gate for composer projects.
+11. **The `rights` question** offers "Use it" · "Redraw" for a likeness (the chain runs again) and "Use it" · "Leave it out" for a logo (the asset and the params naming it go).
+12. **Renderers** of an older document revision close 30 s later, not at once: tasks now render side by side while others patch the document.
+13. **Priors.** `review.final` was re-seeded from 12 ledger rows: about $0.07 p50 on Opus, not $1.46. Re-seeded: `producer.plan` (3), `writer.angles` (10), `director.storyboard` (6), `scene.tune` (15), `assistant.turn` (8). Declared guesses (`n: 0`): `asset.spec`, `assistant.conduct`, `assistant.plan`, `assistant.brief`. Estimates from `n < 5` are `rough`.
+
+**Journey needs (PIP-JOURNEY.md §7.2) after P1a:** N4 (the plan half: `GET /api/p/:id` carries `plan`), N5 (`PlanTaskView.label` in sentence case, `ROLE_LABEL` in `plan/catalogue.ts`), N6 (`crew.slots`) and N10 (`ref` on reports, and on the asks and answers that go through Pip, is the plan task's scene or asset, else its id) are met. N2 comes with P1b's revision cards; N1, N3, N4's instances and N11 with P2; N7–N9 with P3.
 
 ## 1. The production plan
 
@@ -66,9 +95,9 @@ There is one row per plan task kind. Every handler wraps today's code, named in 
 - **Changed from the brief:** `art.cast` and `asset.import` are two new kinds, written by code only. Casting has to be its own task for the Art Director to appear in the journey. `docs/RIGHTS.md` §3 says a logo is quantized, never drawn, so a logo needs an import step.
 - **Rights in drawn assets.**
   - An asset chain whose `fromRef` is a `likeness` or `logo` reference writes `rights.likeness` or `rights.brand` as true, and `public` as false, into the asset file. Today lines 1622 and 1682 hardcode them false.
-  - It also writes `flags: {private: true, likeness | brand: true}` on its `AssetRef`.
+  - It also writes `flags: {private: true, likeness: {person, refs} | brand: {owner, trademark}}` on its `AssetRef` (the schema's objects).
   - `lib.publish` is never planned for such an asset (rule V9). `deliver()` keeps its own filter as a second check.
-  - The reference image reaches the model only in the `asset.spec` and `asset.draw` calls, and only on the provider the person chose (`RIGHTS.md` §4). The ledger row names the file.
+  - The reference image reaches the model only in the `asset.spec` and `asset.draw` calls, and only on the provider the person chose (`RIGHTS.md` §4). The task's transcript names the file (the ledger has no column for it).
 
 **Estimates.**
 - Each row's cost comes from `estimateTask` × `calls`. `asset.draw` adds one `asset.critique` at p50, and the repairs at p90.
@@ -717,5 +746,5 @@ export type WorkspaceLine = { text: string;
 
 1. **Split P1 into two commits?** P1a would be the rules-only executor at parity (`assistant.test.ts` green, no Pip call). P1b would be Pip's revision, `crew_replan`, the cards and the evals. The brief says one commit per phase; splitting lowers the risk of the largest change.
 2. **The `rights` node (C2):** keep it as a question, or make it a real `GateId` (`g_rights`) in the gate strip?
-3. **The e2e config (C8):** is a Sonnet Reviewer with one round acceptable for the $1.50 run, or should the cap rise for an Opus Reviewer? One Opus `review.final` is about $1.46 p50 on today's priors.
+3. **The e2e config (C8):** is a Sonnet Reviewer with one round acceptable for the $1.50 run, or should the cap rise for an Opus Reviewer? One Opus `review.final` was about $1.46 p50 on the old priors; re-seeded from the ledger (12 calls) it is about $0.07.
 4. **The logo's place in the video.** No recipe can put a logo on a sign; today it can only be an icon in a toast or an item pickup. Is that enough for now, or does the journey's "your logo on a sign" need a sign recipe (engine work, outside this plan)?

@@ -55,6 +55,12 @@ export interface Gateway {
   measure?(req: import("./llm/types.ts").ChatRequest): Promise<Measure>;
   /** ledger spend for a project since an ISO time (the workspace guard's daily cap) */
   spentSince?(project: string, since: string): number;
+  /** concurrent calls per endpoint (the lane size: local 1, else defaults.concurrency) */
+  laneSize?(providerId: string): number;
+  /** a model on a local endpoint (its calls are free, one at a time) */
+  isLocal?(model: string): boolean;
+  /** the ledger, for estimates from observed calls */
+  ledgerRef?(): import("./llm/ledger.ts").Ledger;
   estimate(
     project: string,
     tasks: { kind: string; role: RoleT; count?: number }[],

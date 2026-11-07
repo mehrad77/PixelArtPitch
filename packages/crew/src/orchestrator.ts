@@ -1,11 +1,14 @@
-// The crew's stage machine. Code runs the pipeline; models make small, schema-bound choices inside it:
-//   brief (Producer plan, questions, G0) -> script (Writer's 3 angles, G1) -> storyboard (Director picks recipes) ->
-//   animatic (rendered at once, G2) -> art (Art Director spec, Pixel Artists draw, critique, judge) -> animate
-//   (Animators tune recipe params from stills) -> narrate -> sound + mix (tools) -> review (lints, Reviewer, one fix
-//   round) -> rough cut (G3) -> deliver (export, G4) -> publish (opt-in, never private assets).
+// The crew. Code runs a production plan (docs/PIP-ORCHESTRATION.md): the rules planner writes today's stage machine out
+// as plan tasks, the executor (plan/executor.ts) runs them as their dependencies finish, and each task kind's handler
+// below wraps what used to be a stage of the pipeline. Models make small, schema-bound choices inside the handlers:
+//   brief (Producer plan, questions, G0) -> script (Writer's 3 angles, G1 pick) -> storyboard (Director picks recipes,
+//   Art Director casts) -> animatic (rendered at G2) -> art (per new asset: spec, two drawings, judge; a logo is
+//   imported) -> animate (one Animator per scene) -> narrate -> sound + mix (tools) -> review (one round per task, a
+//   redo round after blockers) -> rough cut (G3) -> deliver (export, G4) -> publish (opt-in, never private assets).
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { extname, join } from "node:path";
+import { RECIPE_MAP } from "@pap/engine/recipes";
 import { checkAsset } from "@pap/engine/standard";
 import { contactSheet, LIBRARY_DIR, renderSheet } from "@pap/render";
 import type { RoleT } from "@pap/schema";
@@ -39,14 +42,46 @@ import {
   StoryboardOut,
   TuneOut,
 } from "./outputs.ts";
+import { CATALOGUE } from "./plan/catalogue.ts";
+import { isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
+import { Executor, type Outcome } from "./plan/executor.ts";
+import { logoIcon } from "./plan/import.ts";
+import {
+  addReboard,
+  addRedo,
+  addReviewRound,
+  changeRevision,
+  expandPlan,
+  type NewAsset,
+  type RulesCtx,
+  reopenFrom,
+  rerun,
+  startPlan,
+} from "./plan/rules.ts";
+import type { PlanOpT, PlanRevisionT, PlanTaskT, PlanView, ProductionPlanT } from "./plan/schema.ts";
+import {
+  loadPlan,
+  MAX_PIP_PROPOSALS,
+  MAX_REVISIONS_PER_RUN,
+  revise,
+  revisionSummaries,
+  tasksToStart,
+  touch,
+  viewOf,
+} from "./plan/store.ts";
 import { card, fill } from "./prompts.ts";
 
 const js = (s: z.ZodType) => z.toJSONSchema(s, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
-const img = (data: Uint8Array): ContentPart => ({
+const img = (data: Uint8Array, mediaType: "image/png" | "image/jpeg" = "image/png"): ContentPart => ({
   type: "image",
-  mediaType: "image/png",
+  mediaType,
   data: Buffer.from(data).toString("base64"),
 });
+const MEDIA: Record<string, "image/png" | "image/jpeg"> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+};
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 
 class Paused extends Error {}
@@ -102,7 +137,8 @@ export const STAGE_LINE: Record<string, string> = {
   deliver: "Exporting your video",
 };
 const MILESTONE: Record<string, string> = {
-  "producer.plan": "Plan ready",
+  // "Plan ready" belongs to the production plan now (the first plan after G0)
+  "producer.plan": "Brief read",
   "writer.angles": "Script written",
   "director.storyboard": "Storyboard ready",
   "asset.judge": "Hero drawn",
@@ -211,7 +247,29 @@ type Run = {
   thinks?: number;
   /** Pip already asked the person something in this run */
   escalated?: boolean;
+  /** the run's id in the plan (`ProductionPlan.runs`) */
+  id: string;
+  exec?: Executor;
+  /** plan revisions this run wrote (the safety stop is MAX_REVISIONS_PER_RUN) */
+  revisions: number;
+  /** the Writer's angles, waiting for the pick at G1 */
+  angles?: AnglesState;
+  /** the cap the overrun question was asked at, and whether the person declined it */
+  overrun?: { cap: number; declined?: boolean };
+  /** the person pressed "Looks good" at the rough cut in this run (D2: that passes the final too) */
+  roughByUser?: boolean;
 };
+type AnglesState = { angles: { name: string; approach: string; cues: string[] }[]; recommended: number; row: string };
+type ArtSpec = {
+  name: string;
+  kind: string;
+  description: string;
+  spec: z.infer<typeof SpecOut>;
+  letters: string;
+  row: string;
+  fromRef?: string;
+};
+type Variant = { frames: DrawOutT; std: any; model: string; judge?: string } | null;
 /** a change run: its notes, the scenes it may redo, the scenes the Director re-plans, and asks no scene carries */
 export type ChangePlan = { notes: string[]; scope?: string[]; reboard?: string[] };
 /** what a run did, reported when it ends or stops at a gate for the person */
@@ -372,9 +430,10 @@ export class Crew {
     r: Run,
     from: RoleT,
     q: { question: string; options: { id: string; label: string }[]; recommendedId: string },
+    ref?: string,
   ): Promise<string | null> {
     if (!this.conductor) return null;
-    const ask = p.say({ from, to: "pip", kind: "ask", text: q.question });
+    const ask = p.say({ from, to: "pip", kind: "ask", text: q.question, ...(ref ? { ref } : {}) });
     const ds = await this.think(p, r, {
       kind: "ask",
       from,
@@ -391,11 +450,19 @@ export class Crew {
         kind: "answer",
         text: "Only the person can answer that: I've asked them.",
         replyTo: ask.id,
+        ...(ref ? { ref } : {}),
       });
       return null;
     }
     const label = q.options.find((o) => o.id === a.optionId)?.label;
-    p.say({ from: "pip", to: from, kind: "answer", text: a.text || label || "", replyTo: ask.id });
+    p.say({
+      from: "pip",
+      to: from,
+      kind: "answer",
+      text: a.text || label || "",
+      replyTo: ask.id,
+      ...(ref ? { ref } : {}),
+    });
     return label ? `${label}${a.text ? ` (${a.text})` : ""}` : a.text;
   }
 
@@ -412,9 +479,18 @@ export class Crew {
     }
   }
 
-  /** apply Pip's decisions; returns whether any scene was redone */
-  private async apply(p: OpenProject, r: Run, ds: Decision[]): Promise<{ redid: boolean }> {
+  /**
+   * apply Pip's decisions; a redo or re-board becomes a plan revision (the executor runs it after `after`). Returns
+   * whether any scene was sent back, and the redo tunes it added.
+   */
+  private async apply(
+    p: OpenProject,
+    r: Run,
+    ds: Decision[],
+    o: { after?: string[] } = {},
+  ): Promise<{ redid: boolean; added: string[] }> {
     let redid = false;
+    const added: string[] = [];
     const redoable = (ids: string[]) => {
       const ok = ids.filter((id) => (r.redos.get(id) ?? 0) < MAX_REDO && p.doc().scenes.some((s) => s.id === id));
       for (const id of ok) r.redos.set(id, (r.redos.get(id) ?? 0) + 1);
@@ -430,6 +506,7 @@ export class Crew {
         if (over.length)
           ds.push({ kind: "hold", why: `${over.join(", ")} already had ${MAX_REDO} redo rounds for this request` });
         if (!ok.length) continue;
+        for (const id of ok) if (p.state.sceneStatus[id]) p.setSceneStatus(id, { version: "animatic", state: "stale" });
         if (d.kind === "reboard") {
           const m = p.say({
             from: "pip",
@@ -439,7 +516,11 @@ export class Crew {
             ref: ok[0],
           });
           this.briefs.set(`${p.id}:director`, [...(this.briefs.get(`${p.id}:director`) ?? []), m]);
-          await this.reboard(p, r, ok);
+          const why = `Pip sent ${ok.join(", ")} back to the Director: ${d.direction}`;
+          const res = this.planRevise(p, r, { by: "pip", trigger: "conductor", reason: why }, (ts, ctx) =>
+            addReboard(ts, ok, ctx, { after: o.after, reason: why.slice(0, 200) }),
+          );
+          added.push(...(res?.added.filter((id) => res.tasks.find((t) => t.id === id)?.kind === "scene.tune") ?? []));
         } else {
           const m = p.say({
             from: "pip",
@@ -449,9 +530,12 @@ export class Crew {
             ref: ok[0],
           });
           this.briefs.set(`${p.id}:animator`, [...(this.briefs.get(`${p.id}:animator`) ?? []), m]);
+          const why = `Pip brought the Animator back for ${ok.join(", ")}: ${d.why}`;
+          const res = this.planRevise(p, r, { by: "pip", trigger: "conductor", reason: why }, (ts, ctx) =>
+            addRedo(ts, ok, ctx, { after: o.after, reason: why.slice(0, 200) }),
+          );
+          added.push(...(res?.added ?? []));
         }
-        for (const id of ok) if (p.state.sceneStatus[id]) p.setSceneStatus(id, { version: "animatic", state: "stale" });
-        await this.animate(p, r);
         redid = true;
       } else if (d.kind === "next") {
         if (d.why) p.say({ from: "pip", to: "crew", kind: "brief", text: `On track: ${d.why}` });
@@ -487,7 +571,7 @@ export class Crew {
       p.state.paused = true;
       p.saveState();
     }
-    return { redid };
+    return { redid, added };
   }
 
   /** the end of a stage: Pip's triggers, and one "on track?" check only when something needs judgment */
@@ -508,21 +592,165 @@ export class Crew {
     string,
     (v: { verdict: string; reasons?: string[]; items?: string[]; by: string }) => void
   >();
+  /** each project's production plan, as last written (runs/plan.json) */
+  private plans = new Map<string, ProductionPlanT>();
   constructor(deps: CrewDeps) {
     this.deps = deps;
+  }
+
+  // ---------------------------------------------------------------- the production plan
+  /** what planning needs from the gateway, with the project's own model choices */
+  planEnv(p: OpenProject): PlanEnv {
+    const gw = this.deps.gateway;
+    const models = p.doc().crew.models;
+    return {
+      modelFor: (role) => gw.modelFor(role, models),
+      fallbackFor: (role) => gw.fallbackFor(role),
+      caps: (m) => gw.caps(m),
+      laneSize: (ep) => gw.laneSize?.(ep) ?? 4,
+      local: (m) => gw.caps(m)?.local ?? gw.isLocal?.(m) ?? /^(lmstudio|ollama|llamacpp)\//.test(m),
+      ledger: gw.ledgerRef?.(),
+    };
+  }
+  private rulesCtx(p: OpenProject, rev: number): RulesCtx {
+    return { env: this.planEnv(p), rev, assetsOf: (id) => this.sceneAssets(p, id) };
+  }
+  /** the asset ids a decl scene's recipes draw: their asset params, or the params' defaults */
+  private sceneAssets(p: OpenProject, sceneId: string): string[] {
+    const sc = p.doc().scenes.find((s) => s.id === sceneId);
+    if (sc?.kind !== "decl") return [];
+    const out = new Set<string>();
+    for (const rc of sc.recipes) {
+      const R = (RECIPE_MAP as any)[rc.id];
+      for (const [k, spec] of Object.entries<any>(R?.params ?? {}))
+        if (spec.lib) out.add(String(rc.params?.[k] ?? spec.d ?? ""));
+      for (const v of Object.values(rc.params ?? {})) if (typeof v === "string") out.add(v);
+    }
+    return [...out].filter(Boolean);
+  }
+  private pipView(): PlanView["pip"] {
+    return { mode: this.pipMode(), proposals: 0, max: MAX_PIP_PROPOSALS };
+  }
+  /** Pip's plan revision (§1.4): off until P1b wires it */
+  protected pipMode(): "on" | "shadow" | "off" {
+    return "off";
+  }
+  /** the plan as it is now, read-only (never writes rev 0: GET and status() only look) */
+  planNow(p: OpenProject): ProductionPlanT | null {
+    const hit = this.plans.get(p.id);
+    if (hit) return hit;
+    const plan = loadPlan(p);
+    if (plan) this.plans.set(p.id, plan);
+    return plan;
+  }
+  /** `state.plan` (§4.1) */
+  planView(p: OpenProject): PlanView | null {
+    const plan = this.planNow(p);
+    if (!plan) return null;
+    const env = this.planEnv(p);
+    const { spentUsd } = this.deps.gateway.spent(p.id);
+    const live = { ...plan, estimate: planEstimate(plan.tasks, spentUsd, env) };
+    return viewOf(p, live, env, this.pipView());
+  }
+  /** GET /api/p/:id/plan/revisions */
+  planRevisions(p: OpenProject) {
+    return revisionSummaries(p);
+  }
+  /** the plan, written as rev 0 from what the project has when it has none yet */
+  private ensurePlan(p: OpenProject, r: Run | null): ProductionPlanT {
+    const have = this.planNow(p);
+    if (have) return have;
+    const ctx = this.rulesCtx(p, 0);
+    const f = join(p.dir, "runs", "new-assets.json");
+    const pendingNew: NewAsset[] = existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : [];
+    const tasks = startPlan(p.doc(), p.state, ctx, pendingNew);
+    const fresh = tasks.every((t) => t.status === "pending" || (t.kind === "gate" && t.status === "done"));
+    const plan = revise(
+      p,
+      null,
+      {
+        by: fresh ? "rules" : "code",
+        trigger: "start",
+        reason: fresh ? "The rules plan for this brief." : "The plan, from what the project already has.",
+        ops: [],
+        tasks,
+        run: r?.id ?? "none",
+      },
+      ctx.env,
+      this.deps.gateway.spent(p.id).spentUsd,
+      this.pipView(),
+    );
+    this.plans.set(p.id, plan);
+    return plan;
+  }
+  /**
+   * Write a revision made by `f` on the current tasks. Nothing is written when it changes nothing. A run past
+   * MAX_REVISIONS_PER_RUN holds.
+   */
+  private planRevise(
+    p: OpenProject,
+    r: Run | null,
+    rv: { by: PlanRevisionT["by"]; trigger: PlanRevisionT["trigger"]; reason: string },
+    f: (tasks: PlanTaskT[], ctx: RulesCtx) => { tasks: PlanTaskT[]; ops: PlanOpT[]; reason?: string } | null,
+  ): { added: string[]; tasks: PlanTaskT[] } | null {
+    const plan = this.ensurePlan(p, r);
+    const ctx = this.rulesCtx(p, plan.rev + 1);
+    const out = f(plan.tasks, ctx);
+    if (!out || (!out.ops.length && JSON.stringify(out.tasks) === JSON.stringify(plan.tasks))) return null;
+    if (r) {
+      r.revisions++;
+      if (r.revisions > MAX_REVISIONS_PER_RUN && !r.held) {
+        r.held = `the plan changed more than ${MAX_REVISIONS_PER_RUN} times in one run`;
+        p.say({ from: "pip", to: "crew", kind: "brief", text: `Hold: ${r.held}` });
+        p.setStatus({ line: `Waiting for you: ${r.held}` });
+        r.paused = true;
+      }
+    }
+    const next = revise(
+      p,
+      plan,
+      { ...rv, reason: out.reason ?? rv.reason, ops: out.ops, tasks: out.tasks, run: r?.id ?? plan.run },
+      ctx.env,
+      this.deps.gateway.spent(p.id).spentUsd,
+      this.pipView(),
+    );
+    this.plans.set(p.id, next);
+    r?.exec?.wake();
+    return { added: out.ops.flatMap((o) => (o.op === "add" ? [o.task] : [])), tasks: next.tasks };
+  }
+  /** a status-only change: saved, sent as a transient `plan` event */
+  private setPlanStatus(p: OpenProject, id: string, status: PlanTaskT["status"], note?: string) {
+    const plan = this.planNow(p);
+    const t = plan?.tasks.find((x) => x.id === id);
+    if (!plan || !t) return;
+    t.status = status;
+    if (note !== undefined) t.note = note.slice(0, 200);
+    t.taskIds = [...new Set([...t.taskIds, ...p.state.tasks.filter((x) => x.planTask === id).map((x) => x.id)])];
+    touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView());
+  }
+  /** the plan task the next rows of a handler belong to */
+  private ptOf(pt: PlanTaskT | null | undefined) {
+    return pt ? { planTask: pt.id, instance: pt.instance } : {};
   }
 
   // ---------------------------------------------------------------- the CrewApi the server uses
   status(p: OpenProject) {
     const { spentUsd, reservedUsd } = this.deps.gateway.spent(p.id);
     const doc = p.doc();
-    const est = this.deps.gateway.estimate(p.id, this.remaining(p));
+    const plan = this.planNow(p);
+    const est = plan
+      ? (() => {
+          const e = planEstimate(plan.tasks, spentUsd, this.planEnv(p));
+          return { usd: e.usd, sec: e.sec };
+        })()
+      : null;
+    const run = this.runs.get(p.id);
     return {
       budget: {
         capUsd: doc.budget.capUsd,
         spentUsd,
         reservedUsd,
-        estTotalUsd: est ? ([spentUsd + est.usd[0], spentUsd + est.usd[1]] as [number, number]) : null,
+        estTotalUsd: est ? est.usd : null,
       },
       time: { startedAt: p.state.startedAt, etaSec: est ? est.sec : null, deadline: doc.brief.deadline ?? null },
       /** whether a crew is working on this project in this process right now, and what it waits on */
@@ -535,7 +763,10 @@ export class Crew {
             .map((t) => t.endedAt ?? t.startedAt ?? "")
             .sort()
             .at(-1) || null,
-        queued: p.state.tasks.filter((t) => t.status === "queued").length,
+        /** plan tasks whose dependencies are done but that wait for a free slot (or the budget) */
+        queued: plan ? plan.tasks.filter((t) => t.status === "ready").length : 0,
+        /** what is running now, per endpoint (N6): `{ fake: { size: 4, used: 3 }, render: { size: 1, used: 0 } }` */
+        slots: run?.exec?.slots() ?? {},
       },
     };
   }
@@ -548,6 +779,7 @@ export class Crew {
     r.paused = true;
     r.pauseMode = mode;
     if (mode === "now") r.abort.abort(new Paused("paused"));
+    r.exec?.wake();
   }
   resume(p: OpenProject) {
     p.state.paused = false;
@@ -556,6 +788,7 @@ export class Crew {
     if (r) {
       r.paused = false;
       r.resume?.();
+      r.exec?.wake();
     }
   }
   gate(p: OpenProject, gate: string, v: { verdict: string; items?: string[]; reasons?: string[]; by: string }) {
@@ -572,7 +805,7 @@ export class Crew {
    * A person's change (crew_request_change). The note is already added. While a crew works on the project nothing
    * is touched: the note waits for the next review, and once that run ends any change still open reopens its stage.
    * When idle, the owner's stage is reopened (its scene marked stale, later gates reopened, the old export marked
-   * superseded) and the crew runs from there, unless the person paused it.
+   * superseded), the plan gets a change revision, and the crew runs it, unless the person paused it.
    */
   requestChange(p: OpenProject, note: Note, extra: Note[] = []): { queued: boolean; stage: Stage; started: boolean } {
     const stage = OWNER_STAGE[note.assignee] ?? "review";
@@ -597,17 +830,33 @@ export class Crew {
         text: `Also fix: ${n.text.slice(0, 240)}`,
         ref: n.target.scene ?? n.id,
       });
-    const from = this.reopen(p, notes);
-    const change = planChange(p, notes);
-    p.state.change = { ...change, startedAt: new Date().toISOString() };
-    p.saveState();
+    const { from, change } = this.startChange(p, notes);
     if (p.state.paused) return { queued: false, stage: from, started: false };
     this.run(p, { stage: from, change }).catch(() => {});
     return { queued: false, stage: from, started: true };
   }
+  /** reopen the stage a change needs and write its plan revision (§1.7 "Change requests become revisions") */
+  private startChange(p: OpenProject, notes: Note[]) {
+    // rev 0 first, from the project as it was before the change reopened anything
+    this.ensurePlan(p, null);
+    const from = this.reopen(p, notes);
+    const change = planChange(p, notes);
+    p.state.change = { ...change, startedAt: new Date().toISOString() };
+    p.saveState();
+    const what = notes[0]?.text.slice(0, 160) ?? "a change";
+    this.planRevise(p, null, { by: "person", trigger: "change", reason: `Your change: ${what}` }, (ts, ctx) =>
+      changeRevision(ts, change, from, ctx, p.state.sceneStatus),
+    );
+    return { from, change };
+  }
 
   /** called when a run ends, or stops at a gate for the person, with what it did (Pip settles its cards) */
   onRunEnd?: (p: OpenProject, report: RunReport) => void;
+  /**
+   * The budget can't cover the next task, or spend crossed the ask-at line (§1.6 "Overrun"): the executor starts
+   * nothing new. Pip turns this into the /budget card (P1b); without it the status line asks.
+   */
+  onOverrun?: (p: OpenProject, o: { needUsd: number; capUsd: number; spentUsd: number; suggestUsd: number }) => void;
 
   private report(p: OpenProject, r: Run, status: RunReport["status"], error?: string): RunReport {
     const scope = r.scope;
@@ -680,14 +929,19 @@ export class Crew {
         p.emit("log", { level: "info", text: `resuming the crew at ${p.state.stage} after a restart` });
         p.setStatus({ line: "Picking up where the crew left off" });
         const { startedAt: _s, ...change } = p.state.change ?? ({} as any);
-        this.run(p, { stage: p.state.stage, ...(p.state.change ? { change } : {}) }).catch(() => {});
+        this.run(p, { resume: true, ...(p.state.change ? { change } : {}) }).catch(() => {});
         out.push(id);
       } catch {}
     }
     return out;
   }
 
-  async run(p: OpenProject, opts: { stage?: string; change?: ChangePlan } = {}) {
+  /**
+   * Run the plan. `stage` reruns the plan from that stage (crew_run, a change); `resume` continues after a restart
+   * (running and waiting tasks go back to pending); `retry` puts failed tasks back. With none of them the plan just
+   * continues, or reruns from the current stage when nothing is left.
+   */
+  async run(p: OpenProject, opts: { stage?: string; change?: ChangePlan; resume?: boolean; retry?: boolean } = {}) {
     if (this.runs.has(p.id)) throw new Error("the crew is already working on this project");
     const r: Run = {
       abort: new AbortController(),
@@ -698,6 +952,8 @@ export class Crew {
       done: { redone: new Set(), reboarded: [], approximated: [], exported: false },
       triggers: [],
       redos: new Map(),
+      id: `run_${randomUUID().slice(0, 8)}`,
+      revisions: 0,
     };
     this.runs.set(p.id, r);
     p.state.startedAt ??= r.startedAt;
@@ -708,8 +964,17 @@ export class Crew {
     p.setStatus({ line: "The crew is working", problem: undefined });
     let finished = false;
     let outcome: { status: RunReport["status"]; error?: string } = { status: "stopped" };
+    // a raised cap: the executor looks again
+    const onPatch = (e: { event: string; data: any }) => {
+      if (e.event === "patch" && (e.data?.ops ?? []).some((o: any) => String(o.path).startsWith("/budget"))) {
+        r.resume?.();
+        r.exec?.wake();
+      }
+    };
+    p.events.on("event", onPatch);
     try {
-      await this.pipeline(p, r, (opts.stage as Stage) ?? p.state.stage);
+      await this.execute(p, r, opts);
+      if (r.abort.signal.aborted) throw new Paused("stopped");
       finished = true;
       outcome = { status: "done" };
     } catch (e: any) {
@@ -724,9 +989,12 @@ export class Crew {
         const h = humanize(e, failed?.role);
         p.setStatus({ line: h.text, problem: { ...h, taskId: failed?.id } });
         p.setDigest(`The crew stopped: ${String(e?.message ?? e).slice(0, 200)}${e?.fix ? ` Fix: ${e.fix}` : ""}`);
+        // the person's waits (a gate, a pick) end with the run
+        r.abort.abort(new Paused("failed"));
       }
       throw e;
     } finally {
+      p.events.off("event", onPatch);
       this.runs.delete(p.id);
       // a finished, failed or deliberately stopped run is not resumed; only a crash leaves `running` set
       p.state.running = false;
@@ -739,30 +1007,178 @@ export class Crew {
       // (only notes made during this run, so a change no stage can read never loops)
       const left = p.state.notes.filter((n) => n.status === "open" && n.by === "user" && n.createdAt >= r.startedAt);
       if (finished && left.length && !p.state.paused) {
-        const from = this.reopen(p, left);
-        const change = planChange(p, left);
-        p.state.change = { ...change, startedAt: new Date().toISOString() };
-        p.saveState();
+        const { from, change } = this.startChange(p, left);
         setTimeout(() => this.run(p, { stage: from, change }).catch(() => {}), 0);
       }
     }
   }
 
-  // ---------------------------------------------------------------- helpers
-  private remaining(p: OpenProject): { kind: string; role: RoleT; count?: number }[] {
-    const order: Stage[] = ["brief", "script", "storyboard", "art", "animate", "narrate", "sound", "review", "deliver"];
-    const at = order.indexOf(p.state.stage);
-    const all: [Stage, string, RoleT, number][] = [
-      ["brief", "producer.plan", "producer", 1],
-      ["script", "writer.angles", "writer", 1],
-      ["storyboard", "director.storyboard", "director", 1],
-      ["art", "asset.draw", "pixel-artist", 3],
-      ["art", "asset.critique", "pixel-artist", 3],
-      ["art", "asset.judge", "art-director", 1],
-      ["animate", "scene.tune", "animator", Math.max(1, p.doc().scenes.length)],
-      ["review", "review.final", "reviewer", 2],
-    ];
-    return all.filter(([s]) => order.indexOf(s) >= at).map(([, kind, role, count]) => ({ kind, role, count }));
+  /** the plan for this run (rev 0, a rerun from a stage, a resume, a retry), then the executor */
+  private async execute(
+    p: OpenProject,
+    r: Run,
+    opts: { stage?: string; change?: ChangePlan; resume?: boolean; retry?: boolean },
+  ) {
+    const had = !!this.planNow(p);
+    let plan = this.ensurePlan(p, r);
+    // a resume continues the same run (its id stays in plan.runs); anything else is a new run
+    const last = plan.runs.at(-1);
+    if (opts.resume && had && last) r.id = last.id;
+    else plan.runs = [...plan.runs, { id: r.id, startedAt: r.startedAt, pipProposals: 0 }];
+    const sceneStatus = p.state.sceneStatus;
+    if (opts.resume && had) {
+      // running and ready work starts again; a person's wait opens again
+      for (const t of plan.tasks)
+        if (t.status === "running" || t.status === "ready" || t.status === "waiting_person") t.status = "pending";
+      touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView());
+    } else if (opts.retry && plan.tasks.some((t) => t.status === "failed")) {
+      this.planRevise(p, r, { by: "code", trigger: "retry", reason: "Trying the failed step again." }, (ts) => ({
+        tasks: ts.map((t) => (t.status === "failed" ? { ...t, status: "pending" as const, note: undefined } : t)),
+        ops: ts.filter((t) => t.status === "failed").map((t) => ({ op: "add" as const, task: t.id, reason: "retry" })),
+      }));
+    } else if (!opts.change) {
+      const from = (opts.stage as Stage | undefined) ?? (plan.tasks.some(isLive) ? null : p.state.stage);
+      if (from || (opts.resume && !had))
+        this.planRevise(
+          p,
+          r,
+          { by: "code", trigger: "start", reason: `The crew runs again from the ${from ?? p.state.stage} stage.` },
+          (ts) => reopenFrom(ts, (from ?? p.state.stage) as Stage, plan.rev + 1, { sceneStatus }),
+        );
+    }
+    plan = this.planNow(p)!;
+    const env = this.planEnv(p);
+    const exec = new Executor({
+      tasks: () => this.planNow(p)?.tasks ?? [],
+      held: (id) => !!this.planNow(p)?.pending?.tasks.includes(id),
+      handle: (t) => this.handle(p, r, t),
+      setStatus: (t, status, note) => this.setPlanStatus(p, t.id, status, note),
+      endpoint: (t) => {
+        const row = CATALOGUE[t.kind];
+        if (t.role === "person" || !row.calls[1]) return null;
+        const m = resolveTier(t.role as RoleT, t.tier, env);
+        return m.slice(0, m.indexOf("/"));
+      },
+      laneSize: (ep) => env.laneSize(ep),
+      affordable: (t) => this.affordable(p, r, t),
+      overrun: (t) => this.overrun(p, r, t),
+      stopped: () => r.paused,
+      aborted: () => r.abort.signal.aborted,
+      waitResume: () =>
+        new Promise<void>((res) => {
+          if (r.abort.signal.aborted) return res();
+          r.resume = () => {
+            r.resume = undefined;
+            res();
+          };
+          r.abort.signal.addEventListener("abort", () => res(), { once: true });
+        }).then(() => {
+          if (!r.paused) p.emit("log", { level: "info", text: "crew resumed" });
+        }),
+      stageChanged: (s) => {
+        if (p.state.stage !== s) p.setStage(s);
+        if (!r.held && !/^Waiting for you/.test(p.state.status.line))
+          p.setStatus({ phase: PHASE[s] ?? 0, line: STAGE_LINE[s] ?? "Working" });
+        else p.setStatus({ phase: PHASE[s] ?? 0 });
+      },
+      drain: async (s) => {
+        if (s === "animate" && this.planNow(p)?.tasks.some((t) => t.kind === "scene.tune" && t.status === "done"))
+          p.milestone("scenes.animated", "Scenes animated");
+        await this.drain(p, r, s);
+      },
+      fatal: (t) => t.kind === "gate" || CATALOGUE[t.kind].fatal,
+    });
+    r.exec = exec;
+    await exec.run();
+    if (r.abort.signal.aborted) return;
+    p.setStatus({ phase: 4, line: "Your video is ready" });
+    p.setDigest(
+      `Done: ${
+        p
+          .files()
+          .filter((f) => f.kind === "video")
+          .map((f) => f.name)
+          .join(", ") || "no video"
+      } in out/.`,
+    );
+  }
+
+  /** the budget covers this task's worst case, and spend hasn't crossed the ask-at line unasked (§1.6) */
+  private affordable(p: OpenProject, r: Run, t: PlanTaskT) {
+    if (t.estUsd[1] <= 0) return true;
+    const b = p.doc().budget;
+    const { spentUsd, reservedUsd } = this.deps.gateway.spent(p.id);
+    if (b.capUsd - spentUsd - reservedUsd < t.estUsd[1]) return !!(r.overrun?.declined && false);
+    const crossed = b.capUsd > 0 && (spentUsd + reservedUsd) / b.capUsd >= b.askAtFraction;
+    return !crossed || r.overrun?.cap === b.capUsd;
+  }
+  private overrun(p: OpenProject, r: Run, t: PlanTaskT) {
+    const b = p.doc().budget;
+    const { spentUsd } = this.deps.gateway.spent(p.id);
+    const plan = this.planNow(p);
+    const rest = plan ? plan.tasks.filter(isLive).reduce((s, x) => s + x.estUsd[1], 0) : t.estUsd[1];
+    const suggestUsd = Math.ceil((spentUsd + rest) * 2) / 2;
+    const fits = b.capUsd - spentUsd >= t.estUsd[1];
+    if (r.overrun?.cap === b.capUsd && fits) return;
+    r.overrun = { cap: b.capUsd };
+    const line = fits
+      ? `Waiting for you: ${Math.round(b.askAtFraction * 100)}% of the $${b.capUsd} cap is spent. Raise it to $${suggestUsd.toFixed(2)} to finish?`
+      : `Waiting for you: the next step could cost $${t.estUsd[1].toFixed(2)} and $${Math.max(0, b.capUsd - spentUsd).toFixed(2)} is left`;
+    p.setStatus({ line, problem: { text: line.replace(/^Waiting for you: /, ""), action: "add_budget" } });
+    p.say({
+      from: "pip",
+      to: "crew",
+      kind: "brief",
+      text: `Hold: ${line.replace(/^Waiting for you: /, "")}`,
+      ref: t.id,
+    });
+    try {
+      this.onOverrun?.(p, { needUsd: t.estUsd[1], capUsd: b.capUsd, spentUsd, suggestUsd });
+    } catch {}
+  }
+  /** the person declined the overrun card: go on with what fits (P1b) */
+  declineOverrun(p: OpenProject) {
+    const r = this.runs.get(p.id);
+    if (!r) return;
+    r.overrun = { cap: p.doc().budget.capUsd, declined: true };
+    r.resume?.();
+    r.exec?.wake();
+  }
+
+  /** run one plan task's handler */
+  private async handle(p: OpenProject, r: Run, t: PlanTaskT): Promise<Outcome> {
+    switch (t.kind) {
+      case "producer.plan":
+        return this.brief(p, r, t);
+      case "writer.angles":
+        return this.script(p, r, t);
+      case "director.storyboard":
+        return t.scenes?.length ? this.reboard(p, r, t.scenes, t) : this.storyboard(p, r, t);
+      case "art.cast":
+        return this.cast(p, t);
+      case "asset.import":
+        return this.importLogo(p, t);
+      case "asset.spec":
+        return this.assetSpec(p, r, t);
+      case "asset.draw":
+        return this.assetDraw(p, r, t);
+      case "asset.judge":
+        return this.assetJudge(p, r, t);
+      case "scene.tune":
+        return this.tune(p, r, t);
+      case "vo.align":
+        return this.narrate(p, r, t);
+      case "sound.mix":
+        return this.sound(p, t);
+      case "review.final":
+        return this.review(p, r, t);
+      case "deliver.export":
+        return this.deliver(p, r, t);
+      case "lib.publish":
+        return this.publish(p, r, t);
+      case "gate":
+        return this.gateTask(p, r, t);
+    }
   }
 
   private async checkpoint(p: OpenProject, r: Run) {
@@ -798,7 +1214,9 @@ export class Crew {
     if (rep) {
       this.reports.delete(t.id);
       const did = rep.did || patch.summary || t.summary || t.title;
-      const ref = this.taskScenes.get(t.id) ?? t.id;
+      // N10: the instance's subject (its scene or asset), else its plan task, else the row
+      const pt = t.planTask ? this.planNow(p)?.tasks.find((x) => x.id === t.planTask) : undefined;
+      const ref = this.taskScenes.get(t.id) ?? pt?.scene ?? pt?.asset ?? t.planTask ?? t.id;
       p.say({
         from: t.role,
         to: "pip",
@@ -824,6 +1242,11 @@ export class Crew {
       endedAt: new Date().toISOString(),
       error: { message: String(e?.message ?? e).slice(0, 400), fix: e?.fix },
     });
+  }
+
+  /** the model a plan task's tier resolves to; undefined keeps the role's own (and its fallback) */
+  private modelOf(p: OpenProject, pt: PlanTaskT): string | undefined {
+    return pt.tier === "role" ? undefined : resolveTier(pt.role as RoleT, pt.tier, this.planEnv(p));
   }
 
   private ctx(p: OpenProject, role: RoleT, task: string): ToolContext {
@@ -864,7 +1287,9 @@ export class Crew {
       prompt: string;
       vars: Record<string, unknown>;
       schema: z.ZodType<T>;
-      images?: { caption: string; data: Uint8Array }[];
+      images?: { caption: string; data: Uint8Array; mediaType?: "image/png" | "image/jpeg" }[];
+      /** the plan task's tier, resolved (undefined: the role's model) */
+      model?: string;
       history?: ChatMessage[];
       extra?: ContentPart[];
       normalize?: (raw: unknown) => T | null;
@@ -883,11 +1308,11 @@ export class Crew {
         ? `\n\nDirection from Pip (as important as the person's notes):\n${briefs.map((b) => `- ${b.text}`).join("\n")}`
         : "");
     const content: ContentPart[] = [{ type: "text", text: userText }];
-    for (const im of o.images ?? []) content.push({ type: "text", text: im.caption }, img(im.data));
+    for (const im of o.images ?? []) content.push({ type: "text", text: im.caption }, img(im.data, im.mediaType));
     content.push(...(o.extra ?? []));
     const messages: ChatMessage[] = [...(o.history ?? []), { role: "user", content }];
     const doc = p.doc();
-    const model = this.deps.gateway.modelFor(o.role, doc.crew.models);
+    const model = o.model ?? this.deps.gateway.modelFor(o.role, doc.crew.models);
     p.log(t.id, {
       kind: "model",
       title: `Asked ${model.split("/").pop()} (${c.id})`,
@@ -909,7 +1334,7 @@ export class Crew {
         jsonSchema: js(withReport(o.schema)),
         maxOut: c.maxOut,
         effort: c.effort,
-        model: this.deps.gateway.modelFor(o.role, doc.crew.models),
+        model,
         signal: r.abort.signal,
         normalize: o.normalize,
         onEvent: (e) => {
@@ -939,12 +1364,30 @@ export class Crew {
     };
   }
 
-  /** wait at a gate unless the involvement level lets it pass */
-  private async atGate(p: OpenProject, gate: GateId, items: { label: string; ref?: string }[], auto: boolean) {
+  /**
+   * Wait at a gate unless the involvement level lets it pass. `every` stops at all five; `key` (D2) stops at the
+   * brief, the rough cut and (via the pick) the script: the animatic passes by itself, and "Looks good" at the rough
+   * cut passes the final too; `auto` passes them all in code. The wait ends with the run.
+   */
+  private async atGate(
+    p: OpenProject,
+    r: Run,
+    pt: PlanTaskT | null,
+    gate: GateId,
+    items: { label: string; ref?: string }[],
+  ) {
     const inv = p.doc().brief.involvement;
-    const userGate =
-      inv === "every" ||
-      (inv === "key" && ["g0_brief", "g1_script", "g2_animatic", "g3_rough", "g4_final"].includes(gate));
+    const auto = inv === "auto";
+    const withRough = gate === "g4_final" && inv === "key" && r.roughByUser;
+    const userGate = inv === "every" || (inv === "key" && ["g0_brief", "g3_rough", "g4_final"].includes(gate));
+    if (withRough) {
+      p.setGate(gate, {
+        status: "passed",
+        items,
+        verdict: { by: "user", verdict: "approve", at: new Date().toISOString(), note: "with the rough cut" } as any,
+      });
+      return { verdict: "approve" };
+    }
     if (!userGate || auto) {
       p.setGate(gate, {
         status: "passed",
@@ -955,50 +1398,25 @@ export class Crew {
     }
     p.setGate(gate, { status: "open", items });
     p.setDigest(`Waiting for you: ${items.map((i) => i.label).join(", ")}.`);
-    return new Promise<{ verdict: string; reasons?: string[] }>((res) => this.gateWaiters.set(`${p.id}:${gate}`, res));
+    if (pt) this.setPlanStatus(p, pt.id, "waiting_person");
+    const v = await this.waitGate(p, r, gate);
+    if (gate === "g3_rough" && v.by === "user" && v.verdict !== "changes") r.roughByUser = true;
+    return v;
+  }
+  private waitGate(p: OpenProject, r: Run, gate: GateId) {
+    return new Promise<{ verdict: string; reasons?: string[]; by: string }>((res, rej) => {
+      this.gateWaiters.set(`${p.id}:${gate}`, res);
+      if (r.abort.signal.aborted) rej(new Paused("stopped"));
+      r.abort.signal.addEventListener("abort", () => rej(new Paused("stopped")), { once: true });
+    });
   }
 
-  // ---------------------------------------------------------------- the pipeline
-  private async pipeline(p: OpenProject, r: Run, from: Stage) {
-    const order: Stage[] = ["brief", "script", "storyboard", "art", "animate", "narrate", "sound", "review", "deliver"];
-    const auto = p.doc().brief.involvement === "auto";
-    for (const stage of order.slice(order.indexOf(from))) {
-      await this.checkpoint(p, r);
-      p.setStage(stage);
-      p.setStatus({ phase: PHASE[stage] ?? 0, line: STAGE_LINE[stage] ?? "Working" });
-      if (stage === "brief") await this.brief(p, r, auto);
-      if (stage === "script") await this.script(p, r, auto);
-      if (stage === "storyboard") {
-        // a person's change re-plans only its scenes; the rest of the board stays
-        if (r.change?.reboard?.length) await this.reboard(p, r, r.change.reboard);
-        else await this.storyboard(p, r, auto);
-      }
-      if (stage === "art") await this.art(p, r);
-      if (stage === "animate") {
-        await this.animate(p, r);
-        await this.narrateMilestone(p);
-      }
-      if (stage === "narrate") await this.narrate(p, r);
-      if (stage === "sound") await this.sound(p);
-      if (stage === "review") await this.review(p, r, auto);
-      if (stage === "deliver") await this.deliver(p, r, auto);
-      await this.drain(p, r, stage);
-    }
-    p.setStatus({ phase: 4, line: "Your video is ready" });
-    p.setDigest(
-      `Done: ${
-        p
-          .files()
-          .filter((f) => f.kind === "video")
-          .map((f) => f.name)
-          .join(", ") || "no video"
-      } in out/.`,
-    );
-  }
-
-  private async brief(p: OpenProject, r: Run, auto: boolean) {
+  // ---------------------------------------------------------------- the handlers (one per plan task kind)
+  /** producer.plan: the digest, the assumptions, and the questions only the person can answer */
+  private async brief(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const d = p.doc();
-    const t = this.task(p, { kind: "producer.plan", role: "producer", title: "Reading the brief" });
+    const auto = d.brief.involvement === "auto";
+    const t = this.task(p, { kind: "producer.plan", role: "producer", title: "Reading the brief", ...this.ptOf(pt) });
     try {
       const { data } = await this.ask(p, r, t, {
         role: "producer",
@@ -1016,14 +1434,16 @@ export class Crew {
         if (!q.options.some((o) => o.id === q.recommendedId)) q.recommendedId = q.options[0].id;
         if (auto) continue;
         // members never ask the person directly: Pip answers what it can, and escalates what only the person knows
-        const fromPip = await this.askPip(p, r, "producer", q);
+        const fromPip = await this.askPip(p, r, "producer", q, pt.id);
         if (fromPip) {
           notes.push({ by: "pip", text: `${q.question} → ${fromPip}` });
           continue;
         }
         const asked = p.ask({ ...q, kind: "single", blocks: ["script"], from: "producer" }, "producer");
         p.upsertTask({ ...t, status: "waiting_user", title: "Waiting for your answers" });
+        this.setPlanStatus(p, pt.id, "waiting_person");
         const a = await p.waitAnswer(asked.id, r.abort.signal);
+        this.setPlanStatus(p, pt.id, "running");
         const opt = q.options.find((o) => o.id === a.answer?.optionId);
         notes.push({
           by: "user",
@@ -1041,12 +1461,53 @@ export class Crew {
       this.failTask(p, t, e);
       throw e;
     }
-    await this.atGate(p, "g0_brief", [{ label: "Brief and budget" }], auto);
+    return { status: "done" };
   }
 
-  private async script(p: OpenProject, r: Run, auto: boolean) {
+  /** a gate task: the person's pick or OK, or the code that comes with it (the script pick, the animatic) */
+  private async gateTask(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    switch (pt.gate) {
+      case "g0_brief": {
+        await this.atGate(p, r, pt, "g0_brief", [{ label: "Brief and budget" }]);
+        const plan = this.planNow(p);
+        if (plan) p.milestone("plan.ready", `Plan ready · ${tasksToStart(plan.tasks)} tasks to start`);
+        return { status: "done" };
+      }
+      case "g1_script":
+        return this.pickScript(p, r, pt);
+      case "g2_animatic": {
+        // the animatic: rendered straight away from library assets and placeholder boxes
+        const ren = await p.renderer_();
+        const sheet = await contactSheet(ren, { every: 1 });
+        writeFileSync(join(p.dir, "out", "animatic-contact.png"), sheet);
+        p.emit("render", { kind: "still", url: `/api/p/${p.id}/files/animatic-contact.png` });
+        for (const sc of p.doc().scenes) p.setSceneStatus(sc.id, { version: "animatic", state: "ready" });
+        await this.atGate(p, r, pt, "g2_animatic", [
+          { label: "Animatic: pacing before any art is drawn", ref: "out/animatic-contact.png" },
+        ]);
+        return { status: "done" };
+      }
+      case "rights":
+        return this.rights(p, r, pt);
+      case "g3_rough":
+        return this.rough(p, r, pt);
+      case "g4_final":
+        await this.atGate(p, r, pt, "g4_final", [{ label: "Final video" }]);
+        return { status: "done" };
+      default:
+        return { status: "skipped", note: `no gate ${pt.gate}` };
+    }
+  }
+
+  /** writer.angles: three angles in the word budget, with one repair turn */
+  private async script(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const d = p.doc();
-    const t = this.task(p, { kind: "writer.angles", role: "writer", title: "Writing three script angles" });
+    const t = this.task(p, {
+      kind: "writer.angles",
+      role: "writer",
+      title: "Writing three script angles",
+      ...this.ptOf(pt),
+    });
     try {
       const est = await this.tool(p, "writer", t.id, "script_estimate", { lines: ["x"] });
       const budget = (est.data as any).wordBudget as number;
@@ -1070,6 +1531,7 @@ export class Crew {
         },
         schema: AnglesOut,
         normalize: saneAngles,
+        model: this.modelOf(p, pt),
       });
       // one repair turn if any angle breaks the word rules
       const problems = (a: typeof out.data) =>
@@ -1094,17 +1556,36 @@ export class Crew {
           },
           schema: AnglesOut,
           history: out.messages,
+          model: this.modelOf(p, pt),
         });
       }
       for (const n of p.state.notes.filter((x) => x.assignee === "writer" && x.status === "open"))
         p.updateNote(n.id, { status: "done", reason: "the Writer rewrote the script with it" });
       const { angles } = out.data;
       const recommended = Math.min(out.data.recommended, angles.length - 1);
-      let pick = recommended;
       this.done(p, t, {
         summary: angles.map((a, i) => `${i === recommended ? "★ " : ""}${a.name}: ${a.cues[0]}`).join(" / "),
       });
-      if (!auto && p.doc().brief.involvement !== "auto") {
+      r.angles = { angles, recommended, row: t.id };
+      writeFileSync(join(p.dir, "runs", "angles.json"), JSON.stringify(r.angles, null, 1));
+    } catch (e) {
+      this.failTask(p, t, e);
+      throw e;
+    }
+    return { status: "done" };
+  }
+
+  /** G1: the person picks an angle (unless the crew runs on its own), then the cues are set and the timing follows */
+  private async pickScript(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const f = join(p.dir, "runs", "angles.json");
+    const st: AnglesState | undefined = r.angles ?? (existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : undefined);
+    if (!st) throw Object.assign(new Error("no script angles to pick from"), { fix: "run the Writer again" });
+    const { angles, recommended } = st;
+    const t = p.state.tasks.find((x) => x.id === st.row) ?? ({ id: st.row, role: "writer" } as Task);
+    const auto = p.doc().brief.involvement === "auto";
+    let pick = recommended;
+    try {
+      if (!auto) {
         const q = p.ask(
           {
             kind: "single",
@@ -1122,6 +1603,7 @@ export class Crew {
           "writer",
         );
         p.setGate("g1_script", { status: "open", items: [{ label: "Pick a script angle", ref: q.id }] });
+        this.setPlanStatus(p, pt.id, "waiting_person");
         const a = await p.waitAnswer(q.id, r.abort.signal);
         pick = Number((a.answer?.optionId ?? `angle_${recommended}`).split("_")[1]);
       }
@@ -1143,9 +1625,10 @@ export class Crew {
         author: { kind: "agent", role: "editor", task: t.id },
       });
     } catch (e) {
-      this.failTask(p, t, e);
+      if (t.status) this.failTask(p, t, e);
       throw e;
     }
+    return { status: "done" };
   }
 
   private libraryList() {
@@ -1160,12 +1643,25 @@ export class Crew {
       return `${a.id}: ${a.kind} ${a.w}x${a.h}, frames ${f.frames.slice(0, 10).join(", ")}${f.frames.length > 10 ? ", …" : ""}`;
     });
   }
+  /** art the plan already brings in (imported logos, drawings from references), for the Director's asset list */
+  private plannedArt(p: OpenProject): string[] {
+    const plan = this.planNow(p);
+    return (plan?.tasks ?? [])
+      .filter((t) => (t.kind === "asset.import" || t.kind === "asset.spec") && t.fromRef && t.asset && isLive(t))
+      .map((t) =>
+        t.kind === "asset.import"
+          ? `${t.asset}: icon 16x16, the person's logo (use it as toast iconAsset or item_collect itemAsset)`
+          : `${t.asset}: ${t.assetKind ?? "character"} drawn from the person's reference (add it to newAssets as "${t.asset}")`,
+      );
+  }
 
-  private async storyboard(p: OpenProject, r: Run, auto: boolean) {
+  /** director.storyboard: the board from the recipe menu (the baseline board when the model can't), recipes set */
+  private async storyboard(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const t = this.task(p, {
       kind: "director.storyboard",
       role: "director",
       title: "Building scenes from the recipe menu",
+      ...this.ptOf(pt),
     });
     try {
       const { recipeCatalog, checkRecipeParams } = await import("@pap/engine/recipes");
@@ -1186,7 +1682,7 @@ export class Crew {
           return `- ${x.id} (min ${x.minDurationSec}s): ${x.description}${ps.length ? ` Params: ${ps.join("; ")}` : ""}`;
         })
         .join("\n");
-      const libNames = this.libraryList();
+      const libNames = [...this.libraryList(), ...this.plannedArt(p)];
       const asks = noteLines(p, "director");
       const vars = {
         idea: asks.length ? `${d.brief.idea}\n\nChanges the person asked for:\n- ${asks.join("\n- ")}` : d.brief.idea,
@@ -1203,6 +1699,7 @@ export class Crew {
           prompt: "director/storyboard",
           vars,
           schema: StoryboardOut,
+          model: this.modelOf(p, pt),
         });
         for (let attempt = 0; attempt < 2; attempt++) {
           const issues = this.checkBoard(p, out.data, checkRecipeParams);
@@ -1222,6 +1719,7 @@ export class Crew {
             },
             schema: StoryboardOut,
             history: out.messages,
+            model: this.modelOf(p, pt),
           });
           if (!this.checkBoard(p, out.data, checkRecipeParams).length) board = out.data;
         }
@@ -1259,27 +1757,27 @@ export class Crew {
       }
       for (const n of p.state.notes.filter((x) => x.assignee === "director" && x.status === "open"))
         p.updateNote(n.id, { status: "done", reason: "the Director re-planned the scenes with it" });
-      const out = { data: board };
-      await this.applyBoard(p, t, out.data);
+      await this.applyBoard(p, t, board);
       this.done(p, t, {
-        summary: out.data.scenes.map((s) => `${s.title} (${s.recipes.map((x) => x.id).join(", ")})`).join(" → "),
+        summary: board.scenes.map((s) => `${s.title} (${s.recipes.map((x) => x.id).join(", ")})`).join(" → "),
       });
-      // the animatic: rendered straight away from library assets and placeholder boxes
-      const ren = await p.renderer_();
-      const sheet = await contactSheet(ren, { every: 1 });
-      writeFileSync(join(p.dir, "out", "animatic-contact.png"), sheet);
-      p.emit("render", { kind: "still", url: `/api/p/${p.id}/files/animatic-contact.png` });
-      for (const sc of p.doc().scenes) p.setSceneStatus(sc.id, { version: "animatic", state: "ready" });
-      await this.atGate(
-        p,
-        "g2_animatic",
-        [{ label: "Animatic: pacing before any art is drawn", ref: "out/animatic-contact.png" }],
-        auto,
-      );
     } catch (e) {
       this.failTask(p, t, e);
       throw e;
     }
+    this.expandAfterBoard(p, r);
+    return { status: "done" };
+  }
+
+  /** the board is set: the scene and new-art placeholders become real tasks (a `code` revision, §1.3 "Expansion") */
+  private expandAfterBoard(p: OpenProject, r: Run) {
+    const f = join(p.dir, "runs", "new-assets.json");
+    const pending: NewAsset[] = existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : [];
+    const refs = (this.planNow(p)?.tasks ?? []).filter((t) => t.kind === "asset.spec" && t.fromRef && isLive(t));
+    const fresh = pending.filter((a) => !refs.some((t) => t.asset === a.name));
+    this.planRevise(p, r, { by: "code", trigger: "expand", reason: "The storyboard is done." }, (ts, ctx) =>
+      expandPlan(ts, p.doc(), fresh as NewAsset[], ctx),
+    );
   }
 
   private checkBoard(
@@ -1328,6 +1826,8 @@ export class Crew {
     const known = new Set([
       ...this.libraryList().map((l) => l.split(":")[0]),
       ...b.newAssets.map((a) => a.name),
+      ...d.assets.map((a) => a.id),
+      ...this.plannedArt(p).map((l) => l.split(":")[0]),
       "font",
     ]);
     const tl = p.timeline();
@@ -1349,6 +1849,7 @@ export class Crew {
     return issues;
   }
 
+  /** the scene windows, then each scene's recipes; what needs drawing goes to runs/new-assets.json (cast: art.cast) */
   private async applyBoard(p: OpenProject, t: Task, b: z.infer<typeof StoryboardOut>) {
     const n = b.scenes.length;
     const windows = b.scenes.map((s, k) => ({
@@ -1359,35 +1860,64 @@ export class Crew {
       to: k === n - 1 ? "duration" : `E(${s.cues.at(-1)})+0.1`,
     }));
     await this.tool(p, "director", t.id, "storyboard_set", { scenes: windows, reason: "scenes from the storyboard" });
-    const planned = new Set(b.newAssets.map((a) => a.name));
-    await this.castFor(p, t, b.scenes, planned, async () => {
-      for (const s of b.scenes)
-        await this.tool(p, "director", t.id, "scene_set_recipes", {
-          scene: s.id,
-          recipes: s.recipes,
-          reason: `recipes for ${s.title}`,
-        });
-    });
-    // remember what needs drawing
-    const pending = b.newAssets.filter((a) => !p.doc().assets.some((x) => x.id === a.name));
+    for (const s of b.scenes)
+      await this.tool(p, "director", t.id, "scene_set_recipes", {
+        scene: s.id,
+        recipes: s.recipes,
+        reason: `recipes for ${s.title}`,
+      });
+    // remember what needs drawing (a drawing from a reference keeps its reference)
+    const refs = new Map(
+      (this.planNow(p)?.tasks ?? [])
+        .filter((x) => x.kind === "asset.spec" && x.fromRef)
+        .map((x) => [x.asset, x.fromRef]),
+    );
+    const pending = b.newAssets
+      .filter((a) => !p.doc().assets.some((x) => x.id === a.name))
+      .map((a) => (refs.get(a.name) ? { ...a, fromRef: refs.get(a.name) } : a));
     writeFileSync(join(p.dir, "runs", "new-assets.json"), JSON.stringify(pending, null, 1));
     for (const sc of b.scenes) p.setSceneStatus(sc.id, { version: "board", state: "ready" });
   }
 
-  /** cast the library assets the recipes name (and the font), set the recipes, then the fixed ids they draw */
+  /** art.cast: the Art Director casts the library assets the scenes' recipes name (and the font) */
+  private async cast(p: OpenProject, pt: PlanTaskT): Promise<Outcome> {
+    const t = this.task(p, {
+      kind: "art.cast",
+      role: "art-director",
+      title: pt.scenes?.length ? `Casting for ${pt.scenes.join(", ")}` : "Casting the library art",
+      ...this.ptOf(pt),
+    });
+    try {
+      const scenes = p
+        .doc()
+        .scenes.filter((s) => s.kind === "decl" && (!pt.scenes?.length || pt.scenes.includes(s.id))) as {
+        recipes: { id: string; params: Record<string, unknown> }[];
+      }[];
+      const f = join(p.dir, "runs", "new-assets.json");
+      const planned = new Set<string>(
+        pt.scenes?.length ? [] : (existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : []).map((a: any) => a.name),
+      );
+      for (const x of this.planNow(p)?.tasks ?? [])
+        if (x.asset && isLive(x) && x.kind !== "lib.publish") planned.add(x.asset);
+      await this.castFor(p, t, scenes, planned);
+      this.done(p, t, { summary: "cast the library art the scenes use" });
+    } catch (e) {
+      this.failTask(p, t, e);
+      throw e;
+    }
+    return { status: "done" };
+  }
+
+  /** cast the library assets the recipes name (and the font), then the fixed ids the compiled scenes draw */
   private async castFor(
     p: OpenProject,
     t: Task,
     scenes: { recipes: { id: string; params: Record<string, unknown> }[] }[],
     planned: Set<string>,
-    setRecipes: () => Promise<void>,
   ) {
-    // cast library assets the recipes use, and the font
     const d = p.doc();
-    const b = { scenes };
     const want = new Set<string>(["font"]);
-    const { RECIPE_MAP } = await import("@pap/engine/recipes");
-    for (const s of b.scenes)
+    for (const s of scenes)
       for (const rc of s.recipes) {
         const R = (RECIPE_MAP as any)[rc.id];
         for (const [k, spec] of Object.entries<any>(R?.params ?? {}))
@@ -1395,12 +1925,11 @@ export class Crew {
       }
     const lib = new Set(this.libraryList().map((l) => l.split(":")[0]));
     for (const name of want) {
-      if (d.assets.some((a) => a.id === name)) continue;
+      if (d.assets.some((a) => a.id === name) || planned.has(name)) continue;
       if (name === "font")
         await this.tool(p, "art-director", t.id, "cast_asset", { name: "font", libraryId: "font-5x8" });
       else if (lib.has(name)) await this.tool(p, "art-director", t.id, "cast_asset", { name, libraryId: name });
     }
-    await setRecipes();
     // the compiled scenes draw fixed-id assets no param names (flag_raise's castle, the backdrop's moon, skyline and
     // tiles): cast every one the library has, or frame() draws a placeholder box
     const { missingAssets } = await import("@pap/engine/lints");
@@ -1411,14 +1940,16 @@ export class Crew {
 
   /**
    * A person's change that adds beats (characters, actors, a new moment): the Director re-plans only these scenes
-   * from the recipe menu and the library, with the change in its prompt; the rest of the board stays. Missing
-   * library assets are cast. What the menu can only approximate is reported back to the person.
+   * from the recipe menu and the library, with the change in its prompt; the rest of the board stays. The cast that
+   * follows (art.cast with these scenes) casts what the library has. What the menu can only approximate is reported
+   * back to the person.
    */
-  private async reboard(p: OpenProject, r: Run, ids: string[]) {
+  private async reboard(p: OpenProject, r: Run, ids: string[], pt: PlanTaskT): Promise<Outcome> {
     const t = this.task(p, {
       kind: "director.storyboard",
       role: "director",
       title: `Re-planning ${ids.length === 1 ? "a scene" : `${ids.length} scenes`} for your change`,
+      ...this.ptOf(pt),
     });
     try {
       const { recipeCatalog, checkRecipeParams } = await import("@pap/engine/recipes");
@@ -1482,6 +2013,7 @@ export class Crew {
         prompt: "director/reboard",
         vars,
         schema: ReboardOut,
+        model: this.modelOf(p, pt),
       });
       let issues = check(out.data);
       if (issues.length) {
@@ -1495,20 +2027,19 @@ export class Crew {
           },
           schema: ReboardOut,
           history: out.messages,
+          model: this.modelOf(p, pt),
         });
         issues = check(out.data);
       }
       // scenes still wrong keep their recipes; the rest are applied
       const bad = new Set(issues.map((i) => i.split(/[.: ]/)[0]));
       const good = out.data.scenes.filter((sc) => ids.includes(sc.id) && !bad.has(sc.id));
-      await this.castFor(p, t, good, new Set(), async () => {
-        for (const sc of good)
-          await this.tool(p, "director", t.id, "scene_set_recipes", {
-            scene: sc.id,
-            recipes: sc.recipes,
-            reason: `re-planned for the person's change: ${vars.change.slice(0, 200)}`,
-          });
-      });
+      for (const sc of good)
+        await this.tool(p, "director", t.id, "scene_set_recipes", {
+          scene: sc.id,
+          recipes: sc.recipes,
+          reason: `re-planned for the person's change: ${vars.change.slice(0, 200)}`,
+        });
       for (const sc of good) p.setSceneStatus(sc.id, { version: "board", state: "ready" });
       r.done.reboarded.push(...good.map((x) => x.id));
       const approx = out.data.approximated.trim();
@@ -1532,22 +2063,134 @@ export class Crew {
       this.failTask(p, t, e);
       throw e;
     }
+    return { status: "done" };
   }
 
-  private async art(p: OpenProject, r: Run) {
-    const f = join(p.dir, "runs", "new-assets.json");
-    const pending: { name: string; kind: string; description: string }[] = existsSync(f)
-      ? JSON.parse(readFileSync(f, "utf8"))
-      : [];
+  // ---------------------------------------------------------------- art: import, spec, draw, judge, rights
+  private palette() {
     const palette = JSON.parse(readFileSync(join(LIBRARY_DIR, "palettes", "pap-night.json"), "utf8"));
     const table = Object.entries<any>(palette.colours)
       .map(([k, v]) => `${k}  ${v.hex}  ${v.use}`)
       .join("\n");
-    for (const a of pending) {
-      await this.checkpoint(p, r);
-      if (p.doc().assets.some((x) => x.id === a.name)) continue;
-      const tpl = KIND_TEMPLATES[a.kind] ?? KIND_TEMPLATES.icon;
-      const ts = this.task(p, { kind: "asset.spec", role: "art-director", title: `Spec for ${a.name}` });
+    const colours = Object.fromEntries(Object.entries<any>(palette.colours).map(([k, x]) => [k, x.hex])) as Record<
+      string,
+      string
+    >;
+    return { palette, table, colours };
+  }
+  private artFile = (p: OpenProject, name: string, what: string) => {
+    mkdirSync(join(p.dir, "runs", "art"), { recursive: true });
+    return join(p.dir, "runs", "art", `${name.replace(/[^a-z0-9_-]/gi, "")}.${what}.json`);
+  };
+  /** the reference image a chain comes from, as a model input (only spec and draw calls, RIGHTS.md §4) */
+  private refImage(
+    p: OpenProject,
+    t: Task,
+    file?: string,
+  ): { caption: string; data: Uint8Array; mediaType: "image/png" | "image/jpeg" }[] {
+    if (!file) return [];
+    const path = join(p.dir, file);
+    if (!path.startsWith(p.dir) || !existsSync(path)) return [];
+    const mediaType = MEDIA[extname(path).toLowerCase()];
+    if (!mediaType) return [];
+    p.log(t.id, {
+      kind: "step",
+      title: `Sent the reference ${file.split("/").pop()} to the model (private to this project)`,
+    });
+    return [
+      {
+        caption: "The person's reference (capture two or three traits, never trace it):",
+        data: readFileSync(path),
+        mediaType,
+      },
+    ];
+  }
+  /** the asset a chain is for, from the storyboard's list or the plan task itself */
+  private assetOf(p: OpenProject, pt: PlanTaskT): { name: string; kind: string; description: string } {
+    const f = join(p.dir, "runs", "new-assets.json");
+    const listed: { name: string; kind: string; description: string }[] = existsSync(f)
+      ? JSON.parse(readFileSync(f, "utf8"))
+      : [];
+    const a = listed.find((x) => x.name === pt.asset);
+    return {
+      name: pt.asset!,
+      kind: a?.kind ?? pt.assetKind ?? "character",
+      description: a?.description ?? pt.description ?? `${pt.asset}`,
+    };
+  }
+
+  /** asset.import: a logo is quantized to the palette as a private 16x16 icon and cast; it is never drawn */
+  private async importLogo(p: OpenProject, pt: PlanTaskT): Promise<Outcome> {
+    const name = pt.asset!;
+    if (p.doc().assets.some((a) => a.id === name)) return { status: "skipped", note: "already in the project" };
+    const t = this.task(p, {
+      kind: "asset.import",
+      role: "art-director",
+      title: `Importing ${name}`,
+      ...this.ptOf(pt),
+    });
+    try {
+      const path = join(p.dir, pt.fromRef ?? "");
+      if (!pt.fromRef || !path.startsWith(p.dir) || !existsSync(path))
+        throw Object.assign(new Error(`the reference ${pt.fromRef} is missing`), {
+          fix: "add the logo file to the project's references again",
+        });
+      const { colours } = this.palette();
+      const q = logoIcon(readFileSync(path), colours);
+      const file = {
+        id: name,
+        version: 1,
+        kind: "icon",
+        w: 16,
+        h: 16,
+        frames: ["icon"],
+        palette: "pap-night@1",
+        tags: ["icon"],
+        description: "The person's logo, imported as is (private).",
+        licence: "LicenseRef-Private",
+        rights: { likeness: false, brand: true, trademark: true, public: false },
+        provenance: { source: "imported", role: "art-director", origin: p.id, ref: pt.fromRef, maxErr: q.maxErr },
+        hash: randomUUID().slice(0, 16),
+        standard: null,
+        grid: { icon: q.rows },
+      };
+      mkdirSync(join(p.dir, "assets"), { recursive: true });
+      writeFileSync(join(p.dir, "assets", `${name}.json`), `${JSON.stringify(file, null, 1)}\n`);
+      await p.patch(
+        [
+          {
+            op: "add",
+            path: "/assets/-",
+            value: {
+              id: name,
+              src: `file:assets/${name}.json`,
+              flags: { private: true, brand: { owner: "the person", trademark: true } },
+            },
+          },
+        ],
+        { reason: `import the logo as ${name}`, author: { kind: "agent", role: "art-director", task: t.id } },
+      );
+      this.done(p, t, { summary: `${name}: 16x16 icon, private (colour error ${q.meanErr.toFixed(3)})` });
+    } catch (e) {
+      this.failTask(p, t, e);
+      throw e;
+    }
+    return { status: "done" };
+  }
+
+  /** asset.spec: the Art Director's drawing spec (with the reference image when the chain comes from one) */
+  private async assetSpec(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const a = this.assetOf(p, pt);
+    if (p.doc().assets.some((x) => x.id === a.name)) return { status: "skipped", note: "already in the project" };
+    const { palette, table } = this.palette();
+    const tpl = KIND_TEMPLATES[a.kind] ?? KIND_TEMPLATES.icon;
+    const ts = this.task(p, {
+      kind: "asset.spec",
+      role: "art-director",
+      title: `Spec for ${a.name}`,
+      ...this.ptOf(pt),
+    });
+    try {
       const spec = (
         await this.ask(p, r, ts, {
           role: "art-director",
@@ -1561,97 +2204,231 @@ export class Crew {
             palette: table,
           },
           schema: SpecOut,
+          images: this.refImage(p, ts, pt.fromRef),
+          model: this.modelOf(p, pt),
         })
       ).data;
       const letters = [...new Set([..."k.", ...spec.letters.replace(/[^A-Za-z]/g, "")])]
         .filter((c) => c !== "." && palette.colours[c])
         .join("");
       this.done(p, ts, { summary: spec.description.slice(0, 200) });
-      const nVariants = 2;
-      const results = await Promise.all(
-        Array.from({ length: nVariants }, (_, v) =>
-          this.drawVariant(p, r, a, tpl, spec, letters, table, palette, v + 1).catch((e) => {
-            p.emit("log", { level: "warn", role: "pixel-artist", text: `${a.name} v${v + 1} failed: ${e.message}` });
-            return null;
-          }),
-        ),
+      const st: ArtSpec = { ...a, spec, letters, row: ts.id, ...(pt.fromRef ? { fromRef: pt.fromRef } : {}) };
+      writeFileSync(this.artFile(p, a.name, "spec"), JSON.stringify(st, null, 1));
+    } catch (e) {
+      this.failTask(p, ts, e);
+      throw e;
+    }
+    return { status: "done" };
+  }
+  private specOf(p: OpenProject, name: string): ArtSpec | null {
+    const f = this.artFile(p, name, "spec");
+    return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
+  }
+
+  /** asset.draw: one variant; a failure costs nothing more (the judge works with what passed) */
+  private async assetDraw(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const name = pt.asset!;
+    const v = pt.variant ?? 1;
+    if (p.doc().assets.some((x) => x.id === name)) return { status: "skipped", note: "already in the project" };
+    const st = this.specOf(p, name);
+    if (!st) return { status: "skipped", note: "no spec to draw from" };
+    const { palette, table } = this.palette();
+    const tpl = KIND_TEMPLATES[st.kind] ?? KIND_TEMPLATES.icon;
+    let res: Variant = null;
+    let note: string | undefined;
+    try {
+      res = await this.drawVariant(
+        p,
+        r,
+        { name, kind: st.kind, description: st.description },
+        tpl,
+        st.spec,
+        st.letters,
+        table,
+        palette,
+        v,
+        pt,
       );
-      const ok = results.filter((x): x is NonNullable<typeof x> => !!x);
-      if (!ok.length) {
-        const stand = a.kind === "character" ? "mentor-ai" : "items";
-        p.emit("log", {
-          level: "warn",
-          role: "art-director",
-          text: `no variant of ${a.name} passed the standard; casting the library's ${stand} instead`,
-        });
-        await this.tool(p, "art-director", ts.id, "cast_asset", { name: a.name, libraryId: stand });
-        continue;
-      }
-      let best = ok[0];
-      if (ok.length > 1) {
-        const tj = this.task(p, { kind: "asset.judge", role: "art-director", title: `Choosing the best ${a.name}` });
+    } catch (e: any) {
+      if (r.abort.signal.aborted) throw e;
+      p.emit("log", { level: "warn", role: "pixel-artist", text: `${name} v${v} failed: ${e.message}` });
+      note = `partial: ${String(e?.message ?? e).slice(0, 180)}`;
+    }
+    writeFileSync(this.artFile(p, name, `v${v}`), JSON.stringify(res));
+    return { status: "done", ...(note ? { note } : {}) };
+  }
+
+  /** asset.judge: the better variant (the library stands in when neither passed), written and cast */
+  private async assetJudge(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const name = pt.asset!;
+    if (p.doc().assets.some((x) => x.id === name)) return { status: "skipped", note: "already in the project" };
+    const st = this.specOf(p, name);
+    if (!st) return { status: "skipped", note: "no spec" };
+    const tpl = KIND_TEMPLATES[st.kind] ?? KIND_TEMPLATES.icon;
+    const read = (v: number): Variant => {
+      const f = this.artFile(p, name, `v${v}`);
+      return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
+    };
+    const ok = [1, 2].map((v) => ({ v, x: read(v) })).filter((x): x is { v: number; x: NonNullable<Variant> } => !!x.x);
+    if (!ok.length) {
+      const stand = st.kind === "character" ? "mentor-ai" : "items";
+      p.emit("log", {
+        level: "warn",
+        role: "art-director",
+        text: `no variant of ${name} passed the standard; casting the library's ${stand} instead`,
+      });
+      await this.tool(p, "art-director", st.row, "cast_asset", { name, libraryId: stand });
+      return { status: "done", note: `partial: the library's ${stand} stands in` };
+    }
+    let best = ok[0];
+    if (ok.length > 1) {
+      const tj = this.task(p, {
+        kind: "asset.judge",
+        role: "art-director",
+        title: `Choosing the best ${name}`,
+        ...this.ptOf(pt),
+      });
+      try {
         const content: ContentPart[] = [];
-        for (const [i, x] of ok.entries()) content.push({ type: "text", text: `Variant ${i + 1}:` }, img(x.sheet));
+        for (const [i, x] of ok.entries())
+          content.push(
+            { type: "text", text: `Variant ${i + 1}:` },
+            img(readFileSync(join(p.dir, "runs", `${name}-v${x.v}.png`))),
+          );
         const j = (
           await this.ask(p, r, tj, {
             role: "art-director",
             kind: "asset.judge",
             prompt: "art-director/judge",
-            vars: { name: a.name, description: a.description },
+            vars: { name, description: st.description },
             schema: JudgeOut,
             extra: content,
+            model: this.modelOf(p, pt),
           })
         ).data;
         best = ok[j.best - 1] ?? ok[0];
         this.done(p, tj, { summary: j.reason });
-        best.judge = j.reason;
+        best.x.judge = j.reason;
+      } catch (e) {
+        this.failTask(p, tj, e);
+        throw e;
       }
-      // write the asset into the project and cast it
-      const grid = Object.fromEntries(best.frames.frames.map((fr) => [fr.name, fr.rows]));
-      const file = {
-        id: a.name,
-        version: 1,
-        kind: a.kind,
-        w: tpl.w,
-        h: tpl.h,
-        frames: tpl.frames,
-        palette: "pap-night@1",
-        tags: [a.kind],
-        description: spec.description,
-        licence: "LicenseRef-PAP-Library",
-        rights: { likeness: false, brand: false, trademark: false, public: true },
-        provenance: {
-          source: "generated",
-          role: "pixel-artist",
-          model: best.model,
-          provider: best.model.split("/")[0],
-          origin: p.id,
-          judgeReason: best.judge ?? null,
-          promptVersion: "pixel-artist/draw@1",
-        },
-        hash: randomUUID().slice(0, 16),
-        standard: best.std,
-        grid,
-      };
-      mkdirSync(join(p.dir, "assets"), { recursive: true });
-      writeFileSync(join(p.dir, "assets", `${a.name}.json`), `${JSON.stringify(file, null, 1)}\n`);
-      writeFileSync(join(p.dir, "assets", `${a.name}.png`), best.sheet);
-      const d = p.doc();
-      await p.patch(
-        [
-          {
-            op: "add",
-            path: "/assets/-",
-            value: { id: a.name, src: `file:assets/${a.name}.json`, flags: { private: false } },
-          },
-        ],
-        {
-          reason: `add the drawn ${a.name}`,
-          author: { kind: "agent", role: "art-director" },
-          baseRev: d.rev,
-        },
-      );
     }
+    // a drawing from a likeness reference is private and never published (RIGHTS.md §1)
+    const likeness = !!st.fromRef;
+    const grid = Object.fromEntries(best.x.frames.frames.map((fr) => [fr.name, fr.rows]));
+    const file = {
+      id: name,
+      version: 1,
+      kind: st.kind,
+      w: tpl.w,
+      h: tpl.h,
+      frames: tpl.frames,
+      palette: "pap-night@1",
+      tags: [st.kind],
+      description: st.spec.description,
+      licence: likeness ? "LicenseRef-Private" : "LicenseRef-PAP-Library",
+      rights: { likeness, brand: false, trademark: false, public: !likeness },
+      provenance: {
+        source: "generated",
+        role: "pixel-artist",
+        model: best.x.model,
+        provider: best.x.model.split("/")[0],
+        origin: p.id,
+        judgeReason: best.x.judge ?? null,
+        promptVersion: "pixel-artist/draw@1",
+        ...(st.fromRef ? { ref: st.fromRef } : {}),
+      },
+      hash: randomUUID().slice(0, 16),
+      standard: best.x.std,
+      grid,
+    };
+    mkdirSync(join(p.dir, "assets"), { recursive: true });
+    writeFileSync(join(p.dir, "assets", `${name}.json`), `${JSON.stringify(file, null, 1)}\n`);
+    writeFileSync(join(p.dir, "assets", `${name}.png`), readFileSync(join(p.dir, "runs", `${name}-v${best.v}.png`)));
+    const d = p.doc();
+    await p.patch(
+      [
+        {
+          op: "add",
+          path: "/assets/-",
+          value: {
+            id: name,
+            src: `file:assets/${name}.json`,
+            flags: likeness
+              ? { private: true, likeness: { person: "the person in the reference", refs: [st.fromRef!] } }
+              : { private: false },
+          },
+        },
+      ],
+      {
+        reason: `add the drawn ${name}`,
+        author: { kind: "agent", role: "art-director" },
+        baseRev: d.rev,
+      },
+    );
+    return { status: "done" };
+  }
+
+  /** the person's OK before any scene uses a likeness or a logo (never passed by itself, at any involvement) */
+  private async rights(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const name = pt.asset!;
+    const ref = p.doc().assets.find((a) => a.id === name);
+    if (!ref) return { status: "skipped", note: `${name} isn't in the project` };
+    const logo = !!ref.flags.brand;
+    const q = p.ask(
+      {
+        kind: "single",
+        question: logo
+          ? `Your logo (${name}) in the video. Use it?`
+          : `${name}, drawn from your reference. Use it in the video?`,
+        why: "It comes from your reference, so only you can say yes. Private to this project: it never goes into the public library.",
+        options: [
+          { id: "use", label: "Use it", detail: "Private to this project" },
+          logo
+            ? { id: "leave", label: "Leave it out", detail: "The video goes on without it" }
+            : { id: "redraw", label: "Redraw", detail: "The crew draws it again from the same reference" },
+        ],
+        recommendedId: "use",
+        blocks: ["animate"],
+        from: "pip",
+      },
+      "pip",
+    );
+    p.say({ from: "pip", to: "crew", kind: "ask", text: `Asked the person whether ${name} may be used`, ref: name });
+    this.setPlanStatus(p, pt.id, "waiting_person");
+    const a = await p.waitAnswer(q.id, r.abort.signal);
+    const pick = a.answer?.optionId ?? "use";
+    if (pick === "use") return { status: "done", note: "the person said yes" };
+    if (pick === "redraw") {
+      // the chain runs again; whatever waited on this OK waits on the new one
+      const chain = (this.planNow(p)?.tasks ?? []).filter((t) => t.asset === name && t.kind !== "lib.publish");
+      const ids = chain.filter((t) => t.status === "done" || t.id === pt.id).map((t) => t.id);
+      await p.patch([{ op: "remove", path: `/assets/${p.doc().assets.findIndex((x) => x.id === name)}` }], {
+        reason: `redraw ${name}`,
+        author: { kind: "user" },
+      });
+      this.planRevise(
+        p,
+        r,
+        { by: "person", trigger: "change", reason: `You asked for ${name} to be drawn again.` },
+        (ts) => rerun(ts, ids, (this.planNow(p)?.rev ?? 0) + 1, { reason: `you asked for ${name} again` }),
+      );
+      return { status: "done", note: "the person asked for a redraw" };
+    }
+    // leave it out: the asset goes, and the recipes that named it fall back to their defaults
+    const d = p.doc();
+    const ops: any[] = [];
+    d.scenes.forEach((s, k) => {
+      if (s.kind !== "decl") return;
+      s.recipes.forEach((rc, n) => {
+        for (const [key, v] of Object.entries(rc.params ?? {}))
+          if (v === name) ops.push({ op: "remove", path: `/scenes/${k}/recipes/${n}/params/${key}` });
+      });
+    });
+    ops.push({ op: "remove", path: `/assets/${d.assets.findIndex((x) => x.id === name)}` });
+    await p.patch(ops, { reason: `leave ${name} out`, author: { kind: "user" } });
+    return { status: "done", note: "the person left it out" };
   }
 
   private async drawVariant(
@@ -1664,8 +2441,14 @@ export class Crew {
     table: string,
     palette: any,
     v: number,
+    pt: PlanTaskT,
   ) {
-    const t = this.task(p, { kind: "asset.draw", role: "pixel-artist", title: `Drawing ${a.name}, variant ${v}` });
+    const t = this.task(p, {
+      kind: "asset.draw",
+      role: "pixel-artist",
+      title: `Drawing ${a.name}, variant ${v}`,
+      ...this.ptOf(pt),
+    });
     try {
       const colours = Object.fromEntries(Object.entries<any>(palette.colours).map(([k, x]) => [k, x.hex]));
       const toFile = (fr: DrawOutT) => ({
@@ -1679,7 +2462,7 @@ export class Crew {
         tags: [],
         description: spec.description,
         licence: "LicenseRef-PAP-Library",
-        rights: { likeness: false, brand: false, trademark: false, public: true },
+        rights: { likeness: !!pt.fromRef, brand: false, trademark: false, public: !pt.fromRef },
         provenance: {},
         hash: "x",
         standard: null,
@@ -1712,6 +2495,7 @@ export class Crew {
         }
         return errs.slice(0, 20);
       };
+      const model = this.modelOf(p, pt);
       let out = await this.ask(p, r, t, {
         role: "pixel-artist",
         kind: "asset.draw",
@@ -1728,6 +2512,8 @@ export class Crew {
           variant: v,
         },
         schema: DrawOut,
+        images: this.refImage(p, t, pt.fromRef),
+        model,
       });
       for (let fix = 0; fix < 2; fix++) {
         const errs = shape(out.data);
@@ -1744,12 +2530,13 @@ export class Crew {
           },
           schema: DrawOut,
           history: out.messages,
+          model,
         });
       }
       if (shape(out.data).length)
         throw new Error(`grid errors after 2 repairs: ${shape(out.data).slice(0, 3).join("; ")}`);
       // critique rounds against the rendered sheet (vision), stopping when the artist says ship
-      const caps = this.deps.gateway.caps(this.deps.gateway.modelFor("pixel-artist", p.doc().crew.models));
+      const caps = this.deps.gateway.caps(model ?? this.deps.gateway.modelFor("pixel-artist", p.doc().crew.models));
       const rounds = caps?.vision === "failed" ? 0 : 1;
       for (let k = 0; k < rounds; k++) {
         await this.checkpoint(p, r);
@@ -1770,6 +2557,7 @@ export class Crew {
           schema: DrawOut,
           history: out.messages,
           images: [{ caption: "Your sprite:", data: sheetOf(out.data) }],
+          model,
         });
         if (!shape(next.data).length) out = next;
         if (/\bship\b/i.test(next.data.notes)) break;
@@ -1788,7 +2576,7 @@ export class Crew {
             .map((i) => i.message)
             .join("; ")}`,
         );
-      return { frames: out.data, sheet, std, model: t.model ?? "", judge: undefined as string | undefined };
+      return { frames: out.data, std, model: t.model ?? "", judge: undefined as string | undefined };
     } catch (e) {
       this.failTask(p, t, e);
       throw e;
@@ -1802,144 +2590,126 @@ export class Crew {
     return Promise.all(ts.map(async (t) => ({ caption: `t=${t}s`, data: await p.still(t, 2) })));
   }
 
-  private async animate(p: OpenProject, r: Run) {
+  /** scene.tune: one Animator tunes one scene's recipe params from three stills and the lints */
+  private async tune(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const { recipeCatalog } = await import("@pap/engine/recipes");
     const { lintFrames, lintProject } = await import("@pap/engine/lints");
     const cat = recipeCatalog();
-    const d0 = p.doc();
-    // on a resume, scenes an animator already finished are not redone
-    const scenes = d0.scenes.filter(
-      (s) =>
-        s.kind === "decl" &&
-        !(p.state.sceneStatus[s.id]?.version === "render" && p.state.sceneStatus[s.id]?.state === "ready"),
+    const s = p.doc().scenes.find((x) => x.id === pt.scene);
+    if (s?.kind !== "decl") return { status: "skipped", note: "not a recipe scene" };
+    // on a resume or a redo of other scenes, a scene an animator already finished is not redone
+    const ss = p.state.sceneStatus[s.id];
+    if (ss?.version === "render" && ss.state === "ready") return { status: "skipped", note: "already animated" };
+    const t = this.sceneTask(
+      s.id,
+      this.task(p, { kind: "scene.tune", role: "animator", title: `Animating ${s.title || s.id}`, ...this.ptOf(pt) }),
     );
-    // a local vision model takes one request at a time: animate the scenes in turn so the crew shows the truth
-    const local =
-      this.deps.gateway.caps(this.deps.gateway.modelFor("animator", d0.crew.models))?.local ??
-      this.deps.gateway.modelFor("animator", d0.crew.models).startsWith("lmstudio/");
-    const queued = new Map(
-      scenes.map((s) => [
-        s.id,
-        this.sceneTask(
-          s.id,
-          this.task(p, {
-            kind: "scene.tune",
-            role: "animator",
-            title: `Animating ${s.title || s.id}`,
-            status: "queued",
-          }),
-        ),
-      ]),
-    );
-    const one = async (s: (typeof scenes)[number]) => {
-      await this.checkpoint(p, r);
-      const t = p.upsertTask({ ...queued.get(s.id)!, status: "working", startedAt: new Date().toISOString() });
-      p.setSceneStatus(s.id, { version: "animatic", state: "drafting" });
-      try {
-        const d = p.doc();
-        const sc = d.scenes.find((x) => x.id === s.id)!;
-        if (sc.kind !== "decl") return this.done(p, t);
-        const tl = p.timeline();
-        const w = tl.scenes.find((x) => x.id === s.id)!;
-        // exact text widths, real actor boxes and drawn frames need the project's assets and palette
-        const lp = p.project();
-        const ren = await p.renderer_();
-        const lints = [
-          ...lintProject(d, tl, { assets: lp.assets, colours: lp.palette.colours, sky: lp.palette.sky }),
-          ...(await lintFrames(tl, (x) => ren.frame(x), 1, { sky: lp.palette.sky, fadeOut: d.composition.fadeOut })),
-        ]
-          .filter((l: any) => l.scene === s.id)
-          .filter(
-            (l: any, i: number, all: any[]) => all.findIndex((o) => o.rule === l.rule && o.message === l.message) === i,
-          )
-          .map((l: any) => `${l.severity}: ${l.message} (fix: ${l.fix})`);
-        const notes = p.state.notes.filter((n) => n.target.scene === s.id && n.status === "open");
-        // a change for the whole video (a note with no scene) reaches every scene it re-plans
-        const asks = (r.change?.notes ?? [])
-          .map((id) => p.state.notes.find((n) => n.id === id))
-          .filter((n): n is Note => !!n && !n.target.scene && (!r.scope || r.scope.has(s.id)));
-        const { data } = await this.ask(p, r, t, {
-          role: "animator",
-          kind: "scene.tune",
-          prompt: "animator/tune",
-          vars: {
-            scene: s.id,
-            title: sc.title,
-            from: w.from.toFixed(2),
-            to: w.to.toFixed(2),
-            cues: tl.cues
-              .filter((c) => sc.cues.includes(c.id))
-              .map((c) => `${c.id} (${c.start.toFixed(2)}-${c.end.toFixed(2)} s): ${c.text}`)
-              .join("\n"),
-            recipes: sc.recipes.map((x, i) => `${i}: ${x.id} ${JSON.stringify(x.params)}`).join("\n"),
-            menu: cat
-              .filter((c: any) => sc.recipes.some((x) => x.id === c.id))
-              .map((c: any) => ({ id: c.id, params: c.params.properties })),
-            notes:
-              notes.length || asks.length
-                ? [...notes, ...asks].map((n) => `${n.id} (${n.category}): ${n.text}`).join("\n")
-                : "(none)",
-            lints: lints.length ? lints.join("\n") : "(none)",
-          },
-          schema: TuneOut,
-          images: await this.sceneStills(p, s.id),
-        });
-        if (data.changes.length) {
-          const recipes = sc.recipes.map((x) => ({ ...x, params: { ...x.params } }));
-          for (const c of data.changes)
-            if (recipes[c.recipe]) recipes[c.recipe].params = { ...recipes[c.recipe].params, ...c.params };
-          const res = await this.deps.registry.call(
-            "scene_set_recipes",
-            {
-              scene: s.id,
-              recipes,
-              reason:
-                data.changes
-                  .map((c) => c.why)
-                  .join("; ")
-                  .slice(0, 280) || "tune",
-            },
-            this.ctx(p, "animator", t.id),
-          );
-          if (!res.ok)
-            p.emit("log", {
-              level: "warn",
-              role: "animator",
-              text: `${s.id}: kept the scene as it was (${res.error.message})`,
-            });
-        }
-        for (const n of notes)
-          p.updateNote(n.id, {
-            status: "done",
-            reason: data.changes.map((c) => c.why).join("; ") || "checked; no change needed",
-          });
-        this.done(p, t, {
-          summary: data.changes.length ? data.changes.map((c) => c.why).join("; ") : "no changes needed",
-        });
-        p.setSceneStatus(s.id, { version: "render", state: "ready" });
-        r.done.redone.add(s.id);
-      } catch (e: any) {
-        if (r.abort.signal.aborted) throw e;
-        // a weak model failing here costs nothing: the scene keeps its recipes as they are
-        this.failTask(p, t, e);
-        p.emit("log", {
-          level: "warn",
-          role: "animator",
-          text: `${s.id}: kept as built (${String(e?.message ?? e).slice(0, 120)})`,
-        });
+    p.setSceneStatus(s.id, { version: "animatic", state: "drafting" });
+    try {
+      const d = p.doc();
+      const sc = d.scenes.find((x) => x.id === s.id)!;
+      if (sc.kind !== "decl") {
+        this.done(p, t);
+        return { status: "done" };
       }
-    };
-    if (local) for (const s of scenes) await one(s);
-    else await Promise.all(scenes.map(one));
+      const tl = p.timeline();
+      const w = tl.scenes.find((x) => x.id === s.id)!;
+      // exact text widths, real actor boxes and drawn frames need the project's assets and palette
+      const lp = p.project();
+      const ren = await p.renderer_();
+      const lints = [
+        ...lintProject(d, tl, { assets: lp.assets, colours: lp.palette.colours, sky: lp.palette.sky }),
+        ...(await lintFrames(tl, (x) => ren.frame(x), 1, { sky: lp.palette.sky, fadeOut: d.composition.fadeOut })),
+      ]
+        .filter((l: any) => l.scene === s.id)
+        .filter(
+          (l: any, i: number, all: any[]) => all.findIndex((o) => o.rule === l.rule && o.message === l.message) === i,
+        )
+        .map((l: any) => `${l.severity}: ${l.message} (fix: ${l.fix})`);
+      const notes = p.state.notes.filter((n) => n.target.scene === s.id && n.status === "open");
+      // a change for the whole video (a note with no scene) reaches every scene it re-plans
+      const asks = (r.change?.notes ?? [])
+        .map((id) => p.state.notes.find((n) => n.id === id))
+        .filter((n): n is Note => !!n && !n.target.scene && (!r.scope || r.scope.has(s.id)));
+      const { data } = await this.ask(p, r, t, {
+        role: "animator",
+        kind: "scene.tune",
+        prompt: "animator/tune",
+        vars: {
+          scene: s.id,
+          title: sc.title,
+          from: w.from.toFixed(2),
+          to: w.to.toFixed(2),
+          cues: tl.cues
+            .filter((c) => sc.cues.includes(c.id))
+            .map((c) => `${c.id} (${c.start.toFixed(2)}-${c.end.toFixed(2)} s): ${c.text}`)
+            .join("\n"),
+          recipes: sc.recipes.map((x, i) => `${i}: ${x.id} ${JSON.stringify(x.params)}`).join("\n"),
+          menu: cat
+            .filter((c: any) => sc.recipes.some((x) => x.id === c.id))
+            .map((c: any) => ({ id: c.id, params: c.params.properties })),
+          notes:
+            notes.length || asks.length
+              ? [...notes, ...asks].map((n) => `${n.id} (${n.category}): ${n.text}`).join("\n")
+              : "(none)",
+          lints: lints.length ? lints.join("\n") : "(none)",
+        },
+        schema: TuneOut,
+        images: await this.sceneStills(p, s.id),
+        model: this.modelOf(p, pt),
+      });
+      if (data.changes.length) {
+        const recipes = sc.recipes.map((x) => ({ ...x, params: { ...x.params } }));
+        for (const c of data.changes)
+          if (recipes[c.recipe]) recipes[c.recipe].params = { ...recipes[c.recipe].params, ...c.params };
+        const res = await this.deps.registry.call(
+          "scene_set_recipes",
+          {
+            scene: s.id,
+            recipes,
+            reason:
+              data.changes
+                .map((c) => c.why)
+                .join("; ")
+                .slice(0, 280) || "tune",
+          },
+          this.ctx(p, "animator", t.id),
+        );
+        if (!res.ok)
+          p.emit("log", {
+            level: "warn",
+            role: "animator",
+            text: `${s.id}: kept the scene as it was (${res.error.message})`,
+          });
+      }
+      for (const n of notes)
+        p.updateNote(n.id, {
+          status: "done",
+          reason: data.changes.map((c) => c.why).join("; ") || "checked; no change needed",
+        });
+      this.done(p, t, {
+        summary: data.changes.length ? data.changes.map((c) => c.why).join("; ") : "no changes needed",
+      });
+      p.setSceneStatus(s.id, { version: "render", state: "ready" });
+      r.done.redone.add(s.id);
+    } catch (e: any) {
+      if (r.abort.signal.aborted) throw e;
+      // a weak model failing here costs nothing: the scene keeps its recipes as they are
+      this.failTask(p, t, e);
+      p.emit("log", {
+        level: "warn",
+        role: "animator",
+        text: `${s.id}: kept as built (${String(e?.message ?? e).slice(0, 120)})`,
+      });
+      return { status: "done", note: `partial: kept as built (${String(e?.message ?? e).slice(0, 140)})` };
+    }
+    return { status: "done" };
   }
 
-  private async narrateMilestone(p: OpenProject) {
-    p.milestone("scenes.animated", "Scenes animated");
-  }
-
-  private async narrate(p: OpenProject, r: Run) {
+  /** vo.align: the person's narration take, aligned and applied */
+  private async narrate(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const d = p.doc();
-    if (d.brief.narration !== "user" || d.audio.vo.length) return;
+    if (d.brief.narration !== "user" || d.audio.vo.length) return { status: "skipped", note: "no narration to align" };
     const q = p.ask(
       {
         kind: "single",
@@ -1955,8 +2725,9 @@ export class Crew {
       },
       "producer",
     );
+    this.setPlanStatus(p, pt.id, "waiting_person");
     const a = await p.waitAnswer(q.id, r.abort.signal);
-    if (a.answer?.optionId !== "recorded") return;
+    if (a.answer?.optionId !== "recorded") return { status: "done", note: "no narration" };
     const { readdirSync, statSync } = await import("node:fs");
     const dir = join(p.dir, "private", "vo");
     const takes = existsSync(dir)
@@ -1964,15 +2735,25 @@ export class Crew {
           .map((f) => ({ f, m: statSync(join(dir, f)).mtimeMs }))
           .sort((x, y) => y.m - x.m)
       : [];
-    if (!takes.length) return p.emit("log", { level: "warn", text: "no narration take found in private/vo/" });
-    const t = this.task(p, { kind: "vo.align", role: "editor", title: "Aligning your narration" });
+    if (!takes.length) {
+      p.emit("log", { level: "warn", text: "no narration take found in private/vo/" });
+      return { status: "done", note: "partial: no take found in private/vo/" };
+    }
+    const t = this.task(p, { kind: "vo.align", role: "editor", title: "Aligning your narration", ...this.ptOf(pt) });
     await this.tool(p, "editor", t.id, "vo_align", { file: `private/vo/${takes[0].f}`, apply: true });
     this.done(p, t);
+    return { status: "done" };
   }
 
-  private async sound(p: OpenProject) {
+  /** sound.mix: the effects, the music bed and the mix (tools only) */
+  private async sound(p: OpenProject, pt: PlanTaskT): Promise<Outcome> {
     const d = p.doc();
-    const t = this.task(p, { kind: "sound.mix", role: "mixer", title: "Sound effects, music and the mix" });
+    const t = this.task(p, {
+      kind: "sound.mix",
+      role: "mixer",
+      title: "Sound effects, music and the mix",
+      ...this.ptOf(pt),
+    });
     try {
       const { VOICE_KEEP } = await import("@pap/engine/audio");
       const keep = d.audio.vo.length ? VOICE_KEEP : null;
@@ -1996,95 +2777,146 @@ export class Crew {
       this.failTask(p, t, e);
       throw e;
     }
+    return { status: "done" };
   }
 
-  private async review(p: OpenProject, r: Run, auto: boolean) {
+  /** review rounds per run (settings `defaults.reviewRounds`, default 2: one round plus one fix round) */
+  protected reviewRounds(): number {
+    return 2;
+  }
+
+  /**
+   * review.final: one round. Blockers become notes; in a person's change run only the changed scenes are redone.
+   * Blockers on the round before the last send their scenes back (Pip decides in a change run), and a next round
+   * checks the fixes before the rough cut.
+   */
+  private async review(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const round = pt.round ?? 1;
     // changes the person asked for while the crew worked: their scenes are redone before the review looks
-    const asked = [
-      ...new Set(
-        p.state.notes
-          .filter((n) => n.assignee === "animator" && n.status === "open" && n.by === "user" && n.target.scene)
-          .map((n) => n.target.scene!),
-      ),
-    ];
+    const asked =
+      round === 1
+        ? [
+            ...new Set(
+              p.state.notes
+                .filter((n) => n.assignee === "animator" && n.status === "open" && n.by === "user" && n.target.scene)
+                .map((n) => n.target.scene!),
+            ),
+          ]
+        : [];
     if (asked.length) {
       for (const s of asked) if (p.state.sceneStatus[s]) p.setSceneStatus(s, { version: "animatic", state: "stale" });
-      await this.animate(p, r);
+      const why = `your change came in while the crew worked: ${asked.join(", ")} first`;
+      this.planRevise(
+        p,
+        r,
+        { by: "person", trigger: "change", reason: `Redoing ${asked.join(", ")} for your change before the review.` },
+        (ts, ctx) => {
+          const red = addRedo(ts, asked, ctx, { reason: why.slice(0, 200) });
+          const again = rerun(red.tasks, [pt.id], ctx.rev, { reason: why.slice(0, 200) });
+          const copy = again.map.get(pt.id)!;
+          return {
+            tasks: again.tasks.map((t) =>
+              t.id === copy ? { ...t, dependsOn: [...new Set([...t.dependsOn, ...red.added])] } : t,
+            ),
+            ops: [...red.ops, ...again.ops],
+          };
+        },
+      );
+      return { status: "skipped", note: "waits for your changes to the scenes" };
     }
-    for (let round = 0; round < 2; round++) {
-      await this.checkpoint(p, r);
-      const t = this.task(p, {
-        kind: "review.final",
-        role: "reviewer",
-        title: round ? "Checking the fixes" : "Reviewing the cut",
-      });
-      let rev: ReviewOutT;
-      try {
-        const d = p.doc();
-        const tl = p.timeline();
-        const ren = await p.renderer_();
-        const sheet = await contactSheet(ren, { every: 1 });
-        writeFileSync(join(p.dir, "out", "contact.png"), sheet);
-        const stills = (await Promise.all(d.scenes.map((s) => this.sceneStills(p, s.id)))).flat();
-        rev = (
-          await this.ask(p, r, t, {
-            role: "reviewer",
-            kind: "review.final",
-            prompt: "reviewer/final",
-            vars: {
-              idea: noteLines(p, "producer").length
-                ? `${d.brief.idea}\n\nThe person asked for these changes; check the cut does them:\n- ${noteLines(p, "producer").join("\n- ")}`
-                : d.brief.idea,
-              cues: tl.cues.map((c) => `${c.id} ${c.start.toFixed(1)}-${c.end.toFixed(1)}s: ${c.text}`).join(" | "),
-              scenes: tl.scenes.map((s) => `${s.id} ${s.from.toFixed(1)}-${s.to.toFixed(1)}s`).join(", "),
-            },
-            schema: ReviewOut,
-            images: [{ caption: "Contact sheet:", data: sheet }, ...stills],
-          })
-        ).data;
-        this.done(p, t, { summary: `${rev.verdict}: ${rev.summary}` });
-      } catch (e: any) {
-        if (r.abort.signal.aborted) throw e;
-        // no usable review from this model: the lints already passed, so the cut goes on to the gate as it is
-        this.failTask(p, t, e);
-        p.emit("log", {
-          level: "warn",
+    const t = this.task(p, {
+      kind: "review.final",
+      role: "reviewer",
+      title: round > 1 ? "Checking the fixes" : "Reviewing the cut",
+      ...this.ptOf(pt),
+    });
+    let rev: ReviewOutT;
+    try {
+      const d = p.doc();
+      const tl = p.timeline();
+      const ren = await p.renderer_();
+      const sheet = await contactSheet(ren, { every: 1 });
+      writeFileSync(join(p.dir, "out", "contact.png"), sheet);
+      const stills = (await Promise.all(d.scenes.map((s) => this.sceneStills(p, s.id)))).flat();
+      rev = (
+        await this.ask(p, r, t, {
           role: "reviewer",
-          text: `review unavailable (${String(e?.message ?? e).slice(0, 120)}); continuing on lints only`,
-        });
-        break;
-      }
-      for (const b of rev.blockers)
-        p.addNote({
-          target: { scene: b.scene, range: [b.t, b.t] },
-          category: "art",
-          text: `${b.issue} Fix: ${b.fix}`,
-          assignee: "animator",
-          by: "reviewer",
-        });
-      for (const n of p.state.notes.filter((x) => x.assignee === "producer" && x.status === "open" && x.by === "user"))
-        p.updateNote(n.id, { status: "picked_up", reason: "the Reviewer checked the cut against it" });
-      // in a person's change run, only the changed scenes are redone; other blockers wait as notes
-      const redo = rev.blockers.filter((b) => !r.scope || r.scope.has(b.scene));
-      if (rev.verdict === "ship" || !redo.length || round === 1) break;
-      // a blocker on a scene the person asked to change: Pip decides (redo, re-board, or hold)
-      if (this.conductor && r.change) {
-        const ds = await this.think(p, r, {
-          kind: "blocker",
-          scenes: [...new Set(redo.map((b) => b.scene))],
-          text: redo.map((b) => `${b.scene}: ${b.issue}`),
-          round,
-        });
-        const { redid } = await this.apply(p, r, ds);
-        if (!redid || r.held) break;
-        continue;
-      }
-      // the blockers' scenes are redone (animate skips scenes that are ready)
-      for (const b of redo)
-        if (p.state.sceneStatus[b.scene]) p.setSceneStatus(b.scene, { version: "animatic", state: "stale" });
-      await this.animate(p, r);
+          kind: "review.final",
+          prompt: "reviewer/final",
+          vars: {
+            idea: noteLines(p, "producer").length
+              ? `${d.brief.idea}\n\nThe person asked for these changes; check the cut does them:\n- ${noteLines(p, "producer").join("\n- ")}`
+              : d.brief.idea,
+            cues: tl.cues.map((c) => `${c.id} ${c.start.toFixed(1)}-${c.end.toFixed(1)}s: ${c.text}`).join(" | "),
+            scenes: tl.scenes.map((s) => `${s.id} ${s.from.toFixed(1)}-${s.to.toFixed(1)}s`).join(", "),
+          },
+          schema: ReviewOut,
+          images: [{ caption: "Contact sheet:", data: sheet }, ...stills],
+          model: this.modelOf(p, pt),
+        })
+      ).data;
+      this.done(p, t, { summary: `${rev.verdict}: ${rev.summary}` });
+    } catch (e: any) {
+      if (r.abort.signal.aborted) throw e;
+      // no usable review from this model: the lints already passed, so the cut goes on to the gate as it is
+      this.failTask(p, t, e);
+      p.emit("log", {
+        level: "warn",
+        role: "reviewer",
+        text: `review unavailable (${String(e?.message ?? e).slice(0, 120)}); continuing on lints only`,
+      });
+      return { status: "done", note: "partial: review unavailable; continuing on lints only" };
     }
-    // a person's change: blockers left on its scenes after the one fix round stop the crew here for the person
+    for (const b of rev.blockers)
+      p.addNote({
+        target: { scene: b.scene, range: [b.t, b.t] },
+        category: "art",
+        text: `${b.issue} Fix: ${b.fix}`,
+        assignee: "animator",
+        by: "reviewer",
+      });
+    for (const n of p.state.notes.filter((x) => x.assignee === "producer" && x.status === "open" && x.by === "user"))
+      p.updateNote(n.id, { status: "picked_up", reason: "the Reviewer checked the cut against it" });
+    // in a person's change run, only the changed scenes are redone; other blockers wait as notes
+    const redo = rev.blockers.filter((b) => !r.scope || r.scope.has(b.scene));
+    if (rev.verdict === "ship" || !redo.length || round >= this.reviewRounds()) return { status: "done" };
+    const scenes = [...new Set(redo.map((b) => b.scene))].filter((s) => p.doc().scenes.some((x) => x.id === s));
+    let tunes: string[] = [];
+    if (this.conductor && r.change) {
+      // a blocker on a scene the person asked to change: Pip decides (redo, re-board, or hold)
+      const ds = await this.think(p, r, {
+        kind: "blocker",
+        scenes,
+        text: redo.map((b) => `${b.scene}: ${b.issue}`),
+        round: round - 1,
+      });
+      const { redid, added } = await this.apply(p, r, ds, { after: [pt.id] });
+      if (!redid || r.held) return { status: "done" };
+      tunes = added;
+    } else {
+      // the blockers' scenes are redone
+      for (const s of scenes) if (p.state.sceneStatus[s]) p.setSceneStatus(s, { version: "animatic", state: "stale" });
+      const why = `the Reviewer found blockers in ${scenes.join(", ")}`;
+      const res = this.planRevise(
+        p,
+        r,
+        { by: "code", trigger: "conductor", reason: `Redoing ${scenes.join(", ")}: ${why}.` },
+        (ts, ctx) => addRedo(ts, scenes, ctx, { after: [pt.id], reason: why }),
+      );
+      tunes = res?.added ?? [];
+    }
+    if (tunes.length)
+      this.planRevise(
+        p,
+        r,
+        { by: "code", trigger: "conductor", reason: "Checking the fixes before the rough cut." },
+        (ts, ctx) => addReviewRound(ts, pt.id, tunes, ctx, "check the fixes"),
+      );
+    return { status: "done" };
+  }
+
+  /** G3: the rough cut; in a person's change run, blockers left on its scenes stop the crew here for the person */
+  private async rough(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const left = r.change ? this.report(p, r, "waiting").openBlockers : [];
     if (left.length) {
       const g = "g3_rough";
@@ -2101,15 +2933,18 @@ export class Crew {
       try {
         this.onRunEnd?.(p, this.report(p, r, "waiting"));
       } catch {}
-      await new Promise<unknown>((res) => this.gateWaiters.set(`${p.id}:${g}`, res));
-      return;
+      this.setPlanStatus(p, pt.id, "waiting_person");
+      const v = await this.waitGate(p, r, g);
+      if (v.by === "user" && v.verdict !== "changes") r.roughByUser = true;
+      return { status: "done" };
     }
-    await this.atGate(p, "g3_rough", [{ label: "Rough cut", ref: "out/contact.png" }], auto);
+    await this.atGate(p, r, pt, "g3_rough", [{ label: "Rough cut", ref: "out/contact.png" }]);
+    return { status: "done" };
   }
 
-  private async deliver(p: OpenProject, r: Run, auto: boolean) {
-    await this.checkpoint(p, r);
-    const t = this.task(p, { kind: "deliver.export", role: "editor", title: "Exporting the video" });
+  /** deliver.export: the video and subtitles */
+  private async deliver(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const t = this.task(p, { kind: "deliver.export", role: "editor", title: "Exporting the video", ...this.ptOf(pt) });
     try {
       const res = await this.tool(p, "editor", t.id, "export_video", {});
       r.done.exported = true;
@@ -2118,54 +2953,60 @@ export class Crew {
       this.failTask(p, t, e);
       throw e;
     }
-    await this.atGate(p, "g4_final", [{ label: "Final video" }], auto);
-    // publish new, non-private assets to the public library only with the user's yes
-    const fresh = p
-      .doc()
-      .assets.filter((a) => a.src.startsWith("file:") && !a.flags.private && !a.flags.likeness && !a.flags.brand);
-    for (const a of fresh) {
-      const file = join(p.dir, a.src.slice(5));
-      const asset = JSON.parse(readFileSync(file, "utf8"));
-      if (asset.rights?.likeness || asset.rights?.brand || asset.rights?.trademark) continue;
-      if (existsSync(join(LIBRARY_DIR, a.id))) continue;
-      let yes = auto;
-      if (!auto) {
-        const q = p.ask(
-          {
-            kind: "yesno",
-            question: `Add "${a.id}" to the public asset library?`,
-            why: "Other projects could reuse it. It passed the PAP standard and shows no real person or brand.",
-            options: [
-              { id: "yes", label: "Yes, publish it", detail: "" },
-              { id: "no", label: "Keep it in this project", detail: "" },
-            ],
-            recommendedId: "yes",
-            blocks: [],
-            timeoutSec: null,
-            from: "librarian",
-          },
-          "librarian",
-        );
-        yes = (await p.waitAnswer(q.id, r.abort.signal)).answer?.optionId === "yes";
-      }
-      if (!yes) continue;
-      const t2 = this.task(p, { kind: "lib.publish", role: "librarian", title: `Publishing ${a.id}` });
-      mkdirSync(join(LIBRARY_DIR, a.id), { recursive: true });
-      writeFileSync(join(LIBRARY_DIR, a.id, "asset.json"), `${JSON.stringify(asset, null, 1)}\n`);
-      const png = file.replace(/\.json$/, ".png");
-      if (existsSync(png)) writeFileSync(join(LIBRARY_DIR, a.id, "sheet.png"), readFileSync(png));
-      const idxF = join(LIBRARY_DIR, "index.json");
-      const idx = JSON.parse(readFileSync(idxF, "utf8"));
-      idx.assets.push({
-        id: a.id,
-        kind: asset.kind,
-        w: asset.w,
-        h: asset.h,
-        frames: asset.frames.length,
-        tags: asset.tags ?? [],
-      });
-      writeFileSync(idxF, `${JSON.stringify(idx, null, 1)}\n`);
-      this.done(p, t2, { summary: `library/${a.id}` });
+    return { status: "done" };
+  }
+
+  /** lib.publish: a new public asset goes into the library only with the person's yes (never a private one) */
+  private async publish(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const a = p.doc().assets.find((x) => x.id === pt.asset);
+    if (!a?.src.startsWith("file:")) return { status: "skipped", note: "not a drawn asset" };
+    // the second check (V9 is the first): private, likeness and brand assets never leave the project
+    if (a.flags.private || a.flags.likeness || a.flags.brand) return { status: "skipped", note: "private" };
+    const file = join(p.dir, a.src.slice(5));
+    const asset = JSON.parse(readFileSync(file, "utf8"));
+    if (asset.rights?.likeness || asset.rights?.brand || asset.rights?.trademark || asset.rights?.public === false)
+      return { status: "skipped", note: "private" };
+    if (existsSync(join(LIBRARY_DIR, a.id))) return { status: "skipped", note: "already in the library" };
+    const auto = p.doc().brief.involvement === "auto";
+    let yes = auto;
+    if (!auto) {
+      const q = p.ask(
+        {
+          kind: "yesno",
+          question: `Add "${a.id}" to the public asset library?`,
+          why: "Other projects could reuse it. It passed the PAP standard and shows no real person or brand.",
+          options: [
+            { id: "yes", label: "Yes, publish it", detail: "" },
+            { id: "no", label: "Keep it in this project", detail: "" },
+          ],
+          recommendedId: "yes",
+          blocks: [],
+          timeoutSec: null,
+          from: "librarian",
+        },
+        "librarian",
+      );
+      this.setPlanStatus(p, pt.id, "waiting_person");
+      yes = (await p.waitAnswer(q.id, r.abort.signal)).answer?.optionId === "yes";
     }
+    if (!yes) return { status: "done", note: "kept in this project" };
+    const t2 = this.task(p, { kind: "lib.publish", role: "librarian", title: `Publishing ${a.id}`, ...this.ptOf(pt) });
+    mkdirSync(join(LIBRARY_DIR, a.id), { recursive: true });
+    writeFileSync(join(LIBRARY_DIR, a.id, "asset.json"), `${JSON.stringify(asset, null, 1)}\n`);
+    const png = file.replace(/\.json$/, ".png");
+    if (existsSync(png)) writeFileSync(join(LIBRARY_DIR, a.id, "sheet.png"), readFileSync(png));
+    const idxF = join(LIBRARY_DIR, "index.json");
+    const idx = JSON.parse(readFileSync(idxF, "utf8"));
+    idx.assets.push({
+      id: a.id,
+      kind: asset.kind,
+      w: asset.w,
+      h: asset.h,
+      frames: asset.frames.length,
+      tags: asset.tags ?? [],
+    });
+    writeFileSync(idxF, `${JSON.stringify(idx, null, 1)}\n`);
+    this.done(p, t2, { summary: `library/${a.id}` });
+    return { status: "done" };
   }
 }

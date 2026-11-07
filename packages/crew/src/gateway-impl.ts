@@ -59,13 +59,25 @@ export class ModelGateway implements Gateway {
   private lane(providerId: string) {
     let l = this.lanes.get(providerId);
     if (!l) {
-      const local = ["lmstudio", "ollama", "llamacpp"].includes(
-        this.settings.providers.find((p) => p.id === providerId)?.kind ?? "",
-      );
-      l = new Lanes(local ? 1 : Math.max(1, this.settings.defaults?.concurrency ?? 4));
+      l = new Lanes(this.laneSize(providerId));
       this.lanes.set(providerId, l);
     }
     return l;
+  }
+  /** the executor's slot size for an endpoint: one on a local model server, else defaults.concurrency */
+  laneSize(providerId: string) {
+    const local = ["lmstudio", "ollama", "llamacpp"].includes(
+      this.settings.providers.find((p) => p.id === providerId)?.kind ?? "",
+    );
+    return local ? 1 : Math.max(1, this.settings.defaults?.concurrency ?? 4);
+  }
+  isLocal(model: string) {
+    const id = model.slice(0, model.indexOf("/"));
+    const kind = this.settings.providers.find((p) => p.id === id)?.kind ?? "";
+    return ["lmstudio", "ollama", "llamacpp"].includes(kind) || (this.caps(model)?.local ?? false);
+  }
+  ledgerRef() {
+    return this.ledger;
   }
   readonly ledger: Ledger;
   readonly secrets: SecretStore;

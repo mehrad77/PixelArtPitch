@@ -10,7 +10,8 @@ type Stage = "brief" | "script" | "storyboard" | "art" | "animate" | "narrate" |
 type Task = { id: string; kind: string; role: Role; title: string;            // "Drawing hero, variant 2 of 3, critique 1"
   status: "upcoming" | "queued" | "working" | "waiting_user" | "waiting" | "done" | "failed" | "cancelled";
   model?: string; usd: number; estUsd?: number; etaSec?: number; startedAt?: string; endedAt?: string;
-  summary?: string; error?: { message: string; fix?: string }; lastImage?: string /* URL */; parent?: string };
+  summary?: string; error?: { message: string; fix?: string }; lastImage?: string /* URL */; parent?: string;
+  planTask?: string /* the plan task this row is an attempt at */; instance?: string /* "animator:s03" */ };
 type Gate = { id: "g0_brief" | "g1_script" | "g2_animatic" | "g3_rough" | "g4_final"; status: "locked" | "open" | "passed" | "changes";
   items: { label: string; ref?: string }[] };
 type Note = { id: string; target: { scene?: string; cue?: string; asset?: string; range?: [number, number]; track?: string };
@@ -22,7 +23,27 @@ type ProjectState = { doc: Project; rev: number; timeline: Timeline /* cues, sce
   budget: { capUsd: number; spentUsd: number; reservedUsd: number; estTotalUsd: [number, number] | null };
   time: { startedAt: string | null; etaSec: [number, number] | null; deadline: string | null };
   files: { name: string; url: string; bytes: number; kind: "video" | "subtitles" | "audio" | "image" }[];
-  digest: string /* Producer's latest 2-3 sentence summary */ };
+  digest: string /* Producer's latest 2-3 sentence summary */;
+  crew: { running: boolean; paused: boolean; stage: Stage; lastActiveAt: string | null;
+    queued: number /* plan tasks ready but waiting for a slot or the budget */;
+    slots: Record<string, { size: number; used: number }> /* per endpoint, plus "render" */ };
+  plan: PlanView | null /* the production plan; null until a crew first runs (GET never writes one) */;
+  instances: [] /* crew members that come and go: filled in P2 */ };
+// The production plan (docs/PIP-ORCHESTRATION.md §4.2). `budget.estTotalUsd` and `time.etaSec` come from it once it exists.
+type PlanTaskView = { id: string; kind: string; role: Role | "person"; gate?: PlanGate; scene?: string; asset?: string;
+  round?: number; instance: string; label: string /* "Animator · scene 3", sentence case */; stage: Stage;
+  dependsOn: string[]; tier: "role" | "strong" | "light"; model: string | null /* resolved */;
+  estUsd: [number, number]; conditional: boolean;
+  status: "pending" | "ready" | "running" | "waiting_person" | "done" | "skipped" | "failed" | "dropped";
+  taskIds: string[]; addedIn: number; reason?: string };
+type PlanGate = "g0_brief" | "g1_script" | "g2_animatic" | "rights" | "g3_rough" | "g4_final";
+type PlanView = { rev: number; at: string; by: "rules" | "pip" | "person" | "code"; reason: string; tasks: PlanTaskView[];
+  estimate: { usd: [number, number]; sec: [number, number]; rough: boolean } /* spent + remaining */;
+  approvedUsd: number | null; pip: { mode: "on" | "shadow" | "off"; proposals: number; max: 6 };
+  pending?: { rev: number; cardId: string; tasks: string[] } };
+type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigger: string; reason: string;
+  ops: { op: "add" | "drop" | "retier" | "expand"; task: string; label: string; reason: string }[];
+  deltaUsd: [number, number] };
 ```
 
 ## Routes
@@ -43,7 +64,9 @@ type ProjectState = { doc: Project; rev: number; timeline: Timeline /* cues, sce
 | `POST /api/p/:id/questions/:qid/answer` | `{ optionId?, value?, note? }` | `QuestionT` |
 | `POST /api/p/:id/notes` | `{ target, category, text?, assignee? }` | `Note` |
 | `POST /api/p/:id/gates/:gate` | `{ verdict: "approve" \| "approve_notes" \| "changes", items?: string[], reasons?: string[] }` | `Gate` |
-| `POST /api/p/:id/crew/run` | `{ stage? }` | `{ ok }` |
+| `POST /api/p/:id/crew/run` | `{ stage? }` | `{ ok }`: continues the plan; `stage` reruns it from that stage (finished work from there on runs again as fresh plan tasks) |
+| `POST /api/p/:id/crew/retry` | | `{ ok }`: the failed plan task goes back to pending (a `retry` revision); with none failed, the current stage reruns |
+| `GET /api/p/:id/plan/revisions` | | `PlanRevisionSummary[]` from `runs/plan.jsonl`, oldest first |
 | `POST /api/p/:id/crew/pause` | `{ mode: "after_step" \| "now" }` | `{ ok }` |
 | `POST /api/p/:id/crew/resume` | | `{ ok }` |
 | `GET /api/p/:id/events` | SSE, `Last-Event-ID` resumes | events below |
@@ -86,4 +109,4 @@ type Cap = "passed" | "claimed" | "failed" | "unknown";
 
 ## SSE events (`GET /api/p/:id/events`)
 Each event has `id` (event-log seq), `event` name and JSON `data`:
-`patch` (PatchEntry), `task` (Task), `question` (QuestionT), `note` (Note), `gate` (Gate), `ledger` ({ usd, spentUsd, reservedUsd, model, role }), `digest` ({ text }), `render` ({ kind: "proxy" | "still" | "final", url }), `log` ({ level, text, role? }), `stage` ({ stage }), `pip` ({ type: "thinking" } (transient, id 0) | { type: "item", item: PipItem } | { type: "card", itemId, card: PipCard } | { type: "summary", summary: PipSummary }), `channel` (ChannelMsg), `milestone` ({ id, at, kind: "gate" \| "answer" \| "stage" \| "export" \| "change", text }; the ones derived from other events are sent live with id 0, and `ProjectState.milestones` derives them all from the log).
+`patch` (PatchEntry), `task` (Task), `question` (QuestionT), `note` (Note), `gate` (Gate), `ledger` ({ usd, spentUsd, reservedUsd, model, role }), `digest` ({ text }), `render` ({ kind: "proxy" | "still" | "final", url }), `log` ({ level, text, role? }), `stage` ({ stage }), `pip` ({ type: "thinking" } (transient, id 0) | { type: "item", item: PipItem } | { type: "card", itemId, card: PipCard } | { type: "summary", summary: PipSummary }), `channel` (ChannelMsg), `plan` ({ view: PlanView; revision?: PlanRevisionSummary }: stored when it carries a revision; a status-only change is transient, id 0), `milestone` ({ id, at, kind: "gate" \| "answer" \| "stage" \| "export" \| "change" \| "plan", text }; the ones derived from other events are sent live with id 0, and `ProjectState.milestones` derives them all from the log). The `plan` milestones are "Plan ready · N tasks to start" (when G0 passes) and "Plan changed: <reason>" (each revision with ops). The Producer's own milestone is now "Brief read".

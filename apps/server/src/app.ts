@@ -19,14 +19,25 @@ export const VERSION = "0.1.0";
 const WEB_DIST = new URL("../../web/dist/", import.meta.url).pathname;
 
 export interface CrewApi {
-  run(p: OpenProject, opts: { stage?: string }): Promise<void>;
+  run(p: OpenProject, opts: { stage?: string; retry?: boolean }): Promise<void>;
   pause(p: OpenProject, mode: "after_step" | "now"): void;
   resume(p: OpenProject): void;
   status(p: OpenProject): {
     budget: { capUsd: number; spentUsd: number; reservedUsd: number; estTotalUsd: [number, number] | null };
     time: { startedAt: string | null; etaSec: [number, number] | null; deadline: string | null };
-    crew?: { running: boolean; paused: boolean; stage: string; lastActiveAt: string | null; queued: number };
+    crew?: {
+      running: boolean;
+      paused: boolean;
+      stage: string;
+      lastActiveAt: string | null;
+      queued: number;
+      slots?: Record<string, { size: number; used: number }>;
+    };
   };
+  /** the production plan as the wire carries it (docs/PIP-ORCHESTRATION.md §4.2); null before the first run */
+  planView?(p: OpenProject): unknown;
+  /** every plan revision, as summaries */
+  planRevisions?(p: OpenProject): unknown[];
   gate(
     p: OpenProject,
     gate: string,
@@ -211,6 +222,9 @@ export function createApp(o: ServerOpts) {
       // what happened, as markers in Pip's chat: derived from the event log, with the events' own times
       milestones: p.markers(),
       sceneStatus: p.state.sceneStatus,
+      // the production plan (null until a crew first runs); instances arrive with P2
+      plan: o.crew?.planView?.(p) ?? null,
+      instances: [],
     };
   };
 
@@ -354,13 +368,14 @@ export function createApp(o: ServerOpts) {
   });
   // the crew channel ("Behind the scenes"): Pip's briefs and answers, the members' reports and asks
   app.get("/api/p/:id/channel", (c) => c.json(proj(c.req.param("id")).channel()));
+  // the production plan's revisions (runs/plan.jsonl), oldest first
+  app.get("/api/p/:id/plan/revisions", (c) => c.json(o.crew?.planRevisions?.(proj(c.req.param("id"))) ?? []));
   app.get("/api/p/:id/tasks/:tid/transcript", (c) => c.json(proj(c.req.param("id")).transcript(c.req.param("tid"))));
   app.post("/api/p/:id/crew/retry", async (c) => {
     if (!o.crew) return c.json({ ok: false, error: { code: "no_crew", message: "the crew is not configured" } }, 503);
     const p = proj(c.req.param("id"));
-    o.crew
-      .run(p, { stage: p.state.stage })
-      .catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
+    // the failed task goes back to pending (a `retry` plan revision); with none failed, the current stage reruns
+    o.crew.run(p, { retry: true }).catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
     return c.json({ ok: true });
   });
   app.post("/api/p/:id/crew/pause", async (c) => {

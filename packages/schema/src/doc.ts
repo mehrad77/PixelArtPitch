@@ -28,6 +28,8 @@ export const Brief = z.object({
   narration: z.enum(["user", "tts", "none"]).default("user"),
   involvement: z.enum(["every", "key", "auto"]).default("key"),
   deadline: z.string().datetime().optional(),
+  /** how the brief was made: Pip's /new conversation, the composer, or a fork (docs/PIP-ORCHESTRATION.md §1.3) */
+  source: z.enum(["pip", "composer", "fork"]).optional(),
   references: z
     .array(
       z.object({

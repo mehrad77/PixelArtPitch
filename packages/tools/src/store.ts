@@ -71,6 +71,10 @@ export type Task = {
   /** a later task of the same role and kind replaced this one (a retry); human views hide it */
   supersededBy?: string;
   attempt?: number;
+  /** the production plan task this row is an attempt at (docs/PIP-ORCHESTRATION.md §1.2) */
+  planTask?: string;
+  /** the crew member it belongs to: "writer", "animator:s03", "pixel-artist:founder" */
+  instance?: string;
 };
 export type GateId = "g0_brief" | "g1_script" | "g2_animatic" | "g3_rough" | "g4_final";
 export type Gate = {
@@ -194,7 +198,7 @@ export type PapEvent = { seq: number; event: string; data: unknown; ts: string }
 export type Marker = {
   id: string;
   at: string;
-  kind: "gate" | "answer" | "stage" | "export" | "change";
+  kind: "gate" | "answer" | "stage" | "export" | "change" | "plan";
   text: string;
   image?: string;
 };
@@ -219,7 +223,7 @@ export function markerOf(e: PapEvent, prev?: string): Marker | null {
     return {
       id: String(d.id).includes("@") ? String(d.id) : `${d.id}@${e.seq}`,
       at: String(d.at ?? e.ts),
-      kind: String(d.id).startsWith("deliver.export") ? "export" : "stage",
+      kind: String(d.id).startsWith("deliver.export") ? "export" : String(d.id).startsWith("plan.") ? "plan" : "stage",
       text: String(d.text),
       ...(d.image ? { image: d.image } : {}),
     };
@@ -470,7 +474,12 @@ export class OpenProject {
     const old = this.renderer;
     this.rendererRev = this._doc.rev;
     this.renderer = openRenderer(this.project());
-    old?.then((r) => r.close()).catch(() => {});
+    // tasks run side by side: one may still be drawing frames on the old document's renderer, so it closes later
+    if (old) {
+      const t = setTimeout(() => old.then((r) => r.close()).catch(() => {}), 30_000);
+      t.unref();
+      this.retired.push({ r: old, t });
+    }
     return this.renderer;
   }
   async still(t: number, scale = 4): Promise<Uint8Array> {
@@ -486,7 +495,12 @@ export class OpenProject {
   async renderer_(): Promise<Renderer> {
     return this.ren();
   }
+  private retired: { r: Promise<Renderer>; t: ReturnType<typeof setTimeout> }[] = [];
   close() {
+    for (const x of this.retired.splice(0)) {
+      clearTimeout(x.t);
+      x.r.then((r) => r.close()).catch(() => {});
+    }
     this.renderer?.then((r) => r.close()).catch(() => {});
   }
 
@@ -576,9 +590,11 @@ export class OpenProject {
   upsertTask(t: Task) {
     const i = this.state.tasks.findIndex((x) => x.id === t.id);
     if (i < 0) {
-      // a new attempt at the same job supersedes earlier failed ones
-      const prev = this.state.tasks.filter(
-        (x) => x.role === t.role && x.kind === t.kind && (x.parent ?? "") === (t.parent ?? ""),
+      // a new attempt at the same job supersedes earlier failed ones (the same plan task, when it has one)
+      const prev = this.state.tasks.filter((x) =>
+        t.planTask
+          ? x.planTask === t.planTask
+          : x.role === t.role && x.kind === t.kind && (x.parent ?? "") === (t.parent ?? ""),
       );
       t.attempt = prev.length + 1;
       for (const x of prev)
