@@ -13,13 +13,14 @@ import { ShortcutsDialog } from "../components/ShortcutsDialog.tsx";
 import { StagePanel } from "../components/StagePanel.tsx";
 import { TrackTimeline } from "../components/TrackTimeline.tsx";
 import { type Overlays, Viewer } from "../components/Viewer.tsx";
+import { WaitLine } from "../components/WaitLine.tsx";
 import { client } from "../lib/client.ts";
+import { usePublishProject } from "../lib/current.ts";
 import { buildClips, type Clip, NOTE_CATEGORY, ROLE_LABEL, type TrackId } from "../lib/derive.ts";
 import { ago, FPS, timecode } from "../lib/format.ts";
 import { isControlTarget, useProject, useThrottled } from "../lib/hooks.ts";
-import { isStaleDigest, setView } from "../lib/human.ts";
+import { isStaleDigest } from "../lib/human.ts";
 import { usePlayback } from "../lib/playback.ts";
-import { navigate } from "../lib/router.tsx";
 import type { NoteStatus, NoteTarget, ProjectState, Role, Stage } from "../lib/types.ts";
 import "./Workspace.css";
 
@@ -71,7 +72,8 @@ function Workspace({
   state: ProjectState;
   view: ReturnType<typeof useProject>;
 }) {
-  const pb = usePlayback(state.timeline.duration);
+  const pb = usePlayback(state.timeline.duration, id);
+  usePublishProject(id, state);
   const [overlays, setOverlays] = useState<Overlays>({ safe: false, captions: true, grid: false });
   const [compare, setCompare] = useState(false);
   const [inOut, setInOut] = useState<[number | null, number | null]>([null, null]);
@@ -88,11 +90,15 @@ function Workspace({
   });
   const clips = useMemo(() => buildClips(state), [state]);
   // "The crew stopped: …" outlives the failure it reports; once a retry recovered it, say nothing
-  const digestText = isStaleDigest(state) ? "" : state.digest;
-  const digest = useThrottled(digestText, 20000);
   const openQs = state.questions.filter((q) => q.status === "open");
   const openGates = state.gates.filter((g) => g.status === "open");
   const inboxCount = openQs.length + openGates.length;
+  // the Inbox already shows an open gate: drop the digest's sentence that repeats it ("Approve it (G2)…")
+  const digestText = (isStaleDigest(state) ? "" : state.digest)
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !(openGates.length && /\(G\d\)/.test(sentence)))
+    .join(" ");
+  const digest = useThrottled(digestText, 20000);
 
   const sceneAt = useCallback(
     (t: number) => state.timeline.scenes.find((s) => t >= s.from && t < s.to),
@@ -184,22 +190,20 @@ function Workspace({
 
   return (
     <main id="main" className="workspace" data-density="compact" data-grain="off">
-      <ProjectHeader projectId={id} state={state} stage={stage} conn={view.conn} onNeedsYou={nextQuestion} />
+      <ProjectHeader projectId={id} state={state} stage={stage} conn={view.conn} />
       <div className="digest">
         <span className="label">Producer</span>
-        <p>{digestText}</p>
+        <div className="digest-text">
+          <p>{digestText}</p>
+          <WaitLine projectId={id} state={state} onNeeds={nextQuestion} needsLabel="" />
+        </div>
+        {inboxCount > 0 && (
+          <button type="button" className="linkish small" onClick={nextQuestion}>
+            Inbox ({inboxCount})
+          </button>
+        )}
         <button type="button" className="linkish small" onClick={() => setHelp(true)}>
           Shortcuts (?)
-        </button>
-        <button
-          type="button"
-          className="linkish small"
-          onClick={() => {
-            setView("simple");
-            navigate(`/p/${encodeURIComponent(id)}`);
-          }}
-        >
-          ‹ Simple view
         </button>
       </div>
       <p className="visually-hidden" role="status" aria-live="polite">
@@ -278,7 +282,7 @@ function Workspace({
                 </EmptyState>
               )}
               {openGates.map((g) => (
-                <GateCard key={g.id} projectId={id} gate={g} />
+                <GateCard key={g.id} projectId={id} gate={g} state={state} />
               ))}
               {openQs.map((q) => (
                 <DecisionCard key={q.id} projectId={id} q={q} />
@@ -372,6 +376,8 @@ function Workspace({
         </aside>
       </div>
       <TrackTimeline
+        projectId={id}
+        narration={state.doc.brief.narration}
         clips={clips}
         pb={pb}
         zoom={zoom}

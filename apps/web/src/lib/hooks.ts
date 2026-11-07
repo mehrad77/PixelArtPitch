@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { client } from "./client.ts";
+import { currentView, onViewChange, type View } from "./human.ts";
 import { applyEvent } from "./reducer.ts";
 import type { ConnState, PatchEntryT, ProjectState, ServerEvent } from "./types.ts";
 
@@ -48,8 +49,12 @@ export type ProjectView = {
   reload: () => void;
 };
 
-/** a project's state, kept live by its event stream; patches refetch the state (debounced) and extend the history */
-export function useProject(id: string): ProjectView {
+/** the remembered Simple / Studio choice, re-rendering when it changes */
+export const useView = (): View => useSyncExternalStore(onViewChange, currentView);
+
+/** a project's state, kept live by its event stream; patches refetch the state (debounced) and extend the history.
+ * A null id loads nothing. */
+export function useProject(id: string | null): ProjectView {
   const [state, setState] = useState<ProjectState | null>(null);
   const [history, setHistory] = useState<PatchEntryT[]>([]);
   const [error, setError] = useState<Error | null>(null);
@@ -60,6 +65,7 @@ export function useProject(id: string): ProjectView {
   const refetch = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(() => {
+    if (!id) return;
     client.project(id).then(
       (s) => {
         // live activity is client-only: a refetched state must not drop it
@@ -75,6 +81,7 @@ export function useProject(id: string): ProjectView {
     setState(null);
     setHistory([]);
     setProxy(null);
+    if (!id) return;
     load();
     // a proxy built before this visit announces nothing: look for it once
     let live = true;

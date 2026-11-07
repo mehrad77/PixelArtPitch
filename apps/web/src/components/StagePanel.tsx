@@ -3,6 +3,7 @@ import { Badge, Button, Callout, Checkbox, DescriptionList, EmptyState, Table, T
 import { client } from "../lib/client.ts";
 import { DEPARTMENTS, GATE_STAGE, ROLE_LABEL, STAGE_LABEL, TASK_STATUS } from "../lib/derive.ts";
 import { bytes, n, secs, usd, words } from "../lib/format.ts";
+import { VERSION_WORD } from "../lib/human.ts";
 import { LinkButton } from "../lib/router.tsx";
 import type { ProjectState, Stage } from "../lib/types.ts";
 import { DecisionCard, GateCard } from "./DecisionCard.tsx";
@@ -42,7 +43,7 @@ function Gates({ projectId, state, stage }: Props) {
   return (
     <>
       {gates.map((g) => (
-        <GateCard key={g.id} projectId={projectId} gate={g} where="stage" />
+        <GateCard key={g.id} projectId={projectId} gate={g} where="stage" state={state} />
       ))}
     </>
   );
@@ -235,10 +236,14 @@ function StoryboardPanel(p: Props) {
                   {secs(s.from)} to {secs(s.to)}
                 </span>
                 <span>
-                  <Badge tone={st?.version === "render" ? "accent" : "muted"} variant="text">
-                    {st?.version ?? "slate"}
+                  <Badge tone={st?.version === "render" ? "accent" : "muted"} size="sm">
+                    {VERSION_WORD[st?.version ?? "slate"]}
                   </Badge>
-                  {st?.stale && <Badge tone="warning">Stale</Badge>}
+                  {st?.stale && (
+                    <Badge tone="warning" size="sm">
+                      Needs update
+                    </Badge>
+                  )}
                 </span>
               </div>
             </li>
@@ -325,7 +330,7 @@ function WorkPanel(p: Props) {
   return (
     <div className="stack-4">
       <p className="small muted">
-        Scenes move from board to animatic to render. Stale ones need another pass after a change.
+        Scenes go from sketch to rough to final. One marked “Needs update” gets another pass after a change.
       </p>
       <ul className="plain-list">
         {p.state.timeline.scenes.map((s) => {
@@ -335,10 +340,14 @@ function WorkPanel(p: Props) {
               <button type="button" className="linkish" onClick={() => p.onSeek(s.from)}>
                 {p.state.doc.scenes.find((x) => x.id === s.id)?.title || s.id}
               </button>{" "}
-              <Badge tone="muted" variant="text">
-                {st?.version ?? "slate"}
+              <Badge tone="muted" size="sm">
+                {VERSION_WORD[st?.version ?? "slate"]}
               </Badge>
-              {st?.stale && <Badge tone="warning">Stale</Badge>}
+              {st?.stale && (
+                <Badge tone="warning" size="sm">
+                  Needs update
+                </Badge>
+              )}
             </li>
           );
         })}

@@ -45,6 +45,7 @@ export const SHORTCUTS: [ReactNode, string][] = [
   [<Kbd key="m">M</Kbd>, "Add a note at the playhead or the In/Out range"],
   [<Kbd key="bs">\</Kbd>, "Before and after the last change"],
   [<Kbd key="q">Q</Kbd>, "Next question in the Inbox"],
+  [<Kbd key="c">C</Kbd>, "Open the crew: what each agent is doing (on every page)"],
   [
     <>
       <Kbd>{cmd}</Kbd> + <Kbd>.</Kbd>

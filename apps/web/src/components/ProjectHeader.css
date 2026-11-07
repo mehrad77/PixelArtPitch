@@ -29,8 +29,25 @@
   display: grid;
   gap: var(--space-1);
   padding: var(--space-1) var(--space-2);
+  min-inline-size: 0;
   --meter-label-size: 3.5rem;
   --meter-value-size: auto;
+}
+/* two short rows that never overflow: the bar gives way first, then the words end in an ellipsis */
+.hud .meter,
+.hud .meter-row {
+  min-inline-size: 0;
+}
+.hud .meter .meter-bar {
+  flex: 1 1 3rem;
+  min-inline-size: 2rem;
+}
+.hud .meter .meter-value {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ws-actions {
   grid-area: actions;

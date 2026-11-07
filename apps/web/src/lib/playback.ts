@@ -21,14 +21,21 @@ export type Playback = {
   duration: number;
 };
 
-export function usePlayback(duration: number): Playback {
-  const [t, setT] = useState(0);
+/** the playhead per project, so switching between Simple and Studio keeps the place */
+const kept = new Map<string, number>();
+
+/** `keep` names the playhead to carry across views (the project id) */
+export function usePlayback(duration: number, keep?: string): Playback {
+  const [t, setT] = useState(() => (keep ? (kept.get(keep) ?? 0) : 0));
   const [playing, setPlaying] = useState(false);
   const [rate, setRate] = useState(1);
   const ext = useRef(false);
   const tRef = useRef(0);
   tRef.current = t;
   const dur = Math.max(0.1, duration);
+  useEffect(() => {
+    if (keep) kept.set(keep, t);
+  }, [keep, t]);
 
   useEffect(() => {
     if (!playing) return;

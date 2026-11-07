@@ -30,6 +30,25 @@ export type ProjectSummary = {
   deadline: string | null;
   needsYou: number;
   updatedAt: string;
+  // extensions for the overview (optional: an older server sends none of them)
+  /** a crew is working on it in this process right now */
+  running?: boolean;
+  paused?: boolean;
+  status?: { line: string; phase: number; problem?: ProjectStatus["problem"] };
+  /** 0..4, or 5 once the video is out */
+  phase?: number;
+  /** how many milestones are reached */
+  milestones?: number;
+  /** a video exists */
+  finished?: boolean;
+  /** roles with a task in progress */
+  working?: Role[];
+  /** extension: roles waiting on the person */
+  waiting?: Role[];
+  /** a 320×180 frame */
+  thumb?: string;
+  /** the video, to play in the card (when the server names it) */
+  video?: string;
 };
 
 export type TaskStatus =
@@ -131,6 +150,14 @@ export type ArtAsset = {
   variants: { id: string; img: string; score?: number; reason?: string }[];
 };
 export type CrewState = "idle" | "running" | "pausing" | "paused";
+export type CrewInfo = {
+  state?: CrewState;
+  running?: boolean;
+  paused?: boolean;
+  stage?: Stage;
+  lastActiveAt?: string | null;
+  queued?: number;
+};
 export type ProblemAction = "retry" | "change_model" | "add_budget";
 /** extension: the one sentence the person sees, and the one problem the crew can't fix alone */
 export type ProjectStatus = {
@@ -170,7 +197,8 @@ export type ProjectState = {
   sceneStatus?: Record<string, SceneStatus>;
   findings?: Finding[];
   art?: ArtAsset[];
-  crew?: { state: CrewState };
+  /** the crew's run: `state` is the older shape; the server now sends running / paused / stage / lastActiveAt / queued */
+  crew?: CrewInfo;
   status?: ProjectStatus;
   milestones?: Milestone[];
   /** client only: live activity per task id, the newest ~500 each */

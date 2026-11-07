@@ -1,29 +1,32 @@
-// The workspace header: project name, the HUD (spend and time meters in one PixelFrame), the "Needs you" signal,
-// "Pause crew", and the stage nav grouped Plan / Make / Finish, each stage saying done, now, upcoming or needs you.
+// The workspace header: project name, the HUD (spend and time meters in one PixelFrame, two short rows; the full
+// sentence is the tooltip and the accessible value), "Pause crew", "Record narration" in the Narrate and Sound stages,
+// and the stage nav grouped Plan / Make / Finish, each stage saying done, now, upcoming or needs you. "Needs you" is
+// on the app header's Crew button.
 import { Badge, Button, Menu, Meter, PixelFrame } from "@shabboo/kit/react";
 import { useState } from "react";
 import { client } from "../lib/client.ts";
-import { needsYouCount, STAGE_GROUPS, STAGE_LABEL, STAGE_STATE_WORD, stageStates } from "../lib/derive.ts";
+import { STAGE_GROUPS, STAGE_LABEL, STAGE_STATE_WORD, stageStates } from "../lib/derive.ts";
 import { duration, usd } from "../lib/format.ts";
+import { crewStateOf, effectOf } from "../lib/human.ts";
 import { Link, LinkButton } from "../lib/router.tsx";
 import type { ConnState, ProjectState, Stage } from "../lib/types.ts";
 import "./ProjectHeader.css";
+
+/** "40 min", "2 h": whole hours past the first, for the HUD's short row */
+const roughly = (sec: number) => (sec < 3600 ? duration(sec) : `${Math.round(sec / 3600)} h`);
 
 export function ProjectHeader({
   projectId,
   state,
   stage,
   conn,
-  onNeedsYou,
 }: {
   projectId: string;
   state: ProjectState;
   stage: Stage;
   conn: ConnState;
-  onNeedsYou: () => void;
 }) {
-  const needs = needsYouCount(state);
-  const crew = state.crew?.state ?? "running";
+  const crew = crewStateOf(state);
   const [err, setErr] = useState<string | null>(null);
   const b = state.budget;
   const committed = b.spentUsd + b.reservedUsd;
@@ -37,12 +40,17 @@ export function ProjectHeader({
   let tMax = elapsed + (eta?.[1] ?? 0) || 1;
   let tVal = elapsed;
   let tText = eta ? `Done in ${duration(eta[0])} to ${duration(eta[1])}` : "No estimate yet";
+  // the short row: "≈ 28 min left · due in 2 h"
+  let tShort = eta ? `≈ ${duration((eta[0] + eta[1]) / 2)} left` : "No estimate";
   if (deadline) {
     tMax = Math.max(1, (deadline - started) / 1000);
     tVal = Math.min(tMax * 1.2, elapsed + (eta?.[1] ?? 0));
     const left = (deadline - now) / 1000;
     tText += left > 0 ? `; deadline in ${duration(left)}` : "; the deadline has passed";
+    tShort += left > 0 ? ` · due in ${roughly(left)}` : " · past due";
   }
+  const sText = `${usd(b.spentUsd)} spent and ${usd(b.reservedUsd)} in flight, of ${usd(b.capUsd)}`;
+  const sShort = `${usd(b.spentUsd)} of ${usd(b.capUsd)} · ${usd(b.reservedUsd)} reserved`;
 
   const pause = async (mode: string) => {
     setErr(null);
@@ -84,7 +92,9 @@ export function ProjectHeader({
           low={askAt * 0.75}
           high={askAt}
           optimum={0}
-          valueText={`${usd(b.spentUsd)} + ${usd(b.reservedUsd)} in flight of ${usd(b.capUsd)}`}
+          valueText={sShort}
+          aria-valuetext={sText}
+          title={sText}
         />
         <Meter
           id="hud-time"
@@ -96,27 +106,23 @@ export function ProjectHeader({
           max={tMax}
           high={deadline ? tMax * 0.9 : undefined}
           optimum={0}
-          valueText={tText}
+          valueText={tShort}
+          aria-valuetext={tText}
+          title={tText}
         />
       </PixelFrame>
       <div className="ws-actions">
-        {needs > 0 ? (
-          <Button size="sm" variant="ghost" onClick={onNeedsYou}>
-            <Badge tone="signal" variant="text" live>
-              Needs you ({needs})
-            </Badge>
-          </Button>
-        ) : (
-          <Badge tone="muted" variant="text">
-            Needs you (0)
-          </Badge>
-        )}
         {crew === "paused" || crew === "pausing" ? (
           <>
             <Badge tone="warning" variant="text">
               {crew === "paused" ? "Crew paused" : "Pausing after this step"}
             </Badge>
-            <Button size="sm" variant="primary" onClick={resume}>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={resume}
+              title={effectOf({ kind: "resume" }, state).text || undefined}
+            >
               Resume crew
             </Button>
           </>
@@ -136,9 +142,11 @@ export function ProjectHeader({
             onSelect={pause}
           />
         )}
-        <LinkButton size="sm" variant="ghost" href={`/p/${encodeURIComponent(projectId)}/record`}>
-          Record narration
-        </LinkButton>
+        {(stage === "narrate" || stage === "sound") && (
+          <LinkButton size="sm" variant="ghost" href={`/p/${encodeURIComponent(projectId)}/record`}>
+            Record narration
+          </LinkButton>
+        )}
       </div>
       {err && (
         <p className="ws-error" role="status">

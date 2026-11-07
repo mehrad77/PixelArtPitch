@@ -1,8 +1,10 @@
 // The project in plain words, for the default (simple) view: five steps instead of nine stages, one status
 // sentence, milestones and money as one quiet line. The rule: if the crew can fix it alone, the person never hears
 // about it; if it can't, they get one sentence and one button. Pure functions, no React.
+import { clock, duration } from "./format.ts";
 import type {
   ClipState,
+  CrewState,
   GateId,
   Milestone,
   ProblemAction,
@@ -127,8 +129,8 @@ export function plainTitle(t: Task, s: ProjectState): string {
 export type Problem = { text: string; action: ProblemAction; taskId: string };
 export const PROBLEM_BUTTON: Record<ProblemAction, string> = {
   retry: "Try again",
-  change_model: "Choose another model",
-  add_budget: "Add $2 to the budget",
+  change_model: "Use a different model",
+  add_budget: "Add budget",
 };
 function actionFor(t: Task): ProblemAction {
   // the message says what happened; the fix often names Settings as a last resort, so it doesn't pick the button
@@ -230,10 +232,15 @@ export function humanStatus(s: ProjectState): HumanStatus {
     return { text: "The pictures are done. Record your narration when you're ready.", tone: "needs" };
   const problem = problemOf(s);
   if (problem) return { text: problem.text, tone: "problem", problem };
-  const crew = s.crew?.state ?? "running";
+  const crew = crewStateOf(s);
+  // the main line follows the reason: "Waiting to start" only before anything ran, "Stopped" once a run broke off
+  const why = waitReason(s);
+  if (why.kind === "not_started") return { text: "Waiting to start", tone: "info" };
+  if (why.kind === "stopped") return { text: "Stopped", tone: "paused" };
   if (crew === "paused") return { text: "Paused. Nothing is spent while the crew waits.", tone: "paused" };
   if (phaseOf(s) >= PHASES.length) return { text: "Your video is ready.", tone: "info" };
-  if (s.status?.line) return { text: s.status.line, tone: crew === "pausing" ? "paused" : "working" };
+  if (s.status?.line && !/^Waiting to start/i.test(s.status.line))
+    return { text: s.status.line, tone: crew === "pausing" ? "paused" : "working" };
   const lead = leadWorking(s);
   if (lead && lead.status === "working")
     return {
@@ -324,10 +331,278 @@ export function getView(): View {
     return "simple";
   }
 }
+let viewNow: View | null = null;
+const viewListeners = new Set<() => void>();
+/** the remembered view; the in-memory copy wins, so the choice holds even with storage off */
+export const currentView = (): View => viewNow ?? getView();
 export function setView(v: View) {
+  viewNow = v;
   try {
     localStorage.setItem("pap.view", v);
   } catch {
     // storage off: the choice lasts for this page only
   }
+  for (const l of viewListeners) l();
 }
+export function onViewChange(cb: () => void): () => void {
+  viewListeners.add(cb);
+  return () => viewListeners.delete(cb);
+}
+
+// ---- the project last opened, for the header's Crew button off a project page ----
+export function getLastProject(): string | null {
+  try {
+    return localStorage.getItem("pap.lastProject");
+  } catch {
+    return null;
+  }
+}
+export function setLastProject(id: string) {
+  try {
+    localStorage.setItem("pap.lastProject", id);
+  } catch {
+    // storage off: the header falls back to the project with the newest activity
+  }
+}
+
+// ---- the crew's run ----
+/** the run state from either shape the server sends */
+export function crewStateOf(s: ProjectState): CrewState {
+  const c = s.crew;
+  if (c?.state) return c.state;
+  if (c?.paused) return "paused";
+  if (c?.running === false) return "idle";
+  return "running";
+}
+/** whether the crew is running (paused counts as not running) */
+export const crewRunning = (s: ProjectState) => {
+  const st = crewStateOf(s);
+  return st === "running" || st === "pausing";
+};
+/** a stage in plain words, for sentences: "Paused by you during the script" */
+export const STAGE_WORD: Record<Stage, string> = {
+  brief: "the plan",
+  script: "the script",
+  storyboard: "the storyboard",
+  art: "the drawings",
+  animate: "animation",
+  narrate: "narration",
+  sound: "sound",
+  review: "the final check",
+  deliver: "the export",
+};
+/** the roles that work in a stage */
+export const STAGE_ROLES: Record<Stage, Role[]> = {
+  brief: ["producer"],
+  script: ["writer"],
+  storyboard: ["director"],
+  art: ["art-director", "pixel-artist", "librarian"],
+  animate: ["animator", "scene-coder"],
+  narrate: ["editor"],
+  sound: ["sound-designer", "mixer"],
+  review: ["reviewer"],
+  deliver: ["editor"],
+};
+const cap1 = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+const crewStage = (s: ProjectState): Stage => s.crew?.stage ?? s.stage;
+export const stageTasks = (s: ProjectState, stage: Stage) =>
+  visibleTasks(s.tasks.filter((t) => STAGE_ROLES[stage].includes(t.role)));
+
+export type WaitAction = "needs" | "problem" | "resume" | "start" | "continue" | "open";
+export type WaitReason = {
+  kind: "needs" | "problem" | "paused" | "not_started" | "stopped" | "queued" | "working" | "finished" | "between";
+  text: string;
+  action?: WaitAction;
+  problem?: Problem;
+  stage?: Stage;
+};
+
+/** what the person is waiting for, as one muted line under the status; the first case that applies wins */
+export function waitReason(s: ProjectState): WaitReason {
+  const stage = crewStage(s);
+  // 1. waiting for you
+  const gates = s.gates.filter((g) => g.status === "open");
+  const qs = s.questions.filter((q) => q.status === "open");
+  const behind = qs.find((q) => gates.some((g) => q.blocks.includes(GATE_AT[g.id])));
+  const ask = behind?.question ?? (gates[0] ? GATE_TITLE[gates[0].id] : qs[0]?.question);
+  if (ask) return { kind: "needs", text: `Waiting for you: ${ask}`, action: "needs" };
+  if (needsNarration(s)) return { kind: "needs", text: "Waiting for you: record your narration", action: "needs" };
+  // 2. a problem only the person can fix
+  const problem = problemOf(s);
+  if (problem) return { kind: "problem", text: problem.text, action: "problem", problem };
+  // 3. paused
+  const crew = crewStateOf(s);
+  if (crew === "paused")
+    return { kind: "paused", text: `Paused by you during ${STAGE_WORD[stage]}.`, action: "resume", stage };
+  // 8. finished (before the "not running" cases: a finished crew is not running either)
+  if (phaseOf(s) >= PHASES.length)
+    return { kind: "finished", text: "Everything is done. Your video is in Finished.", action: "open" };
+  if (!crewRunning(s)) {
+    // 4. nothing done yet
+    if (!s.tasks.length) return { kind: "not_started", text: "The crew hasn't started yet.", action: "start" };
+    // 5. work broke off
+    const at = s.crew?.lastActiveAt;
+    return {
+      kind: "stopped",
+      text: `The crew stopped during ${STAGE_WORD[stage]}${at ? ` at ${clock(new Date(at))}` : ""}.`,
+      action: "continue",
+      stage,
+    };
+  }
+  const tasks = stageTasks(s, stage);
+  const working = s.tasks.filter((t) => t.status === "working");
+  const queued = s.crew?.queued ?? s.tasks.filter((t) => t.status === "queued").length;
+  // 6. in line for the model
+  if (!working.length && queued > 0) {
+    const next = s.tasks.find((t) => t.status === "queued");
+    const local = isLocalModel(next?.model);
+    return {
+      kind: "queued",
+      text: `Waiting for the model: ${queued} ${queued === 1 ? "step" : "steps"} in line${local ? ". LM Studio answers one request at a time" : ""}`,
+    };
+  }
+  // 7. working
+  if (working.length) {
+    const done = tasks.filter((t) => t.status === "done").length;
+    const m = Math.max(tasks.length, done);
+    return { kind: "working", text: `${done} of ${m} ${m === 1 ? "step" : "steps"} done in this stage` };
+  }
+  return { kind: "between", text: "Getting the next step ready." };
+}
+
+/** a model that runs on this computer: free, and it answers one request at a time */
+export const isLocalModel = (m?: string) => !!m && /^(lmstudio|ollama|llamacpp)\//.test(m);
+
+// ---- what an action will cause, said before it runs ----
+export type EffectAction =
+  | { kind: "start" }
+  | { kind: "continue"; stage: Stage }
+  | { kind: "retry"; taskId: string }
+  | { kind: "change_model"; taskId: string }
+  | { kind: "add_budget"; amount: number }
+  | { kind: "resume" }
+  | { kind: "gate_changes"; stage: Stage; items: string[] };
+export type Effect = {
+  /** one line, or "" when the action does only what its label says */
+  text: string;
+  /** costly or destructive: a two-step confirm in place */
+  confirm: boolean;
+  /** where to read more (Settings → Roles) */
+  href?: string;
+};
+const CONFIRM_USD = 0.5;
+/** "about $0.20 and 3 min", "free, about 3 min", "cost unknown until it starts" */
+function costLine(tasks: Task[], fallbackSec?: number | null): { text: string; usd: number | null } {
+  const local = tasks.length > 0 && tasks.every((t) => isLocalModel(t.model));
+  const known = tasks.filter((t) => t.estUsd != null || t.usd > 0);
+  const usd = known.length
+    ? known.reduce((a, t) => a + Math.max(0, (t.estUsd ?? t.usd) - (t.status === "done" ? 0 : t.usd)), 0)
+    : null;
+  const secs = tasks.reduce((a, t) => a + (t.etaSec ?? 0), 0) || fallbackSec || 0;
+  const time = secs > 0 ? `about ${duration(secs)}` : "";
+  if (local) return { text: time ? `free, ${time}` : "free; time unknown until it starts", usd: 0 };
+  if (usd == null)
+    return { text: time ? `cost unknown until it starts, ${time}` : "cost and time unknown until it starts", usd };
+  return {
+    text: `about ${usdPlain(Math.round(usd * 100) / 100)}${time ? ` and ${time.replace("about ", "")}` : ""}`,
+    usd,
+  };
+}
+const etaMid = (s: ProjectState) => (s.time.etaSec ? (s.time.etaSec[0] + s.time.etaSec[1]) / 2 : null);
+
+/** the one effect line for an action, shared by the simple view, Studio and the crew drawer */
+export function effectOf(a: EffectAction, s: ProjectState): Effect {
+  switch (a.kind) {
+    case "start": {
+      const est = s.budget.estTotalUsd;
+      const eta = etaMid(s);
+      const money = est ? `about ${usdPlain(est[0])} to ${usdPlain(est[1])} in all` : "cost unknown until it starts";
+      return {
+        text: `Starts the crew on your brief: ${money}${eta ? `, ${duration(eta)}` : ""}.`,
+        confirm: (est?.[1] ?? 0) > CONFIRM_USD,
+      };
+    }
+    case "continue": {
+      const left = stageTasks(s, a.stage).filter((t) => t.status !== "done" && t.status !== "cancelled");
+      const c = costLine(left, etaMid(s));
+      return {
+        text: `Restarts ${STAGE_WORD[a.stage]}: ${c.text}; finished steps are kept.`,
+        confirm: (c.usd ?? 0) > CONFIRM_USD,
+      };
+    }
+    case "retry": {
+      const t = s.tasks.find((x) => x.id === a.taskId);
+      if (!t) return { text: "Runs the step again; cost unknown until it starts.", confirm: false };
+      const c = costLine([{ ...t, usd: 0 }]);
+      return {
+        text: `Runs “${plainTitle(t, s)}” again: ${c.text}; finished work is kept.`,
+        confirm: (c.usd ?? 0) > CONFIRM_USD,
+      };
+    }
+    case "change_model": {
+      const t = s.tasks.find((x) => x.id === a.taskId);
+      const who = t ? memberOf(t.role).label.toLowerCase() : "crew member";
+      return {
+        text: `Switches the ${who} to another model for this project, picked in Settings › Roles. Future steps may cost more; the cost is unknown until you pick one.`,
+        confirm: false,
+        href: "/settings/roles",
+      };
+    }
+    case "add_budget": {
+      const cap = s.budget.capUsd + a.amount;
+      const need = s.budget.estTotalUsd?.[1];
+      const ask = Math.round(s.doc.budget.askAtFraction * 100);
+      const finish =
+        need == null
+          ? "the total is unknown, so the crew may ask again"
+          : need <= cap
+            ? "lets the crew finish"
+            : `the crew may need about ${usdPlain(Math.ceil(need - cap))} more`;
+      return {
+        text: `New cap ${usdPlain(cap)}: +${usdPlain(a.amount)} ${finish}; it will still ask at ${ask}%.`,
+        confirm: true,
+      };
+    }
+    case "resume": {
+      const lead = leadWorking(s) ?? s.tasks.find((t) => t.status === "queued" || t.status === "working");
+      return { text: lead ? `Continues from “${plainTitle(lead, s)}”.` : "", confirm: false };
+    }
+    case "gate_changes": {
+      const redo = stageTasks(s, a.stage).filter((t) => t.status === "done");
+      const c = costLine(redo.map((t) => ({ ...t, status: "upcoming" as const, usd: 0, estUsd: t.estUsd ?? t.usd })));
+      const role = memberOf(STAGE_ROLES[a.stage][0]).label.toLowerCase();
+      const what = a.items.length ? a.items.join(", ").toLowerCase() : `all of ${STAGE_WORD[a.stage]}`;
+      return {
+        text: `${cap1(`the ${role}`)} redoes ${what}: ${c.text}.`,
+        confirm: (c.usd ?? 0) > CONFIRM_USD || !a.items.length || a.stage === "art",
+      };
+    }
+  }
+}
+
+// ---- models, in words (Studio and the crew drawer only: the simple view never names a model) ----
+const PROVIDER_WORD: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  custom: "Custom",
+};
+const LOCAL = new Set(["lmstudio", "ollama", "llamacpp"]);
+/** "anthropic/claude-sonnet-5-5" → "Sonnet 5.5 · Anthropic"; "lmstudio/gemma-4-26b" → "gemma-4-26b · on this Mac" */
+export function modelWords(id?: string): string {
+  if (!id) return "Model picked when it starts";
+  const slash = id.indexOf("/");
+  const provider = slash > 0 ? id.slice(0, slash) : "";
+  const name = slash > 0 ? id.slice(slash + 1) : id;
+  if (LOCAL.has(provider)) return `${name} · on this Mac`;
+  let pretty = name;
+  const claude = name.match(/^claude-([a-z]+)((?:-\d+)*)$/i);
+  if (claude) {
+    const ver = claude[2].split("-").filter(Boolean).join(".");
+    pretty = `${cap1(claude[1])}${ver ? ` ${ver}` : ""}`;
+  }
+  const who = PROVIDER_WORD[provider] ?? provider;
+  return who ? `${pretty} · ${who}` : pretty;
+}
+/** the short name for a task group's suffix: "Sonnet 5.5", "gemma-4-26b" */
+export const modelShort = (id?: string) => (id ? modelWords(id).split(" · ")[0] : "");

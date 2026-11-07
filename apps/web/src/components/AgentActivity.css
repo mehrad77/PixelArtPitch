@@ -11,6 +11,13 @@
   /* the narrow layout below asks this box, not the viewport */
   container-type: inline-size;
 }
+.activity-frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
 .activity-layout {
   display: grid;
   grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
@@ -330,4 +337,20 @@
   justify-self: start;
   color: var(--text-muted);
   font-size: var(--step--1);
+}
+
+/* the model in use, beside the name */
+.activity-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+/* the header's Crew button: which project */
+.activity-picker {
+  padding: var(--space-2) var(--space-5);
+  border-block-end: 1px solid var(--stroke-subtle);
+}
+.activity-picker .field {
+  max-inline-size: 24rem;
 }

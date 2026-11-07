@@ -1,21 +1,22 @@
 // The default project screen: the film, one sentence of status, where we are in five plain steps, and the one thing
 // that needs the person, if any. Money is one quiet line. Everything else (stages, tracks, models, tasks) is in
-// Studio, one toggle away and remembered (pap.view). Watching rules as in Studio: nothing the crew does moves the
+// Studio, one toggle away in the app header and remembered (pap.view). Watching rules as in Studio: nothing the crew does moves the
 // playhead or the focus.
 import { Button, Callout, Popover, Skeleton, Steps, Timeline, TimelineItem } from "@shabboo/kit/react";
 import { useCallback, useEffect, useState } from "react";
 import { client } from "../lib/client.ts";
+import { usePublishProject } from "../lib/current.ts";
 import { clock } from "../lib/format.ts";
 import { isControlTarget, type ProjectView, useProject, useThrottled } from "../lib/hooks.ts";
-import { humanStatus, milestones, PHASES, phaseOf, plainUsd, setView } from "../lib/human.ts";
+import { crewStateOf, effectOf, humanStatus, milestones, PHASES, phaseOf, plainUsd } from "../lib/human.ts";
 import { usePlayback } from "../lib/playback.ts";
-import { Link, navigate } from "../lib/router.tsx";
+import { Link } from "../lib/router.tsx";
 import type { ProjectState } from "../lib/types.ts";
 import { CrewHero, CrewStrip } from "./CrewStrip.tsx";
 import { NeedsYouCard } from "./NeedsYouCard.tsx";
-import { ProblemButton } from "./ProblemButton.tsx";
 import { SteerPopover } from "./SteerPopover.tsx";
 import { Viewer } from "./Viewer.tsx";
+import { WaitLine } from "./WaitLine.tsx";
 import "./SimpleProject.css";
 
 const NO_OVERLAYS = { safe: false, captions: true, grid: false };
@@ -43,7 +44,8 @@ export function SimpleProjectPage({ id }: { id: string }) {
 }
 
 function SimpleProject({ id, state, view }: { id: string; state: ProjectState; view: ProjectView }) {
-  const pb = usePlayback(state.timeline.duration);
+  const pb = usePlayback(state.timeline.duration, id);
+  usePublishProject(id, state);
   const [steer, setSteer] = useState<{ t: number; x: number; y: number } | null>(null);
   const phase = phaseOf(state);
   const b = state.budget;
@@ -110,22 +112,10 @@ function SimpleProject({ id, state, view }: { id: string; state: ProjectState; v
           onSteer={(t, x, y) => setSteer({ t, x, y })}
         />
       </div>
-      <StatusLine projectId={id} state={state} />
+      <StatusLine projectId={id} state={state} onNeeds={focusNeeds} />
       <NeedsYouCard projectId={id} state={state} />
       <CrewStrip projectId={id} state={state} />
       <SoFar state={state} />
-      <footer className="sp-foot">
-        <button
-          type="button"
-          className="linkish small"
-          onClick={() => {
-            setView("studio");
-            navigate(`/p/${encodeURIComponent(id)}/${state.stage}`);
-          }}
-        >
-          Studio ▸
-        </button>
-      </footer>
       {steer && (
         <SteerPopover
           projectId={id}
@@ -140,8 +130,8 @@ function SimpleProject({ id, state, view }: { id: string; state: ProjectState; v
   );
 }
 
-/** the one sentence; a problem the crew can't fix alone adds its one button */
-function StatusLine({ projectId, state }: { projectId: string; state: ProjectState }) {
+/** the one sentence, and under it why nothing moves and the one thing to do about it */
+function StatusLine({ projectId, state, onNeeds }: { projectId: string; state: ProjectState; onNeeds: () => void }) {
   const st = humanStatus(state);
   const live = useThrottled(st.text, 10000);
   // while nobody has started yet, a few big faces keep the person company
@@ -149,8 +139,10 @@ function StatusLine({ projectId, state }: { projectId: string; state: ProjectSta
   return (
     <div className="sp-status" data-tone={st.tone} data-hero={starting ? "" : undefined}>
       {starting && <CrewHero />}
-      <p>{st.text}</p>
-      {st.problem && <ProblemButton projectId={projectId} state={state} problem={st.problem} />}
+      <div className="sp-status-text">
+        <p>{st.text}</p>
+        <WaitLine projectId={projectId} state={state} mainText={st.text} onNeeds={onNeeds} />
+      </div>
       <p className="visually-hidden" role="status" aria-live="polite">
         {live}
       </p>
@@ -160,7 +152,7 @@ function StatusLine({ projectId, state }: { projectId: string; state: ProjectSta
 
 /** a quiet Pause: after this step, or now; while paused, Resume is the primary button */
 function PauseControl({ projectId, state }: { projectId: string; state: ProjectState }) {
-  const crew = state.crew?.state ?? "running";
+  const crew = crewStateOf(state);
   const [err, setErr] = useState<string | null>(null);
   const run = async (fn: () => Promise<void>) => {
     setErr(null);
@@ -175,7 +167,12 @@ function PauseControl({ projectId, state }: { projectId: string; state: ProjectS
   return (
     <>
       {crew === "paused" ? (
-        <Button size="sm" variant="primary" onClick={resume}>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={resume}
+          title={effectOf({ kind: "resume" }, state).text || undefined}
+        >
           Resume
         </Button>
       ) : crew === "idle" ? null : (

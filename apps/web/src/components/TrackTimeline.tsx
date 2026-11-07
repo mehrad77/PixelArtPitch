@@ -9,6 +9,7 @@ import { type KeyboardEvent, type PointerEvent, useLayoutEffect, useMemo, useRef
 import { CLIP_WORD, type Clip, initials, TRACKS, type TrackId } from "../lib/derive.ts";
 import { clamp, FPS, timecode } from "../lib/format.ts";
 import type { Playback } from "../lib/playback.ts";
+import { Link } from "../lib/router.tsx";
 import type { ClipState } from "../lib/types.ts";
 import "./TrackTimeline.css";
 
@@ -42,7 +43,12 @@ export function TrackTimeline({
   inOut,
   selected,
   onSelect,
+  projectId,
+  narration = "none",
 }: {
+  projectId: string;
+  /** how the narration is made; with nothing recorded yet, the Voice track is one quiet band (hidden for "none") */
+  narration?: "user" | "tts" | "none";
   clips: Clip[];
   pb: Playback;
   zoom: number;
@@ -60,7 +66,8 @@ export function TrackTimeline({
     return m;
   }, [clips]);
 
-  const tracks = TRACKS.filter((t) => byTrack.get(t.id)?.length);
+  const voiceBand = narration !== "none" && !byTrack.get("voice")?.length;
+  const tracks = TRACKS.filter((t) => byTrack.get(t.id)?.length || (t.id === "voice" && voiceBand));
   const tick = zoom >= 80 ? 1 : zoom >= 30 ? 2 : zoom >= 12 ? 5 : 10;
   const ticks: number[] = [];
   for (let s = 0; s <= pb.duration; s += tick) ticks.push(s);
@@ -166,40 +173,49 @@ export function TrackTimeline({
                 }}
               />
             )}
-            {tracks.map((tr) => (
-              <ul key={tr.id} className="track" aria-label={`${tr.label} track`}>
-                {(byTrack.get(tr.id) ?? []).map((c) => {
-                  const left = c.from * zoom;
-                  const w = Math.max(c.point ? 10 : 4, (c.to - c.from) * zoom);
-                  const word = CLIP_WORD[c.state];
-                  const name = `${c.label}, ${word}, ${timecode(c.from)}${c.point ? "" : ` to ${timecode(c.to)}`}`;
-                  return (
-                    <li
-                      key={c.id}
-                      className="clip-slot"
-                      style={{ insetInlineStart: `${left - (c.point ? 5 : 0)}px`, inlineSize: `${w}px` }}
-                    >
-                      <button
-                        type="button"
-                        className={`clip${c.point ? " point" : ""}`}
-                        data-state={c.state}
-                        data-kind={c.kind}
-                        aria-pressed={selected === c.id}
-                        aria-label={name}
-                        title={name}
-                        onClick={() => {
-                          pb.pause();
-                          pb.seek(c.from);
-                          onSelect(c);
-                        }}
+            {tracks.map((tr) =>
+              tr.id === "voice" && voiceBand ? (
+                <ul key={tr.id} className="track" aria-label="Voice track">
+                  <li className="voice-band" style={{ inlineSize: `${Math.ceil(pb.duration * zoom)}px` }}>
+                    <span>{narration === "user" ? "Narration not recorded" : "Narration not generated yet"}</span>
+                    {narration === "user" && <Link href={`/p/${encodeURIComponent(projectId)}/record`}>Record</Link>}
+                  </li>
+                </ul>
+              ) : (
+                <ul key={tr.id} className="track" aria-label={`${tr.label} track`}>
+                  {(byTrack.get(tr.id) ?? []).map((c) => {
+                    const left = c.from * zoom;
+                    const w = Math.max(c.point ? 10 : 4, (c.to - c.from) * zoom);
+                    const word = CLIP_WORD[c.state];
+                    const name = `${c.label}, ${word}, ${timecode(c.from)}${c.point ? "" : ` to ${timecode(c.to)}`}`;
+                    return (
+                      <li
+                        key={c.id}
+                        className="clip-slot"
+                        style={{ insetInlineStart: `${left - (c.point ? 5 : 0)}px`, inlineSize: `${w}px` }}
                       >
-                        {!c.point && <ClipText clip={c} w={w} word={word} />}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ))}
+                        <button
+                          type="button"
+                          className={`clip${c.point ? " point" : ""}`}
+                          data-state={c.state}
+                          data-kind={c.kind}
+                          aria-pressed={selected === c.id}
+                          aria-label={name}
+                          title={name}
+                          onClick={() => {
+                            pb.pause();
+                            pb.seek(c.from);
+                            onSelect(c);
+                          }}
+                        >
+                          {!c.point && <ClipText clip={c} w={w} word={word} />}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ),
+            )}
             <div className="playhead" aria-hidden="true" style={{ insetInlineStart: `${pb.t * zoom}px` }} />
           </div>
         </div>

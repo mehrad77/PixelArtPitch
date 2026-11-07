@@ -6,7 +6,9 @@ import { type FormEvent, useState } from "react";
 import { client } from "../lib/client.ts";
 import { GATE_LABEL, GATE_STAGE, isStage, ROLE_LABEL, STAGE_LABEL } from "../lib/derive.ts";
 import { clock, signedDuration, signedUsd } from "../lib/format.ts";
-import type { Gate, QuestionT, Role } from "../lib/types.ts";
+import { effectOf } from "../lib/human.ts";
+import type { Gate, ProjectState, QuestionT, Role } from "../lib/types.ts";
+import { EffectButton } from "./EffectAction.tsx";
 import "./DecisionCard.css";
 
 const fromLabel = (from: string) => ROLE_LABEL[from as Role] ?? from;
@@ -157,18 +159,31 @@ export function DecisionCard({ projectId, q, where = "inbox" }: { projectId: str
   );
 }
 
-export function GateCard({ projectId, gate, where = "inbox" }: { projectId: string; gate: Gate; where?: string }) {
+export function GateCard({
+  projectId,
+  gate,
+  where = "inbox",
+  state,
+}: {
+  projectId: string;
+  gate: Gate;
+  where?: string;
+  /** with the project state, "Ask for changes" says what it redoes before it runs */
+  state?: ProjectState;
+}) {
   const [checked, setChecked] = useState<string[]>([]);
   const [reasons, setReasons] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const base = `${where}-gate-${gate.id}`;
+  const hasReasons = () => {
+    if (reasons.trim()) return true;
+    setErr("Say what to change, so the crew knows where to start.");
+    document.getElementById(`${base}-why`)?.focus();
+    return false;
+  };
   const send = async (verdict: "approve" | "approve_notes" | "changes") => {
-    if (verdict === "changes" && !reasons.trim()) {
-      setErr("Say what to change, so the crew knows where to start.");
-      document.getElementById(`${base}-why`)?.focus();
-      return;
-    }
+    if (verdict === "changes" && !hasReasons()) return;
     setBusy(true);
     setErr(null);
     try {
@@ -248,9 +263,19 @@ export function GateCard({ projectId, gate, where = "inbox" }: { projectId: stri
         <Button size="sm" variant="ghost" onClick={() => send("approve_notes")}>
           Approve with notes
         </Button>
-        <Button size="sm" variant="danger" onClick={() => send("changes")}>
-          Ask for changes
-        </Button>
+        {state ? (
+          <EffectButton
+            label="Ask for changes"
+            variant="danger"
+            effect={effectOf({ kind: "gate_changes", stage: GATE_STAGE[gate.id], items: checked }, state)}
+            check={hasReasons}
+            onRun={() => send("changes")}
+          />
+        ) : (
+          <Button size="sm" variant="danger" onClick={() => send("changes")}>
+            Ask for changes
+          </Button>
+        )}
       </div>
     </form>
   );

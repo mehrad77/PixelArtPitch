@@ -252,7 +252,8 @@ export function buildClips(s: ProjectState): Clip[] {
   // scenes and picture
   for (const sc of tl.scenes) {
     const st = sceneStatusOf(s, sc.id);
-    const state: ClipState = st.stale ? "stale" : st.state;
+    // "needs you" belongs to the gate marker on the Notes track and to the Inbox; a clip says its own state
+    const state: ClipState = st.stale ? "stale" : st.state === "approval" ? "ready" : st.state;
     clips.push({
       id: `scene:${sc.id}`,
       track: "scenes",
@@ -286,7 +287,7 @@ export function buildClips(s: ProjectState): Clip[] {
       state: aligned ? "locked" : "ready",
       cue: c.id,
     });
-  // voice: one clip per recorded file, spanning the cues; planned cue spans when nothing is recorded
+  // voice: one clip per recorded file, spanning the cues; with nothing recorded the timeline draws one band instead
   if (s.doc.audio.vo.length) {
     const end = tl.cues.at(-1)?.end ?? tl.duration;
     s.doc.audio.vo.forEach((v, i) => {
@@ -299,17 +300,6 @@ export function buildClips(s: ProjectState): Clip[] {
         state: aligned ? "ready" : "stale",
       });
     });
-  } else if (s.doc.brief.narration !== "none") {
-    for (const c of tl.cues)
-      clips.push({
-        id: `vo-plan:${c.id}`,
-        track: "voice",
-        from: c.start,
-        to: c.end,
-        label: "to record",
-        state: "planned",
-        cue: c.id,
-      });
   }
   // sfx
   s.doc.audio.sfx.events.forEach((e, i) => {

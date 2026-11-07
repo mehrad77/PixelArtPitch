@@ -6,10 +6,11 @@ import { type FormEvent, useState } from "react";
 import { client } from "../lib/client.ts";
 import { GATE_STAGE } from "../lib/derive.ts";
 import { signedDuration, signedUsd } from "../lib/format.ts";
-import { GATE_TITLE, memberOf, needsNarration, problemOf } from "../lib/human.ts";
+import { effectOf, GATE_TITLE, memberOf, needsNarration, problemOf } from "../lib/human.ts";
 import { LinkButton } from "../lib/router.tsx";
 import type { Gate, GateId, ProjectState, QuestionT, Role } from "../lib/types.ts";
 import { DecisionCard } from "./DecisionCard.tsx";
+import { EffectButton } from "./EffectAction.tsx";
 import { ProblemButton } from "./ProblemButton.tsx";
 import "./NeedsYouCard.css";
 
@@ -91,7 +92,7 @@ export function NeedsYouCard({ projectId, state }: { projectId: string; state: P
         {img && <img className="needs-preview pixelated" src={img} alt="" />}
         <div className="needs-main">
           {item.kind === "gate" ? (
-            <GateItem key={item.key} projectId={projectId} gate={item.gate} />
+            <GateItem key={item.key} projectId={projectId} gate={item.gate} state={state} />
           ) : item.kind === "question" ? (
             item.q.kind === "multi" || item.q.kind === "number" ? (
               <>
@@ -236,20 +237,22 @@ function QuestionItem({ projectId, q }: { projectId: string; q: QuestionT }) {
   );
 }
 
-function GateItem({ projectId, gate }: { projectId: string; gate: Gate }) {
+function GateItem({ projectId, gate, state }: { projectId: string; gate: Gate; state: ProjectState }) {
   const [open, setOpen] = useState(false);
   const [checked, setChecked] = useState<string[]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const base = `needs-gate-${gate.id}`;
+  const hasChanges = () => {
+    if (note.trim() || checked.length) return true;
+    setErr("Tick what needs another pass, or say what to change.");
+    document.getElementById(`${base}-why`)?.focus();
+    return false;
+  };
   const send = async (verdict: "approve" | "changes") => {
     const text = note.trim();
-    if (verdict === "changes" && !text && !checked.length) {
-      setErr("Tick what needs another pass, or say what to change.");
-      document.getElementById(`${base}-why`)?.focus();
-      return;
-    }
+    if (verdict === "changes" && !hasChanges()) return;
     setBusy(true);
     setErr(null);
     try {
@@ -315,9 +318,13 @@ function GateItem({ projectId, gate }: { projectId: string; gate: Gate }) {
           Looks good
         </Button>
         {open ? (
-          <Button size="sm" variant="ghost" onClick={() => send("changes")}>
-            Send changes
-          </Button>
+          <EffectButton
+            label="Send changes"
+            variant="ghost"
+            effect={effectOf({ kind: "gate_changes", stage: GATE_STAGE[gate.id], items: checked }, state)}
+            check={hasChanges}
+            onRun={() => send("changes")}
+          />
         ) : (
           <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
             Change something

@@ -1,0 +1,24 @@
+.effect-action {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+.effect-line {
+  flex: 1 1 16rem;
+  color: var(--text-muted);
+  font-size: var(--step--1);
+}
+.effect-error {
+  flex: 1 0 100%;
+}
+.budget-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2);
+}
+.budget-form .field {
+  inline-size: 7rem;
+}

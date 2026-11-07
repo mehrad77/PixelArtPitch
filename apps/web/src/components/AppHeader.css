@@ -1,0 +1,60 @@
+/* the app header's end: Simple | Studio, the mock badge, the Crew button */
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-inline-start: auto;
+}
+.mode-switch {
+  display: flex;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+.mode-switch > .radio + .radio {
+  margin-inline-start: -1px;
+}
+.crew-btn-wrap {
+  display: contents;
+}
+.crew-btn.btn {
+  gap: var(--space-2);
+  padding-inline: var(--space-2);
+}
+.crew-btn-faces {
+  display: inline-flex;
+  align-items: center;
+}
+.crew-btn-faces > span + span {
+  margin-inline-start: calc(var(--space-2) * -1);
+}
+.crew-btn .crew-face {
+  --face: 1.5rem;
+  animation: none;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.crew-btn .crew-face[data-mood="later"] {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    inset 0 0 0 1px var(--stroke-control);
+}
+.crew-btn .crew-face .crew-face-glyphs {
+  translate: none;
+}
+.crew-btn-word {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+.crew-btn-dot {
+  inline-size: var(--space-2);
+  block-size: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--text-accent);
+}
+@media (max-width: 40rem) {
+  .crew-btn-word {
+    display: none;
+  }
+}

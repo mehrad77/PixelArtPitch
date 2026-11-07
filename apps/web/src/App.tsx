@@ -1,8 +1,10 @@
 import { Badge, EmptyState, SkipLink } from "@shabboo/kit/react";
+import { CrewButton, ModeSwitch } from "./components/AppHeader.tsx";
 import { SimpleProjectPage } from "./components/SimpleProject.tsx";
 import { client } from "./lib/client.ts";
 import { isStage } from "./lib/derive.ts";
-import { getView } from "./lib/human.ts";
+import { useView } from "./lib/hooks.ts";
+import type { View } from "./lib/human.ts";
 import { Link, match, navigate, usePath } from "./lib/router.tsx";
 import { ComposerPage } from "./pages/Composer.tsx";
 import { LibraryPage } from "./pages/Library.tsx";
@@ -11,7 +13,15 @@ import { RecordPage } from "./pages/Record.tsx";
 import { SETTINGS_TABS, SettingsPage, type SettingsTab } from "./pages/Settings.tsx";
 import { WorkspacePage } from "./pages/Workspace.tsx";
 
-function Route({ path }: { path: string }) {
+/** the project a path is about, and its view: a stage is Studio, the bare address the remembered view */
+function projectRoute(path: string, view: View): { id: string; mode: View | null } | null {
+  let m = match("/p/:id/:stage", path);
+  if (m) return { id: m.id, mode: isStage(m.stage) ? "studio" : null };
+  m = match("/p/:id", path);
+  return m ? { id: m.id, mode: view } : null;
+}
+
+function Route({ path, view }: { path: string; view: View }) {
   if (path === "/" || path === "") return <ProjectsPage />;
   if (path === "/new") return <ComposerPage />;
   if (path === "/library") return <LibraryPage />;
@@ -28,7 +38,7 @@ function Route({ path }: { path: string }) {
   // the project's own address opens the simple view, or Studio when the person last chose it; a stage is Studio
   m = match("/p/:id", path);
   if (m)
-    return getView() === "studio" ? (
+    return view === "studio" ? (
       <WorkspacePage key={`studio-${m.id}`} id={m.id} />
     ) : (
       <SimpleProjectPage key={m.id} id={m.id} />
@@ -44,6 +54,8 @@ function Route({ path }: { path: string }) {
 
 export function App() {
   const path = usePath();
+  const view = useView();
+  const proj = projectRoute(path, view);
   const section = path.startsWith("/library") ? "library" : path.startsWith("/settings") ? "settings" : "projects";
   return (
     <div className="app">
@@ -63,13 +75,17 @@ export function App() {
             Settings
           </Link>
         </nav>
-        {client.mock && (
-          <Badge tone="info" title="Fixture data simulated in the browser; nothing reaches a server.">
-            Mock data
-          </Badge>
-        )}
+        <div className="topbar-end">
+          {proj?.mode && <ModeSwitch projectId={proj.id} mode={proj.mode} />}
+          {client.mock && (
+            <Badge tone="info" title="Fixture data simulated in the browser; nothing reaches a server.">
+              Mock data
+            </Badge>
+          )}
+          <CrewButton routeId={proj?.id ?? null} />
+        </div>
       </header>
-      <Route path={path} />
+      <Route path={path} view={view} />
     </div>
   );
 }

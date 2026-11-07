@@ -5,12 +5,12 @@ import { useEffect, useState } from "react";
 import { client } from "../lib/client.ts";
 import { DEPARTMENTS, type Department, leadTask, ROLE_LABEL, TASK_STATUS, taskProgress } from "../lib/derive.ts";
 import { duration, usd } from "../lib/format.ts";
-import { memberOf, retriesOf, visibleTasks } from "../lib/human.ts";
+import { memberOf, modelShort, plainTitle, retriesOf, STAGE_WORD, visibleTasks } from "../lib/human.ts";
 import type { ProjectState, Task } from "../lib/types.ts";
 import { AgentActivity } from "./AgentActivity.tsx";
 import "./CrewRow.css";
 
-const modelName = (m?: string) => (m ? (m.split("/").pop() ?? m) : "Model picked when it starts");
+const modelName = (m?: string) => (m ? modelShort(m) : "Model picked when it starts");
 
 export function CrewPanel({
   projectId,
@@ -34,7 +34,13 @@ export function CrewPanel({
     <div className="crew">
       <ul className="crew-list">
         {DEPARTMENTS.map((d) => (
-          <CrewRow key={d.id} dept={d} tasks={state.tasks.filter((t) => d.roles.includes(t.role))} onOpen={setOpen} />
+          <CrewRow
+            key={d.id}
+            dept={d}
+            state={state}
+            tasks={state.tasks.filter((t) => d.roles.includes(t.role))}
+            onOpen={setOpen}
+          />
         ))}
       </ul>
       {open && (
@@ -63,7 +69,17 @@ export function CrewPanel({
   );
 }
 
-export function CrewRow({ dept, tasks: all, onOpen }: { dept: Department; tasks: Task[]; onOpen: (t: Task) => void }) {
+export function CrewRow({
+  dept,
+  state,
+  tasks: all,
+  onOpen,
+}: {
+  dept: Department;
+  state: ProjectState;
+  tasks: Task[];
+  onOpen: (t: Task) => void;
+}) {
   // a failure a later try recovered isn't news: hide it, and say "Retried 1×" on the try that took over
   const tasks = visibleTasks(all);
   const retried = (t: Task) => retriesOf(t, all);
@@ -75,13 +91,10 @@ export function CrewRow({ dept, tasks: all, onOpen }: { dept: Department; tasks:
   if (!lead)
     return (
       <li className="crew-row" data-status="upcoming">
-        <div className="crew-main">
+        <p className="crew-later">
           <span className="crew-dept">{dept.label}</span>
-          <Badge tone="muted" variant="text">
-            Upcoming
-          </Badge>
-          <span className="crew-line muted">Not started. Joins when {dept.stages.join(" or ")} begins.</span>
-        </div>
+          <span className="muted">Joins with {dept.stages.map((st) => STAGE_WORD[st]).join(" or ")}</span>
+        </p>
       </li>
     );
   const st = TASK_STATUS[lead.status];
@@ -89,24 +102,30 @@ export function CrewRow({ dept, tasks: all, onOpen }: { dept: Department; tasks:
   return (
     <li className="crew-row" data-status={lead.status}>
       <div className="crew-main">
-        <span className="crew-dept">{dept.label}</span>
-        <Tag variant="chip" size="sm" as="span" title={lead.model}>
-          {modelName(lead.model)}
-        </Tag>
-        <Badge tone={st.tone} live={lead.status === "working"}>
-          {st.word}
-        </Badge>
-        {retried(lead) > 0 && (
-          <span className="muted small" title="An earlier try stopped; the crew retried it on its own.">
-            Retried {retried(lead)}×
+        <div className="crew-top">
+          <span className="crew-dept">{dept.label}</span>
+          {img && <img className="crew-thumb pixelated" src={img} alt={`Last output from ${dept.label}`} />}
+        </div>
+        <div className="crew-meta">
+          <Tag variant="chip" size="sm" as="span" title={lead.model}>
+            {modelName(lead.model)}
+          </Tag>
+          <Badge tone={st.tone} size="sm">
+            {st.word}
+          </Badge>
+          {retried(lead) > 0 && (
+            <span className="muted small" title="An earlier try stopped; the crew retried it on its own.">
+              Retried {retried(lead)}×
+            </span>
+          )}
+          <span className="crew-money mono small">
+            {usd(spent)}
+            {eta > 0 && ` · ${duration(eta)} left`}
           </span>
-        )}
-        <span className="crew-money mono small">
-          {usd(spent)}
-          {eta > 0 && ` · ${duration(eta)} left`}
-        </span>
-        {img && <img className="crew-thumb pixelated" src={img} alt={`Last output from ${dept.label}`} />}
-        <p className="crew-line">{lead.title}</p>
+        </div>
+        <p className="crew-line" title={lead.title}>
+          {plainTitle(lead, state)}
+        </p>
         {lead.status === "working" && (
           <ProgressBar
             id={pid}

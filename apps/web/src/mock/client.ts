@@ -302,6 +302,54 @@ class MockBackend {
 
   constructor() {
     this.projects.set("lantern", newProject("lantern", "Lantern · demo night", {}, 6, true));
+    // a few more, still, for the Projects overview: one stopped mid-run, one not started, the finished example
+    const done = (id: string, role: Role, title: string, at: number): Task =>
+      task(id, role, title, "done", { usd: 0.12, startedAt: iso(at - 120), endedAt: iso(at) });
+    const harbor = newProject("harbor", "Harbor lights", {}, 5, false);
+    Object.assign(harbor.state, {
+      stage: "animate",
+      tasks: [
+        done("t_producer", "producer", "Reading the brief and planning the crew", -9000),
+        done("t_writer", "writer", "Writing three script angles", -8400),
+        done("t_director", "director", "Storyboarding five scenes", -7800),
+        done("t_artist", "pixel-artist", "Drawing hero variants", -7000),
+        task("t_tune_s1", "scene-coder", "Animating scene 1 of 5", "upcoming"),
+      ],
+      crew: { state: "idle" },
+      budget: { ...harbor.state.budget, spentUsd: 1.84 },
+      time: { ...harbor.state.time, etaSec: null },
+      milestones: [
+        { id: "m_plan", at: iso(-9000), text: "Plan ready" },
+        { id: "m_script", at: iso(-8400), text: "Script written · 3 options" },
+      ],
+    });
+    for (const sc of harbor.state.timeline.scenes)
+      harbor.state.sceneStatus = {
+        ...harbor.state.sceneStatus,
+        [sc.id]: { version: "animatic", stale: false, state: "ready" },
+      };
+    harbor.phase = 99;
+    this.projects.set("harbor", harbor);
+    const fresh = newProject("fresh", "Night market", {}, 4, false);
+    Object.assign(fresh.state, { tasks: [], crew: { state: "idle" }, time: { ...fresh.state.time, etaSec: null } });
+    fresh.phase = 99;
+    this.projects.set("fresh", fresh);
+    const example = newProject("example", "Moth and lamp · example", {}, 0, false);
+    Object.assign(example.state, {
+      stage: "deliver",
+      tasks: [done("t_producer", "producer", "Reading the brief and planning the crew", -86400)],
+      crew: { state: "idle" },
+      time: { ...example.state.time, etaSec: null },
+      files: [{ name: "pitch.mp4", url: "", bytes: 2_400_000, kind: "video" }],
+      milestones: [{ id: "m_video", at: iso(-86400), text: "Your video is ready" }],
+    });
+    for (const sc of example.state.timeline.scenes)
+      example.state.sceneStatus = {
+        ...example.state.sceneStatus,
+        [sc.id]: { version: "render", stale: false, state: "locked" },
+      };
+    example.phase = 99;
+    this.projects.set("example", example);
   }
 
   get(id: string) {
@@ -373,6 +421,7 @@ class MockBackend {
   }
   /** what the server will send as `status`: the same plain sentence the client derives, plus the problem */
   pushStatus(p: MockProject) {
+    this.syncCrew(p);
     const bare: ProjectState = { ...p.state, status: undefined };
     const h = humanStatus(bare);
     const eta = bare.time.etaSec;
@@ -386,6 +435,31 @@ class MockBackend {
     if (key === p.lastStatus) return;
     p.lastStatus = key;
     this.emit(p, { event: "status", data: st });
+  }
+  /** the server's crew fields (running, paused, stage, lastActiveAt, queued), derived from the simulated run */
+  syncCrew(p: MockProject) {
+    const st = p.state.crew?.state ?? "running";
+    const times = p.state.tasks.flatMap((t) => [t.startedAt, t.endedAt]).filter((x): x is string => !!x);
+    const last = times.sort().at(-1) ?? null;
+    const crew = {
+      state: st,
+      running: st === "running" || st === "pausing",
+      paused: st === "paused",
+      stage: p.state.stage,
+      lastActiveAt: last,
+      queued: p.state.tasks.filter((t) => t.status === "queued").length,
+    };
+    const c = p.state.crew;
+    if (
+      c &&
+      c.running === crew.running &&
+      c.paused === crew.paused &&
+      c.stage === crew.stage &&
+      c.lastActiveAt === crew.lastActiveAt &&
+      c.queued === crew.queued
+    )
+      return;
+    this.x(p, { crew });
   }
   log(p: MockProject, role: Role, line: string) {
     const list = p.transcripts.get(role) ?? [];
@@ -929,20 +1003,37 @@ export class MockClient implements Client {
   }
   async projects(): Promise<ProjectSummary[]> {
     await wait();
-    return [...be().projects.values()].map(({ state: s }) => ({
-      id: s.doc.id,
-      title: s.doc.title,
-      dir: `~/Movies/PixelArtPitch/${s.doc.id}`,
-      rev: s.rev,
-      stage: s.stage,
-      spentUsd: s.budget.spentUsd,
-      capUsd: s.budget.capUsd,
-      etaSec: s.time.etaSec?.[1] ?? null,
-      deadline: s.time.deadline,
-      needsYou:
-        s.questions.filter((q) => q.status === "open").length + s.gates.filter((g) => g.status === "open").length,
-      updatedAt: new Date().toISOString(),
-    }));
+    return [...be().projects.values()].map(({ state: s }) => {
+      const crew = s.crew?.state ?? "running";
+      const running = crew === "running" || crew === "pausing";
+      const times = s.tasks.flatMap((t) => [t.startedAt, t.endedAt]).filter((x): x is string => !!x);
+      const finished = s.files.some((f) => f.kind === "video");
+      const mid = s.timeline.scenes[Math.floor(s.timeline.scenes.length / 2)];
+      const h = humanStatus(s);
+      return {
+        id: s.doc.id,
+        title: s.doc.title,
+        dir: `~/Movies/PixelArtPitch/${s.doc.id}`,
+        rev: s.rev,
+        stage: s.stage,
+        spentUsd: s.budget.spentUsd,
+        capUsd: s.budget.capUsd,
+        etaSec: running && s.time.etaSec ? (s.time.etaSec[0] + s.time.etaSec[1]) / 2 : null,
+        deadline: s.time.deadline,
+        needsYou:
+          s.questions.filter((q) => q.status === "open").length + s.gates.filter((g) => g.status === "open").length,
+        updatedAt: running ? new Date().toISOString() : (times.sort().at(-1) ?? iso(-3 * 3600)),
+        running,
+        paused: crew === "paused",
+        phase: phaseOf(s),
+        status: { line: h.text, phase: Math.min(PHASES.length - 1, phaseOf(s)), problem: problemOf(s) },
+        milestones: s.milestones?.length ?? 0,
+        finished,
+        working: [...new Set(s.tasks.filter((t) => t.status === "working").map((t) => t.role))],
+        waiting: [...new Set(s.tasks.filter((t) => t.status === "waiting_user").map((t) => t.role))],
+        thumb: mid ? this.frameUrl(s.doc.id, (mid.from + mid.to) / 2, 1) : undefined,
+      };
+    });
   }
   async createProject(input: CreateProjectInput) {
     await wait(300);

@@ -160,11 +160,6 @@ export function drawFrame(spec: FrameSpec): string {
     px(bx + 2, 126, 6, 2, k.leaf);
     px(bx + 6, 129, 4, 3, k.leafShade);
   }
-  if (spec.version === "animatic") {
-    c.fillStyle = k.muted;
-    c.font = `7px ${font}`;
-    c.fillText("ANIMATIC", 8, 12);
-  }
   return cache(key);
 }
 function cache(key: string) {

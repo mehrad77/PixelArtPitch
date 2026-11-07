@@ -1,10 +1,12 @@
-// The one button for a problem the crew can't fix alone: Try again, Choose another model, or Add $2.
-import { Button } from "@shabboo/kit/react";
-import { useState } from "react";
+// The one action for a problem the crew can't fix alone: Try again, Use a different model, or Add budget. Each says
+// what it causes before it runs (effectOf); adding budget is a small inline form with the new cap.
+import { Button, Field } from "@shabboo/kit/react";
+import { type FormEvent, useState } from "react";
 import { client } from "../lib/client.ts";
-import { PROBLEM_BUTTON, type Problem } from "../lib/human.ts";
+import { effectOf, PROBLEM_BUTTON, type Problem, usdPlain } from "../lib/human.ts";
 import { navigate } from "../lib/router.tsx";
 import type { ProjectState } from "../lib/types.ts";
+import { EffectButton } from "./EffectAction.tsx";
 
 export function ProblemButton({
   projectId,
@@ -17,36 +19,83 @@ export function ProblemButton({
   problem: Problem;
   className?: string;
 }) {
-  const [err, setErr] = useState<string | null>(null);
+  if (problem.action === "add_budget") return <AddBudget projectId={projectId} state={state} className={className} />;
+  if (problem.action === "change_model")
+    return (
+      <EffectButton
+        className={className}
+        label={PROBLEM_BUTTON.change_model}
+        effect={effectOf({ kind: "change_model", taskId: problem.taskId }, state)}
+        onRun={() => navigate("/settings/roles")}
+      />
+    );
+  return (
+    <EffectButton
+      className={className}
+      label={PROBLEM_BUTTON.retry}
+      effect={effectOf({ kind: "retry", taskId: problem.taskId }, state)}
+      onRun={() => client.crewRetry(projectId, problem.taskId, state.stage)}
+    />
+  );
+}
+
+function AddBudget({ projectId, state, className }: { projectId: string; state: ProjectState; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState(2);
   const [busy, setBusy] = useState(false);
-  const act = async () => {
+  const [err, setErr] = useState<string | null>(null);
+  const add = Number.isFinite(amount) && amount > 0 ? amount : 0;
+  const fx = effectOf({ kind: "add_budget", amount: add }, state);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!add) {
+      setErr("Enter an amount above $0.");
+      return;
+    }
     setErr(null);
-    if (problem.action === "change_model") return navigate("/settings/setup");
     setBusy(true);
     try {
-      if (problem.action === "retry") await client.crewRetry(projectId, problem.taskId, state.stage);
-      else
-        await client.patch(projectId, {
-          ops: [{ op: "replace", path: "/budget/capUsd", value: state.budget.capUsd + 2 }],
-          reason: "Added $2 to the budget from the simple view",
-          baseRev: state.rev,
-        });
-    } catch (e) {
-      setErr(`${(e as Error).message}. Try again in a moment.`);
+      await client.patch(projectId, {
+        ops: [{ op: "replace", path: "/budget/capUsd", value: state.budget.capUsd + add }],
+        reason: `Added ${usdPlain(add)} to the budget`,
+        baseRev: state.rev,
+      });
+      setOpen(false);
+    } catch (e2) {
+      setErr(`${(e2 as Error).message}. Try again in a moment.`);
     } finally {
       setBusy(false);
     }
   };
+  if (!open)
+    return (
+      <span className="effect-action">
+        <Button className={className} size="sm" variant="primary" onClick={() => setOpen(true)}>
+          {PROBLEM_BUTTON.add_budget}
+        </Button>
+        <span className="effect-line">The budget is {usdPlain(state.budget.capUsd)}. You pick how much to add.</span>
+      </span>
+    );
   return (
-    <>
-      <Button className={className} size="sm" variant="primary" onClick={act} aria-busy={busy ? "true" : undefined}>
-        {PROBLEM_BUTTON[problem.action]}
+    <form className="budget-form" onSubmit={submit} aria-busy={busy ? "true" : undefined}>
+      <Field
+        id={`budget-add-${projectId}`}
+        label="Add, in dollars"
+        type="number"
+        size="sm"
+        min={0.5}
+        step={0.5}
+        value={String(amount)}
+        onChange={(e) => setAmount(Number(e.currentTarget.value))}
+        hint={fx.text}
+        error={err ?? undefined}
+      />
+      <Button type="submit" size="sm" variant="primary">
+        Yes, add {usdPlain(add)}
       </Button>
-      {err && (
-        <p className="decision-error" role="status">
-          {err}
-        </p>
-      )}
-    </>
+      <Button size="sm" variant="quiet" onClick={() => setOpen(false)}>
+        Cancel
+      </Button>
+    </form>
   );
 }
