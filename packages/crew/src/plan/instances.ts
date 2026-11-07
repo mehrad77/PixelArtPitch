@@ -846,9 +846,21 @@ export class InstanceTracker {
   readonly fold: InstanceFold;
   private p: TrackedProject;
   private sent = new Map<string, Instance>();
+  private warned = false;
+  /**
+   * The listener runs inside the emit of a crew step (a task row, a status change): a fault in this view must
+   * never fail the run. It says so once, with the event name and the error's type only (no project text, no keys).
+   */
   private on = (e: FoldEvent) => {
     if (!RELEVANT.has(e.event)) return;
-    if (this.fold.apply(e)) this.diff(e.ts);
+    try {
+      if (this.fold.apply(e)) this.diff(e.ts);
+    } catch (err) {
+      if (this.warned) return;
+      this.warned = true;
+      const kind = err instanceof Error ? err.name : typeof err;
+      console.error(`instances: the crew view failed on a ${e.event} event (${kind}); the crew goes on without it`);
+    }
   };
   constructor(
     p: TrackedProject,

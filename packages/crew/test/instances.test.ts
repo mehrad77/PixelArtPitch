@@ -501,4 +501,57 @@ test("a whole run at one slot: live events in order, replay equals live, the kep
   assert.match(asked[0], /of the project's \$5\.00 cap/);
   const user = w.pip!.items(p.id).find((i) => i.kind === "user");
   assert.deepEqual(user && "about" in user ? user.about : null, { instance: "producer", label: "Producer" });
+
+  // a throwing view never fails the run: the crew runs again from the sound stage while the fold throws on every event
+  const failedBefore = p.state.tasks.filter((t) => t.status === "failed" && !t.supersededBy).length;
+  const tracker = (crew as any).trackers.get(p.id).t as InstanceType<typeof InstanceTracker>;
+  const said: string[] = [];
+  const err = console.error;
+  console.error = (...a: unknown[]) => said.push(a.map(String).join(" "));
+  tracker.fold.apply = () => {
+    throw new TypeError(`broken view, secret-ish text: ${p.doc().brief.idea}`);
+  };
+  try {
+    await crew.run(p, { stage: "sound" });
+  } finally {
+    console.error = err;
+  }
+  assert.ok(
+    p.state.tasks.filter((t) => t.kind === "sound.mix").length >= 2,
+    "the rerun made its tasks while the view threw",
+  );
+  assert.equal(
+    p.state.tasks.filter((t) => t.status === "failed" && !t.supersededBy).length,
+    failedBefore,
+    "no new failure (the Pixel artist's fake failures are the first run's)",
+  );
+  assert.equal(p.state.status?.line, "Your video is ready");
+  const warned = said.filter((x) => x.startsWith("instances:"));
+  assert.equal(warned.length, 1, "it says so once");
+  assert.match(
+    warned[0],
+    /^instances: the crew view failed on a \w+ event \(TypeError\); the crew goes on without it$/,
+  );
+  assert.ok(!warned[0].includes("Lumen"), "no project text in the line");
+});
+
+test("tracker: a fault in the fold stays inside the listener", () => {
+  const events = new EventEmitter();
+  const tracker = new InstanceTracker({ events, eventsSince: () => [] }, { idle: () => false });
+  tracker.fold.apply = () => {
+    throw new Error("boom");
+  };
+  const said: string[] = [];
+  const err = console.error;
+  console.error = (...a: unknown[]) => said.push(a.map(String).join(" "));
+  try {
+    for (let i = 1; i <= 3; i++)
+      assert.doesNotThrow(() =>
+        events.emit("event", { seq: i, event: "task", data: { id: "r" }, ts: "2026-11-07T21:00:00.000Z" }),
+      );
+  } finally {
+    console.error = err;
+  }
+  assert.deepEqual(said, ["instances: the crew view failed on a task event (Error); the crew goes on without it"]);
+  tracker.close();
 });
