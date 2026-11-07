@@ -18,6 +18,8 @@ export const Author = z.object({
   model: z.string().optional(),
   task: z.string().optional(),
   client: z.string().optional(),
+  /** who carried a person's action out for them: "pip" when the person confirmed one of Pip's cards */
+  via: z.string().optional(),
 });
 export type AuthorT = z.infer<typeof Author>;
 

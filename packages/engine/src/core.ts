@@ -292,6 +292,25 @@ const TYPO_RE = new RegExp(`[${Object.keys(TYPO).join("")}]`, "gu");
 /** plain-ASCII punctuation for stored text (captions, SRT, the doc): dashes, quotes, ellipsis, odd spaces */
 export const plainText = (s: string) => s.replace(TYPO_RE, (c) => TYPO[c] ?? c);
 
+/**
+ * The characters of `text` the pixel font can't draw, once the typographic swaps are made (whitespace always
+ * passes; a lowercase letter passes when its capital is drawn). `fontFrames` is the font asset's frames,
+ * named "g<codepoint>". An empty list means captions in this text can be burned into the picture.
+ */
+export function missingGlyphs(text: string, fontFrames: Record<string, unknown>): string[] {
+  const have = new Set(
+    Object.keys(fontFrames)
+      .filter((k) => /^g\d+$/.test(k))
+      .map((k) => String.fromCodePoint(Number(k.slice(1)))),
+  );
+  const out = new Set<string>();
+  for (const ch of plainText(text)) {
+    if (/\s/.test(ch) || have.has(ch) || have.has(ch.toUpperCase())) continue;
+    out.add(ch);
+  }
+  return [...out];
+}
+
 // ---- helpers (pure) ----
 export const clamp = (v: number, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;

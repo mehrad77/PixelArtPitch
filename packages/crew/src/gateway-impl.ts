@@ -1,7 +1,7 @@
 // The Gateway over the plain-HTTP model layer: settings pick the model per role, every call is metered (reserve the
 // worst case, ledger row, settle) under one BudgetGuard per project, and the structured-output ladder returns JSON.
 import type { RoleT } from "@pap/schema";
-import type { CallOut, CallSpec, Gateway } from "./gateway.ts";
+import type { CallOut, CallSpec, ChatSpec, Gateway } from "./gateway.ts";
 import {
   BudgetError,
   BudgetGuard,
@@ -72,10 +72,26 @@ export class ModelGateway implements Gateway {
   private providers = new Map<string, Provider>();
   onThreshold?: (project: string, fraction: number) => void;
 
-  constructor(opts: { ledger?: Ledger; secrets?: SecretStore; settings?: Settings } = {}) {
+  /** providers given by the caller (tests); they survive reload() */
+  private fixed = new Map<string, Provider>();
+
+  /** caps given by the caller (tests), ahead of probes */
+  private knownCaps = new Map<string, Caps>();
+
+  constructor(
+    opts: {
+      ledger?: Ledger;
+      secrets?: SecretStore;
+      settings?: Settings;
+      providers?: Provider[];
+      caps?: Record<string, Caps>;
+    } = {},
+  ) {
     this.ledger = opts.ledger ?? new Ledger();
     this.secrets = opts.secrets ?? new SecretStore();
     this.settings = opts.settings ?? loadSettings();
+    for (const p of opts.providers ?? []) this.fixed.set(p.config.id, p);
+    for (const [m, c] of Object.entries(opts.caps ?? {})) this.knownCaps.set(m, c);
   }
   reload() {
     this.settings = loadSettings();
@@ -83,7 +99,7 @@ export class ModelGateway implements Gateway {
   }
 
   private provider(id: string): Provider {
-    const hit = this.providers.get(id);
+    const hit = this.fixed.get(id) ?? this.providers.get(id);
     if (hit) return hit;
     const cfg = this.settings.providers.find((p) => p.id === id);
     if (!cfg)
@@ -100,18 +116,23 @@ export class ModelGateway implements Gateway {
     if (!g) {
       g = new BudgetGuard({ project, capUsd, ledger: this.ledger, onThreshold: (f) => this.onThreshold?.(project, f) });
       this.guards.set(project, g);
-    }
+    } else if (g.capUsd !== capUsd) g.setCap(capUsd); // a raised (or lowered) cap applies from the next call
     return g;
   }
 
   modelFor(role: RoleT, projectModels?: Record<string, string>) {
     return projectModels?.[role] ?? this.settings.roles?.[role]?.model ?? "anthropic/claude-sonnet-5-5";
   }
-  private fallbackFor(role: RoleT) {
-    return this.settings.roles?.[role]?.fallback;
+  fallbackFor(role: RoleT) {
+    const own = this.settings.roles?.[role]?.fallback;
+    // Pip falls back to the Producer's model when its settings name none
+    if (!own && role === "assistant") return this.settings.roles?.producer?.model;
+    return own;
   }
 
   caps(model: string): Caps | null {
+    const known = this.knownCaps.get(model);
+    if (known) return known;
     const probe = readProbe(model);
     return (probe?.caps as Caps | undefined) ?? (model.startsWith("anthropic/") ? DEFAULT_CAPS : null);
   }
@@ -166,10 +187,48 @@ export class ModelGateway implements Gateway {
     }
   }
 
+  async chat(spec: ChatSpec) {
+    const model = spec.model ?? this.modelFor(spec.role);
+    const providerId = model.slice(0, model.indexOf("/"));
+    const prov = metered(this.provider(providerId), {
+      guard: this.guard(spec.project, spec.capUsd),
+      ledger: this.ledger,
+      price: (m) => priceFor(m),
+      task: spec.task,
+      taskKind: spec.taskKind,
+      role: spec.role,
+      promptVersion: spec.promptVersion,
+    });
+    const anthropic = providerId === "anthropic";
+    const result = await this.lane(providerId).run(() =>
+      prov.chat(
+        {
+          model,
+          system: spec.system,
+          messages: spec.messages,
+          tools: spec.tools,
+          // never a forced choice: Sonnet 5.5 and Opus 5.5 reject it
+          ...(spec.tools?.length ? { toolChoice: "auto" as const } : {}),
+          maxOut: anthropic ? spec.maxOut : Math.min(spec.maxOut, 6000),
+          effort: anthropic ? spec.effort : "low",
+          cache: true,
+          ...(spec.thinking === false ? { thinking: false } : {}),
+          ...(anthropic ? {} : { temperature: 0.4 }),
+        },
+        { signal: spec.signal, onEvent: spec.onEvent },
+      ),
+    );
+    return { result, model };
+  }
+
   spent(project: string) {
     const g = this.guards.get(project);
     if (g) return { spentUsd: g.spentUsd, reservedUsd: g.reservedUsd };
     return { spentUsd: this.ledger.totalUsd({ project }), reservedUsd: 0 };
+  }
+
+  spentSince(project: string, since: string) {
+    return this.ledger.totalUsd({ project, since });
   }
 
   estimate(_project: string, tasks: { kind: string; role: RoleT; count?: number }[]) {

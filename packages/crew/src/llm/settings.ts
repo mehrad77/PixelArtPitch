@@ -27,6 +27,24 @@ const PriceOverrideZ = z.object({
   cacheReadPerMTok: z.number().min(0).optional(),
 });
 
+/** a person's MCP server ("connection"); secrets live in the SecretStore, only their key names here */
+export const ConnectionZ = z.object({
+  name: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/),
+  transport: z.enum(["stdio", "http"]),
+  command: z.string().optional(),
+  args: z.array(z.string()).default([]),
+  cwd: z.string().optional(),
+  url: z.string().url().optional(),
+  envKeys: z.array(z.string()).default([]),
+  headerKeys: z.array(z.string()).default([]),
+  enabled: z.boolean().default(true),
+  trust: z.enum(["ask", "read"]).default("ask"),
+  description: z.string().max(200).default(""),
+  /** tool count at the last connect, for Pip's one-line catalogue (no spawn needed) */
+  tools: z.number().int().min(0).default(0),
+});
+export type ConnectionT = z.infer<typeof ConnectionZ>;
+
 export const SettingsSchema = z.object({
   providers: z.array(ProviderZ),
   profile: z.enum(["best", "balanced", "local", "custom"]),
@@ -40,6 +58,7 @@ export const SettingsSchema = z.object({
   paths: z.object({ roots: z.array(z.string()), library: z.string(), ffmpeg: z.string() }),
   /** manual $/MTok per model id, applied with setPriceOverride by the caller */
   prices: z.record(z.string(), PriceOverrideZ).default({}),
+  connections: z.array(ConnectionZ).default([]),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 export type Profile = Settings["profile"];
@@ -77,6 +96,8 @@ export const PROFILES: Record<"best" | "balanced", RoleAssignments> = {
     "sound-designer": tier(HAIKU),
     mixer: tier(HAIKU),
     editor: tier(HAIKU),
+    // Pip: Sonnet; the fallback is the Producer's model, or Opus where that is Sonnet too
+    assistant: { model: SONNET, fallback: OPUS },
   },
   // mostly Sonnet; Opus only for reviewer and pixel-artist; the four light roles stay on Haiku as in Best
   balanced: {
@@ -92,6 +113,7 @@ export const PROFILES: Record<"best" | "balanced", RoleAssignments> = {
     "sound-designer": tier(HAIKU),
     mixer: tier(HAIKU),
     editor: tier(HAIKU),
+    assistant: { model: SONNET, fallback: OPUS },
   },
 };
 
@@ -132,6 +154,7 @@ export function defaultSettings(): Settings {
     defaults: { capUsd: 20, askAtFraction: 0.8, involvement: "key", concurrency: 4 },
     paths: { roots: [join(appDataDir(), "projects")], library: lib, ffmpeg: "ffmpeg" },
     prices: {},
+    connections: [],
   };
 }
 

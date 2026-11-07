@@ -21,6 +21,8 @@ export const ROLE_NEEDS: Record<RoleT, Need[]> = {
   editor: ["structured"],
   reviewer: ["vision", "structured"],
   librarian: ["structured"],
+  // Pip: agent mode wants tools, but menu mode gets by on structured output alone
+  assistant: ["structured"],
 };
 
 const ok = (s: CapStatus) => s === "passed" || s === "claimed";

@@ -191,6 +191,9 @@ importers:
       '@pap/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@pap/mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp-client
       '@pap/render':
         specifier: workspace:*
         version: link:../../packages/render
@@ -258,6 +261,8 @@ importers:
       '@pap/schema':
         specifier: workspace:*
         version: link:../schema
+
+  packages/mcp-client: {}
 
   packages/render:
     dependencies:

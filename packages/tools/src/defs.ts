@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { thinSfx } from "@pap/engine/audio";
 import { plainText } from "@pap/engine/core";
 import { encode, loudness, mix, openDoc, openRenderer, sha256File, subtitles, writeMusic, writeSfx } from "@pap/render";
-import { Brief, Cue, PatchOp, type ProjectT, SfxType, TimeExpr } from "@pap/schema";
+import { Brief, Cue, PatchOp, type ProjectT, type RoleT, SfxType, TimeExpr } from "@pap/schema";
 import { z } from "zod";
 import { fitRuns, speechRuns } from "./align.ts";
 import { defineTool, fail, ok, QuestionInput, type ToolContext } from "./registry.ts";
@@ -574,6 +574,16 @@ export const questionAnswer = defineTool({
     ok(await P(ctx).answer(i.id, { optionId: i.optionId, note: i.note }, ctx.author.client ?? ctx.author.kind)),
 });
 
+/** the role a note goes to: an asset to the Pixel Artist, a cue to the Writer, sound to the Sound Designer, a scene
+ * to the Animator, anything else to the Producer */
+export function noteOwner(target: { scene?: string; cue?: string; asset?: string }, category: string): RoleT {
+  if (target.asset) return "pixel-artist";
+  if (target.cue) return "writer";
+  if (category === "sound") return "sound-designer";
+  if (target.scene) return "animator";
+  return "producer";
+}
+
 export const noteAdd = defineTool({
   name: "note_add",
   title: "Leave a note",
@@ -596,17 +606,7 @@ export const noteAdd = defineTool({
   effects: "write",
   project: true,
   handler: async (i, ctx) => {
-    const assignee =
-      i.assignee ??
-      (i.target.asset
-        ? "pixel-artist"
-        : i.target.cue
-          ? "writer"
-          : i.category === "sound"
-            ? "sound-designer"
-            : i.target.scene
-              ? "animator"
-              : "producer");
+    const assignee = i.assignee ?? noteOwner(i.target, i.category);
     return ok(
       P(ctx).addNote({
         target: i.target,

@@ -59,6 +59,15 @@ type ProjectState = { doc: Project; rev: number; timeline: Timeline /* cues, sce
 | `GET /api/library` | | `library/index.json` |
 | `GET /api/library/:id` | | the asset file |
 | `GET /api/library/:id/sheet.png` | | its preview sheet |
+| `GET /api/pip` | `?project=` | `{ items: PipItem[], name: "Pip", model, mode: "agent" \| "menu", busy }` (shapes in `docs/ASSISTANT.md`) |
+| `POST /api/pip` | `{ project?, text }` | `202 { turnId }`; `409` while a turn runs in that conversation; progress as SSE `pip` events |
+| `POST /api/pip/cards/:cardId` | `{ project?, decision: "confirm" \| "decline", edit? }` | `{ card }` (status `running`/`submitted` at once; the final state comes as a `pip` `card` event); `409` if already decided |
+| `GET /api/events` | SSE | the workspace stream: `pip` events for the conversation with no project |
+| `GET /api/connections` | | the person's MCP servers: `{ name, transport, command?, args, url?, envKeys, headerKeys, enabled, trust, status, tools, toolNames, error?, fix? }[]` (secret values never) |
+| `POST /api/connections` | `{ json }` (pasted `mcpServers` JSON) | `{ added: { name, status, tools: string[], error?, fix? }[] }` |
+| `PATCH /api/connections/:name` | `{ enabled?, trust?: "ask" \| "read" }` | the connection |
+| `DELETE /api/connections/:name` | | `{ ok }` (its secrets are deleted too) |
+| `POST /api/connections/:name/test` | | `{ name, status, tools, error?, fix? }` |
 
 ```ts
 type Settings = { providers: { id: string; kind: "anthropic" | "openai" | "openrouter" | "lmstudio" | "ollama" | "llamacpp" | "custom";
@@ -75,4 +84,4 @@ type Cap = "passed" | "claimed" | "failed" | "unknown";
 
 ## SSE events (`GET /api/p/:id/events`)
 Each event has `id` (event-log seq), `event` name and JSON `data`:
-`patch` (PatchEntry), `task` (Task), `question` (QuestionT), `note` (Note), `gate` (Gate), `ledger` ({ usd, spentUsd, reservedUsd, model, role }), `digest` ({ text }), `render` ({ kind: "proxy" | "still" | "final", url }), `log` ({ level, text, role? }), `stage` ({ stage }).
+`patch` (PatchEntry), `task` (Task), `question` (QuestionT), `note` (Note), `gate` (Gate), `ledger` ({ usd, spentUsd, reservedUsd, model, role }), `digest` ({ text }), `render` ({ kind: "proxy" | "still" | "final", url }), `log` ({ level, text, role? }), `stage` ({ stage }), `pip` ({ type: "thinking" } (transient, id 0) | { type: "item", item: PipItem } | { type: "card", itemId, card: PipCard }).

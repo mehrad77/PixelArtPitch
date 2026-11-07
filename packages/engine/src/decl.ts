@@ -891,12 +891,13 @@ function drawLayer(e: Engine, l: CLayer, env: Env, ox: number, oy: number, am: n
       const f = actorFrame(fr, p, st, t);
       let rows = e.frame(p.asset, f.name, [16, 24]);
       if (st.sq) rows = squashRows(rows, 2);
-      const w = rows[0]?.length ?? 16;
+      const scale = Math.max(1, Math.round(p.scale ?? 1));
+      const w = (rows[0]?.length ?? 16) * scale;
       const flip = st.facing !== p.artFaces;
       const x = sx - Math.floor(w / 2);
-      const y = sy - rows.length + f.bob;
-      box = { x, y, w, h: rows.length };
-      if (!rec) e.sprite(rows, x, y, { flip, outline: p.outline ?? undefined, alpha });
+      const y = sy - rows.length * scale + f.bob * scale;
+      box = { x, y, w, h: rows.length * scale };
+      if (!rec) e.sprite(rows, x, y, { flip, outline: p.outline ?? undefined, alpha, ...(scale > 1 ? { scale } : {}) });
       break;
     }
     case "text": {

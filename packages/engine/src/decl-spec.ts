@@ -160,6 +160,7 @@ export const KIND_SPECS: Record<string, Spec> = {
     runFps: num(10, "run cycle frames per second", 1, 24),
     idleFps: num(2.5, "idle breathing frames per second", 0.5, 12),
     dust: bool(true, "footstep puffs while walking and dust on landing"),
+    scale: int(1, "whole-pixel scale: 2 draws the character twice as big, feet on the same line", 1, 3),
     outline: colour(null, "1 px outline colour"),
     frames: { t: "obj", d: {}, doc: '{ idle?: [..], run?: [..], jump?: "..", wave?: ".." } frame names' },
   },

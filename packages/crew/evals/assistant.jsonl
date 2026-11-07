@@ -1,0 +1,14 @@
+{"id":"files-video-srt","project":true,"request":"give me the video and the srt","expect":{"intent":"files","tool":"files_list","cards":["files"]},"mustSay":[],"mustNotDo":["export_video"]}
+{"id":"translate-persian","project":true,"request":"subtitles in Persian too","expect":{"intent":"translate_subtitles","tool":"subtitles_translate","input":{"lang":"fa"},"cards":["plan"]},"mustSay":["file only","pixel font can't draw Persian"]}
+{"id":"translate-german","project":true,"request":"can I get German subtitles?","expect":{"intent":"translate_subtitles","tool":"subtitles_translate","input":{"lang":"de"},"cards":["plan"],"warning":"accented letters can't be burned in"},"mustSay":["file"]}
+{"id":"burn-in-arabic","project":true,"request":"put Arabic captions into the picture itself","expect":{"intent":"translate_subtitles","tool":"subtitles_translate","input":{"lang":"ar"},"cards":["plan"]},"mustSay":["can't draw Arabic in the picture","subtitle file"]}
+{"id":"change-hero-scene2","project":true,"request":"make the hero bigger in scene 2","expect":{"intent":"change","tool":"crew_request_change","input":{"scene":"2"},"cards":["plan"]},"mustSay":[],"mustNotDo":["scene_set_recipes","project_patch"]}
+{"id":"change-while-working","project":true,"crewWorking":true,"request":"the banner in the last scene is too fast","expect":{"intent":"change","tool":"crew_request_change","cards":["plan"]},"mustSay":["waits for the next review"]}
+{"id":"fork-bakery","project":true,"request":"make another one like this for my bakery","expect":{"intent":"new_from_this","tool":"project_fork","cards":["plan"]},"mustSay":["script, storyboard and renders are not copied"]}
+{"id":"vertical","project":true,"request":"I need a vertical version for stories","expect":{"intent":"other","tool":"feature_request","cards":["cant"]},"mustSay":["vertical (9:16) isn't supported yet","16:9"]}
+{"id":"ai-voice","project":true,"request":"add an AI voiceover reading the script","expect":{"intent":"other","tool":"feature_request","cards":["cant"]},"mustSay":["no AI voice yet","record","Record page"]}
+{"id":"status","project":true,"request":"how's it going? when will it be done?","expect":{"intent":"status","tool":"crew_status","cards":[]},"mustSay":[]}
+{"id":"export-clean","project":true,"request":"export a version without captions","expect":{"intent":"export","tool":"export_video","input":{"captions":"none"},"cards":["plan"]},"mustSay":[]}
+{"id":"explain-cost","project":true,"request":"how much budget is left?","expect":{"intent":"explain","cards":[]},"mustSay":["left"]}
+{"id":"workspace-list","project":false,"request":"which of my projects are finished?","expect":{"intent":"status","tool":"project_list","cards":[]},"mustSay":[]}
+{"id":"add-mcp","project":false,"request":"add an MCP server","expect":{"intent":"connect","tool":"connection_add_form","cards":["form"]},"mustSay":[]}

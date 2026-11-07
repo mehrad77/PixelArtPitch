@@ -79,6 +79,7 @@ The hero walks in from an edge at whole pixels, kicks up footstep dust, slows to
 | arrive | time | at + 60% of the scene, max 3 s | | they stop |
 | wave | bool | true | | wave 0.3 s after stopping |
 | label | text | "" | | name tag above the head |
+| scale | int | 1 | 1–3 | how big the hero is drawn (2 = twice the size, feet stay on the ground) |
 | second | bool | false | | draw a second copy even if the scene already has this hero |
 
 ```json

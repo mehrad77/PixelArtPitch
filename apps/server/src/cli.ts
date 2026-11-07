@@ -72,6 +72,7 @@ async function main() {
       `PixelArtPitch ${VERSION} on http://127.0.0.1:${port}\nopen: ${url}\nMCP:  http://127.0.0.1:${port}/mcp  (Authorization: Bearer <mcpToken in ${SERVER_FILE}>)`,
     );
     const stop = () => {
+      wired.connections.closeAll();
       workspace.closeAll();
       rmSync(SERVER_FILE, { force: true });
       server.close();

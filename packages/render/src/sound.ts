@@ -122,13 +122,18 @@ const ts = (s: number, sep: "," | ".") => {
   const p = (n: number, w: number) => String(n).padStart(w, "0");
   return `${p(Math.floor(ms / 3600000), 2)}:${p(Math.floor(ms / 60000) % 60, 2)}:${p(Math.floor(ms / 1000) % 60, 2)}${sep}${p(ms % 1000, 3)}`;
 };
-/** SRT and WebVTT from the same cues that drive the burned-in captions, shifted by the hold */
-export function subtitles(p: LoadedProject) {
+/**
+ * SRT and WebVTT from the same cues that drive the burned-in captions, shifted by the hold.
+ * `texts` replaces cue texts by id (a translation): those are written as given, without the pixel font's
+ * `plainText` swaps, since a subtitle file never passes through the font.
+ */
+export function subtitles(p: LoadedProject, opts: { texts?: Record<string, string> } = {}) {
   const { hold, cues } = p.timeline;
   const post = p.doc.composition.captions.post;
+  const text = (c: { id: string; text: string }) => opts.texts?.[c.id] ?? plainText(c.text);
   const srt = cues
-    .map((c, i) => `${i + 1}\n${ts(c.start + hold, ",")} --> ${ts(c.end + hold + post, ",")}\n${plainText(c.text)}\n`)
+    .map((c, i) => `${i + 1}\n${ts(c.start + hold, ",")} --> ${ts(c.end + hold + post, ",")}\n${text(c)}\n`)
     .join("\n");
-  const vtt = `WEBVTT\n\n${cues.map((c) => `${ts(c.start + hold, ".")} --> ${ts(c.end + hold + post, ".")}\n${plainText(c.text)}\n`).join("\n")}`;
+  const vtt = `WEBVTT\n\n${cues.map((c) => `${ts(c.start + hold, ".")} --> ${ts(c.end + hold + post, ".")}\n${text(c)}\n`).join("\n")}`;
   return { srt, vtt };
 }

@@ -269,6 +269,8 @@ export const Role = z.enum([
   "editor",
   "reviewer",
   "librarian",
+  /** Pip, the studio's assistant (docs/ASSISTANT.md) */
+  "assistant",
 ]);
 export const Crew = z.object({
   profile: z.enum(["best", "balanced", "local", "custom"]).default("best"),

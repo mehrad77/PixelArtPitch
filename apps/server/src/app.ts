@@ -5,12 +5,14 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
+import type { Pip } from "@pap/crew/assistant";
 import { PHASE } from "@pap/crew/orchestrator";
 import type { Registry, ToolContext } from "@pap/tools";
 import { type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
+import type { Connections } from "./connections.ts";
 import { McpSession } from "./mcp.ts";
 
 export const VERSION = "0.1.0";
@@ -49,6 +51,10 @@ export type ServerOpts = {
   registry: Registry;
   crew?: CrewApi;
   hooks?: Hooks;
+  /** Pip, the assistant (docs/ASSISTANT.md) */
+  pip?: Pip;
+  /** the person's MCP servers */
+  connections?: Connections;
   token?: string;
   mcpToken?: string;
   /** allow the Vite dev server's origin (http://localhost:5140) */
@@ -158,7 +164,10 @@ export function createApp(o: ServerOpts) {
     const authed = (cookie && same(cookie, token)) || (header && same(header, token));
     if (!authed)
       return c.json(
-        { ok: false, error: { code: "unauthorized", message: "This window isn't signed in to the studio. Reload the page" } },
+        {
+          ok: false,
+          error: { code: "unauthorized", message: "This window isn't signed in to the studio. Reload the page" },
+        },
         401,
       );
     if (c.req.method !== "GET" && c.req.method !== "HEAD" && !(header && same(header, token)))
@@ -394,6 +403,103 @@ export function createApp(o: ServerOpts) {
       clearInterval(ping);
       p.events.off("event", on);
     });
+  });
+
+  // ---- Pip ----
+  const noPip = (c: any) => c.json({ ok: false, error: { code: "no_pip", message: "Pip is not configured" } }, 503);
+  const projectArg = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  app.get("/api/pip", (c) => {
+    if (!o.pip) return noPip(c);
+    const project = projectArg(c.req.query("project"));
+    const { model, mode } = o.pip.pick(project);
+    return c.json({ items: o.pip.items(project), name: "Pip", model, mode, busy: o.pip.isBusy(project) });
+  });
+  app.post("/api/pip", async (c) => {
+    if (!o.pip) return noPip(c);
+    const b = await c.req.json().catch(() => ({}));
+    const project = projectArg(b.project);
+    const { turnId, done } = o.pip.ask(project, String(b.text ?? ""));
+    done.catch((e) => console.error(`pip: ${e?.message ?? e}`));
+    return c.json({ turnId }, 202);
+  });
+  app.post("/api/pip/cards/:cardId", async (c) => {
+    if (!o.pip) return noPip(c);
+    const b = await c.req.json().catch(() => ({}));
+    if (b.decision !== "confirm" && b.decision !== "decline")
+      return c.json({ ok: false, error: { code: "bad_decision", message: 'decision is "confirm" or "decline"' } }, 400);
+    const { card, done } = o.pip.decide(
+      projectArg(b.project),
+      c.req.param("cardId"),
+      b.decision,
+      typeof b.edit === "string" ? b.edit : undefined,
+    );
+    done.catch((e) => console.error(`pip card: ${e?.message ?? e}`));
+    return c.json({ card });
+  });
+  // the workspace stream: Pip's events when no project is open
+  app.get("/api/events", (c) => {
+    if (!o.pip) return noPip(c);
+    const pip = o.pip;
+    return streamSSE(c, async (stream) => {
+      const on = (e: { seq: number; event: string; data: unknown }) => {
+        stream.writeSSE({ id: String(e.seq), event: e.event, data: JSON.stringify(e.data) }).catch(() => {});
+      };
+      pip.events.on("event", on);
+      const ping = setInterval(() => stream.writeSSE({ event: "ping", data: "{}" }).catch(() => {}), 20000);
+      await new Promise<void>((res) => stream.onAbort(() => res()));
+      clearInterval(ping);
+      pip.events.off("event", on);
+    });
+  });
+
+  // ---- connections (the person's MCP servers); secrets are never echoed ----
+  const noConn = (c: any) =>
+    c.json({ ok: false, error: { code: "no_connections", message: "connections are not configured" } }, 503);
+  const connErr = (c: any, e: any) =>
+    c.json(
+      { ok: false, error: { code: e?.code ?? "error", message: String(e?.message ?? e), fix: e?.fix } },
+      (e?.status ?? 400) as any,
+    );
+  app.get("/api/connections", (c) => (o.connections ? c.json(o.connections.list()) : noConn(c)));
+  app.post("/api/connections", async (c) => {
+    if (!o.connections) return noConn(c);
+    const b = await c.req.json().catch(() => ({}));
+    try {
+      return c.json(await o.connections.add(typeof b.json === "string" ? b.json : JSON.stringify(b.json ?? "")));
+    } catch (e) {
+      return connErr(c, e);
+    }
+  });
+  app.patch("/api/connections/:name", async (c) => {
+    if (!o.connections) return noConn(c);
+    const b = await c.req.json().catch(() => ({}));
+    try {
+      return c.json(
+        o.connections.patch(c.req.param("name"), {
+          ...(typeof b.enabled === "boolean" ? { enabled: b.enabled } : {}),
+          ...(b.trust === "ask" || b.trust === "read" ? { trust: b.trust } : {}),
+        }),
+      );
+    } catch (e) {
+      return connErr(c, e);
+    }
+  });
+  app.delete("/api/connections/:name", (c) => {
+    if (!o.connections) return noConn(c);
+    try {
+      o.connections.remove(c.req.param("name"));
+      return c.json({ ok: true });
+    } catch (e) {
+      return connErr(c, e);
+    }
+  });
+  app.post("/api/connections/:name/test", async (c) => {
+    if (!o.connections) return noConn(c);
+    try {
+      return c.json(await o.connections.test(c.req.param("name")));
+    } catch (e) {
+      return connErr(c, e);
+    }
   });
 
   // ---- settings, models, ledger, library ----

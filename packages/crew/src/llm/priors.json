@@ -1,5 +1,5 @@
 {
-  "_about": "Per-task-kind priors seeded from the proof of concept's 411 logged calls (aggregates only). Tokens are per call; usd is repriced at the bundled Opus 5.5 rates. size: output tokens ~ (cells / refCells)^exponent, fitted on sprite draws with known sizes.",
+  "_about": "Per-task-kind priors seeded from the proof of concept's 411 logged calls (aggregates only). Tokens are per call; usd is repriced at the bundled Opus 5.5 rates. size: output tokens ~ (cells / refCells)^exponent, fitted on sprite draws with known sizes. assistant.turn and subtitles.translate are declared guesses (n: 0) until the ledger has samples.",
   "source": {
     "model": "claude-opus-5-5",
     "calls": 411
@@ -295,6 +295,74 @@
       "usd": {
         "p50": 0.2158,
         "p90": 0.3781
+      }
+    },
+    "assistant.turn": {
+      "n": 0,
+      "effort": "medium",
+      "tokens": {
+        "in": {
+          "p50": 6000,
+          "p90": 24000
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 400,
+          "p90": 2000
+        },
+        "thinking": {
+          "p50": 0,
+          "p90": 0
+        }
+      },
+      "usd": {
+        "p50": 0.04,
+        "p90": 0.17
+      }
+    },
+    "subtitles.translate": {
+      "n": 0,
+      "effort": "low",
+      "tokens": {
+        "in": {
+          "p50": 1500,
+          "p90": 4000
+        },
+        "cacheWrite": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheWrite1h": {
+          "p50": 0,
+          "p90": 0
+        },
+        "cacheRead": {
+          "p50": 0,
+          "p90": 0
+        },
+        "out": {
+          "p50": 600,
+          "p90": 2000
+        },
+        "thinking": {
+          "p50": 0,
+          "p90": 0
+        }
+      },
+      "usd": {
+        "p50": 0.0225,
+        "p90": 0.07
       }
     }
   }

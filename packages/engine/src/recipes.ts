@@ -256,11 +256,13 @@ export const RECIPES: Recipe[] = [
       ),
       wave: { t: "bool", d: true, doc: "wave after stopping" },
       label: { t: "str", d: "", doc: "optional name tag above the head (1-2 words)" },
+      scale: { t: "int", d: 1, min: 1, max: 3, doc: "how big the hero is drawn: 2 is twice the size (whole pixels)" },
       second,
     },
     expand(p, h) {
       const again = p.second ? null : h.same(p.hero);
       if (again) {
+        if (p.scale > 1) again.props = { ...again.props, scale: p.scale };
         // the scene already has this hero: walk it on to x instead of drawing a twin
         const dur = Math.max(0.3, p.arrive - p.at);
         const decel = Math.min(0.3, dur / 2);
@@ -294,7 +296,13 @@ export const RECIPES: Recipe[] = [
         L(
           id,
           "actor",
-          { asset: p.hero, x: x0, artFaces: p.faces, facing: dir > 0 ? "right" : "left" },
+          {
+            asset: p.hero,
+            x: x0,
+            artFaces: p.faces,
+            facing: dir > 0 ? "right" : "left",
+            ...(p.scale > 1 ? { scale: p.scale } : {}),
+          },
           {
             z: 10,
             keys,
@@ -308,7 +316,7 @@ export const RECIPES: Recipe[] = [
             h.id("tag"),
             "widget",
             { widget: "nameTag", label: p.label },
-            { z: 30, behaviors: [B("attach", undefined, { to: id, dx: 0, dy: -40 })] },
+            { z: 30, behaviors: [B("attach", undefined, { to: id, dx: 0, dy: -16 - 24 * p.scale })] },
           ),
         );
       return { layers };

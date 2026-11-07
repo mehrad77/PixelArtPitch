@@ -1,5 +1,6 @@
 // Connects the crew (orchestrator, providers, ledger, settings) to the server and registers the crew tools.
 
+import { type ExternalTools, Pip, translator } from "@pap/crew/assistant";
 import { ModelGateway } from "@pap/crew/gateway-impl";
 import {
   createProvider,
@@ -12,21 +13,53 @@ import {
   withProbe,
 } from "@pap/crew/llm/index";
 import { Crew } from "@pap/crew/orchestrator";
-import { defineTool, fail, ok, type Registry, type Workspace } from "@pap/tools";
+import {
+  crewRequestChangeTool,
+  defineTool,
+  fail,
+  ok,
+  type Registry,
+  subtitlesTranslateTool,
+  type Workspace,
+} from "@pap/tools";
 import { z } from "zod";
 import type { CrewApi, Hooks } from "./app.ts";
+import { Connections } from "./connections.ts";
 
 export async function wireCrew(deps: {
   workspace: Workspace;
   registry: Registry;
-}): Promise<{ crew?: CrewApi; hooks?: Hooks }> {
-  const gateway = new ModelGateway();
+  /** tests and scripts: a gateway over fake or chosen providers */
+  gateway?: ModelGateway;
+  external?: ExternalTools;
+  /** false: don't resume interrupted crews (scripts) */
+  resume?: boolean;
+}): Promise<{
+  crew?: CrewApi;
+  hooks?: Hooks;
+  pip?: Pip;
+  gateway: ModelGateway;
+  crewImpl: Crew;
+  connections: Connections;
+}> {
+  const gateway = deps.gateway ?? new ModelGateway();
+  // the person's MCP servers: saved in settings (secrets in the SecretStore), never in the registry
+  const connections = new Connections({
+    load: () => structuredClone(gateway.publicSettings().connections ?? []),
+    save: (list) => {
+      const s = gateway.publicSettings();
+      s.connections = list;
+      if (!deps.gateway) saveSettings(s);
+    },
+    secrets: gateway.secrets,
+  });
   const crew = new Crew({ workspace: deps.workspace, registry: deps.registry, gateway });
   // a crash or restart never loses a crew: pick up every run that was in progress
-  setTimeout(() => {
-    const resumed = crew.resumeInterrupted();
-    if (resumed.length) console.log(`resumed the crew on: ${resumed.join(", ")}`);
-  }, 500).unref();
+  if (deps.resume !== false)
+    setTimeout(() => {
+      const resumed = crew.resumeInterrupted();
+      if (resumed.length) console.log(`resumed the crew on: ${resumed.join(", ")}`);
+    }, 500).unref();
   gateway.onThreshold = (project, f) => {
     try {
       deps.workspace
@@ -123,6 +156,22 @@ export async function wireCrew(deps: {
     }),
   );
 
+  // Pip's tools come after the crew tools: one needs the Writer's model, the other the orchestrator
+  deps.registry.add(
+    subtitlesTranslateTool(translator(gateway)),
+    crewRequestChangeTool((p, note) => crew.requestChange(p, note)),
+  );
+  const pip = new Pip({
+    workspace: deps.workspace,
+    registry: deps.registry,
+    gateway,
+    crewRunning: (p) => crew.status(p).crew.running,
+    crewStatus: (p) => crew.status(p),
+    external: deps.external ?? connections,
+    lend: (p, role, tools) => crew.lend(p, role, tools),
+    resolveLend: (ref) => connections.resolve(ref)?.name,
+  });
+
   const models = async (): Promise<ModelInfo[]> => {
     const s = gateway.publicSettings();
     const out: ModelInfo[] = [];
@@ -143,7 +192,14 @@ export async function wireCrew(deps: {
       get: () => publicSettings(gateway.publicSettings(), gateway.secrets),
       put: (v: any) => {
         const cur = structuredClone(gateway.publicSettings());
-        const next = { ...cur, ...v, providers: v.providers ?? cur.providers, roles: v.roles ?? cur.roles };
+        // connections change only through /api/connections
+        const next = {
+          ...cur,
+          ...v,
+          providers: v.providers ?? cur.providers,
+          roles: v.roles ?? cur.roles,
+          connections: cur.connections,
+        };
         if (v.profile && v.profile !== cur.profile && !v.roles)
           next.roles =
             rolesForProfile(v.profile, { providers: next.providers, current: cur.roles as any }) ?? cur.roles;
@@ -195,5 +251,5 @@ export async function wireCrew(deps: {
     },
     ledger: (q) => gateway.ledger.query({ project: q.project } as any).slice(-(q.limit ?? 200)),
   };
-  return { crew, hooks };
+  return { crew, hooks, pip, gateway, crewImpl: crew, connections };
 }

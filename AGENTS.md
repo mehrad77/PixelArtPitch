@@ -12,7 +12,8 @@ These are the instructions for **coding agents working on this repo**. Crew-memb
 | `packages/engine` | The byte-exact renderer core (`core.ts`), declarative scenes (`decl*.ts`), recipes (`recipes.ts`), lints (`lints.ts`), the asset standard (`standard.ts`), PNG → palette (`quantize.ts`), synth audio (`audio.ts`), the vendored painter (`painter/`) |
 | `packages/render` | The render sandbox (`sandbox-child.ts`), frame streaming, ffmpeg encode, sound files and mix, subtitles, the golden check |
 | `packages/tools` | The one tool registry (`registry.ts`), the core tools (`defs.ts`), the project store (`store.ts`), voice alignment (`align.ts`) |
-| `packages/crew` | The model gateway and providers over plain HTTP (`llm/`), prices, the orchestrator (in progress) |
+| `packages/crew` | The model gateway and providers over plain HTTP (`llm/`), prices, the orchestrator, and Pip, the assistant (`assistant.ts`, `docs/ASSISTANT.md`) |
+| `packages/mcp-client` | A plain MCP client (stdio + Streamable HTTP) for the person's own MCP servers ("connections") |
 | `apps/server` | Hono on 127.0.0.1: the studio API (`docs/API.md`), MCP over stdio and HTTP (`mcp.ts`), the CLI (`cli.ts`) |
 | `apps/web` | The studio UI (Vite) |
 | `library/` | The public asset library: `<id>/asset.json` + `sheet.png`, `index.json`, `palettes/pap-night.json`. Public assets only. |
