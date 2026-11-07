@@ -108,6 +108,10 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `PATCH /api/connections/:name` | `{ enabled?, trust?: "ask" \| "read" }` | the connection |
 | `DELETE /api/connections/:name` | | `{ ok }` (its secrets are deleted too) |
 | `POST /api/connections/:name/test` | | `{ name, status, tools, error?, fix? }` |
+| `GET /api/docs` | | `{ docs: DocEntry[] }`: the repo's docs meant for reading (the Docs page, below) |
+| `GET /api/docs/file` | `?path=<a path from GET /api/docs>` | `DocFile`; `400` (`bad_path`: `..`, absolute, a backslash, not `.md`, outside the repo) or `404` (`not_found`: not in the listing, or a symlink) with a `fix` |
+| `GET /api/docs/tools` | | `{ tools: ToolDoc[] }`: every tool in the registry, with the input schema MCP's `tools/list` serves |
+| `GET /api/docs/connections` | | `{ connections: ConnDoc[] }` (`[]` with none); an enabled connection is connected to list its tools (8 s each at most), an off one never starts |
 
 ```ts
 type Settings = { providers: { id: string; kind: "anthropic" | "openai" | "openrouter" | "lmstudio" | "ollama" | "llamacpp" | "custom";
@@ -123,6 +127,29 @@ type ModelRow = { id: string /* provider/model */; provider: string; label: stri
   speed: { ttftMs: number; tokPerSec: number; samples: number } | null; spend30dUsd: number; fit?: Record<Role, number> };
 type Cap = "passed" | "claimed" | "failed" | "unknown";
 ```
+
+## The Docs page (`/docs`)
+`apps/server/src/docs.ts`. Read-only, behind the same cookie and Host/Origin checks as every `/api` route.
+- **Which docs:** every `README.md`, the root `AGENTS.md`, `docs/**/*.md` and `skills/*/SKILL.md`. Never walked: `node_modules`, `dist`, `out`, `private`, `data`, `coverage`, `poc`, `vendor`, `.git`, any folder the root `.gitignore` names, any folder with a `pitch.json` (a project) and any symlink. `GET /api/docs/file` serves only a path that listing returns, and checks again that its real path is inside the repo.
+- **Approval:** a registry tool has `approval: true` when `effects` is not `read` and it isn't `feature_request`: Pip proposes it as a card the person confirms (`docs/ASSISTANT.md`). A connection's tool has `approval: false` only when it is `readOnly` and the connection's trust is `read`.
+- **Secrets:** a `ConnDoc` carries no args, env, headers, `cwd`, nor a URL's path, query or login. Its `error` is a fixed sentence per error code, never the server's own message (which can echo a URL or stderr).
+
+```ts
+type DocEntry = { path: string /* repo-relative */; group: string /* folder; "" is the root, "skills" holds every SKILL.md */;
+  title: string /* first heading */; summary: string /* front matter `description`, else the first paragraph, ≤ 180 chars */ };
+type DocFile = DocEntry & { markdown: string /* front matter removed */; meta: Record<string, string> /* front matter */ };
+type ToolField = { name: string /* "a", "a.b", "a[].b" */; type: string; required: boolean; description?: string;
+  enum?: unknown[]; default?: unknown };
+type ToolDoc = { name; title; description; tier: "basic" | "advanced"; effects: "read" | "write" | "spend" | "destructive";
+  roles: "*" | Role[] /* [] = the person and MCP clients only */; project: boolean; approval: boolean;
+  inputSchema: JSONSchema /* as MCP serves it, project_id first on project tools */; fields: ToolField[];
+  examples: { input: unknown; note?: string }[] };
+type ConnDoc = { name; description; transport: "stdio" | "http"; runs: string /* the program's name, or the URL's origin */;
+  status: "connected" | "off" | "failed"; trust: "ask" | "read"; error?: string; fix?: string;
+  tools: { name; title?; description; readOnly: boolean; destructive: boolean; approval: boolean; inputSchema; fields: ToolField[] }[] };
+```
+
+The page's addresses: `/docs`, `/docs/read/<path without .md>`, `/docs/tools/<name>`, `/docs/connections/<server>/<tool>`. The mock (`?mock=1`, `apps/web/src/mock/docs.ts`) reads `apps/web/src/mock/docs-tools.json`; regenerate it with `node scripts/docs-fixture.ts` after a tool changes (a test in `apps/server/test/docs.test.ts` says when).
 
 ## SSE events (`GET /api/p/:id/events`)
 Each stored event has `id` (event-log seq), `event` name and JSON `data`; a transient one (seq 0) is sent with no `id`, so it never moves the client's `Last-Event-ID`:

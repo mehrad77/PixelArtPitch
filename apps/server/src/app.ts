@@ -17,6 +17,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { Connections } from "./connections.ts";
+import { listDocs, REPO_ROOT, readDoc, toolDocs } from "./docs.ts";
 import { McpSession } from "./mcp.ts";
 
 export const VERSION = "0.1.0";
@@ -87,6 +88,8 @@ export type ServerOpts = {
   mcpToken?: string;
   /** allow the Vite dev server's origin (http://localhost:5140) */
   dev?: boolean;
+  /** the repo the Docs page reads (tests point it elsewhere) */
+  docsRoot?: string;
 };
 
 const same = (a: string, b: string) => {
@@ -706,6 +709,20 @@ export function createApp(o: ServerOpts) {
       return connErr(c, e);
     }
   });
+
+  // ---- docs: the repo's Markdown (a fixed allow-list, read-only) and every tool; never a connection's secrets ----
+  const docsRoot = o.docsRoot ?? REPO_ROOT;
+  app.get("/api/docs", (c) => c.json({ docs: listDocs(docsRoot) }));
+  app.get("/api/docs/file", (c) => {
+    try {
+      return c.json(readDoc(docsRoot, { path: c.req.query("path") }));
+    } catch (e: any) {
+      if (!e?.fix) throw e;
+      return c.json({ ok: false, error: { code: e.code, message: e.message, fix: e.fix } }, e.status);
+    }
+  });
+  app.get("/api/docs/tools", (c) => c.json({ tools: toolDocs(o.registry) }));
+  app.get("/api/docs/connections", async (c) => c.json({ connections: (await o.connections?.docs()) ?? [] }));
 
   // ---- settings, models, ledger, library ----
   app.get("/api/settings", (c) => c.json(o.hooks?.settings?.get() ?? {}));
