@@ -1,0 +1,83 @@
+/* A doc read in the app's own type: kit tokens only, logical properties, wide things scroll in their own box. */
+.md {
+  max-inline-size: 46rem;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.md > :first-child {
+  margin-block-start: 0;
+}
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  margin-block: var(--space-6) var(--space-2);
+  line-height: 1.25;
+  scroll-margin-block-start: var(--space-4);
+}
+.md h2 {
+  font-size: var(--step-2);
+}
+.md h3 {
+  font-size: var(--step-1);
+}
+.md h4,
+.md h5,
+.md h6 {
+  font-size: var(--step-0);
+}
+.md p,
+.md ul,
+.md ol,
+.md blockquote {
+  margin-block: 0 var(--space-3);
+}
+.md ul,
+.md ol {
+  padding-inline-start: var(--space-5);
+}
+.md li + li {
+  margin-block-start: var(--space-1);
+}
+.md li > ul,
+.md li > ol {
+  margin-block: var(--space-1) 0;
+}
+.md code {
+  padding-inline: var(--space-1);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  unicode-bidi: isolate;
+}
+.md blockquote {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--stroke-strong);
+  color: var(--text-muted);
+}
+.md hr {
+  margin-block: var(--space-5);
+  border: 0;
+  border-block-start: 1px solid var(--stroke);
+}
+.md a {
+  color: var(--text-accent);
+}
+.md .md-unlinked {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+}
+.md .md-img {
+  color: var(--text-muted);
+}
+.md .md-table,
+.md figure {
+  margin-block: 0 var(--space-4);
+}
+.md .md-table td,
+.md .md-table th {
+  vertical-align: top;
+  overflow-wrap: normal;
+}

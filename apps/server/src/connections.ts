@@ -6,6 +6,7 @@ import type { ExternalTools, ExternalToolT, FormCard } from "@pap/crew/assistant
 import type { ConnectionT, SecretStore } from "@pap/crew/llm/index";
 import { McpClient, type McpTool, resultText, type ServerSpec } from "@pap/mcp-client";
 import { z } from "zod";
+import { type ConnDoc, connToolDoc, safeRuns } from "./docs.ts";
 
 const IDLE_MS = 10 * 60_000;
 type Added = NonNullable<FormCard["result"]>["added"][number];
@@ -67,6 +68,23 @@ export function parseServers(json: string): { name: string; server: z.infer<type
       );
     return { name: slug(name), server: r.data };
   });
+}
+
+const CHECK_FIX = "open Settings › Connections and press Test to see the whole error";
+/** a failed connect, in words that carry no secret (see Connections.docs) */
+function failWords(code: unknown, runs: string): string {
+  const c = String(code ?? "");
+  if (c.startsWith("timeout_")) return `It didn't answer within ${c.slice(8)} s.`;
+  const words: Record<string, string> = {
+    not_found: `The program ${runs} isn't installed on this computer.`,
+    spawn: `The program ${runs} didn't start.`,
+    exited: "The server stopped while it was starting.",
+    unreachable: `Can't reach ${runs}.`,
+    unauthorized: `${runs} turned the key down.`,
+    http: `${runs} answered with an error.`,
+    closed: "The connection closed.",
+  };
+  return words[c] ?? "It didn't connect.";
 }
 
 type Live = { client: McpClient | null; tools: McpTool[] | null; idle?: NodeJS.Timeout; error?: string; fix?: string };
@@ -238,10 +256,11 @@ export class Connections implements ExternalTools {
     for (const name of this.live.keys()) this.stop(name);
   }
 
-  private async toolsRaw(name: string): Promise<McpTool[]> {
+  private async toolsRaw(name: string, o: { save?: boolean } = {}): Promise<McpTool[]> {
     const { client, live } = await this.client(name);
     if (!live.tools) {
       live.tools = await client.listTools();
+      if (o.save === false) return live.tools;
       const all = this.load();
       const c = all.find((x) => x.name === name);
       if (c && c.tools !== live.tools.length) {
@@ -250,6 +269,41 @@ export class Connections implements ExternalTools {
       }
     }
     return live.tools;
+  }
+
+  /** the Docs page: each connection's safe face (never args, env, headers or a URL's path/query) and its tools. An
+   * enabled connection is connected (or reused) to list them, each within `timeoutMs`; an off one never starts. */
+  async docs(timeoutMs = 8000): Promise<ConnDoc[]> {
+    return Promise.all(
+      this.load().map(async (c): Promise<ConnDoc> => {
+        const base = {
+          name: c.name,
+          description: c.description,
+          transport: c.transport,
+          runs: safeRuns(c.transport, c.command, c.url),
+          trust: c.trust,
+        };
+        if (!c.enabled) return { ...base, status: "off", tools: [] };
+        let timer: NodeJS.Timeout | undefined;
+        try {
+          const tools = await Promise.race([
+            this.toolsRaw(c.name, { save: false }),
+            new Promise<never>((_, rej) => {
+              timer = setTimeout(
+                () => rej(Object.assign(new Error("timeout"), { code: `timeout_${Math.round(timeoutMs / 1000)}` })),
+                timeoutMs,
+              );
+            }),
+          ]);
+          return { ...base, status: "connected", tools: tools.map((t) => connToolDoc(t, c.trust)) };
+        } catch (e: any) {
+          // words by error code, never the raw message: it can echo a URL's query, the arguments or the server's stderr
+          return { ...base, status: "failed", error: failWords(e?.code, base.runs), fix: CHECK_FIX, tools: [] };
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      }),
+    );
   }
 
   // ---------------------------------------------------------------- ExternalTools (Pip)
