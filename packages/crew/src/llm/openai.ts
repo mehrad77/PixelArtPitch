@@ -451,10 +451,11 @@ export async function readOpenAIStream(res: Response, t0: number, onEvent?: (e: 
         text += d.content;
         onEvent?.({ type: "text", text: d.content });
       }
-      if ((d.reasoning || d.reasoning_content) && !thinkingSeen) {
+      const reasoning = d.reasoning ?? d.reasoning_content;
+      if (reasoning) {
         mark();
         thinkingSeen = true;
-        onEvent?.({ type: "thinking" });
+        onEvent?.({ type: "thinking", text: typeof reasoning === "string" ? reasoning : undefined });
       }
       for (const tc of d.tool_calls ?? []) {
         mark();

@@ -299,6 +299,7 @@ export function createApp(o: ServerOpts) {
     o.crew.run(p, { stage: b.stage }).catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
     return c.json({ ok: true });
   });
+  app.get("/api/p/:id/tasks/:tid/transcript", (c) => c.json(proj(c.req.param("id")).transcript(c.req.param("tid"))));
   app.post("/api/p/:id/crew/retry", async (c) => {
     if (!o.crew) return c.json({ ok: false, error: { code: "no_crew", message: "the crew is not configured" } }, 503);
     const p = proj(c.req.param("id"));

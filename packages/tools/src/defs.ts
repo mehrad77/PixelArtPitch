@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { thinSfx } from "@pap/engine/audio";
-import { encode, loudness, mix, sha256File, subtitles, writeMusic, writeSfx } from "@pap/render";
+import { encode, loudness, mix, openDoc, openRenderer, sha256File, subtitles, writeMusic, writeSfx } from "@pap/render";
 import { Brief, Cue, PatchOp, type ProjectT, SfxType, TimeExpr } from "@pap/schema";
 import { z } from "zod";
 import { fitRuns, speechRuns } from "./align.ts";
@@ -788,7 +788,11 @@ export const exportVideo = defineTool({
   name: "export_video",
   title: "Export the video",
   description: "Render the final video for one delivery (with sound and subtitles) into the project's out/ folder.",
-  input: z.object({ delivery: z.string().optional() }),
+  input: z.object({
+    delivery: z.string().optional(),
+    /** "burned": captions drawn into the pixels (the project default); "none": a clean picture, subtitles as files only */
+    captions: z.enum(["burned", "none"]).optional(),
+  }),
   output: z.object({
     file: z.string(),
     seconds: z.number(),
@@ -812,7 +816,18 @@ export const exportVideo = defineTool({
     };
     const out = join(p.dir, "out");
     mkdirSync(out, { recursive: true });
-    const r = await p.renderer_();
+    const burned = d.composition.captions.enabled;
+    const want = i.captions ? i.captions === "burned" : burned;
+    // a clean export renders a copy of the document with captions off; the project itself is unchanged
+    const r =
+      want === burned
+        ? await p.renderer_()
+        : await openRenderer(
+            openDoc(p.dir, {
+              ...d,
+              composition: { ...d.composition, captions: { ...d.composition.captions, enabled: want } },
+            }),
+          );
     await writeSfx(p.project(), r, join(out, "sfx.wav"));
     const m = writeMusic(p.project(), join(out, "music.wav"));
     const mx = mix(p.project(), {

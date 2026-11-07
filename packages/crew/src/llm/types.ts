@@ -127,7 +127,10 @@ export type ChatResult = {
   raw?: unknown;
 };
 
-export type StreamEvent = { type: "text"; text: string } | { type: "thinking" } | { type: "tool_call"; name: string };
+export type StreamEvent =
+  | { type: "text"; text: string }
+  | { type: "thinking"; text?: string }
+  | { type: "tool_call"; name: string };
 
 export interface Provider {
   config: ProviderConfig;

@@ -326,6 +326,14 @@ export class Crew {
   }
   private async tool(p: OpenProject, role: RoleT, task: string, name: string, input: unknown) {
     const res = await this.deps.registry.call(name, input, this.ctx(p, role, task));
+    p.log(task, {
+      kind: "tool",
+      title: `${name} → ${res.ok ? "ok" : res.error.code}`,
+      detail: { input, result: res.ok ? res.data : res.error },
+      ...(res.ok && res.images?.[0]
+        ? { image: `data:image/png;base64,${Buffer.from(res.images[0].data).toString("base64")}` }
+        : {}),
+    });
     if (!res.ok) {
       const err: any = new Error(`${name}: ${res.error.message}`);
       err.fix = res.error.fix;
@@ -360,22 +368,44 @@ export class Crew {
     content.push(...(o.extra ?? []));
     const messages: ChatMessage[] = [...(o.history ?? []), { role: "user", content }];
     const doc = p.doc();
-    const out = await this.deps.gateway.json({
-      project: p.id,
-      capUsd: doc.budget.capUsd,
-      task: t.id,
-      taskKind: o.kind,
-      role: o.role,
-      promptVersion: c.version,
-      system: fill(c.system, o.vars),
-      messages,
-      schema: o.schema,
-      jsonSchema: js(o.schema),
-      maxOut: c.maxOut,
-      effort: c.effort,
-      model: this.deps.gateway.modelFor(o.role, doc.crew.models),
-      signal: r.abort.signal,
-      normalize: o.normalize,
+    const model = this.deps.gateway.modelFor(o.role, doc.crew.models);
+    p.log(t.id, {
+      kind: "model",
+      title: `Asked ${model.split("/").pop()} (${c.id})`,
+      detail: { prompt: userText.slice(0, 6000), images: (o.images ?? []).map((i) => i.caption) },
+    });
+    let thinking = "";
+    const started = Date.now();
+    const out = await this.deps.gateway
+      .json({
+        project: p.id,
+        capUsd: doc.budget.capUsd,
+        task: t.id,
+        taskKind: o.kind,
+        role: o.role,
+        promptVersion: c.version,
+        system: fill(c.system, o.vars),
+        messages,
+        schema: o.schema,
+        jsonSchema: js(o.schema),
+        maxOut: c.maxOut,
+        effort: c.effort,
+        model: this.deps.gateway.modelFor(o.role, doc.crew.models),
+        signal: r.abort.signal,
+        normalize: o.normalize,
+        onEvent: (e) => {
+          if (e.type === "thinking" && e.text && thinking.length < 20000) thinking += e.text;
+        },
+      })
+      .catch((e: any) => {
+        p.log(t.id, { kind: "error", title: String(e?.message ?? e).slice(0, 200), thinking: thinking || undefined });
+        throw e;
+      });
+    p.log(t.id, {
+      kind: "answer",
+      title: `Answered in ${((Date.now() - started) / 1000).toFixed(0)} s · ${out.result.usage.outputTokens} tokens${out.result.usd ? ` · $${out.result.usd.toFixed(3)}` : ""}`,
+      detail: out.data,
+      thinking: thinking || undefined,
     });
     t.usd += out.result.usd;
     t.model = out.model;
@@ -739,6 +769,21 @@ export class Crew {
     });
     if (!b.scenes.at(-1)?.recipes.some((r) => r.id === "end_card_loop"))
       issues.push("the last scene must use end_card_loop");
+    const norm = (x: string) =>
+      x
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+    const cueTexts = new Set(d.script.cues.map((c) => norm(c.text)));
+    for (const s of b.scenes)
+      for (const r of s.recipes)
+        for (const key of ["title", "text", "subtitle", "word"]) {
+          const v = r.params[key];
+          if (typeof v === "string" && (cueTexts.has(norm(v)) || v.split(/\s+/).length > 3))
+            issues.push(
+              `scene ${s.id} ${r.id}.${key} "${v}" repeats or spells out the script; captions already show every cue, so use at most 3 words (or drop it)`,
+            );
+        }
     const known = new Set([
       ...this.libraryList().map((l) => l.split(":")[0]),
       ...b.newAssets.map((a) => a.name),

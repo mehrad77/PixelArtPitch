@@ -328,6 +328,8 @@ export class OpenProject {
       this._doc = parsed.data;
       this.stills.clear();
       this.emit("patch", entry);
+      if (opts.author.task)
+        this.log(opts.author.task, { kind: "patch", title: `Changed the project: ${opts.reason}`, detail: ops });
       return { rev: this._doc.rev, seq: entry.seq };
     });
   }
@@ -470,6 +472,31 @@ export class OpenProject {
     this.state.stage = stage;
     this.saveState();
     this.emit("stage", { stage });
+  }
+  /** a task's activity log: what it asked, which tools it called with what, what came back */
+  log(
+    taskId: string,
+    entry: {
+      kind: "step" | "model" | "tool" | "patch" | "answer" | "error";
+      title: string;
+      detail?: unknown;
+      thinking?: string;
+      image?: string;
+    },
+  ) {
+    const dir = join(this.dir, "runs", "transcripts");
+    mkdirSync(dir, { recursive: true });
+    const e = { at: new Date().toISOString(), ...entry };
+    appendFileSync(join(dir, `${taskId.replace(/[^a-z0-9_-]/gi, "")}.jsonl`), `${JSON.stringify(e)}\n`);
+    this.events.emit("event", { seq: 0, event: "activity", data: { task: taskId, ...e }, ts: e.at });
+  }
+  transcript(taskId: string) {
+    const f = join(this.dir, "runs", "transcripts", `${taskId.replace(/[^a-z0-9_-]/gi, "")}.jsonl`);
+    if (!existsSync(f)) return [];
+    return readFileSync(f, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
   }
   setStatus(patch: Partial<RuntimeState["status"]>) {
     this.state.status = { ...this.state.status, ...patch };
@@ -614,7 +641,10 @@ export class Workspace {
       // what the night backdrop and the common recipes draw, so a new project never shows missing-asset boxes
       assets: [
         { id: "font", src: "lib:font-5x8@1" },
-        ...["moon", "skyline", "tiles", "props", "qblock", "items", "powerups", "castle", "gamers"].map((id) => ({ id, src: `lib:${id}@1` })),
+        ...["moon", "skyline", "tiles", "props", "qblock", "items", "powerups", "castle", "gamers"].map((id) => ({
+          id,
+          src: `lib:${id}@1`,
+        })),
       ],
       budget: { capUsd: input.budgetUsd },
     });
