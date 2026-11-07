@@ -44,7 +44,7 @@ The person approved both specs (this one and its sibling) with these answers to 
 | Phase | State | What it contains |
 |---|---|---|
 | P1a | **Built** | the catalogue, schemas, rules planner, validator, estimates, the executor in place of `pipeline()` (slots, budget stop, gates, pause, resume, retry), the stage view, rev 0, expansion, change/redo/re-board/review-round revisions, the rights fix, `state.plan`, SSE `plan`, plan milestones, `crew.slots`, priors re-seeded; tests `plan.test.ts` and `plan-parity.test.ts` |
-| P1b | Not yet | Pip's revision (`assistant.plan`), `crew_replan`, the 20% card, `pipPlan`, `reviewRounds`, evals |
+| P1b | **Built** | Pip's revision (`plan/pip.ts`, `assistant.plan`, prompt `assistant/plan.md`), one repair then the rules plan, `defaults.pipPlan` (default `shadow`), `crew_replan` with the 6-proposal cap, the 20% revision card (confirm, decline), the overrun card, `defaults.reviewRounds`, `evals/plan.jsonl` (15 items), the scorer (`plan/evals.ts`) and the runner (`evals/plan.ts`); tests `plan-pip.test.ts` |
 | P2–P4 | Not yet | |
 
 **What P1a built differently from the text below** (each is also corrected in place):
@@ -63,7 +63,17 @@ The person approved both specs (this one and its sibling) with these answers to 
 12. **Renderers** of an older document revision close 30 s later, not at once: tasks now render side by side while others patch the document.
 13. **Priors.** `review.final` was re-seeded from 12 ledger rows: about $0.07 p50 on Opus, not $1.46. Re-seeded: `producer.plan` (3), `writer.angles` (10), `director.storyboard` (6), `scene.tune` (15), `assistant.turn` (8). Declared guesses (`n: 0`): `asset.spec`, `assistant.conduct`, `assistant.plan`, `assistant.brief`. Estimates from `n < 5` are `rough`.
 
-**Journey needs (PIP-JOURNEY.md §7.2) after P1a:** N4 (the plan half: `GET /api/p/:id` carries `plan`), N5 (`PlanTaskView.label` in sentence case, `ROLE_LABEL` in `plan/catalogue.ts`), N6 (`crew.slots`) and N10 (`ref` on reports, and on the asks and answers that go through Pip, is the plan task's scene or asset, else its id) are met. N2 comes with P1b's revision cards; N1, N3, N4's instances and N11 with P2; N7–N9 with P3.
+**What P1b built differently:**
+
+14. **`pipPlan` ships as `shadow`.** The Anthropic eval (§5) was not run: it spends money and needs the person's go-ahead. It would cost about $0.23 (p50, one Sonnet call per item) to $1.05 (every item repaired) for the 15 items, from the declared `assistant.plan` prior (n = 0, so rough). The local run (LM Studio, `google/gemma-4-26b-a4b-qat`, $0, about 9 s a call) is valid on 15 of 15 items but proposes no ops anywhere, so missing + extra equals the rules plan's (0.13 + 0) and Pip doesn't beat it. Switch to `on` after a Sonnet run that wins.
+15. **V6 for Pip** is an error only when Pip's revision makes an over-cap plan dearer. An empty diff on an over-cap rules plan (a $1.50 brief) is valid; the rules plan then stands, and the overrun card covers the spend.
+16. **`crew_replan`** is validated like Pip's revision but gets no repair turn; a refused one is posted as "Kept the default plan: <first error>" and still counts toward the 6.
+17. **The 20% card** is posted only where Pip is wired (`Crew.onPlanCard`); a bare `Crew` (scripts, the parity test) never holds tasks for it. A revision `by: "person"` (a change, a decline) skips it. `approvedUsd` is the plan's p50 when G0 passes (by the person or by `auto`), or at Start on `/new`.
+18. **The overrun card** is Pip's existing "Raise the cap to $X" card with X = max(spent + the plan's remaining p90 rounded up to $0.50, cap + $0.50), once per cap value.
+19. **The conductor's prompt** (`assistant/conduct.md` v2) lists the live plan task ids while `crew_replan` is allowed.
+20. **Eval truth.** The items' `estUsd` ranges are hand-set guesses (no real run has priced these briefs yet); `estErr` is only as good as they are. The rules plan's p50 is about $1.21-1.24 for every cloud brief, because the hero's two Opus drawings dominate it.
+
+**Journey needs (PIP-JOURNEY.md §7.2) after P1a:** N2 (P1b: `whoInstances` on revision cards), N4 (the plan half: `GET /api/p/:id` carries `plan`), N5 (`PlanTaskView.label` in sentence case, `ROLE_LABEL` in `plan/catalogue.ts`), N6 (`crew.slots`) and N10 (`ref` on reports, and on the asks and answers that go through Pip, is the plan task's scene or asset, else its id) are met. N1, N3, N4's instances and N11 with P2; N7–N9 with P3.
 
 ## 1. The production plan
 

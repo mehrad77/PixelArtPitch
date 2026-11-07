@@ -86,7 +86,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/pip` | `{ project?, text }` | `202 { turnId }`; `409` while a turn runs in that conversation; progress as SSE `pip` events. `/undo`, `/budget [usd]`, `/why` answer without a model; `/compact` makes one call |
 | `PUT /api/pip/summary` | `{ project?, text }` | `{ summary }` (the person's correction; used from the next turn) |
 | `GET /api/p/:id/channel` | | `ChannelMsg[]`: the crew channel ("Behind the scenes") |
-| `POST /api/pip/cards/:cardId` | `{ project?, decision: "confirm" \| "decline", edit? }` | `{ card }` (status `running`/`submitted` at once; the final state comes as a `pip` `card` event); `409` if already decided |
+| `POST /api/pip/cards/:cardId` | `{ project?, decision: "confirm" \| "decline", edit? }` | `{ card }` (status `running`/`submitted` at once; the final state comes as a `pip` `card` event); `409` if already decided. A plan card the crew asked for carries `revision?: { rev, ops, fromUsd, toUsd }` and `whoInstances?: { instance, label }[]` (a revision past the 20% line: confirm runs its tasks, decline drops them), or is the overrun's "Raise the cap" card (decline: the crew goes on only with steps that fit) |
 | `GET /api/events` | SSE | the workspace stream: `pip` events for the conversation with no project |
 | `GET /api/connections` | | the person's MCP servers: `{ name, transport, command?, args, url?, envKeys, headerKeys, enabled, trust, status, tools, toolNames, error?, fix? }[]` (secret values never) |
 | `POST /api/connections` | `{ json }` (pasted `mcpServers` JSON) | `{ added: { name, status, tools: string[], error?, fix? }[] }` |
@@ -98,7 +98,9 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 type Settings = { providers: { id: string; kind: "anthropic" | "openai" | "openrouter" | "lmstudio" | "ollama" | "llamacpp" | "custom";
     label: string; baseUrl: string; hasKey: boolean; enabled: boolean }[];
   profile: "best" | "balanced" | "local" | "custom"; roles: Record<Role, { model: string; fallback?: string }>;
-  defaults: { capUsd: number; askAtFraction: number; involvement: "every" | "key" | "auto"; concurrency: number };
+  defaults: { capUsd: number; askAtFraction: number; involvement: "every" | "key" | "auto"; concurrency: number;
+    pipPlan: "on" | "shadow" | "off" /* Pip's plan revision; default "shadow" */;
+    reviewRounds: 1 | 2 /* review rounds per crew run; default 2 */ };
   paths: { roots: string[]; library: string; ffmpeg: string } };
 type ModelRow = { id: string /* provider/model */; provider: string; label: string; local: boolean;
   caps: { vision: Cap; structured: Cap; tools: Cap; longOutput: Cap }; ctx: number; maxOut: number;

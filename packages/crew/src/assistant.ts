@@ -52,6 +52,15 @@ export type PlanCard = {
   lend?: string[];
   status: PlanStatus;
   result?: { text: string; files?: PipFile[]; projectId?: string; error?: string };
+  /** a plan revision past the 20% line (docs/PIP-ORCHESTRATION.md §4.4): what it adds and the new total */
+  revision?: {
+    rev: number;
+    ops: { op: string; task: string; label: string; reason: string }[];
+    fromUsd: number;
+    toUsd: number;
+  };
+  /** the crew members a revision card brings in, by instance ("Animator · scene 2"; PIP-JOURNEY N2) */
+  whoInstances?: { instance: string; label: string }[];
 };
 export type FormCard = {
   id: string;
@@ -128,6 +137,8 @@ type Action = {
   lend?: { role: RoleT; tools: string[] };
   /** a card that handed work to the crew: it settles when the crew's run on that note ends */
   handoff?: { noteId: string };
+  /** a card the crew asked for: its confirm or decline goes back to the crew (a revision, the budget) */
+  crew?: "pending" | "overrun";
 };
 /** the cards that hand work to one crew role, and so may lend it external tools */
 const LENDS = new Set(["crew_request_change"]);
@@ -233,6 +244,8 @@ export type PipDeps = {
   home?: string;
   /** daily cap for workspace-level turns (default $1) */
   workspaceCapUsd?: number;
+  /** a crew card was decided: a plan revision past the 20% line, or the budget overrun */
+  crewDecide?: (p: OpenProject, what: "pending" | "overrun", decision: "confirm" | "decline") => void;
 };
 
 const now = () => new Date().toISOString();
@@ -1808,6 +1821,18 @@ export class Pip {
       throw new StoreError("already_decided", `this card is ${c.status}`, "ask Pip again for a new card", 409);
     if (decision === "decline") {
       c.status = "declined";
+      if (c.action.crew) {
+        const pr = c.action.projectId ? this.deps.workspace.get(c.action.projectId) : p;
+        if (pr) this.deps.crewDecide?.(pr, c.action.crew, "decline");
+      }
+      const card = save();
+      return { card, done: Promise.resolve(card) };
+    }
+    if (c.action.crew === "pending") {
+      const pr = c.action.projectId ? this.deps.workspace.get(c.action.projectId) : p;
+      if (pr) this.deps.crewDecide?.(pr, "pending", "confirm");
+      c.status = "done";
+      c.result = { text: "The crew goes on with the new plan." };
       const card = save();
       return { card, done: Promise.resolve(card) };
     }
@@ -1862,6 +1887,74 @@ export class Pip {
       return save();
     })().finally(() => this.inflight.delete(c.id));
     return { card, done };
+  }
+
+  /** a card the crew asks for (a revision past the 20% line, the budget overrun), posted in the project's chat */
+  postCrewCard(p: OpenProject, text: string, c: Omit<StoredPlan, "id" | "type" | "status">): string {
+    const made: StoredPlan = { id: rid("card"), type: "plan", status: "proposed", ...c };
+    const item: StoredItem = { id: rid("pip"), at: now(), kind: "pip", text, cards: [made] };
+    this.log(p).append(item);
+    this.emit(p, { type: "item", item: publicItem(item) });
+    return made.id;
+  }
+  /** the 20% card (§1.6, §4.4): the revision's tasks wait until the person says yes */
+  revisionCard(
+    p: OpenProject,
+    r: {
+      rev: number;
+      reason: string;
+      fromUsd: number;
+      toUsd: number;
+      deltaUsd: [number, number];
+      ops: { op: string; task: string; label: string; reason: string }[];
+      whoInstances: { instance: string; label: string }[];
+      roles: RoleT[];
+    },
+  ): string {
+    return this.postCrewCard(p, `The plan grew past what you approved: ${r.reason}`, {
+      title: `Plan change: ${money(r.fromUsd)} → about ${money(r.toUsd)}`,
+      detail: r.reason,
+      who: r.roles,
+      whoInstances: r.whoInstances,
+      usd: [Math.max(0, r.deltaUsd[0]), Math.max(0, r.deltaUsd[1])],
+      sec: null,
+      effects: [
+        ...r.ops
+          .filter((o) => o.op !== "expand")
+          .slice(0, 6)
+          .map((o) => `${o.op === "add" ? "Adds" : o.op === "drop" ? "Drops" : "Changes"} ${o.label}: ${o.reason}`),
+        "Everything else keeps running while you decide.",
+      ],
+      confirmLabel: "Go ahead",
+      revision: { rev: r.rev, ops: r.ops, fromUsd: r.fromUsd, toUsd: r.toUsd },
+      action: { tool: "", input: {}, projectId: p.id, crew: "pending" },
+    });
+  }
+  /** the overrun card (§1.6): the existing "Raise the cap" plan card, posted by the crew when spend nears the cap */
+  overrunCard(p: OpenProject, o: { needUsd: number; capUsd: number; spentUsd: number; suggestUsd: number }): string {
+    const want = Math.max(o.suggestUsd, o.capUsd + 0.5);
+    return this.postCrewCard(p, `The crew is near the budget: ${money(o.spentUsd)} of ${money(o.capUsd)} spent.`, {
+      title: `Raise the cap to ${money(want)}`,
+      detail: `The project's budget cap goes from ${money(o.capUsd)} to ${money(want)} so the crew can finish.`,
+      who: [],
+      usd: [0, 0],
+      sec: null,
+      effects: [
+        `The next step could cost up to ${money(o.needUsd)}.`,
+        "Keep it as it is: the crew goes on only with steps that fit, then waits for you.",
+      ],
+      confirmLabel: `Set ${money(want)}`,
+      action: {
+        tool: "project_patch",
+        input: {
+          ops: [{ op: "replace", path: "/budget/capUsd", value: want }],
+          reason: `set the cap to ${money(want)} (the crew asked)`,
+          baseRev: p.rev(),
+        },
+        projectId: p.id,
+        crew: "overrun",
+      },
+    });
   }
 
   /** run reports that arrived before their card was saved (a fast run) */

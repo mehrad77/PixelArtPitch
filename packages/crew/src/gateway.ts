@@ -20,6 +20,8 @@ export type CallSpec<T> = {
   effort?: "low" | "medium" | "high" | "xhigh";
   /** force a specific model id instead of the role's */
   model?: string;
+  /** no escalation to the role's fallback on a failure (Pip's plan revision: one call, one repair, then the rules) */
+  noFallback?: boolean;
   signal?: AbortSignal;
   onEvent?: (e: StreamEvent) => void;
   normalize?: (raw: unknown) => T | null;
@@ -59,6 +61,8 @@ export interface Gateway {
   laneSize?(providerId: string): number;
   /** a model on a local endpoint (its calls are free, one at a time) */
   isLocal?(model: string): boolean;
+  /** the crew defaults from settings (pipPlan, reviewRounds) */
+  defaults?(): { pipPlan?: "on" | "shadow" | "off"; reviewRounds?: 1 | 2 };
   /** the ledger, for estimates from observed calls */
   ledgerRef?(): import("./llm/ledger.ts").Ledger;
   estimate(

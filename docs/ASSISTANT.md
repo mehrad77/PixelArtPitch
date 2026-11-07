@@ -94,7 +94,10 @@ type PipCard =
       editable?: { field: string; label: string; value: string };   // e.g. the drafted brief for project_fork
       status: "proposed" | "running" | "done" | "declined" | "failed";
       result?: { text: string; files?: PipFile[]; projectId?: string; error?: string };
-      // server-only: { tool, input, projectId }
+      // a plan revision past the 20% line (PIP-ORCHESTRATION §4.4): its ops and the new p50 total
+      revision?: { rev: number; ops: { op: string; task: string; label: string; reason: string }[]; fromUsd: number; toUsd: number };
+      whoInstances?: { instance: string; label: string }[];   // "Pixel artist · keeper": who the revision brings in
+      // server-only: { tool, input, projectId, crew? }
     }
   | { id: string; type: "cant"; text: string; nearest?: string };   // "Vertical video isn't possible yet."
 ```
@@ -208,6 +211,18 @@ Pip directs the crew. The rules plan is Pip's rails: code writes today's stage m
 - After a review, a redo is followed by a review round that checks the fixes before the rough cut. With `defaults.reviewRounds: 1` there is no second round.
 - Each of these is a plan revision (`by: "pip"`, `trigger: "conductor"`), shown as a "Plan changed: …" marker. The fixed rules write the same revision with `by: "code"`.
 - The end-of-stage check ("on track?") runs when the plan's stage view moves past a stage: the stage of the earliest unfinished task.
+- `crew_replan` takes Pip's plan ops (`PlanDiffOut`: add a drawing, a logo import or a scene redo; drop or retier a pending task by its id). The validator checks them like any revision; a refused one is posted as "Kept the default plan: <first error>". The conductor's prompt lists the live task ids only while the run has proposals left.
+
+**Pip's plan revision** (`assistant.plan`, prompt `assistant/plan.md`, [`PIP-ORCHESTRATION.md`](PIP-ORCHESTRATION.md) §1.4)
+- Once per run, right after G0 passes (or right after Start on a `/new` project), Pip reads the rules plan and may propose a small diff: at most 8 ops, each with a reason of at most 90 characters. `{ops: [], summary: ""}` is a good answer.
+- Code expands an added asset into its chain (spec, two drawings, the judge, and the person's OK when it comes from a reference) and adds the dependencies. Gates are never Pip's.
+- One call on Pip's own model (never escalated to a fallback), metered as `assistant.plan`; one repair turn with the validator's errors; then the rules plan stands and the channel says "Kept the default plan: <first error>".
+- `defaults.pipPlan`: `on` applies it (a `by: "pip"` revision, "Plan changed: <summary>"); `shadow` (the default) runs the call and posts "Shadow plan (not applied): …" on the channel; `off` makes no call. Menu mode and local models never call.
+- At most 6 proposals per run, failures included (`crew_replan` counts too). The 7th trigger has no `crew_replan` tool.
+
+**Cards the crew asks for**
+- **A revision past the 20% line:** when a revision's p50 total goes past 1.2 × what the person last approved (the G0 verdict, Start, or the last confirmed card), its added tasks wait and Pip posts a plan card "Plan change: $X → about $Y" with `revision` (rev, ops, fromUsd, toUsd) and `whoInstances` ("Pixel artist · keeper"). "Go ahead" runs them; declining drops them in a `decline` revision. Everything else keeps running. A person's change card skips the rule: it is consent in itself.
+- **The overrun:** when spend crosses `askAtFraction` of the cap, or the next task's p90 doesn't fit, the crew starts nothing new and Pip posts "Raise the cap to $X" (X = spent + the plan's remaining p90, rounded up to $0.50). Confirm sets the cap and the crew goes on; keeping it lets the crew go on only with steps that fit, then it waits with the "add budget" problem.
 
 **Messages**
 - They live in one channel per project, `runs/channel.jsonl`, shown to people as "Behind the scenes".

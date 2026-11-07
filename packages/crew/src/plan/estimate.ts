@@ -22,6 +22,21 @@ export type PlanEnv = {
   ledger?: Ledger;
 };
 
+/** the plan's view of a gateway, with a project's own model choices */
+export function envOf(
+  gw: Pick<import("../gateway.ts").Gateway, "modelFor" | "fallbackFor" | "caps" | "laneSize" | "isLocal" | "ledgerRef">,
+  models: Record<string, string> = {},
+): PlanEnv {
+  return {
+    modelFor: (role) => gw.modelFor(role, models),
+    fallbackFor: (role) => gw.fallbackFor(role),
+    caps: (m) => gw.caps(m),
+    laneSize: (ep) => gw.laneSize?.(ep) ?? 4,
+    local: (m) => gw.caps(m)?.local ?? gw.isLocal?.(m) ?? /^(lmstudio|ollama|llamacpp)\//.test(m),
+    ledger: gw.ledgerRef?.(),
+  };
+}
+
 const providerOf = (model: string) => (model.includes("/") ? model.slice(0, model.indexOf("/")) : model);
 const out = (model: string) => priceFor(model)?.outPerMTok ?? 0;
 

@@ -42,10 +42,11 @@ import {
   StoryboardOut,
   TuneOut,
 } from "./outputs.ts";
-import { CATALOGUE } from "./plan/catalogue.ts";
-import { isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
+import { CATALOGUE, taskLabel } from "./plan/catalogue.ts";
+import { envOf, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
 import { Executor, type Outcome } from "./plan/executor.ts";
 import { logoIcon } from "./plan/import.ts";
+import { applyDiff, type PipRevisionResult, pipRevision, planPromptVars } from "./plan/pip.ts";
 import {
   addReboard,
   addRedo,
@@ -58,7 +59,7 @@ import {
   rerun,
   startPlan,
 } from "./plan/rules.ts";
-import type { PlanOpT, PlanRevisionT, PlanTaskT, PlanView, ProductionPlanT } from "./plan/schema.ts";
+import type { PlanDiffOutT, PlanOpT, PlanRevisionT, PlanTaskT, PlanView, ProductionPlanT } from "./plan/schema.ts";
 import {
   loadPlan,
   MAX_PIP_PROPOSALS,
@@ -69,6 +70,7 @@ import {
   touch,
   viewOf,
 } from "./plan/store.ts";
+import { validate as validatePlan } from "./plan/validate.ts";
 import { card, fill } from "./prompts.ts";
 
 const js = (s: z.ZodType) => z.toJSONSchema(s, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
@@ -374,12 +376,13 @@ export type Decision =
   | { kind: "reboard"; scenes: string[]; direction: string }
   | { kind: "next"; why?: string }
   | { kind: "hold"; why: string }
-  | { kind: "escalate"; question: string; options?: string[] };
+  | { kind: "escalate"; question: string; options?: string[] }
+  | { kind: "replan"; diff: PlanDiffOutT };
 export interface Conductor {
   think(
     p: OpenProject,
     trigger: Trigger,
-    ctx: { change?: ChangePlan; redos: Map<string, number> },
+    ctx: { change?: ChangePlan; redos: Map<string, number>; replan?: boolean },
   ): Promise<Decision[]>;
 }
 /** at most this many redo rounds per scene per request */
@@ -472,7 +475,10 @@ export class Crew {
     r.thinks = (r.thinks ?? 0) + 1;
     if (r.thinks > 12) return [{ kind: "hold", why: "the crew needed Pip more than 12 times in one run" }];
     try {
-      return await this.conductor.think(p, tr, { change: r.change, redos: r.redos });
+      // crew_replan only while this run has Pip proposals left (§1.6: at most 6)
+      const run = this.planNow(p)?.runs.find((x) => x.id === r.id);
+      const replan = !!run && run.pipProposals < MAX_PIP_PROPOSALS;
+      return await this.conductor.think(p, tr, { change: r.change, redos: r.redos, replan });
     } catch (e: any) {
       p.emit("log", { level: "warn", text: `Pip couldn't decide (${String(e?.message ?? e).slice(0, 120)}); holding` });
       return [{ kind: "hold", why: "Pip couldn't reach its model to decide what to do next" }];
@@ -537,6 +543,8 @@ export class Crew {
           added.push(...(res?.added ?? []));
         }
         redid = true;
+      } else if (d.kind === "replan") {
+        await this.pipRevise(p, r, "conductor", d.diff);
       } else if (d.kind === "next") {
         if (d.why) p.say({ from: "pip", to: "crew", kind: "brief", text: `On track: ${d.why}` });
       } else if (d.kind === "escalate") {
@@ -601,16 +609,7 @@ export class Crew {
   // ---------------------------------------------------------------- the production plan
   /** what planning needs from the gateway, with the project's own model choices */
   planEnv(p: OpenProject): PlanEnv {
-    const gw = this.deps.gateway;
-    const models = p.doc().crew.models;
-    return {
-      modelFor: (role) => gw.modelFor(role, models),
-      fallbackFor: (role) => gw.fallbackFor(role),
-      caps: (m) => gw.caps(m),
-      laneSize: (ep) => gw.laneSize?.(ep) ?? 4,
-      local: (m) => gw.caps(m)?.local ?? gw.isLocal?.(m) ?? /^(lmstudio|ollama|llamacpp)\//.test(m),
-      ledger: gw.ledgerRef?.(),
-    };
+    return envOf(this.deps.gateway, p.doc().crew.models);
   }
   private rulesCtx(p: OpenProject, rev: number): RulesCtx {
     return { env: this.planEnv(p), rev, assetsOf: (id) => this.sceneAssets(p, id) };
@@ -628,12 +627,23 @@ export class Crew {
     }
     return [...out].filter(Boolean);
   }
-  private pipView(): PlanView["pip"] {
-    return { mode: this.pipMode(), proposals: 0, max: MAX_PIP_PROPOSALS };
+  private pipView(p: OpenProject): PlanView["pip"] {
+    const plan = this.plans.get(p.id);
+    const run = plan?.runs.at(-1);
+    return { mode: this.pipMode(p), proposals: run?.pipProposals ?? 0, max: MAX_PIP_PROPOSALS };
   }
-  /** Pip's plan revision (§1.4): off until P1b wires it */
-  protected pipMode(): "on" | "shadow" | "off" {
-    return "off";
+  /** Pip's model is agent-capable (set by wireCrew from Pip's own check); without it Pip's plan call never runs */
+  pipModeFor?: (model: string) => "agent" | "menu";
+  /**
+   * Pip's plan revision (§1.4): the `defaults.pipPlan` setting, and `off` in menu mode and on a local model, where
+   * the rules plan stands with no call.
+   */
+  pipMode(p: OpenProject): "on" | "shadow" | "off" {
+    const set = this.deps.gateway.defaults?.().pipPlan ?? "shadow";
+    if (set === "off" || !this.pipModeFor) return "off";
+    const model = this.deps.gateway.modelFor("assistant", p.doc().crew.models);
+    if (this.planEnv(p).local(model) || this.pipModeFor(model) !== "agent") return "off";
+    return set;
   }
   /** the plan as it is now, read-only (never writes rev 0: GET and status() only look) */
   planNow(p: OpenProject): ProductionPlanT | null {
@@ -650,7 +660,7 @@ export class Crew {
     const env = this.planEnv(p);
     const { spentUsd } = this.deps.gateway.spent(p.id);
     const live = { ...plan, estimate: planEstimate(plan.tasks, spentUsd, env) };
-    return viewOf(p, live, env, this.pipView());
+    return viewOf(p, live, env, this.pipView(p));
   }
   /** GET /api/p/:id/plan/revisions */
   planRevisions(p: OpenProject) {
@@ -678,7 +688,7 @@ export class Crew {
       },
       ctx.env,
       this.deps.gateway.spent(p.id).spentUsd,
-      this.pipView(),
+      this.pipView(p),
     );
     this.plans.set(p.id, plan);
     return plan;
@@ -712,12 +722,220 @@ export class Crew {
       { ...rv, reason: out.reason ?? rv.reason, ops: out.ops, tasks: out.tasks, run: r?.id ?? plan.run },
       ctx.env,
       this.deps.gateway.spent(p.id).spentUsd,
-      this.pipView(),
+      this.pipView(p),
     );
     this.plans.set(p.id, next);
+    const added = out.ops.flatMap((o) => (o.op === "add" ? [o.task] : []));
+    this.overTwenty(p, next, plan, rv, added);
     r?.exec?.wake();
-    return { added: out.ops.flatMap((o) => (o.op === "add" ? [o.task] : [])), tasks: next.tasks };
+    return { added, tasks: next.tasks };
   }
+  /**
+   * The 20% rule (§1.6): a revision whose p50 total is past 1.2 × what the person approved becomes a revision card;
+   * its added tasks wait (plan.pending) while everything else runs. A change card is consent in itself.
+   */
+  private overTwenty(
+    p: OpenProject,
+    next: ProductionPlanT,
+    prev: ProductionPlanT,
+    rv: { by: PlanRevisionT["by"]; trigger: PlanRevisionT["trigger"]; reason: string },
+    added: string[],
+  ) {
+    if (!this.onPlanCard || next.approvedUsd === null || next.pending) return;
+    if (rv.by === "person" || !added.length) return;
+    if (next.estimate.usd[0] <= 1.2 * next.approvedUsd + 1e-9) return;
+    const tasks = added.filter((id) => next.tasks.find((t) => t.id === id && isLive(t)));
+    if (!tasks.length) return;
+    const ids = p.doc().scenes.map((s) => s.id);
+    const card = this.onPlanCard(p, {
+      rev: next.rev,
+      reason: next.reason,
+      fromUsd: next.approvedUsd,
+      toUsd: next.estimate.usd[0],
+      deltaUsd: [next.estimate.usd[0] - prev.estimate.usd[0], next.estimate.usd[1] - prev.estimate.usd[1]],
+      ops: next.ops.map((o) => {
+        const id = o.op === "expand" ? o.placeholder : o.task;
+        const t = next.tasks.find((x) => x.id === id);
+        return { op: o.op, task: id, label: t ? taskLabel(t, ids) : id, reason: o.reason };
+      }),
+      whoInstances: [
+        ...new Map(
+          tasks.map((id) => next.tasks.find((t) => t.id === id)!).map((t) => [t.instance, taskLabel(t, ids)]),
+        ).entries(),
+      ]
+        .filter(([i]) => i !== "person")
+        .map(([instance, label]) => ({ instance, label })),
+      roles: [
+        ...new Set(tasks.map((id) => next.tasks.find((t) => t.id === id)!.role).filter((x) => x !== "person")),
+      ] as RoleT[],
+    });
+    if (!card) return;
+    next.pending = { rev: next.rev, cardId: card, tasks };
+    touch(p, next, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
+  }
+  /** Pip posts a revision card (§4.4) and returns its id; unset, the 20% rule never holds tasks */
+  onPlanCard?: (
+    p: OpenProject,
+    c: {
+      rev: number;
+      reason: string;
+      fromUsd: number;
+      toUsd: number;
+      deltaUsd: [number, number];
+      ops: { op: string; task: string; label: string; reason: string }[];
+      whoInstances: { instance: string; label: string }[];
+      roles: RoleT[];
+    },
+  ) => string | null;
+  /** the person confirmed the revision card: its tasks run, and the new total is what they approved */
+  confirmPending(p: OpenProject) {
+    const plan = this.planNow(p);
+    if (!plan?.pending) return;
+    plan.approvedUsd = plan.estimate.usd[0];
+    delete plan.pending;
+    touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
+    const r = this.runs.get(p.id);
+    r?.resume?.();
+    r?.exec?.wake();
+  }
+  /** the person declined it: a `decline` revision drops those tasks, and Pip hears so at the next stage check */
+  declinePending(p: OpenProject) {
+    const plan = this.planNow(p);
+    if (!plan?.pending) return;
+    const drop = new Set(plan.pending.tasks);
+    delete plan.pending;
+    const r = this.runs.get(p.id) ?? null;
+    this.planRevise(p, r, { by: "person", trigger: "decline", reason: "You kept the plan as it was." }, (ts) => ({
+      tasks: ts.map((t) =>
+        drop.has(t.id) && isLive(t) ? { ...t, status: "dropped" as const, note: "you declined it" } : t,
+      ),
+      ops: [...drop].map((task) => ({ op: "drop" as const, task, reason: "you declined it" })),
+    }));
+    r?.triggers.push({
+      kind: "stage",
+      stage: p.state.stage,
+      notes: ["The person declined the plan change; carry on without it."],
+    });
+    r?.resume?.();
+    r?.exec?.wake();
+  }
+  /**
+   * Pip's revision of the plan (§1.4): once after G0 (or Start on /new), or a conductor's crew_replan (`given`).
+   * Counted per run (at most 6, failures included). Under `shadow` it is posted on the channel, not applied. A bad
+   * answer keeps the rules plan: "Kept the default plan: <first error>".
+   */
+  private async pipRevise(
+    p: OpenProject,
+    r: Run,
+    why: "g0" | "start" | "conductor",
+    given?: PlanDiffOutT,
+  ): Promise<PipRevisionResult | null> {
+    const mode = given ? "on" : this.pipMode(p);
+    if (mode === "off") return null;
+    const plan = this.ensurePlan(p, r);
+    const run = plan.runs.find((x) => x.id === r.id);
+    if (!run || run.pipProposals >= MAX_PIP_PROPOSALS) return null;
+    run.pipProposals++;
+    const d = p.doc();
+    const env = this.planEnv(p);
+    const ctx = { ...this.rulesCtx(p, plan.rev + 1), refs: d.brief.references };
+    const { spentUsd } = this.deps.gateway.spent(p.id);
+    const lib = JSON.parse(readFileSync(join(LIBRARY_DIR, "index.json"), "utf8")).assets as {
+      id: string;
+      kind: string;
+      tags?: string[];
+    }[];
+    const vctx = { doc: d, library: new Set(lib.map((a) => a.id)), env, spentUsd, redos: r.redos };
+    let res: PipRevisionResult;
+    if (given) {
+      const applied = applyDiff(plan.tasks, given, ctx);
+      const v = validatePlan(applied.tasks, {
+        ...vctx,
+        by: "pip",
+        before: plan.tasks,
+        ops: given.ops.map((x) => ({ ...x, task: "task" in x ? x.task : undefined })) as any,
+      });
+      const errors = [...applied.issues, ...v.errors];
+      res = {
+        tasks: errors.length ? null : applied.tasks,
+        ops: applied.ops,
+        summary: given.summary || "Pip changed the plan.",
+        ...(errors.length ? { kept: `${errors[0].message}${errors[0].fix ? ` (${errors[0].fix})` : ""}` } : {}),
+        valid: errors.length ? "no" : "first",
+        calls: 0,
+        usd: 0,
+        sec: 0,
+        diff: given,
+      };
+    } else {
+      const model = this.deps.gateway.modelFor("assistant", d.crew.models);
+      p.setStatus({ line: "Pip is planning who works on this" });
+      res = await pipRevision({
+        gateway: this.deps.gateway,
+        project: p.id,
+        capUsd: d.budget.capUsd,
+        model,
+        vars: planPromptVars({
+          brief: {
+            idea: d.brief.idea,
+            purpose: d.brief.purpose,
+            audience: d.brief.audience,
+            lengthSec: d.brief.lengthSec,
+            narration: d.brief.narration,
+            involvement: d.brief.involvement,
+            style: d.brief.tone,
+          },
+          refs: d.brief.references.map((x) => ({ file: x.file, type: x.type, rights: x.rights })),
+          library: lib,
+          budget: {
+            capUsd: d.budget.capUsd,
+            reserveUsd: d.budget.reserveUsd,
+            spentUsd,
+            estUsd: [plan.estimate.usd[0], plan.estimate.usd[1]],
+          },
+          tasks: plan.tasks,
+          ctx,
+        }),
+        tasks: plan.tasks,
+        ctx,
+        validate: vctx,
+        signal: AbortSignal.any([r.abort.signal, AbortSignal.timeout(60_000)]),
+      });
+    }
+    touch(p, plan, env, this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
+    if (!res.tasks) {
+      p.say({
+        from: "pip",
+        to: "crew",
+        kind: "brief",
+        text: `Kept the default plan: ${res.kept ?? "no usable answer"}`.slice(0, 400),
+      });
+      return res;
+    }
+    if (!res.ops.length) return res;
+    if (mode === "shadow") {
+      p.say({
+        from: "pip",
+        to: "crew",
+        kind: "brief",
+        text: `Shadow plan (not applied): ${res.summary} ${res.ops.map((o) => `${o.op} ${"task" in o ? o.task : o.placeholder}: ${o.reason}`).join("; ")}`.slice(
+          0,
+          600,
+        ),
+      });
+      return res;
+    }
+    const tasks = res.tasks;
+    this.planRevise(
+      p,
+      r,
+      { by: "pip", trigger: why === "conductor" ? "conductor" : "pip_revision", reason: res.summary },
+      () => ({ tasks, ops: res.ops }),
+    );
+    p.say({ from: "pip", to: "crew", kind: "brief", text: `Plan changed: ${res.summary}`.slice(0, 400) });
+    return res;
+  }
+
   /** a status-only change: saved, sent as a transient `plan` event */
   private setPlanStatus(p: OpenProject, id: string, status: PlanTaskT["status"], note?: string) {
     const plan = this.planNow(p);
@@ -726,7 +944,7 @@ export class Crew {
     t.status = status;
     if (note !== undefined) t.note = note.slice(0, 200);
     t.taskIds = [...new Set([...t.taskIds, ...p.state.tasks.filter((x) => x.planTask === id).map((x) => x.id)])];
-    touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView());
+    touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
   }
   /** the plan task the next rows of a handler belong to */
   private ptOf(pt: PlanTaskT | null | undefined) {
@@ -1030,7 +1248,7 @@ export class Crew {
       // running and ready work starts again; a person's wait opens again
       for (const t of plan.tasks)
         if (t.status === "running" || t.status === "ready" || t.status === "waiting_person") t.status = "pending";
-      touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView());
+      touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
     } else if (opts.retry && plan.tasks.some((t) => t.status === "failed")) {
       this.planRevise(p, r, { by: "code", trigger: "retry", reason: "Trying the failed step again." }, (ts) => ({
         tasks: ts.map((t) => (t.status === "failed" ? { ...t, status: "pending" as const, note: undefined } : t)),
@@ -1045,6 +1263,14 @@ export class Crew {
           { by: "code", trigger: "start", reason: `The crew runs again from the ${from ?? p.state.stage} stage.` },
           (ts) => reopenFrom(ts, (from ?? p.state.stage) as Stage, plan.rev + 1, { sceneStatus }),
         );
+    }
+    plan = this.planNow(p)!;
+    // a /new project: G0 was passed by Start, so Pip's revision comes now (once)
+    if ((p.doc().brief as { source?: string }).source === "pip" && plan.rev === 0 && !had) {
+      plan.approvedUsd ??= plan.estimate.usd[0];
+      await this.pipRevise(p, r, "start");
+      const now = this.planNow(p);
+      if (now) p.milestone("plan.ready", `Plan ready · ${tasksToStart(now.tasks)} tasks to start`);
     }
     plan = this.planNow(p)!;
     const env = this.planEnv(p);
@@ -1108,7 +1334,7 @@ export class Crew {
     if (t.estUsd[1] <= 0) return true;
     const b = p.doc().budget;
     const { spentUsd, reservedUsd } = this.deps.gateway.spent(p.id);
-    if (b.capUsd - spentUsd - reservedUsd < t.estUsd[1]) return !!(r.overrun?.declined && false);
+    if (b.capUsd - spentUsd - reservedUsd < t.estUsd[1]) return false;
     const crossed = b.capUsd > 0 && (spentUsd + reservedUsd) / b.capUsd >= b.askAtFraction;
     return !crossed || r.overrun?.cap === b.capUsd;
   }
@@ -1119,8 +1345,10 @@ export class Crew {
     const rest = plan ? plan.tasks.filter(isLive).reduce((s, x) => s + x.estUsd[1], 0) : t.estUsd[1];
     const suggestUsd = Math.ceil((spentUsd + rest) * 2) / 2;
     const fits = b.capUsd - spentUsd >= t.estUsd[1];
-    if (r.overrun?.cap === b.capUsd && fits) return;
-    r.overrun = { cap: b.capUsd };
+    const asked = r.overrun?.cap === b.capUsd;
+    if (asked && fits) return;
+    // the card once per cap; after that (or after a decline) the status line says why the crew waits
+    if (!asked) r.overrun = { cap: b.capUsd };
     const line = fits
       ? `Waiting for you: ${Math.round(b.askAtFraction * 100)}% of the $${b.capUsd} cap is spent. Raise it to $${suggestUsd.toFixed(2)} to finish?`
       : `Waiting for you: the next step could cost $${t.estUsd[1].toFixed(2)} and $${Math.max(0, b.capUsd - spentUsd).toFixed(2)} is left`;
@@ -1132,9 +1360,10 @@ export class Crew {
       text: `Hold: ${line.replace(/^Waiting for you: /, "")}`,
       ref: t.id,
     });
-    try {
-      this.onOverrun?.(p, { needUsd: t.estUsd[1], capUsd: b.capUsd, spentUsd, suggestUsd });
-    } catch {}
+    if (!asked)
+      try {
+        this.onOverrun?.(p, { needUsd: t.estUsd[1], capUsd: b.capUsd, spentUsd, suggestUsd });
+      } catch {}
   }
   /** the person declined the overrun card: go on with what fits (P1b) */
   declineOverrun(p: OpenProject) {
@@ -1469,8 +1698,15 @@ export class Crew {
     switch (pt.gate) {
       case "g0_brief": {
         await this.atGate(p, r, pt, "g0_brief", [{ label: "Brief and budget" }]);
+        // what the person approved at G0 is the plan's total now (the 20% line, §1.6)
         const plan = this.planNow(p);
-        if (plan) p.milestone("plan.ready", `Plan ready · ${tasksToStart(plan.tasks)} tasks to start`);
+        if (plan) {
+          plan.approvedUsd = plan.estimate.usd[0];
+          touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
+        }
+        await this.pipRevise(p, r, "g0");
+        const now = this.planNow(p);
+        if (now) p.milestone("plan.ready", `Plan ready · ${tasksToStart(now.tasks)} tasks to start`);
         return { status: "done" };
       }
       case "g1_script":
@@ -1647,11 +1883,18 @@ export class Crew {
   private plannedArt(p: OpenProject): string[] {
     const plan = this.planNow(p);
     return (plan?.tasks ?? [])
-      .filter((t) => (t.kind === "asset.import" || t.kind === "asset.spec") && t.fromRef && t.asset && isLive(t))
+      .filter(
+        (t) =>
+          (t.kind === "asset.import" || t.kind === "asset.spec") &&
+          t.asset &&
+          !t.expand &&
+          isLive(t) &&
+          (t.fromRef || t.description),
+      )
       .map((t) =>
         t.kind === "asset.import"
           ? `${t.asset}: icon 16x16, the person's logo (use it as toast iconAsset or item_collect itemAsset)`
-          : `${t.asset}: ${t.assetKind ?? "character"} drawn from the person's reference (add it to newAssets as "${t.asset}")`,
+          : `${t.asset}: ${t.assetKind ?? "character"} ${t.fromRef ? "drawn from the person's reference" : "being drawn for this video"} (add it to newAssets as "${t.asset}")`,
       );
   }
 
@@ -2782,7 +3025,7 @@ export class Crew {
 
   /** review rounds per run (settings `defaults.reviewRounds`, default 2: one round plus one fix round) */
   protected reviewRounds(): number {
-    return 2;
+    return this.deps.gateway.defaults?.().reviewRounds ?? 2;
   }
 
   /**

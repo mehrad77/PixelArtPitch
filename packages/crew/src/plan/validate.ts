@@ -115,7 +115,11 @@ export function validate(tasks: PlanTaskT[], ctx: ValidateCtx): { errors: PlanIs
         t.id,
       );
   }
-  // V5 gate_missing, gate_touched
+  // V5 gate_touched (first: it is the cause when a gate goes missing), gate_missing
+  if (pip)
+    for (const o of ops)
+      if ((o.op === "drop" || o.op === "retier") && o.task && ids.get(o.task)?.kind === "gate")
+        err("V5", "gate_touched", `${o.task} is a gate`, "gates aren't yours to change");
   const live = tasks.filter((t) => t.status !== "dropped");
   for (const g of ["g0_brief", "g1_script", "g2_animatic", "g3_rough", "g4_final"])
     if (!live.some((t) => t.kind === "gate" && t.gate === g))
@@ -134,14 +138,14 @@ export function validate(tasks: PlanTaskT[], ctx: ValidateCtx): { errors: PlanIs
         "code adds the rights gate with the chain",
       );
   }
-  if (pip)
-    for (const o of ops)
-      if ((o.op === "drop" || o.op === "retier") && o.task && ids.get(o.task)?.kind === "gate")
-        err("V5", "gate_touched", `${o.task} is a gate`, "gates aren't yours to change");
   // V6 over_cap (Pip only; rules and code plans become a card instead)
   const cap = ctx.doc.budget.capUsd - ctx.doc.budget.reserveUsd;
   const p50 = ctx.spentUsd + tasks.filter((t) => isLive(t) && !t.conditional).reduce((s, t) => s + t.estUsd[0], 0);
-  if (pip && p50 > cap)
+  // Pip may not push the plan over the cap; a diff that leaves an over-cap rules plan no dearer is not Pip's error
+  const p50Before = ctx.before
+    ? ctx.spentUsd + ctx.before.filter((t) => isLive(t) && !t.conditional).reduce((s, t) => s + t.estUsd[0], 0)
+    : 0;
+  if (pip && p50 > cap && p50 > p50Before + 1e-9)
     err(
       "V6",
       "over_cap",

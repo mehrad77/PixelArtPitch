@@ -335,6 +335,12 @@ test("validator: V1-V14", () => {
   assert.ok(errs(base(), d, { by: "pip", ops: [{ op: "drop", task: "t_g1" }] }).includes("V5"), "gates aren't Pip's");
   assert.ok(errs(base(), { ...d, budget: { ...d.budget, capUsd: 0.6 } }, { by: "pip" }).includes("V6"));
   assert.ok(!errs(base(), { ...d, budget: { ...d.budget, capUsd: 0.6 } }).includes("V6"), "never for a rules plan");
+  assert.ok(
+    !errs(base(), { ...d, budget: { ...d.budget, capUsd: 0.6 } }, { by: "pip", before: base(), ops: [] }).includes(
+      "V6",
+    ),
+    "an empty diff on an over-cap rules plan isn't Pip's error",
+  );
   const before = base();
   assert.ok(errs(base(), d, { by: "pip", before, ops: [{ op: "drop", task: "t_storyboard" }] }).includes("V7"));
   byId(before, "t_review_r1").status = "running";

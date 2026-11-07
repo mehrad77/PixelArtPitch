@@ -54,6 +54,10 @@ export const SettingsSchema = z.object({
     askAtFraction: z.number().min(0.1).max(1),
     involvement: z.enum(["every", "key", "auto"]),
     concurrency: z.number().int().min(1).max(32),
+    /** Pip's revision of the rules plan (docs/PIP-ORCHESTRATION.md §1.4): applied, logged only, or not called */
+    pipPlan: z.enum(["on", "shadow", "off"]).default("shadow"),
+    /** review rounds per crew run: 2 = one review plus one round that checks the fixes */
+    reviewRounds: z.union([z.literal(1), z.literal(2)]).default(2),
   }),
   paths: z.object({ roots: z.array(z.string()), library: z.string(), ffmpeg: z.string() }),
   /** manual $/MTok per model id, applied with setPriceOverride by the caller */
@@ -151,7 +155,14 @@ export function defaultSettings(): Settings {
     providers: structuredClone(DEFAULT_PROVIDERS),
     profile: "best",
     roles: structuredClone(PROFILES.best),
-    defaults: { capUsd: 20, askAtFraction: 0.8, involvement: "key", concurrency: 4 },
+    defaults: {
+      capUsd: 20,
+      askAtFraction: 0.8,
+      involvement: "key",
+      concurrency: 4,
+      pipPlan: "shadow",
+      reviewRounds: 2,
+    },
     paths: { roots: [join(appDataDir(), "projects")], library: lib, ffmpeg: "ffmpeg" },
     prices: {},
     connections: [],

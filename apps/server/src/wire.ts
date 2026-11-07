@@ -171,10 +171,26 @@ export async function wireCrew(deps: {
     external: deps.external ?? connections,
     lend: (p, role, tools) => crew.lend(p, role, tools),
     resolveLend: (ref) => connections.resolve(ref)?.name,
+    crewDecide: (p, what, decision) => {
+      if (what === "pending") decision === "confirm" ? crew.confirmPending(p) : crew.declinePending(p);
+      else if (decision === "decline") crew.declineOverrun(p);
+    },
   });
 
   // Pip directs the crew on its triggers (asks, partial/blocked reports, blockers, stage checks)
-  crew.conductor = new PipConductor({ gateway, modeFor: (m) => pip.modeFor(m) });
+  const conductor = new PipConductor({ gateway, modeFor: (m) => pip.modeFor(m) });
+  crew.conductor = conductor;
+  // the production plan (docs/PIP-ORCHESTRATION.md): Pip's revision runs in agent mode only; its cards come from Pip
+  crew.pipModeFor = (m) => pip.modeFor(m);
+  conductor.plan = (p) =>
+    (crew.planNow(p)?.tasks ?? [])
+      .filter((t) => ["pending", "ready", "running", "waiting_person"].includes(t.status))
+      .map((t) => `${t.id} (${t.kind}${t.scene ? ` ${t.scene}` : ""}${t.asset ? ` ${t.asset}` : ""})`)
+      .join(", ");
+  crew.onPlanCard = (p, c) => pip.revisionCard(p, c);
+  crew.onOverrun = (p, o) => {
+    pip.overrunCard(p, o);
+  };
   deps.registry.add(
     defineTool({
       name: "ask_pip",

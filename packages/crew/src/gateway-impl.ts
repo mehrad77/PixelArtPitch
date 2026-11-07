@@ -79,6 +79,9 @@ export class ModelGateway implements Gateway {
   ledgerRef() {
     return this.ledger;
   }
+  defaults() {
+    return this.settings.defaults ?? {};
+  }
   readonly ledger: Ledger;
   readonly secrets: SecretStore;
   private settings: Settings;
@@ -196,7 +199,7 @@ export class ModelGateway implements Gateway {
     } catch (e: any) {
       // escalate once to the role's fallback on a model failure (never on budget or a cancel)
       const fb = this.fallbackFor(spec.role);
-      if (e instanceof BudgetError || spec.signal?.aborted || !fb || fb === model) throw e;
+      if (e instanceof BudgetError || spec.signal?.aborted || spec.noFallback || !fb || fb === model) throw e;
       return tryModel(fb);
     }
   }

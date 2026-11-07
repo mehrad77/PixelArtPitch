@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { Gateway } from "./gateway.ts";
 import type { ChatMessage, ToolSpec } from "./llm/types.ts";
 import type { ChangePlan, Conductor, Decision, Trigger } from "./orchestrator.ts";
+import { PlanDiffOut } from "./plan/schema.ts";
 import { card, fill } from "./prompts.ts";
 
 const ROLES = [
@@ -32,6 +33,7 @@ const DecisionIn = {
     question: z.string().min(5).max(200),
     options: z.array(z.string().max(80)).max(6).optional(),
   }),
+  crew_replan: PlanDiffOut,
 };
 const TOOLS: ToolSpec[] = Object.entries(DecisionIn).map(([name, schema]) => ({
   name,
@@ -43,10 +45,20 @@ const TOOLS: ToolSpec[] = Object.entries(DecisionIn).map(([name, schema]) => ({
     crew_next: "On track: carry on.",
     crew_hold: "Stop and tell the person what's wrong.",
     crew_escalate: "Ask the person something only they know.",
+    crew_replan:
+      "Change the production plan: add a drawing (asset.spec), a logo import or a scene redo, drop or retier a pending task by its id. Code adds the chain and its gates; the validator may refuse it.",
   }[name]!,
   inputSchema: z.toJSONSchema(schema, { io: "input" }) as Record<string, unknown>,
 }));
-const TERMINAL = new Set(["crew_answer", "crew_redo", "crew_reboard", "crew_next", "crew_hold", "crew_escalate"]);
+const TERMINAL = new Set([
+  "crew_answer",
+  "crew_redo",
+  "crew_reboard",
+  "crew_next",
+  "crew_hold",
+  "crew_escalate",
+  "crew_replan",
+]);
 
 /** questions only the person can answer */
 const PERSON_ONLY =
@@ -115,7 +127,7 @@ export class PipConductor implements Conductor {
   async think(
     p: OpenProject,
     t: Trigger,
-    ctx: { change?: ChangePlan; redos: Map<string, number> },
+    ctx: { change?: ChangePlan; redos: Map<string, number>; replan?: boolean },
   ): Promise<Decision[]> {
     const model = this.gateway.modelFor("assistant", p.doc().crew.models);
     if (this.modeFor(model) !== "agent") return rules(t, ctx);
@@ -127,7 +139,10 @@ export class PipConductor implements Conductor {
     }
   }
 
-  private async loop(p: OpenProject, t: Trigger, ctx: { redos: Map<string, number> }, model: string) {
+  /** the plan's live tasks, one line each, so crew_replan can name them */
+  plan?: (p: OpenProject) => string;
+
+  private async loop(p: OpenProject, t: Trigger, ctx: { redos: Map<string, number>; replan?: boolean }, model: string) {
     const c = card("assistant", "conduct");
     const d = p.doc();
     const st = p.state;
@@ -145,6 +160,7 @@ export class PipConductor implements Conductor {
           .map((n) => `${n.id} (${n.assignee}): ${n.text.slice(0, 160)}`)
           .join("; ") || "none"
       }`,
+      ...(ctx.replan && this.plan ? [`Plan (live tasks): ${this.plan(p) || "none"}`] : []),
       `Decisions on the brief: ${
         d.notes
           .map((n) => n.text)
@@ -173,7 +189,8 @@ export class PipConductor implements Conductor {
         promptVersion: c.version,
         system: c.system,
         messages,
-        tools: TOOLS,
+        // crew_replan only while the run has Pip proposals left (§1.6)
+        tools: ctx.replan ? TOOLS : TOOLS.filter((x) => x.name !== "crew_replan"),
         maxOut: c.maxOut,
         effort: c.effort,
         model,
@@ -211,7 +228,9 @@ export class PipConductor implements Conductor {
                     ? { kind: "next", why: v.why }
                     : call.name === "crew_hold"
                       ? { kind: "hold", why: v.why }
-                      : { kind: "escalate", question: v.question, options: v.options },
+                      : call.name === "crew_replan"
+                        ? { kind: "replan", diff: v }
+                        : { kind: "escalate", question: v.question, options: v.options },
         );
         if (TERMINAL.has(call.name)) terminal = true;
         messages.push({ role: "tool", toolCallId: call.id, name: call.name, content: "ok" });
