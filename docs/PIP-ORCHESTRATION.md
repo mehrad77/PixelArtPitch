@@ -486,7 +486,7 @@ The P4 run re-added whole chains on every change (the estimate grew to $12.50), 
 - **A change re-adds only what it touches.**
   - `reopenFrom(tasks, from, rev, { keep })`: finished work `keep` names stays done. `exclude` still also keeps a failed task failed; `keep` only skips the copy.
   - `changeRevision(…, keep)` keeps every `scene.tune` outside `change.scope`.
-  - The orchestrator's `keepOf(p, redraw)`: a chain task (`asset.*`, its `rights` gate) whose asset the doc has as itself (`hasArt`: in the doc, not a stand-in), and every `lib.publish`. A stage rerun (`crew_run {stage}`) uses it too.
+  - The orchestrator's `keepOf(p, redraw)`: a chain task (`asset.*`, its `rights` gate) whose asset the doc has as itself (`hasArt`: in the doc, not a stand-in), and a `lib.publish` already answered or about such art. A stage rerun (`crew_run {stage}`) uses it too.
   - A note on an asset (`target.asset`, no scene) scopes the change to the scenes that draw it and redraws that asset: `change.assets` (also in `state.change`), exempt from `keep`, and the handlers' guard lets it through.
   - The four run-time "already in the project" skips (import, spec, draw, judge) stay as a guard; the plan no longer prices them.
   - `freshId` keeps a variant's suffix: `t_draw_owl_v1` at rev 4 is `t_draw_owl_v1_v4` (it used to be `t_draw_owl_v4_2`).
@@ -503,11 +503,11 @@ The P4 run re-added whole chains on every change (the estimate grew to $12.50), 
   - the revision it would make passes the validator (redo and re-board too, not only replan), with V4's `strictNames` and V15 on its words;
   - it is the only plan change on this trigger (the second gets "one plan change per trigger");
   - it isn't the same change as Pip's last one (same kind and scenes, or the same ops ignoring reasons) while that one's tasks haven't run yet.
-  - The check runs inside the conductor's loop (`think` ctx `check`): a refusal goes back as the tool call's error, not counted as terminal, so Pip can correct itself in its next step. A refused `crew_replan` counts toward the run's six proposals. `apply()` checks again for the fixed rules' decisions; past the redo limit it still holds the run and tells the person (the 2-redo hold).
+  - The check runs inside the conductor's loop (`think` ctx `check`): a refusal goes back as the tool call's error, not counted as terminal, so Pip can correct itself in its next step. A refused `crew_replan` counts toward the run's six proposals. `apply()` checks again for the fixed rules' decisions, as code (`by: "code"`: the plan's shape only, since a rule's redo carries the Reviewer's words and the budget is the overrun flow's); past the redo limit it still holds the run and tells the person (the 2-redo hold).
   - Caps are unchanged: `think()` 12 per run, `MAX_PIP_PROPOSALS` 6, `MAX_REVISIONS_PER_RUN` 40, at most 3 conductor steps per trigger.
 - **Gates on a rerun.**
   - Every rerun path locks the gates at and after the stage it reopens (`relockFrom`): a change (from `reopen()`), a retry (from the earliest redone task's stage) and a run from a stage. A resume never relocks. A copied gate then asks again: at `key`, a rerun's G3 always asks the person, and only its "Looks good" passes G4 with it (D2).
-  - `crew.gate()` takes a verdict only for a gate that is open or that a run waits on; anything else is `409 gate_not_open`.
+  - `crew.gate()` takes a verdict only for a gate that is open or that a run waits on; anything else is `409 gate_not_open` (on a gate left at `changes`, its fix says to tell Pip what to change, or run the crew again to be asked).
   - `changes` is never a pass (`atGate`, `rough()`): its reasons and items become one note of the person's to the gate's owner (G0 producer, G1 writer, G2 director, G3 animator, G4 editor), the run ends at the gate (its task back to `pending`), and the run's end starts that change, which asks at the gate again. With no reasons, the line says "Waiting for you: what to change in the rough cut" until the person says it (Pip's field).
 - **Publish is safe and asked once.**
   - The library has two layers (`@pap/render` `library.ts`): the repo's `library/` is a read-only seed; the person's own library is `settings.paths.library` (default `<appData>/library`; the server sets it with `setUserLibrary`). `library_search`, `library_get`, `cast_asset`, rendering, Pip's plan prompt, the Director's library list and `GET /api/library` read both; the person's wins on an id both have.

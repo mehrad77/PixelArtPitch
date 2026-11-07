@@ -369,6 +369,10 @@ test("the conductor's plan changes are checked: unknown names, invented assets, 
     { kind: "redo", scenes: ["quest"], why: "second" },
   ]);
   assert.equal(crew.planNow(p)!.rev, rev + 1, "only the first one was applied");
+  // a fixed rule's redo carries the Reviewer's words: apply() checks the plan's shape only, never its words
+  const r2 = fakeRun();
+  await c.apply(p, r2, [{ kind: "redo", scenes: ["flag"], why: "the Reviewer says hero_walk is off" }]);
+  assert.equal(crew.planNow(p)!.rev, rev + 2, "the rules' redo is applied");
   assert.deepEqual(idsIn("redo t_tune_grind_r2 and owl_reading, not end-card"), ["t_tune_grind_r2", "owl_reading"]);
 });
 
@@ -537,6 +541,24 @@ test("publish writes to the person's library, remembers the answer and never ask
     assert.ok(lib.libraryIndex().assets.some((a) => a.id === "castle" && a.layer === "seed"));
     assert.throws(() => lib.publishAsset(lampAsset("castle"), null), /already has castle/);
     assert.throws(() => lib.publishAsset(lampAsset("test-x"), null, SEED), /seed/);
+    // search, get, cast and render read both layers; the person's library wins on an id both have
+    const { registry, workspace } = { registry: c.deps.registry, workspace: c.deps.workspace };
+    const tctx = { author: { kind: "user" as const }, project: p, workspace, emit: () => {} };
+    const found = await registry.call("library_search", { query: "test-lamp" }, tctx);
+    assert.ok(found.ok && (found.data as any[]).some((a) => a.id === "test-lamp" && a.ref === "lib:test-lamp@1"));
+    const cast = await registry.call("cast_asset", { name: "lamp-cast", libraryId: "test-lamp" }, tctx);
+    assert.ok(cast.ok, JSON.stringify(cast));
+    const loaded = lib.loadProject(p.dir);
+    assert.ok(
+      loaded.assets.some(([id]) => id === "lamp-cast"),
+      "render resolves a lib: ref from the user library",
+    );
+    mkdirSync(join(user, "castle"), { recursive: true });
+    writeFileSync(join(user, "castle", "asset.json"), JSON.stringify(lampAsset("castle")));
+    writeFileSync(join(user, "castle", "sheet.png"), Buffer.from("png"));
+    const got = await registry.call("library_get", { id: "castle" }, tctx);
+    assert.ok(got.ok && (got.data as any).description === "A small lamp.", "the user's castle wins over the seed's");
+    assert.ok(existsSync(join(SEED, "castle", "asset.json")), "and the seed's stays as it is");
   } finally {
     lib.setUserLibrary(null);
     rmSync(user, { recursive: true, force: true });

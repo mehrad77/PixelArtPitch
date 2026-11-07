@@ -652,7 +652,7 @@ export class Crew {
    * left, the revision it makes passes the validator (crew_redo and crew_reboard too, not only crew_replan), its words
    * name only ids the project has, and it isn't the same change as Pip's last one in this run.
    */
-  checkChange(p: OpenProject, r: Run, d: Decision, o: { replan?: boolean } = {}): string | null {
+  checkChange(p: OpenProject, r: Run, d: Decision, o: { replan?: boolean; by?: "pip" | "code" } = {}): string | null {
     if (!planChanging(d)) return null;
     const plan = this.planNow(p);
     if (!plan) return null;
@@ -695,13 +695,15 @@ export class Crew {
       d.kind === "redo"
         ? addRedo(plan.tasks, d.scenes, ctx, { reason: why.slice(0, 200) })
         : addReboard(plan.tasks, d.scenes, ctx, { reason: why.slice(0, 200) });
+    // apply()'s re-check (`by: "code"`): a fixed rule's redo carries the Reviewer's or the member's words, and the
+    // budget is the overrun flow's job, so only the plan's shape is checked there
+    const pip = o.by !== "code";
     const v = validatePlan(out.tasks, {
       ...vctx,
-      by: "pip",
+      by: pip ? "pip" : "code",
       before: plan.tasks,
       ops: out.ops,
-      texts: [why],
-      strictNames: true,
+      ...(pip ? { texts: [why], strictNames: true } : {}),
     });
     return v.errors[0] ? fix(v.errors[0]) : null;
   }
@@ -728,7 +730,7 @@ export class Crew {
     let sig: { sig: string; had: Set<string> } | null = null;
     for (const d of ds) {
       if (planChanging(d)) {
-        const why = changed ? "one plan change per trigger" : this.checkChange(p, r, d, { replan: false });
+        const why = changed ? "one plan change per trigger" : this.checkChange(p, r, d, { replan: false, by: "code" });
         if (why) {
           p.emit("log", { level: "warn", text: `Pip's ${d.kind} was not applied: ${why.slice(0, 200)}` });
           continue;
@@ -1505,7 +1507,9 @@ export class Crew {
       throw new StoreError(
         "gate_not_open",
         `${gate} isn't waiting for a verdict (it is ${now?.status ?? "unknown"})`,
-        "answer a gate when the crew opens it (state.gates status open)",
+        now?.status === "changes"
+          ? "say what to change in Pip's field (crew_request_change), or run the crew again to be asked at this gate"
+          : "answer a gate when the crew opens it (state.gates status open)",
         409,
       );
     const g = p.setGate(gate as GateId, {
@@ -1606,12 +1610,18 @@ export class Crew {
   }
   /**
    * What a rerun keeps as it is (§1.9): the chain and rights OK of art the project already has as itself (a stand-in
-   * isn't art: a retry redraws it), and every publish question already met. `redraw` names assets the change redoes.
+   * isn't art: a retry redraws it), and its publish question (answered, or about art that stays). `redraw` names
+   * assets the change redoes.
    */
   keepOf(p: OpenProject, redraw: string[] = []): (t: PlanTaskT) => boolean {
     const d = p.doc();
     return (t) => {
-      if (t.kind === "lib.publish") return true;
+      // a publish question already met (or asked of art that stays as it is) is never asked again
+      if (t.kind === "lib.publish")
+        return (
+          d.assets.some((a) => a.id === t.asset && !!a.publish) ||
+          (!!t.asset && !redraw.includes(t.asset) && hasArt(d, t.asset))
+        );
       if (!t.asset || redraw.includes(t.asset)) return false;
       if (t.kind.startsWith("asset.") || (t.kind === "gate" && t.gate === "rights")) return hasArt(d, t.asset);
       return false;
