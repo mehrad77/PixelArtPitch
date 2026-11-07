@@ -742,9 +742,14 @@ export class Crew {
     added: string[],
   ) {
     if (!this.onPlanCard || next.approvedUsd === null || next.pending) return;
-    if (rv.by === "person" || !added.length) return;
+    // new work: added tasks, and the art an expansion brings in (C5); expanded tunes were priced by their placeholder
+    const art = next.ops.flatMap((o) =>
+      o.op === "expand" && prev.tasks.find((t) => t.id === o.placeholder)?.expand === "per_new_asset" ? o.into : [],
+    );
+    const fresh = [...added, ...art];
+    if (rv.by === "person" || !fresh.length) return;
     if (next.estimate.usd[0] <= 1.2 * next.approvedUsd + 1e-9) return;
-    const tasks = added.filter((id) => next.tasks.find((t) => t.id === id && isLive(t)));
+    const tasks = fresh.filter((id) => next.tasks.find((t) => t.id === id && isLive(t)));
     if (!tasks.length) return;
     const ids = p.doc().scenes.map((s) => s.id);
     const card = this.onPlanCard(p, {

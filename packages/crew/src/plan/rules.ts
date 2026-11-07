@@ -649,6 +649,9 @@ export function expandPlan(
       ph.kind === "lib.publish" ? [] : chainIds.filter((id) => ts.find((t) => t.id === id)?.kind === ph.kind);
     ops.push({ op: "expand", placeholder: ph.id, into, reason: "the storyboard is done" });
   }
+  // new art no placeholder stood for (a later board, a re-run) is an add
+  const covered = new Set(ops.flatMap((o) => (o.op === "expand" ? o.into : [])));
+  for (const id of chainIds) if (!covered.has(id)) ops.push({ op: "add", task: id, reason: "the storyboard needs it" });
   // a publish question for each new public asset
   for (const a of fresh.filter((x) => !x.fromRef && !x.rights)) {
     const id = freshId(`t_publish_${idPart(a.name)}`, ctx.rev, taken);

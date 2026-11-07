@@ -214,6 +214,29 @@ test("the 20% card: a revision past 1.2 x approved waits for the person; confirm
   assert.equal(ok.approvedUsd, ok.estimate.usd[0]);
 });
 
+test("the 20% rule covers expansions (C5): new art from the board waits for the card; the tunes don't", async () => {
+  const w = await setup({ pipPlan: "off" });
+  const r = w.run();
+  const plan = w.crew.planNow(w.p);
+  plan.approvedUsd = 0.01;
+  const { writeFileSync } = await import("node:fs");
+  const art = ["lantern", "boat", "gull"].map((name) => ({
+    name,
+    kind: "prop",
+    description: `a small ${name} for the harbour`,
+  }));
+  writeFileSync(join(w.p.dir, "runs", "new-assets.json"), JSON.stringify(art));
+  w.crew.expandAfterBoard(w.p, r);
+  const after = w.crew.planNow(w.p);
+  assert.equal(after.trigger, "expand");
+  assert.ok(after.pending, "the expansion is held for the person");
+  for (const a of ["lantern", "boat", "gull"]) assert.ok(after.pending.tasks.includes(`t_spec_${a}`), a);
+  assert.ok(!after.pending.tasks.some((id: string) => id.startsWith("t_tune_")), "tunes keep running");
+  const c = (w.pip!.items(w.p.id).at(-1) as any).cards[0];
+  assert.equal(c.id, after.pending.cardId);
+  assert.ok(c.whoInstances.some((x: any) => x.instance === "pixel-artist:boat"));
+});
+
 test("crew_replan: the conductor's ops are validated like Pip's; a gate can't be touched", async () => {
   const w = await setup({ pipPlan: "off" });
   const r = w.run();

@@ -143,7 +143,10 @@ export class Executor {
         this.host.stageChanged(stage);
       }
       if (this.failure) {
-        const people = [...this.running.keys()].filter((id) => tasks.find((t) => t.id === id)?.kind === "gate");
+        // the person's waits (a gate, a pick, a narration take, a publish question) end with the run
+        const people = [...this.running.keys()].filter(
+          (id) => tasks.find((t) => t.id === id)?.status === "waiting_person",
+        );
         const work = [...this.running.entries()].filter(([id]) => !people.includes(id)).map(([, j]) => j);
         await Promise.all(work);
         throw this.failure.error;
