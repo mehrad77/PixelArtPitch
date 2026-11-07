@@ -1,0 +1,15 @@
+{"seq":1,"event":"plan","data":{"view":{"rev":0,"at":"2026-11-07T20:00:00.000Z","by":"rules","reason":"r","tasks":[{"id":"t_tune_s01","kind":"scene.tune","role":"animator","scene":"s01","instance":"animator:s01","dependsOn":[],"status":"pending","taskIds":[],"addedIn":0,"label":"Animator · scene 1","stage":"animate","tier":"role","model":null,"estUsd":[0,0],"conditional":false,"round":1}],"estimate":{"usd":[0,0],"sec":[0,0],"rough":true},"approvedUsd":null,"pip":{"mode":"off","proposals":0,"max":6}},"revision":{"rev":0,"at":"2026-11-07T20:00:00.000Z","by":"rules","trigger":"start","reason":"The rules plan for this brief.","ops":[],"deltaUsd":[0,0]}},"ts":"2026-11-07T20:00:01.000Z"}
+{"seq":2,"event":"run","data":{"id":"run_1","status":"start"},"ts":"2026-11-07T20:00:02.000Z"}
+{"seq":3,"event":"plan_status","data":{"rev":0,"tasks":[{"id":"t_tune_s01","status":"running"}]},"ts":"2026-11-07T20:00:03.000Z"}
+{"seq":4,"event":"task","data":{"id":"r1","kind":"scene.tune","role":"animator","title":"Tuning the hook","status":"working","usd":0,"planTask":"t_tune_s01","instance":"animator:s01","startedAt":"2026-11-07T20:00:03.000Z"},"ts":"2026-11-07T20:00:04.000Z"}
+{"seq":5,"event":"log","data":{"level":"info","text":"checkpoint: tuning"},"ts":"2026-11-07T20:00:05.000Z"}
+{"seq":6,"event":"run","data":{"id":"run_1","status":"stopped"},"ts":"2026-11-07T20:00:35.000Z"}
+{"seq":7,"event":"log","data":{"level":"info","text":"checkpoint: stopped"},"ts":"2026-11-07T20:00:36.000Z"}
+{"seq":8,"event":"run","data":{"id":"run_2","status":"start"},"ts":"2026-11-07T21:00:36.000Z"}
+{"seq":9,"event":"plan_status","data":{"rev":0,"tasks":[{"id":"t_tune_s01","status":"running","taskIds":["r1"]}]},"ts":"2026-11-07T21:00:37.000Z"}
+{"seq":10,"event":"task","data":{"id":"r2","kind":"scene.tune","role":"animator","title":"Tuning the hook","status":"working","usd":0,"planTask":"t_tune_s01","instance":"animator:s01","startedAt":"2026-11-07T21:00:37.000Z"},"ts":"2026-11-07T21:00:38.000Z"}
+{"seq":11,"event":"task","data":{"id":"r1","kind":"scene.tune","role":"animator","title":"Tuning the hook","status":"cancelled","usd":0,"planTask":"t_tune_s01","instance":"animator:s01","supersededBy":"r2","startedAt":"2026-11-07T20:00:04.000Z"},"ts":"2026-11-07T21:00:39.000Z"}
+{"seq":12,"event":"task","data":{"id":"r2","kind":"scene.tune","role":"animator","title":"Tuning the hook","status":"done","usd":0.03,"planTask":"t_tune_s01","instance":"animator:s01","startedAt":"2026-11-07T21:00:38.000Z","endedAt":"2026-11-07T21:00:39.000Z"},"ts":"2026-11-07T21:00:43.000Z"}
+{"seq":13,"event":"plan_status","data":{"rev":0,"tasks":[{"id":"t_tune_s01","status":"done","taskIds":["r1","r2"]}]},"ts":"2026-11-07T21:00:44.000Z"}
+{"seq":14,"event":"run","data":{"id":"run_2","status":"done"},"ts":"2026-11-07T21:00:45.000Z"}
+{"seq":15,"event":"log","data":{"level":"info","text":"checkpoint: end"},"ts":"2026-11-07T21:00:46.000Z"}

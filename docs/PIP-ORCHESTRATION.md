@@ -84,6 +84,15 @@ The person approved both specs (this one and its sibling) with these answers to 
 26. **The tracker.** One per open project, started by `GET /api/p/:id`, the SSE subscription or a run. It folds the log once, lays `runs/plan.json` and the rows as they are now over it (with no run active, `running` and `ready` read as `pending`, as a resume makes them; a restart cancels rows without an event), then follows the stream. Each change goes out as a transient `instance` event right after the event that caused it. `GET` never animates: it is the same fold. The tracker listens inside the crew's own emits, so a fault in it is caught there: it logs one line (the event name and the error's type, never project text) and the run goes on.
 27. **SSE ids.** A transient event (seq 0) is now sent without an `id`. "id: 0" set the web client's `Last-Event-ID` to `"0"`, so a reconnect replayed the whole log.
 28. **`about`** is stored on the user item as `{ instance, label }`, and later turns see the message as "(About Pixel artist · founder) …". `Instance.tasks` lists row ids for a project from before the plan.
+29. **A life never outlasts its run (PIP-JOURNEY N24).**
+    - A life ends when its member's last task ends, fails or is cancelled, or when the run it belonged to stops.
+    - `Crew.run` now writes a stored `run` event, `{ id, status: "start" }` at the start and `{ id, status: "done" | "failed" | "stopped" }` at the end.
+    - When a run ends, its plan rows still `working`, `queued` or `waiting_user` are cancelled with `endedAt`.
+    - When the fold sees a run's end, it cancels that run's open rows at the stop's time if they have no `endedAt`, and its running, ready and waiting tasks go back to `pending`.
+    - A run that died without a word (a crash, or a log from before the `run` event, where a restart cancels the rows with no event) is found by the next run's start: its `run` event, or the old start lines ("The crew is working.", "Picking up where the crew left off", "The crew is making your change"). Its rows end at the last event it wrote.
+    - A tracker attached to an idle project closes such rows where the log ends, not at the time it attached.
+    - Only crew rows close this way: plan rows, or catalogue kinds on an old log. A row Pip lent a member for, such as a translation, is left alone.
+    - On the real `questday_teaser` the Animator's first life now runs 13:27:15 to 13:27:15 (the run died right after it started), not to 15:04. In all, it was alive 8.5 s.
 
 **Journey needs (PIP-JOURNEY.md §7.2) after P1a:** N2 (P1b: `whoInstances` on revision cards), N4 (the plan half: `GET /api/p/:id` carries `plan`), N5 (`PlanTaskView.label` in sentence case, `ROLE_LABEL` in `plan/catalogue.ts`), N6 (`crew.slots`) and N10 (`ref` on reports, and on the asks and answers that go through Pip, is the plan task's scene or asset, else its id) are met. N1, N3, N4's instances, N11 and N19 are met by P2 (items 21–26); N12 stays as written (any one path within 2 hops). N7–N9 with P3.
 
@@ -619,6 +628,7 @@ export type WorkspaceLine = { text: string;
 | Stream | Event | Data | Stored? |
 |---|---|---|---|
 | `/api/p/:id/events` | `plan` | `{ view: PlanView; revision?: PlanRevisionSummary }`; `revision` only on a new revision | stored when `revision` is set; status-only ones are transient (id 0) |
+| `/api/p/:id/events` | `run` | `{ id; status: "start" \| "done" \| "failed" \| "stopped" }`: a crew run's bounds (P2 item 29) | stored |
 | `/api/p/:id/events` | `plan_status` | `{ rev; tasks: { id; status; note?; taskIds? }[] }`: the tasks whose status moved, just before the status-only `plan` view (P2) | stored |
 | `/api/p/:id/events` | `instance` | `{ instance: Instance; change: "spawn" \| "ghost" \| "live" \| "idle" \| "end" \| "revive" }`; a `spawn` or `revive` comes before its task's `working` row and an `end` after its last task event (N3) | transient (derived, no `id`) |
 | `/api/p/:id/events` | `milestone` | the `kind: "plan"` milestones: "Plan ready · N tasks to start" (the first revision after G0; N = the non-gate, non-conditional tasks still to do) and "Plan changed: <reason>" (each revision with add, drop, retier or expand ops) | derived, as today |

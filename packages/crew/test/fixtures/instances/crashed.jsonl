@@ -1,0 +1,13 @@
+{"seq":1,"event":"digest","data":{"text":"The crew is working."},"ts":"2026-11-07T13:27:01.000Z"}
+{"seq":2,"event":"task","data":{"id":"a1","kind":"scene.tune","role":"animator","title":"Tuning Hello","status":"working","usd":0,"startedAt":"2026-11-07T13:27:02.000Z"},"ts":"2026-11-07T13:27:02.000Z"}
+{"seq":3,"event":"task","data":{"id":"a2","kind":"scene.tune","role":"animator","title":"Tuning World","status":"working","usd":0,"startedAt":"2026-11-07T13:27:02.000Z"},"ts":"2026-11-07T13:27:03.000Z"}
+{"seq":4,"event":"log","data":{"level":"info","text":"checkpoint: tuning"},"ts":"2026-11-07T13:27:04.000Z"}
+{"seq":5,"event":"ledger","data":{"usd":0,"role":"animator","model":"fake/model","spentUsd":0,"reservedUsd":0},"ts":"2026-11-07T13:27:05.000Z"}
+{"seq":6,"event":"digest","data":{"text":"The crew is working."},"ts":"2026-11-07T15:04:05.000Z"}
+{"seq":7,"event":"task","data":{"id":"a1","kind":"scene.tune","role":"animator","title":"Tuning Hello","status":"cancelled","usd":0,"startedAt":"2026-11-07T13:27:02.000Z","supersededBy":"b1"},"ts":"2026-11-07T15:04:06.000Z"}
+{"seq":8,"event":"task","data":{"id":"a2","kind":"scene.tune","role":"animator","title":"Tuning World","status":"cancelled","usd":0,"startedAt":"2026-11-07T13:27:02.000Z","supersededBy":"b2"},"ts":"2026-11-07T15:04:07.000Z"}
+{"seq":9,"event":"task","data":{"id":"b1","kind":"scene.tune","role":"animator","title":"Animating Hello","status":"working","usd":0,"startedAt":"2026-11-07T15:04:07.000Z"},"ts":"2026-11-07T15:04:08.000Z"}
+{"seq":10,"event":"task","data":{"id":"b2","kind":"scene.tune","role":"animator","title":"Animating World","status":"working","usd":0,"startedAt":"2026-11-07T15:04:08.000Z"},"ts":"2026-11-07T15:04:09.000Z"}
+{"seq":11,"event":"task","data":{"id":"b1","kind":"scene.tune","role":"animator","title":"Animating Hello","status":"done","usd":0.01,"startedAt":"2026-11-07T15:04:08.000Z","endedAt":"2026-11-07T15:04:09.000Z"},"ts":"2026-11-07T15:04:12.000Z"}
+{"seq":12,"event":"task","data":{"id":"b2","kind":"scene.tune","role":"animator","title":"Animating World","status":"done","usd":0.02,"startedAt":"2026-11-07T15:04:08.000Z","endedAt":"2026-11-07T15:04:12.000Z"},"ts":"2026-11-07T15:04:13.000Z"}
+{"seq":13,"event":"log","data":{"level":"info","text":"checkpoint: end"},"ts":"2026-11-07T15:04:14.000Z"}

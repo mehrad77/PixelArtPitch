@@ -13,7 +13,7 @@
 // task, gates costing nothing.
 import type { EventEmitter } from "node:events";
 import { z } from "zod";
-import { ROLE_LABEL } from "./catalogue.ts";
+import { CATALOGUE_KINDS, ROLE_LABEL } from "./catalogue.ts";
 import type { PlanRevisionSummary, PlanTaskView, PlanView } from "./schema.ts";
 
 // ---------------------------------------------------------------- the wire shape (§4.2, apps/web/src/lib/types.ts)
@@ -129,6 +129,18 @@ const SUBJECT: Record<string, "scene" | "asset"> = {
 /** the person's picks a member asks (N19): its face stays, "needs you", until the pick is made */
 const ASKED_BY_DEP = new Set(["g1_script", "rights"]);
 const UNFINISHED = new Set(["pending", "ready", "running", "waiting_person"]);
+/** a row still at work: a run's end (or a dead run) closes these */
+const OPEN_ROW = new Set(["working", "queued", "waiting_user"]);
+const CREW_KINDS = new Set<string>(CATALOGUE_KINDS);
+/** a row of the crew's run (not one Pip lent a member for, such as a translation) */
+const crewRow = (r: Row) => !!r.planTask || CREW_KINDS.has(r.kind);
+/** how a run opens in the log (Crew.run, Crew.resumeInterrupted, a change): a log from before the `run` event */
+const RUN_STARTS = new Set([
+  "The crew is working.",
+  "The crew is working",
+  "Picking up where the crew left off",
+  "The crew is making your change",
+]);
 const SATISFIED = new Set(["done", "skipped", "dropped"]);
 const MAX_GHOSTS = 3;
 const HORIZON = 2;
@@ -204,13 +216,16 @@ export class InstanceFold {
   private byId = new Map<string, PT>();
   private pending = new Set<string>();
   private revs = new Map<number, Rev>();
-  private rows = new Map<string, Row & { seq: number; ts: string; last: number }>();
+  /** `endAt`: when the fold knows it ended though the row has no `endedAt` (its run stopped or died) */
+  private rows = new Map<string, Row & { seq: number; ts: string; last: number; endAt?: string }>();
   private rowOwner = new Map<string, string>();
   private metas = new Map<string, Meta>();
   /** a status-only view (or an overlay) was seen: statuses are exact, rows no longer move them */
   private exact = false;
   private joins = 0;
   private lastTs = "";
+  /** the event before the current one: where a run that died without a word last spoke */
+  private prevTs = "";
 
   constructor(opts: FoldOpts = {}) {
     this.opts = opts;
@@ -222,8 +237,23 @@ export class InstanceFold {
   // ---------------------------------------------------------------- events
   /** fold one event; returns whether instances may have changed */
   apply(e: FoldEvent): boolean {
+    this.prevTs = this.lastTs;
     this.lastTs = e.ts;
     switch (e.event) {
+      // N24: a life never outlasts its run. A run's end stops its open rows then; a run that died without a word
+      // (a crash, or a log from before the `run` event) is found by the next run's start, and its rows end at the
+      // last thing it said
+      case "run": {
+        const d = e.data as { status?: string };
+        if (d?.status === "start") return this.stale(this.prevTs || e.ts);
+        this.stop(e.ts);
+        break;
+      }
+      case "digest":
+      case "status": {
+        const text = (e.data as { text?: string; line?: string })?.[e.event === "digest" ? "text" : "line"];
+        return RUN_STARTS.has(text ?? "") ? this.stale(this.prevTs || e.ts) : false;
+      }
       case "plan": {
         const d = e.data as { view?: PlanView; revision?: PlanRevisionSummary };
         if (!d?.view) return false;
@@ -271,7 +301,13 @@ export class InstanceFold {
         const r = e.data as Row;
         if (!r?.id) return false;
         const had = this.rows.get(r.id);
-        this.rows.set(r.id, { ...r, seq: had?.seq ?? e.seq, ts: had?.ts ?? e.ts, last: e.seq });
+        this.rows.set(r.id, {
+          ...r,
+          seq: had?.seq ?? e.seq,
+          ts: had?.ts ?? e.ts,
+          last: e.seq,
+          ...(had?.endAt ? { endAt: had.endAt } : {}),
+        });
         this.memo.clear();
         const t = r.planTask ? this.byId.get(r.planTask) : undefined;
         if (t && !t.taskIds.includes(r.id)) t.taskIds.push(r.id);
@@ -337,10 +373,15 @@ export class InstanceFold {
     idle: boolean,
     ts = new Date().toISOString(),
   ) {
+    // what changed while nobody wrote (a restart cancels the open rows): it ended where the log ends
+    const at = idle && this.lastTs ? this.lastTs : ts;
     for (const r of now.rows ?? []) {
       const had = this.rows.get(r.id);
-      if (had) this.rows.set(r.id, { ...had, ...r });
+      if (!had) continue;
+      const closed = OPEN_ROW.has(had.status) && !OPEN_ROW.has(r.status) && !r.endedAt;
+      this.rows.set(r.id, { ...had, ...r, ...(closed ? { endAt: had.endAt ?? at } : {}) });
     }
+    this.memo.clear();
     if (now.plan) {
       this.exact = true;
       for (const x of now.plan) {
@@ -350,7 +391,24 @@ export class InstanceFold {
         for (const id of x.taskIds ?? []) if (!t.taskIds.includes(id)) t.taskIds.push(id);
       }
     }
-    this.settle(ts);
+    this.settle(at);
+  }
+
+  /** a run ended: its open rows are cancelled at `at` (unless they say when), and nothing of it runs or waits */
+  private stop(at: string) {
+    for (const [id, r] of this.rows)
+      if (OPEN_ROW.has(r.status) && crewRow(r))
+        this.rows.set(id, { ...r, status: "cancelled", endAt: r.endedAt ?? r.endAt ?? at });
+    for (const t of this.tasks)
+      if (t.status === "running" || t.status === "ready" || t.status === "waiting_person") t.status = "pending";
+    this.memo.clear();
+  }
+  /** a run starts while rows of an earlier one are still open: that one died; it ends at `at` */
+  private stale(at: string): boolean {
+    if (![...this.rows.values()].some((r) => OPEN_ROW.has(r.status) && crewRow(r))) return false;
+    this.stop(at);
+    this.settle(at);
+    return true;
   }
 
   private setPlan(v: PlanView) {
@@ -518,7 +576,7 @@ export class InstanceFold {
       if (!m.lives.length && !live && rows.some((r) => r.startedAt && r.status !== "working")) {
         const spans = rows
           .filter((r) => r.startedAt)
-          .map((r) => ({ from: r.startedAt!, to: r.endedAt ?? r.startedAt! }))
+          .map((r) => ({ from: r.startedAt!, to: r.endedAt ?? r.endAt ?? r.startedAt! }))
           .sort((a, b) => a.from.localeCompare(b.from));
         for (const s of spans) {
           const last = m.lives.at(-1);
@@ -834,7 +892,7 @@ export type TrackedProject = {
   eventsSince(seq: number): FoldEvent[];
   events: EventEmitter;
 };
-const RELEVANT = new Set(["plan", "plan_status", "task", "gate", "question", "channel"]);
+const RELEVANT = new Set(["plan", "plan_status", "task", "gate", "question", "channel", "run", "digest", "status"]);
 
 /**
  * One project's instances, live: folds the stored log once, lays what is true now over it, then follows the

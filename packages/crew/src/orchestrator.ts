@@ -1237,6 +1237,8 @@ export class Crew {
     p.saveState();
     p.setDigest("The crew is working.");
     p.setStatus({ line: "The crew is working", problem: undefined });
+    // the run's bounds in the log: a life never outlasts the run it belonged to (PIP-JOURNEY N24)
+    p.emit("run", { id: r.id, status: "start" });
     let finished = false;
     let outcome: { status: RunReport["status"]; error?: string } = { status: "stopped" };
     // a raised cap: the executor looks again
@@ -1270,6 +1272,13 @@ export class Crew {
       throw e;
     } finally {
       p.events.off("event", onPatch);
+      // its rows that are still open end with it (a pause "now", a failure): cancelled, ended now
+      const at = new Date().toISOString();
+      for (const t of p.state.tasks.filter(
+        (x) => x.planTask && (x.status === "working" || x.status === "queued" || x.status === "waiting_user"),
+      ))
+        p.upsertTask({ ...t, status: "cancelled", endedAt: t.endedAt ?? at });
+      p.emit("run", { id: r.id, status: outcome.status });
       this.runs.delete(p.id);
       // a finished, failed or deliberately stopped run is not resumed; only a crash leaves `running` set
       p.state.running = false;

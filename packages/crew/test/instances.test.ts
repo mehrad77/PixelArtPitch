@@ -220,6 +220,57 @@ test("a log from before plan_status (P1) folds to the same members, outcomes and
   assert.equal(s3.lives[1].reason, undefined, "no newer revision: a new life, but no return line");
 });
 
+test("a cancelled run (N24): a life ends when its run died, at the last thing the run said", () => {
+  // a log from before the plan: two scenes tuning, the process dies, the next run cancels them 97 minutes later
+  const cp = checkpoints("crashed.jsonl");
+  assert.equal(get(cp.get("tuning")!, "animator").state, "live");
+  const a = get(cp.get("end")!, "animator");
+  assert.equal(a.state, "finished");
+  assert.equal(a.lives.length, 2);
+  assert.deepEqual(a.lives[0], {
+    from: "2026-11-07T13:27:02.000Z",
+    to: "2026-11-07T13:27:05.000Z",
+    reason: "Pip brought in the Animator for the scenes",
+  });
+  const alive = a.lives.reduce((n, l) => n + Date.parse(l.to!) - Date.parse(l.from), 0);
+  assert.ok(alive < 60_000, `alive ${alive} ms, not the 97 minutes the run was dead`);
+  assert.equal(a.usd, 0.03);
+  assert.deepEqual(foldInstances(read("crashed.jsonl")), cp.get("end"));
+});
+
+test("a stopped run (N24): its open rows end at the run's stop, and the next attempt is a new life", () => {
+  const cp = checkpoints("stopped.jsonl");
+  assert.equal(get(cp.get("tuning")!, "animator:s01").state, "live");
+  const stopped = get(cp.get("stopped")!, "animator:s01");
+  assert.equal(stopped.state, "idle", "its task waits for the next run");
+  assert.equal(stopped.running, 0);
+  assert.equal(stopped.lives[0].to, "2026-11-07T20:00:35.000Z", "the run's stop, since the row has no endedAt");
+  const end = get(cp.get("end")!, "animator:s01");
+  assert.equal(end.state, "finished");
+  assert.equal(end.outcome, "done");
+  assert.equal(end.lives.length, 2);
+  assert.equal(end.lives[1].from, "2026-11-07T21:00:37.000Z", "when the task took its slot again");
+  assert.equal(end.lives[1].reason, undefined, "the same task resumed: no return line");
+  assert.equal(end.usd, 0.03);
+  // the live tracker, attached after the stop with no run active, closes them where the log ends, not now
+  const events = new EventEmitter();
+  const upTo = read("stopped.jsonl").slice(0, 5);
+  const t = new InstanceTracker(
+    { events, eventsSince: () => upTo },
+    {
+      now: () => ({
+        rows: [{ ...(upTo[3].data as any), status: "cancelled" }],
+        plan: [{ id: "t_tune_s01", status: "running" }],
+      }),
+      idle: () => true,
+    },
+  );
+  const v = get(t.view(), "animator:s01");
+  assert.equal(v.state, "idle");
+  assert.equal(v.lives[0].to, upTo.at(-1)!.ts);
+  t.close();
+});
+
 test("reports parse as Crew.done says them", () => {
   assert.deepEqual(parseReport("done: drew the hero"), { status: "done", did: "drew the hero" });
   assert.deepEqual(parseReport("blocked: tried Couldn't: no recipe Needs: a sign recipe"), {
@@ -396,6 +447,12 @@ test("a whole run at one slot: live events in order, replay equals live, the kep
   const rowsUsd = p.state.tasks.reduce((a, t) => a + t.usd, 0);
   assert.ok(Math.abs(now.reduce((a, i) => a + i.usd, 0) - rowsUsd) < 1e-6);
 
+  // the run's bounds are in the log, and no row of it is left open
+  assert.deepEqual(
+    seen.filter((e) => e.event === "run").map((e) => (e.data as { status: string }).status),
+    ["start", "done"],
+  );
+  assert.ok(!p.state.tasks.some((t) => t.planTask && ["working", "queued", "waiting_user"].includes(t.status)));
   // N3: every working row comes after its member's face went live; nothing of a member follows its end
   const lastInstance = new Map<string, Instance>();
   for (const e of seen) {
