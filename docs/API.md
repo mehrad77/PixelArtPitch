@@ -86,6 +86,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/p/:id/crew/resume` | | `{ ok }` |
 | `GET /api/p/:id/events` | SSE, `Last-Event-ID` resumes | events below |
 | `GET /api/p/:id/files/:name` | Range | an output file (mp4, srt, vtt, wav, png) |
+| `GET /api/p/:id/variants/:name` | | a drawn variant's sheet, `runs/<asset>-v<n>.png` (an `asset.draw` task's `lastImage`); `/api/p/:id/runs/:name` is the same, for older logs |
 | `POST /api/p/:id/vo` | `audio/wav` or `audio/webm` body, `?take=name` | `{ file }` |
 | `POST /api/p/:id/vo/align` | `{ file }` | `{ proposal: { cue: string; start: number; end: number }[] }` then a patch to approve |
 | `GET /api/settings` | | `Settings` (keys never included: `hasKey: boolean`) |

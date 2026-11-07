@@ -2773,7 +2773,15 @@ export class Crew {
         description: spec.description,
         licence: "LicenseRef-PAP-Library",
         rights: { likeness: !!pt.fromRef, brand: false, trademark: false, public: !pt.fromRef },
-        provenance: {},
+        // the system's field, filled here: the standard rejects an empty provenance, and the artist can't write it
+        provenance: {
+          source: "generated",
+          role: "pixel-artist",
+          origin: p.id,
+          variant: v,
+          promptVersion: "pixel-artist/draw@1",
+          ...(pt.fromRef ? { ref: pt.fromRef } : {}),
+        },
         hash: "x",
         standard: null,
         grid: Object.fromEntries(fr.frames.map((f) => [f.name, f.rows])),
@@ -2877,7 +2885,7 @@ export class Crew {
       writeFileSync(join(p.dir, "runs", `${a.name}-v${v}.png`), sheet);
       this.done(p, t, {
         summary: `${std.ok ? "passes" : `${std.hard.length} standard issues`}: ${out.data.notes.slice(0, 160)}`,
-        lastImage: `/api/p/${p.id}/files/../runs/${a.name}-v${v}.png`,
+        lastImage: `/api/p/${p.id}/variants/${a.name}-v${v}.png`,
       });
       if (!std.ok)
         throw new Error(

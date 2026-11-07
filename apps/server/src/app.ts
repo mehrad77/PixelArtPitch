@@ -362,6 +362,18 @@ export function createApp(o: ServerOpts) {
     if (!existsSync(f)) return c.text("not found", 404);
     return fileResponse(f, c.req.header("range"));
   });
+  // a drawn variant's sheet (runs/<asset>-v<n>.png): the crew row's "latest image" while an asset is drawn.
+  // `/runs/:name` is what older logs' `files/../runs/…` resolves to in the browser, so their images show too.
+  const variant = (c: any) => {
+    const p = proj(c.req.param("id"));
+    const name = c.req.param("name");
+    if (!/^[a-z][a-z0-9_-]*-v\d+\.png$/.test(name)) return c.text("bad name", 400);
+    const f = join(p.dir, "runs", name);
+    if (!existsSync(f)) return c.text("not found", 404);
+    return fileResponse(f, c.req.header("range"));
+  };
+  app.get("/api/p/:id/variants/:name", variant);
+  app.get("/api/p/:id/runs/:name", variant);
   app.get("/api/p/:id/proxy.mp4", (c) => {
     const p = proj(c.req.param("id"));
     const f = join(p.dir, "out", "proxy.mp4");
