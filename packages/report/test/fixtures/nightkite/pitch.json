@@ -1,0 +1,51 @@
+{
+  "pap": "1",
+  "rev": 4,
+  "id": "nightkite_teaser",
+  "title": "Nightkite teaser",
+  "brief": {
+    "idea": "A 15 s teaser for Nightkite, a fictional stargazing app: a paper kite rises over a sleeping town.",
+    "purpose": "pitch"
+  },
+  "budget": {
+    "capUsd": 2
+  },
+  "scenes": [
+    {
+      "id": "sky"
+    },
+    {
+      "id": "end"
+    }
+  ],
+  "assets": [
+    {
+      "id": "kite",
+      "src": "file:assets/kite.json",
+      "flags": {
+        "private": false
+      }
+    },
+    {
+      "id": "badge",
+      "src": "file:assets/badge.json",
+      "flags": {
+        "private": true
+      }
+    },
+    {
+      "id": "lamp",
+      "src": "lib:items@1",
+      "flags": {
+        "private": false
+      }
+    }
+  ],
+  "delivery": [
+    {
+      "id": "hd",
+      "scale": 6,
+      "out": "nightkite_teaser.mp4"
+    }
+  ]
+}

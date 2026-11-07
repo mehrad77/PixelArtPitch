@@ -1,0 +1,23 @@
+{
+  "id": "badge",
+  "version": 1,
+  "kind": "logo",
+  "w": 16,
+  "h": 16,
+  "frames": ["idle0", "idle1"],
+  "palette": "pap-night@1",
+  "tags": ["logo"],
+  "description": "A client's badge, private to this project.",
+  "licence": "LicenseRef-PAP-Library",
+  "rights": {
+    "likeness": false,
+    "brand": true,
+    "trademark": true,
+    "public": false
+  },
+  "provenance": {
+    "source": "generated"
+  },
+  "hash": "x",
+  "grid": {}
+}

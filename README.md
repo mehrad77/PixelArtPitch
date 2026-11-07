@@ -46,6 +46,7 @@ More commands:
 | `node apps/server/src/cli.ts mcp` | MCP over stdio. It proxies to a running studio, or runs in-process |
 | `node apps/server/src/cli.ts render <dir>` | Export a project's video |
 | `node apps/server/src/cli.ts still <dir> <t>` | One frame as a PNG |
+| `node apps/server/src/cli.ts report <project> [--run <id>\|--all] [--notes findings.md] [--picks picks.jsonl] [--out <dir>]` | A run as one HTML page: the crew's timeline, cost by role, failures, the new art ([docs/REPORT.md](docs/REPORT.md)) |
 | `pnpm check` | The gate: Biome, `tsc` and every test |
 | `node scripts/banner.ts` | Redraw the banner above with the engine and the library |
 
@@ -61,6 +62,7 @@ A pnpm workspace on Node 24 with type stripping (no build step for the server), 
 | `packages/tools` | The one tool registry, the core tools, the project store |
 | `packages/crew` | Providers, the ledger and budget guard, the orchestrator, the roles, and Pip |
 | `packages/mcp-client` | A small MCP client for your own MCP servers |
+| `packages/report` | `pap report`: a project's run files and the ledger as one HTML page |
 | `apps/server` | Hono on 127.0.0.1: the studio API, SSE, MCP and the CLI |
 | `apps/web` | The studio UI (React, Vite, [ShabUI](https://ui.shab.boo)) |
 | `library/` | The public asset library: sprites, tiles, icons and a 5×8 font on the `pap-night` palette |

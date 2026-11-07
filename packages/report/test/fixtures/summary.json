@@ -1,0 +1,449 @@
+{
+  "project": {
+    "id": "nightkite_teaser",
+    "title": "Nightkite teaser",
+    "idea": "A 15 s teaser for Nightkite, a fictional stargazing app: a paper kite rises over a sleeping town.",
+    "capUsd": 2
+  },
+  "window": {
+    "run": null,
+    "runs": [
+      {
+        "id": "run_a",
+        "status": "failed",
+        "s": 0,
+        "e": 366
+      },
+      {
+        "id": "run_b",
+        "status": "done",
+        "s": 480,
+        "e": 601
+      }
+    ]
+  },
+  "t0": 1772395200,
+  "date": "2026-03-01",
+  "dur": 540,
+  "total": 0.49,
+  "ncalls": 5,
+  "stats": [
+    ["$0.49", "spent of the $2.00 cap"],
+    ["9 min", "from the first message to the last task"],
+    ["5", "model calls"],
+    ["2", "assets of its own, kept"],
+    ["86%", "of the money went to the Pixel artist"],
+    ["85%", "of the Pixel artist's tokens were thinking"]
+  ],
+  "exported": ["nightkite_teaser.mp4"],
+  "outputs": [
+    {
+      "file": "",
+      "label": "The last cut, one frame per scene",
+      "private": true
+    }
+  ],
+  "assets": [
+    {
+      "id": "kite",
+      "kind": "prop",
+      "size": "16×16",
+      "frames": 2,
+      "kept": true,
+      "private": false,
+      "images": [
+        {
+          "file": "img/asset-kite.png",
+          "label": "kite, kept"
+        }
+      ],
+      "tags": [["Kept in the project", "good"], ["Publish: kept in this project", ""]],
+      "description": "A small paper kite, light from the upper left.",
+      "usd": 0.31,
+      "calls": 2,
+      "sec": 120,
+      "limit": 1
+    },
+    {
+      "id": "lamp",
+      "kind": "",
+      "size": "",
+      "frames": 0,
+      "kept": false,
+      "private": false,
+      "images": [
+        {
+          "file": "img/lamp-v1.png",
+          "label": "lamp, variant 1"
+        }
+      ],
+      "tags": [["Not kept: items@1 stands in", ""], ["Variant 1: rejected by the standard", "bad"]],
+      "description": "",
+      "usd": 0.11,
+      "calls": 1,
+      "sec": 60,
+      "limit": 0
+    },
+    {
+      "id": "badge",
+      "kind": "logo",
+      "size": "16×16",
+      "frames": 2,
+      "kept": true,
+      "private": true,
+      "images": [],
+      "tags": [["Kept in the project", "good"], ["Private", "warn"]],
+      "description": "",
+      "usd": 0,
+      "calls": 0,
+      "sec": 0,
+      "limit": 0
+    }
+  ],
+  "lanes": [
+    {
+      "name": "Writer",
+      "role": "writer",
+      "bars": [
+        {
+          "s": 5,
+          "e": 40,
+          "state": "work",
+          "title": "Writing three script angles",
+          "usd": 0.02,
+          "model": "claude-sonnet-5-5",
+          "why": "Three angles."
+        }
+      ]
+    },
+    {
+      "name": "Pixel artist · kite",
+      "role": "pixel-artist",
+      "bars": [
+        {
+          "s": 130,
+          "e": 330,
+          "state": "work",
+          "title": "Drawing kite, variant 1",
+          "usd": 0.31,
+          "model": "claude-opus-5-5",
+          "why": "Drew the kite."
+        }
+      ]
+    },
+    {
+      "name": "Pixel artist · lamp",
+      "role": "pixel-artist",
+      "bars": [
+        {
+          "s": 132,
+          "e": 240,
+          "state": "failed",
+          "title": "Drawing lamp, variant 1",
+          "usd": 0.11,
+          "model": "claude-opus-5-5",
+          "why": "variant 1 fails the standard: licence is empty"
+        }
+      ]
+    },
+    {
+      "name": "Animator · sky",
+      "role": "animator",
+      "bars": [
+        {
+          "s": 361,
+          "e": 365,
+          "state": "failed",
+          "title": "Tuning sky",
+          "usd": 0,
+          "model": "",
+          "why": "401 authentication_error: invalid x-api-key [key]"
+        }
+      ]
+    },
+    {
+      "name": "Animator · end",
+      "role": "animator",
+      "bars": [
+        {
+          "s": 360,
+          "e": 364,
+          "state": "fallback",
+          "title": "Tuning end",
+          "usd": 0,
+          "model": "",
+          "why": "partial: kept as built (401 authentication_error)"
+        }
+      ]
+    },
+    {
+      "name": "Reviewer",
+      "role": "reviewer",
+      "bars": [
+        {
+          "s": 481,
+          "e": 540,
+          "state": "work",
+          "title": "Reviewing the cut",
+          "usd": 0.05,
+          "model": "claude-sonnet-5-5",
+          "why": "Two notes."
+        }
+      ]
+    }
+  ],
+  "you": [
+    {
+      "s": 41,
+      "e": 120,
+      "title": "Gate g1_script"
+    },
+    {
+      "s": 541,
+      "e": 600,
+      "title": "Gate g3_rough"
+    }
+  ],
+  "pipDots": [
+    {
+      "t": 0,
+      "kind": "pip",
+      "text": "What are we making?",
+      "cards": []
+    },
+    {
+      "t": 1,
+      "kind": "user",
+      "text": "a kite teaser </script><script>alert(1)</script>",
+      "cards": []
+    },
+    {
+      "t": 126,
+      "kind": "pip",
+      "text": "The plan grew.",
+      "cards": ["Plan change: $0.90 → about $1.40"]
+    }
+  ],
+  "revs": [
+    {
+      "t": 1,
+      "rev": 0,
+      "by": "rules",
+      "trigger": "start",
+      "reason": "The rules plan for this brief.",
+      "adds": 0,
+      "est": [0.4, 0.9],
+      "spent": 0
+    },
+    {
+      "t": 125,
+      "rev": 1,
+      "by": "pip",
+      "trigger": "conductor",
+      "reason": "Add the kite and the lamp drawings.",
+      "adds": 2,
+      "est": [0.8, 1.4],
+      "spent": 0.02
+    },
+    {
+      "t": 362,
+      "rev": 2,
+      "by": "code",
+      "trigger": "expand",
+      "reason": "The storyboard has 2 scenes.",
+      "adds": 1,
+      "est": [0.9, 1.5],
+      "spent": 0.44
+    }
+  ],
+  "incidents": [
+    {
+      "t": 240,
+      "kind": "standard",
+      "label": "Rejected by the standard"
+    },
+    {
+      "t": 364,
+      "kind": "auth",
+      "label": "Key rejected"
+    },
+    {
+      "t": 366,
+      "kind": "run",
+      "label": "Run failed: The animator got stuck."
+    }
+  ],
+  "byRole": [
+    {
+      "role": "pixel-artist",
+      "label": "Pixel artist",
+      "usd": 0.42,
+      "sec": 180,
+      "n": 3,
+      "limit": 1,
+      "think": 12800,
+      "answer": 2200
+    },
+    {
+      "role": "reviewer",
+      "label": "Reviewer",
+      "usd": 0.05,
+      "sec": 9,
+      "n": 1,
+      "limit": 0,
+      "think": 0,
+      "answer": 500
+    },
+    {
+      "role": "writer",
+      "label": "Writer",
+      "usd": 0.02,
+      "sec": 12,
+      "n": 1,
+      "limit": 0,
+      "think": 0,
+      "answer": 400
+    }
+  ],
+  "byProject": [
+    {
+      "project": "nightkite_teaser",
+      "usd": 0.49,
+      "n": 5,
+      "self": true
+    },
+    {
+      "project": "another_project",
+      "usd": 0.01,
+      "n": 1,
+      "self": false
+    }
+  ],
+  "thinking": {
+    "role": "pixel-artist",
+    "label": "Pixel artist",
+    "share": 85,
+    "calls": [
+      {
+        "what": "kite v1",
+        "kind": "draw",
+        "think": 8000,
+        "answer": 0,
+        "sec": 80,
+        "usd": 0.2,
+        "stop": "max_tokens",
+        "model": "claude-opus-5-5"
+      },
+      {
+        "what": "lamp v1",
+        "kind": "draw",
+        "think": 3000,
+        "answer": 1000,
+        "sec": 60,
+        "usd": 0.11,
+        "stop": "end",
+        "model": "claude-opus-5-5"
+      },
+      {
+        "what": "kite v1",
+        "kind": "critique",
+        "think": 1800,
+        "answer": 1200,
+        "sec": 40,
+        "usd": 0.11,
+        "stop": "end",
+        "model": "claude-opus-5-5"
+      }
+    ]
+  },
+  "fail": {
+    "kinds": [
+      {
+        "kind": "limit",
+        "label": "Hit the token limit"
+      },
+      {
+        "kind": "auth",
+        "label": "Key rejected"
+      },
+      {
+        "kind": "standard",
+        "label": "Rejected by the standard"
+      }
+    ],
+    "rows": [
+      {
+        "role": "pixel-artist",
+        "label": "Pixel artist",
+        "counts": {
+          "limit": 1,
+          "standard": 1
+        }
+      },
+      {
+        "role": "animator",
+        "label": "Animator",
+        "counts": {
+          "auth": 2
+        }
+      }
+    ]
+  },
+  "couldnt": [
+    {
+      "t": 364,
+      "from": "Animator",
+      "text": "No param moves the kite."
+    }
+  ],
+  "picks": [
+    {
+      "project": "nightkite_teaser",
+      "where": "The script pick",
+      "options": ["Problem-first", "Story-first"],
+      "chose": "Story-first",
+      "why": "It opens on the kite.",
+      "by": "person"
+    },
+    {
+      "project": "nightkite_teaser",
+      "where": "The rough cut",
+      "options": [],
+      "chose": "Looks good",
+      "why": "Two notes, both small.",
+      "by": null
+    }
+  ],
+  "findings": {
+    "groups": [
+      {
+        "title": "BUG",
+        "items": [
+          {
+            "text": "The animator's key was rejected and the run went on.",
+            "sub": ["It kept the end scene as built."]
+          }
+        ]
+      },
+      {
+        "title": "UI",
+        "items": [
+          {
+            "text": "(from the person) The plan-change card should read as a diff, with `$0.90 → $1.40`.",
+            "sub": []
+          }
+        ]
+      },
+      {
+        "title": "Notes",
+        "items": [
+          {
+            "text": "A plain note with **bold** words.",
+            "sub": []
+          }
+        ]
+      }
+    ],
+    "raw": "- BUG: the animator's key was rejected and the run went on.\n  - It kept the end scene as built.\n- UI (from the person): the plan-change card should read as a diff, with `$0.90 → $1.40`.\n- A plain note with **bold** words.\n"
+  }
+}

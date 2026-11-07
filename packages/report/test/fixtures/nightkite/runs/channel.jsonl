@@ -1,0 +1,2 @@
+{"id": "m1", "at": "2026-03-01T20:00:40.000Z", "from": "writer", "to": "pip", "kind": "report", "text": "done: Wrote three angles."}
+{"id": "m2", "at": "2026-03-01T20:06:04.000Z", "from": "animator", "to": "pip", "kind": "report", "text": "partial: Kept the end scene. Couldn't: No param moves the kite. Needs: a kite recipe."}

@@ -12,6 +12,7 @@
     "@pap/engine": "workspace:*",
     "@pap/mcp-client": "workspace:*",
     "@pap/render": "workspace:*",
+    "@pap/report": "workspace:*",
     "@pap/schema": "workspace:*",
     "@pap/tools": "workspace:*",
     "hono": "^4.13.16",

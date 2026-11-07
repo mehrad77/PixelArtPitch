@@ -1,0 +1,21 @@
+{"seq": 1, "event": "run", "data": {"id": "run_a", "status": "start"}, "ts": "2026-03-01T20:00:00.000Z"}
+{"seq": 2, "event": "task", "data": {"id": "aa000001", "status": "working", "startedAt": "2026-03-01T20:00:05.000Z", "kind": "writer.angles", "role": "writer", "instance": "writer", "title": "Writing three script angles", "planTask": "t_angles", "usd": 0}, "ts": "2026-03-01T20:00:05.000Z"}
+{"seq": 3, "event": "task", "data": {"id": "aa000001", "status": "done", "endedAt": "2026-03-01T20:00:40.000Z", "usd": 0.02, "model": "anthropic/claude-sonnet-5-5", "summary": "Three angles."}, "ts": "2026-03-01T20:00:40.000Z"}
+{"seq": 4, "event": "gate", "data": {"id": "g1_script", "status": "open", "items": [{"label": "Pick a script angle"}]}, "ts": "2026-03-01T20:00:41.000Z"}
+{"seq": 5, "event": "gate", "data": {"id": "g1_script", "status": "passed", "verdict": {"by": "user", "verdict": "approve"}}, "ts": "2026-03-01T20:02:00.000Z"}
+{"seq": 6, "event": "task", "data": {"id": "aa000002", "status": "working", "startedAt": "2026-03-01T20:02:10.000Z", "kind": "asset.draw", "role": "pixel-artist", "instance": "pixel-artist:kite", "title": "Drawing kite, variant 1", "planTask": "t_draw_kite_v1"}, "ts": "2026-03-01T20:02:10.000Z"}
+{"seq": 7, "event": "task", "data": {"id": "aa000003", "status": "working", "startedAt": "2026-03-01T20:02:12.000Z", "kind": "asset.draw", "role": "pixel-artist", "instance": "pixel-artist:lamp", "title": "Drawing lamp, variant 1", "planTask": "t_draw_lamp_v1"}, "ts": "2026-03-01T20:02:12.000Z"}
+{"seq": 8, "event": "task", "data": {"id": "aa000003", "status": "failed", "endedAt": "2026-03-01T20:04:00.000Z", "usd": 0.11, "model": "anthropic/claude-opus-5-5", "error": {"message": "variant 1 fails the standard: licence is empty"}}, "ts": "2026-03-01T20:04:00.000Z"}
+{"seq": 9, "event": "task", "data": {"id": "aa000002", "status": "done", "endedAt": "2026-03-01T20:05:30.000Z", "usd": 0.31, "model": "anthropic/claude-opus-5-5", "summary": "Drew the kite."}, "ts": "2026-03-01T20:05:30.000Z"}
+{"seq": 10, "event": "task", "data": {"id": "aa000004", "status": "working", "startedAt": "2026-03-01T20:06:00.000Z", "kind": "scene.tune", "role": "animator", "instance": "animator:end", "title": "Tuning end", "planTask": "t_tune_end"}, "ts": "2026-03-01T20:06:00.000Z"}
+{"seq": 11, "event": "task", "data": {"id": "aa000005", "status": "working", "startedAt": "2026-03-01T20:06:01.000Z", "kind": "scene.tune", "role": "animator", "instance": "animator:sky", "title": "Tuning sky", "planTask": "t_tune_sky"}, "ts": "2026-03-01T20:06:01.000Z"}
+{"seq": 12, "event": "task", "data": {"id": "aa000004", "status": "done", "endedAt": "2026-03-01T20:06:04.000Z", "usd": 0, "summary": "partial: kept as built"}, "ts": "2026-03-01T20:06:04.000Z"}
+{"seq": 13, "event": "task", "data": {"id": "aa000005", "status": "failed", "endedAt": "2026-03-01T20:06:05.000Z", "usd": 0, "error": {"message": "401 authentication_error: invalid x-api-key sk-ant-api03-FAKEFAKEFAKE0123456789"}}, "ts": "2026-03-01T20:06:05.000Z"}
+{"seq": 14, "event": "status", "data": {"line": "The animator got stuck.", "problem": {"text": "The animator got stuck.", "action": "retry"}}, "ts": "2026-03-01T20:06:06.000Z"}
+{"seq": 15, "event": "run", "data": {"id": "run_a", "status": "failed"}, "ts": "2026-03-01T20:06:06.000Z"}
+{"seq": 16, "event": "run", "data": {"id": "run_b", "status": "start"}, "ts": "2026-03-01T20:08:00.000Z"}
+{"seq": 17, "event": "task", "data": {"id": "aa000006", "status": "working", "startedAt": "2026-03-01T20:08:01.000Z", "kind": "review.final", "role": "reviewer", "instance": "reviewer", "title": "Reviewing the cut", "planTask": "t_review"}, "ts": "2026-03-01T20:08:01.000Z"}
+{"seq": 18, "event": "task", "data": {"id": "aa000006", "status": "done", "endedAt": "2026-03-01T20:09:00.000Z", "usd": 0.05, "model": "anthropic/claude-sonnet-5-5", "summary": "Two notes."}, "ts": "2026-03-01T20:09:00.000Z"}
+{"seq": 19, "event": "gate", "data": {"id": "g3_rough", "status": "open", "items": [{"label": "Rough cut", "ref": "out/contact.png"}]}, "ts": "2026-03-01T20:09:01.000Z"}
+{"seq": 20, "event": "gate", "data": {"id": "g3_rough", "status": "passed", "verdict": {"by": "user", "verdict": "approve"}}, "ts": "2026-03-01T20:10:00.000Z"}
+{"seq": 21, "event": "run", "data": {"id": "run_b", "status": "done"}, "ts": "2026-03-01T20:10:01.000Z"}

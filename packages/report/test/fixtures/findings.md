@@ -1,0 +1,4 @@
+- BUG: the animator's key was rejected and the run went on.
+  - It kept the end scene as built.
+- UI (from the person): the plan-change card should read as a diff, with `$0.90 → $1.40`.
+- A plain note with **bold** words.

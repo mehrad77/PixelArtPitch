@@ -1,0 +1,4 @@
+{"id": "pip_1", "at": "2026-03-01T20:00:00.000Z", "kind": "pip", "text": "What are we making?", "cards": []}
+{"id": "u_1", "at": "2026-03-01T20:00:01.000Z", "kind": "user", "text": "a kite teaser </script><script>alert(1)</script>", "cards": []}
+{"id": "pip_2", "at": "2026-03-01T20:02:06.000Z", "kind": "pip", "text": "The plan grew.", "cards": [{"type": "plan", "status": "proposed", "title": "Plan change: $0.90 \u2192 about $1.40"}], "trace": {"secret": "should never be read"}}
+{"id": "pip_2", "at": "2026-03-01T20:02:06.000Z", "kind": "pip", "text": "The plan grew.", "cards": [{"type": "plan", "status": "confirmed", "title": "Plan change: $0.90 \u2192 about $1.40"}]}

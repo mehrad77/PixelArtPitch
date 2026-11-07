@@ -1,0 +1,23 @@
+{
+  "id": "kite",
+  "version": 1,
+  "kind": "prop",
+  "w": 16,
+  "h": 16,
+  "frames": ["idle0", "idle1"],
+  "palette": "pap-night@1",
+  "tags": ["prop"],
+  "description": "A small paper kite, light from the upper left.",
+  "licence": "LicenseRef-PAP-Library",
+  "rights": {
+    "likeness": false,
+    "brand": false,
+    "trademark": false,
+    "public": true
+  },
+  "provenance": {
+    "source": "generated"
+  },
+  "hash": "x",
+  "grid": {}
+}

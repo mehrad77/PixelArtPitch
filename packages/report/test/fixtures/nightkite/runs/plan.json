@@ -1,0 +1,65 @@
+{
+  "rev": 2,
+  "at": "2026-03-01T20:06:02.000Z",
+  "by": "code",
+  "trigger": "expand",
+  "reason": "The storyboard has 2 scenes.",
+  "ops": [
+    {
+      "op": "add"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t_angles",
+      "kind": "writer.angles",
+      "role": "writer",
+      "taskIds": ["aa000001"],
+      "status": "done",
+      "note": null
+    },
+    {
+      "id": "t_draw_kite_v1",
+      "kind": "asset.draw",
+      "role": "pixel-artist",
+      "taskIds": ["aa000002"],
+      "status": "done",
+      "note": null
+    },
+    {
+      "id": "t_draw_lamp_v1",
+      "kind": "asset.draw",
+      "role": "pixel-artist",
+      "taskIds": ["aa000003"],
+      "status": "done",
+      "note": "already in the project"
+    },
+    {
+      "id": "t_tune_end",
+      "kind": "scene.tune",
+      "role": "animator",
+      "taskIds": ["aa000004"],
+      "status": "done",
+      "note": "partial: kept as built (401 authentication_error)"
+    },
+    {
+      "id": "t_tune_sky",
+      "kind": "scene.tune",
+      "role": "animator",
+      "taskIds": ["aa000005"],
+      "status": "failed",
+      "note": null
+    },
+    {
+      "id": "t_publish_kite",
+      "kind": "lib.publish",
+      "role": "librarian",
+      "taskIds": [],
+      "status": "done",
+      "note": "kept in this project"
+    }
+  ],
+  "estimate": {
+    "usd": [0.9, 1.5]
+  }
+}

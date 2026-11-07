@@ -4,10 +4,13 @@
 // pap render <project> [--delivery id]   export a video
 // pap still <project> <t> [--scale 4]    one PNG to stdout's path
 // pap golden <project>                   check frames against <project>/gen/golden.json
+// pap report <project> [--run <id>|--all] [--notes findings.md] [--picks picks.jsonl] [--out <dir>] [--include-private]
+//                                        the run as one HTML page (docs/REPORT.md)
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { checkGolden, loadProject, openRenderer } from "@pap/render";
+import { buildReport } from "@pap/report";
 import { buildRegistry, PAP_HOME, Workspace } from "@pap/tools";
 import { createApp, VERSION } from "./app.ts";
 import { serveStdio } from "./mcp.ts";
@@ -135,6 +138,43 @@ async function main() {
     );
     process.exit(res.ok ? 0 : 1);
   }
+  if (cmd === "report") {
+    // by path or by id, without taking the project's lock: a running studio keeps writing while this reads
+    const arg = rest[0];
+    if (!arg || arg.startsWith("--")) {
+      console.error(
+        "usage: pap report <project> [--run <id>|--all] [--notes findings.md] [--picks picks.jsonl] [--out <dir>] [--include-private]",
+      );
+      process.exit(1);
+    }
+    const byPath = existsSync(join(resolve(arg), "pitch.json")) ? resolve(arg) : null;
+    const known = byPath ? [] : new Workspace(roots).list();
+    const dir = byPath ?? known.find((p) => p.id === arg)?.dir;
+    if (!dir) {
+      const ids = known.map((p) => p.id).join(", ") || "(none)";
+      console.error(`not_found: no project ${arg}\nfix: pass a project folder or one of: ${ids}`);
+      process.exit(1);
+    }
+    const notes = flag("notes");
+    const picks = flag("picks");
+    const out = resolve(flag("out") ?? join(dir, "out", "report"));
+    try {
+      const r = buildReport(dir, {
+        run: rest.includes("--all") ? undefined : flag("run"),
+        notes: notes && resolve(notes),
+        picks: picks && resolve(picks),
+        includePrivate: rest.includes("--include-private"),
+        ledger: join(PAP_HOME, "ledger.sqlite"),
+        out,
+      });
+      const { ncalls, total } = r.summary;
+      console.log(`${join(out, "index.html")}  (${r.images.length} images, ${ncalls} calls, $${total.toFixed(2)})`);
+      process.exit(0);
+    } catch (e: any) {
+      console.error(`report: ${e?.message ?? e}${e?.fix ? `\nfix: ${e.fix}` : ""}`);
+      process.exit(1);
+    }
+  }
   if (cmd === "still" || cmd === "render") {
     const workspace = new Workspace(() => []);
     const p = workspace.openDir(resolve(rest[0]));
@@ -157,7 +197,9 @@ async function main() {
     workspace.closeAll();
     process.exit(0);
   }
-  console.log("usage: pap serve [--port 5141] | mcp | render <dir> [--delivery id] | still <dir> <t> | golden <dir>");
+  console.log(
+    "usage: pap serve [--port 5141] | mcp | render <dir> [--delivery id] | still <dir> <t> | golden <dir> | report <project>",
+  );
   process.exit(cmd ? 1 : 0);
 }
 main().catch((e) => {
