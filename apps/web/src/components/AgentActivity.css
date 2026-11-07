@@ -125,7 +125,11 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  padding: var(--space-4) var(--space-5) var(--space-6);
+  /* no top padding: a sticky group title must sit flush at the top, with nothing scrolling above it */
+  padding: 0 var(--space-5) var(--space-6);
+}
+.activity-thread > :first-child {
+  margin-block-start: var(--space-4);
 }
 .activity-empty {
   margin: var(--space-6) 0;
@@ -424,5 +428,25 @@
     padding-inline: 0;
     text-align: center;
     font-size: var(--step--2);
+  }
+}
+
+/* behind the scenes, folded, between a pane's header and its thread */
+.activity-behind {
+  padding: 0 var(--space-5);
+}
+.activity-behind:empty {
+  display: none;
+}
+.activity-behind .channel {
+  padding-block: var(--space-1);
+}
+.activity-behind .channel-list {
+  max-block-size: 16rem;
+  overflow-y: auto;
+}
+@media (max-width: 40rem) {
+  .activity-behind {
+    padding-inline: var(--space-3);
   }
 }

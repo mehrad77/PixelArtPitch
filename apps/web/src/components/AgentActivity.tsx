@@ -31,6 +31,18 @@ import { isRecovered, type Member, modelShort, modelWords, retriesOf } from "../
 import { askPipAbout, type Conv, hasNews, markSeen, pipMood, usePip, usePipOpenRequest } from "../lib/pip.ts";
 import { navigate } from "../lib/router.tsx";
 import type { ActivityEntry, ProjectState, Role, Task } from "../lib/types.ts";
+import { Clamp } from "./Clamp.tsx";
+
+/** a reviewer's verdict word ("fix:", "ship:") reads as plain words */
+function plainSummary(s: string | undefined): string | undefined {
+  if (!s) return s;
+  const m = /^(fix|ship|revise|reject)\s*:\s*/i.exec(s);
+  if (!m) return s;
+  const words = { fix: "Needs fixes", ship: "Ready to ship", revise: "Needs changes", reject: "Not usable" };
+  return `${words[m[1].toLowerCase() as keyof typeof words]}. ${s.slice(m[0].length)}`;
+}
+
+import { BehindTheScenes } from "./Channel.tsx";
 import { CrewFace, crewRows, MOOD_WORD, useStep } from "./CrewStrip.tsx";
 import { DirectControls } from "./DirectControls.tsx";
 import { PipComposer, PipThread } from "./Pip.tsx";
@@ -184,7 +196,7 @@ export function AgentActivity({
     const newest = entries.sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).at(-1);
     return newest ? entryLine(newest) : null;
   };
-  const summary = [...row.tasks].reverse().find((t) => t.summary)?.summary;
+  const summary = plainSummary([...row.tasks].reverse().find((t) => t.summary)?.summary);
   const headLine =
     row.mood === "working" || row.mood === "needs" || row.mood === "stuck" || !summary ? row.line : summary;
   const role: Role = row.lead?.role ?? row.m.roles[0];
@@ -301,10 +313,10 @@ export function AgentActivity({
                       {modelChip}
                     </Tag>
                   </div>
-                  <p className="activity-now">
+                  <Clamp className="activity-now">
                     <span className="visually-hidden">{MOOD_WORD[row.mood]}: </span>
                     {headLine}
-                  </p>
+                  </Clamp>
                 </div>
                 <Switch
                   id="activity-retries"
@@ -315,6 +327,9 @@ export function AgentActivity({
                   className="activity-retries"
                 />
               </header>
+              <div className="activity-behind">
+                <BehindTheScenes projectId={projectId} roles={row.m.roles} />
+              </div>
 
               <div className="activity-thread-wrap">
                 <div className="activity-thread" ref={threadRef} onScroll={onScroll}>
@@ -429,6 +444,11 @@ function PipPane({
           </p>
         </div>
       </header>
+      {projectId && (
+        <div className="activity-behind">
+          <BehindTheScenes projectId={projectId} />
+        </div>
+      )}
       <div className="activity-thread-wrap">
         <div className="activity-thread" ref={ref}>
           <PipThread project={projectId} conv={conv} />
@@ -587,7 +607,7 @@ function Bubble({ entry: e, task, last }: { entry: ActivityEntry; task: Task; la
     case "patch":
       body = (
         <>
-          <p>{e.title.startsWith("Changed the project") ? e.title : `Changed the project: ${e.title}`}</p>
+          <Clamp>{e.title.startsWith("Changed the project") ? e.title : `Changed the project: ${e.title}`}</Clamp>
           {e.detail !== undefined && <Lazy summary="Show the changes">{() => <Code text={pretty(e.detail)} />}</Lazy>}
         </>
       );
@@ -595,10 +615,8 @@ function Bubble({ entry: e, task, last }: { entry: ActivityEntry; task: Task; la
     case "answer":
       body = (
         <>
-          <p>
-            {last && task.summary ? task.summary : "Here's what I came up with."}{" "}
-            <span className="muted small">{answerStats(e.title)}</span>
-          </p>
+          <Clamp lines={3}>{last && task.summary ? plainSummary(task.summary) : "Here's what I came up with."}</Clamp>
+          <p className="muted small">{answerStats(e.title)}</p>
           {e.detail !== undefined && <Lazy summary="Show answer">{() => <Code text={pretty(e.detail)} />}</Lazy>}
         </>
       );
