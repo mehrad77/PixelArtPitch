@@ -60,8 +60,8 @@
 }
 /* Pip leads the faces: the host, then the crew */
 .crew-btn .pip-face {
-  --pip: 1.5rem;
-  font-size: calc(var(--pip) * 0.32);
+  --pip: 1.6rem;
+  font-size: calc(var(--pip) * 0.38);
   animation: none;
 }
 .crew-btn-pip {

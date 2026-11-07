@@ -1,4 +1,5 @@
-// Pip's face: the crew's two-glyph language on a neutral disc with an accent ring, a little larger than a crew face.
+// Pip's face: the crew's two-glyph language on an accent squircle with a pixel crown: Pip leads the crew, and its face
+// never reads as one more round crew disc.
 // Idle ◠ ◠, listening o o, thinking (a stepped glance, still under reduced motion), happy ^ ^, sorry ; ;. A dot
 // on the ring says Pip has something new. Decorative: the caller names it.
 import { useEffect, useState } from "react";
@@ -68,6 +69,11 @@ export function PipFace({
       data-glance={moving && !small ? GLANCE[n % GLANCE.length] || undefined : undefined}
       aria-hidden="true"
     >
+      <span className="pip-face-crown">
+        <svg viewBox="0 0 7 5" shapeRendering="crispEdges" aria-hidden="true" focusable="false">
+          <path fill="currentColor" d="M0 0h1v2H0zM3 0h1v2H3zM6 0h1v2H6zM1 1h1v1H1zM5 1h1v1H5zM0 2h7v3H0z" />
+        </svg>
+      </span>
       <span className="pip-face-glyphs">{glyphs}</span>
       {dot && <span className="pip-face-dot" />}
     </span>

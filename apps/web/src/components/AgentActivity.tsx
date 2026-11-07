@@ -229,12 +229,16 @@ export function AgentActivity({
               onClick={() => setSel("pip")}
               onKeyDown={(e) => onTabKey(e, 0)}
             >
-              <PipFace mood={pipMood(pip, pipKey ? state : null)} size="sm" dot={hasNews(pip) && !onPip} />
+              <PipFace mood={pipMood(pip, pipKey ? state : null)} size="md" dot={hasNews(pip) && !onPip} />
               <span className="activity-who-text">
                 <span className="activity-who-name">Pip</span>
+                <span className="activity-who-role">Leads the crew</span>
                 <span className="activity-who-line">{pipLine(pip)}</span>
               </span>
             </button>
+            <p className="label activity-crew-label" aria-hidden="true">
+              Crew
+            </p>
             {rows.map((r, j) => {
               const i = j + 1;
               const on = !onPip && r.m.id === row.m.id;

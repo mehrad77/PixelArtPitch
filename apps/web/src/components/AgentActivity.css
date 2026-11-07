@@ -395,3 +395,34 @@
     padding-inline: var(--space-3);
   }
 }
+
+/* Pip's own row at the head of the list: taller, a larger squircle, then a hairline and the crew */
+.activity-who-pip {
+  padding-block: var(--space-3);
+}
+.activity-who-pip .pip-face {
+  --pip: 3rem;
+  margin-block-start: var(--space-1);
+}
+.activity-who-role {
+  color: var(--text-muted);
+  font-size: var(--step--2);
+}
+.activity-crew-label {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  border-block-start: 1px solid var(--stroke);
+}
+@container (max-width: 34rem) {
+  .activity-who-pip .pip-face {
+    --pip: 2.5rem;
+  }
+  .activity-who-role {
+    display: none;
+  }
+  .activity-crew-label {
+    padding-inline: 0;
+    text-align: center;
+    font-size: var(--step--2);
+  }
+}

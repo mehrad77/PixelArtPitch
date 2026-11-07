@@ -137,10 +137,14 @@
   inset-inline-start: 30%;
   inset-block-end: -5rem;
 }
-/* Pip leads the row, a little apart from the workers */
+/* Pip leads the row: larger, apart from the workers, with a quiet hairline between */
 .crew-faces .crew-lead {
   display: inline-flex;
-  margin-inline-end: var(--space-3);
+  align-items: center;
+  margin-inline-end: var(--space-4);
+  padding-inline-end: var(--space-4);
+  border-inline-end: 1px solid var(--stroke);
+  min-block-size: 4.5rem;
 }
 .crew-faces .crew-lead + li {
   margin-inline-start: 0;

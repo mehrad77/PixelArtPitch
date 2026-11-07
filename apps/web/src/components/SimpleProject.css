@@ -149,9 +149,45 @@
     --face: 3.25rem;
   }
   .sp-crew .pip-face[data-size="row"] {
-    --pip: 2.9rem;
+    --pip: 3.6rem;
   }
   .sp-crew .crew-lead {
     margin-inline-end: var(--space-2);
+    padding-inline-end: var(--space-2);
+    min-block-size: 0;
+  }
+}
+
+/* Pip at the start edge, its words hanging from it: the accent line drops from Pip's centre into the block below.
+   The crew sits centred in the rest of the row. */
+.simple {
+  --pip-row: 4.5rem;
+}
+.sp-crew .crew-faces {
+  inline-size: 100%;
+}
+.sp-crew .crew-faces .crew-lead {
+  margin-inline-end: auto;
+  padding-inline-end: 0;
+  border-inline-end: 0;
+}
+.sp-crew .crew-faces > li:last-child {
+  margin-inline-end: auto;
+}
+.sp-status .pip-line {
+  position: relative;
+  margin-inline-start: calc(var(--pip-row) / 2 - 1px);
+}
+.sp-status .pip-line::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -2px;
+  inset-block-end: 100%;
+  block-size: calc(var(--space-4) + var(--space-1) + 2px);
+  border-inline-start: 2px solid var(--fill-accent);
+}
+@media (max-width: 30rem) {
+  .simple {
+    --pip-row: 3.6rem;
   }
 }
