@@ -16,6 +16,7 @@ export function WaitLine({
   mainText,
   onNeeds,
   needsLabel = "Show me",
+  hideNeeds = false,
 }: {
   projectId: string;
   state: ProjectState;
@@ -25,8 +26,11 @@ export function WaitLine({
   onNeeds: () => void;
   /** the jump's words; empty when the page already links there (Studio's "Inbox (n)") */
   needsLabel?: string;
+  /** the thing that needs the person is shown right below (the simple view): say nothing about it here */
+  hideNeeds?: boolean;
 }) {
-  const r = waitReason(state);
+  const reason = waitReason(state);
+  const r = hideNeeds && reason.kind === "needs" ? { ...reason, text: "", action: undefined } : reason;
   const text = r.text === mainText ? "" : r.text;
   const live = useThrottled(text, 5000);
   const video = state.files.find((f) => f.kind === "video");

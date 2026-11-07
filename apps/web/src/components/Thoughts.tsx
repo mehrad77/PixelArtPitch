@@ -4,10 +4,11 @@
 // overlap each other or leave the row, stacking upward when there's no room. Hover or focus on a face holds its
 // bubble. Bubbles are decoration (aria-hidden); one polite region says what changed, at most every few seconds.
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { bubbleOf, memberIdOf, useChannelLive } from "../lib/channel.ts";
 import { CREW } from "../lib/human.ts";
 import type { Conv } from "../lib/pip.ts";
 import { pipThought, snapshot, taskChanges } from "../lib/thoughts.ts";
-import type { ProjectState, Task } from "../lib/types.ts";
+import type { ChannelMsg, ProjectState, Task } from "../lib/types.ts";
 import "./Thoughts.css";
 
 const SHOW_MS = 4000;
@@ -18,7 +19,7 @@ const GAP = 6;
 export type Bubble = { id: number; member: string; text: string; left: number; leaving: boolean };
 const nameOf = (member: string) => (member === "pip" ? "Pip" : (CREW.find((m) => m.id === member)?.label ?? member));
 
-export function useThoughts(state: ProjectState | null, pip?: Conv | null) {
+export function useThoughts(state: ProjectState | null, pip?: Conv | null, channelOf?: string | null) {
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [live, setLive] = useState("");
   const held = useRef(new Set<string>());
@@ -66,6 +67,10 @@ export function useThoughts(state: ProjectState | null, pip?: Conv | null) {
     if (!was?.loaded || was.key === pipKey) return;
     push("pip", pipThought(pip.thinking, last));
   }, [pipKey, loaded]);
+
+  // the crew channel: a brief, report, ask or answer floats over the sender's face
+  const onChannel = useCallback((m: ChannelMsg) => push(memberIdOf(m.from), bubbleOf(m)), [push]);
+  useChannelLive(channelOf, onChannel);
 
   // the clock: held bubbles wait; the rest count down, fade, then go
   const any = bubbles.length > 0;
@@ -180,7 +185,9 @@ export function ThoughtLayer({ bubbles, box }: { bubbles: Bubble[]; box: RefObje
             data-placed={s ? "" : undefined}
             style={s ? { insetInlineStart: `${s.x}px`, insetBlockEnd: `calc(100% + ${s.y + 12}px)` } : undefined}
           >
-            <span className="thought-text">{b.text}</span>
+            <span className="thought-text" dir="auto">
+              {b.text}
+            </span>
             {s && (
               <>
                 <span className="thought-dot" data-n="1" style={{ insetInlineStart: `${s.tail}px` }} />

@@ -9,6 +9,7 @@ import { memberOf, modelShort, plainTitle, retriesOf, STAGE_WORD, visibleTasks }
 import { askPipAbout } from "../lib/pip.ts";
 import type { ProjectState, Task } from "../lib/types.ts";
 import { AgentActivity } from "./AgentActivity.tsx";
+import { BehindTheScenes } from "./Channel.tsx";
 import { PipPanel } from "./Pip.tsx";
 import "./CrewRow.css";
 
@@ -38,6 +39,7 @@ export function CrewPanel({
         {/* Pip, pinned first: the one to ask; the rows below are the workers */}
         <li className="crew-row crew-row-pip">
           <PipPanel project={projectId} state={state} inputId="pip-studio-input" />
+          <BehindTheScenes projectId={projectId} />
         </li>
         {DEPARTMENTS.map((d) => (
           <CrewRow

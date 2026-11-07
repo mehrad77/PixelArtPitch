@@ -7,6 +7,7 @@ import type {
   ActivityEntry,
   AnswerInput,
   ArtAsset,
+  ChannelMsg,
   Client,
   ConnectionTrust,
   ConnState,
@@ -352,7 +353,40 @@ class MockBackend {
     },
     titles: () =>
       [...this.projects.values()].map((p) => ({ id: p.state.doc.id, title: p.state.doc.title, state: p.state })),
+    lastChange: (id) => {
+      const p = this.projects.get(id);
+      const undone = new Set(p?.history.flatMap((h) => (h.undoes != null ? [h.undoes] : [])) ?? []);
+      const e = [...(p?.history ?? [])].reverse().find((h) => h.undoes == null && !undone.has(h.seq));
+      if (!e) return null;
+      const by = e.author.kind === "agent" ? `the ${String(e.author.role ?? "crew").replace(/-/g, " ")}` : "you";
+      return { seq: e.seq, reason: e.reason, by };
+    },
+    undo: async (id, seq, reason) => {
+      const p = this.get(id);
+      const e = p.history.find((h) => h.seq === seq);
+      if (e) this.addPatch(p, { kind: "user" }, reason, e.inverse, seq);
+    },
+    setCap: (id, usd) => {
+      const p = this.projects.get(id);
+      if (p) this.x(p, { budget: { ...p.state.budget, capUsd: usd } });
+    },
   });
+  /** the crew channel, per project */
+  channels = new Map<string, ChannelMsg[]>();
+  say(p: MockProject, from: string, to: string, kind: ChannelMsg["kind"], text: string, ref?: string) {
+    const m: ChannelMsg = {
+      id: `ch_${p.seq}_${Date.now().toString(36)}`,
+      at: iso(),
+      from,
+      to,
+      kind,
+      text,
+      ...(ref ? { ref } : {}),
+    };
+    const id = p.state.doc.id;
+    this.channels.set(id, [...(this.channels.get(id) ?? []), m]);
+    this.emit(p, { event: "channel", data: m });
+  }
   settings: Settings = clone(SETTINGS);
   models: ModelRow[] = clone(MODELS);
   library: LibraryIndex = clone(LIBRARY);
@@ -1113,7 +1147,50 @@ class MockBackend {
     const tl = p.state.timeline;
     const sc = tl.scenes[1] ?? tl.scenes[0];
     const n = tl.scenes.length;
+    // Pip directs: the director re-boards, can't do dialogue, Pip accepts the toast, then the animator and reviewer
     if (k === 0) {
+      this.stage(p, "storyboard");
+      if (sc) this.scene(p, sc.id, { stale: true, state: "drafting", by: "director" });
+      this.say(
+        p,
+        "pip",
+        "director",
+        "brief",
+        "Re-board scene 2: the hero bigger, and the founder says the tagline.",
+        sc?.id,
+      );
+      const boardId = `t_change_board_${p.seq}`;
+      this.setTask(p, boardId, {
+        role: "director",
+        kind: "director.storyboard",
+        title: "Re-boarding scene 2",
+        status: "working",
+        etaSec: 3,
+        estUsd: 0.04,
+      });
+      p.alias.set("t_change_board", boardId);
+    }
+    if (k === 2) {
+      this.setTask(p, "t_change_board", { status: "done", summary: "Re-boarded scene 2; the line is a toast." });
+      this.say(
+        p,
+        "director",
+        "pip",
+        "report",
+        "Partly done: there's no dialogue recipe, so the founder's line is a toast.",
+        sc?.id,
+      );
+    }
+    if (k === 3) {
+      this.say(p, "pip", "director", "answer", "Fine: a toast reads well here. Handing it to the animator.");
+      this.say(
+        p,
+        "pip",
+        "animator",
+        "brief",
+        "Scene 2: the hero 25% bigger; keep the toast inside the title-safe box.",
+        sc?.id,
+      );
       this.stage(p, "animate");
       if (sc) this.scene(p, sc.id, { stale: true, state: "drafting", by: "animator" });
       const changeId = `t_change_${p.seq}`;
@@ -1130,6 +1207,14 @@ class MockBackend {
     }
     if (k === 8) {
       this.setTask(p, "t_change", { status: "done", summary: "Made the hero bigger in scene 2." });
+      this.say(
+        p,
+        "animator",
+        "pip",
+        "report",
+        "Done: the hero is bigger in scene 2, and the toast sits in the safe box.",
+        sc?.id,
+      );
       if (sc) this.scene(p, sc.id, { stale: false, state: "ready", version: "render" });
       this.stage(p, "review");
       const changeReviewId = `t_change_review_${p.seq}`;
@@ -1144,6 +1229,7 @@ class MockBackend {
       p.alias.set("t_change_review", changeReviewId);
     }
     if (k === 13) {
+      this.say(p, "reviewer", "pip", "report", "Scene 2 reads well; nothing else moved.", sc?.id);
       this.setTask(p, "t_change_review", { status: "done", summary: "Scene 2 reads well; nothing else moved." });
       this.stage(p, "deliver");
       const changeExportId = `t_change_export_${p.seq}`;
@@ -1160,6 +1246,13 @@ class MockBackend {
       this.setTask(p, "t_change_export", { status: "done", title: "Encoded the final", summary: "Exported again." });
       this.x(p, { crew: { state: "idle" }, files: [...p.state.files] });
       this.digest(p, "Your change is in. The new video is ready.");
+      this.pip.push(p.state.doc.id, {
+        id: `pi_sum_${p.seq}`,
+        at: iso(),
+        kind: "pip",
+        text: "Your change is in: the hero is bigger in scene 2. The founder's line is a toast, since there's no dialogue recipe yet. The new video is ready.",
+        cards: [],
+      });
       this.milestone(p, "Scene 2 changed");
       p.phase = 99;
     }
@@ -1302,7 +1395,7 @@ export class MockClient implements Client {
         summary: `Went with the ${pick} angle: ${p.state.doc.script.cues.length} cues.`,
       });
       b.gateSet(p, "g1_script", "passed");
-      b.milestone(p, "Script written · 3 options");
+      b.milestone(p, `You picked the script: ${q.options.find((x) => x.id === pick)?.label ?? pick}`);
       b.digest(p, `You picked the ${pick} angle. The Director is boarding the scenes now.`);
       b.advance(p);
     }
@@ -1486,6 +1579,16 @@ export class MockClient implements Client {
   async pipCard(cardId: string, d: PipDecision) {
     await wait(80);
     return be().pip.decide(cardId, d);
+  }
+  pipSummary(project: string | undefined, text: string) {
+    return be().pip.saveSummary(project, text);
+  }
+  pipContext(project?: string) {
+    return be().pip.context(project);
+  }
+  async channel(project: string) {
+    await wait(60);
+    return clone(be().channels.get(project) ?? []);
   }
   subscribeWorkspace(on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void) {
     onConn?.("open");

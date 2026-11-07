@@ -11,11 +11,14 @@ import type {
   FileRow,
   PipAdded,
   PipCard,
+  PipContext,
   PipConversation,
   PipDecision,
   PipEvent,
   PipFile,
   PipItem,
+  PipSummary,
+  PipTrace,
   ProjectState,
   ServerEvent,
 } from "../lib/types.ts";
@@ -29,6 +32,10 @@ export type PipHost = {
   handoff(id: string, text: string): void;
   createProject(title: string, idea: string): Promise<string>;
   titles(): { id: string; title: string; state: ProjectState }[];
+  /** the newest change that can be undone, for /undo */
+  lastChange(id: string): { seq: number; reason: string; by: string } | null;
+  undo(id: string, seq: number, reason: string): Promise<void>;
+  setCap(id: string, usd: number): void;
 };
 
 const WS = "_workspace";
@@ -63,7 +70,12 @@ const LANGS: [RegExp, string, string, boolean][] = [
 ];
 const FAKE_TOOLS = ["search", "get_item", "list_recent", "download", "describe", "tag"];
 
-type Conv = { items: PipItem[]; busy: boolean; listeners: Set<(e: ServerEvent) => void> };
+type Conv = {
+  items: PipItem[];
+  busy: boolean;
+  listeners: Set<(e: ServerEvent) => void>;
+  summary: PipSummary | null;
+};
 type Pending = { key: string; card: PipCard; run: (edit?: string) => Promise<void> };
 
 export class MockPip {
@@ -78,7 +90,7 @@ export class MockPip {
   conv(key: string): Conv {
     let c = this.convs.get(key);
     if (!c) {
-      c = { items: [], busy: false, listeners: new Set() };
+      c = { items: [], busy: false, listeners: new Set(), summary: null };
       this.convs.set(key, c);
     }
     return c;
@@ -110,7 +122,64 @@ export class MockPip {
       name: "Pip",
       model: "mock",
       mode: "menu",
+      busy: this.conv(project ?? WS).busy,
+      summary: structuredClone(this.conv(project ?? WS).summary),
     };
+  }
+  /** GET /api/pip/context: plausible numbers from the thread (characters / 4) */
+  async context(project?: string): Promise<PipContext> {
+    await later(250);
+    const c = this.conv(project ?? WS);
+    const st = project ? this.host.state(project) : null;
+    const t4 = (v: unknown) => Math.round(JSON.stringify(v ?? "").length / 4);
+    const cut = c.summary ? c.items.findIndex((i) => i.id === c.summary?.upTo) : -1;
+    const seen = c.items.slice(cut + 1).slice(-20);
+    const conn = this.connections.filter((x) => x.status === "connected");
+    const extTools = conn.length;
+    const tools = 24 + extTools;
+    const parts: PipContext["parts"] = [
+      { id: "system", label: "System prompt", tokens: 2840 },
+      {
+        id: "facts",
+        label: "Project facts",
+        tokens: st ? 900 + Math.min(6000, t4({ brief: st.doc.brief, budget: st.budget, stage: st.stage })) : 650,
+      },
+      {
+        id: "tools",
+        label: "Tool definitions",
+        tokens: tools * 145,
+        detail: `${tools} tools${extTools ? `, ${extTools} from connections` : ""}`,
+      },
+      ...(c.summary
+        ? [{ id: "summary" as const, label: "Summary of earlier conversation", tokens: t4(c.summary.text) }]
+        : []),
+      {
+        id: "messages",
+        label: "Conversation",
+        tokens: seen.reduce((a, i) => a + t4(i), 0) + 140 * seen.length,
+        detail: `${seen.length} ${seen.length === 1 ? "message" : "messages"}`,
+      },
+      { id: "reserve", label: "Room for the reply", tokens: 4096 },
+    ];
+    return {
+      model: "anthropic/claude-sonnet-5-5",
+      provider: "anthropic",
+      window: 200_000,
+      method: "estimate",
+      mode: "menu",
+      windowSource: "table",
+      countSource: "chars/4",
+      total: parts.reduce((a, x) => a + x.tokens, 0),
+      parts,
+    };
+  }
+  /** PUT /api/pip/summary */
+  async saveSummary(project: string | undefined, text: string): Promise<PipSummary> {
+    await later(200);
+    const c = this.conv(project ?? WS);
+    const sum = { text, upTo: c.summary?.upTo ?? c.items.at(-1)?.id ?? "", at: iso() };
+    c.summary = sum;
+    return structuredClone(sum);
   }
   subscribeWorkspace(on: (e: ServerEvent) => void) {
     const c = this.conv(WS);
@@ -130,8 +199,37 @@ export class MockPip {
       this.send(key, { type: "thinking" });
       await later(900 + Math.min(900, text.length * 12));
       try {
-        const { reply, cards } = this.reply(key, project, text);
-        this.push(key, { id: uid("pi"), at: iso(), kind: "pip", text: reply, cards, model: "mock", usd: 0.002 });
+        const cmd = text.trim().match(/^\/(undo|budget|why|compact)\b\s*(.*)$/i);
+        const name = cmd?.[1].toLowerCase();
+        if (name === "compact") await later(700);
+        const out: { reply: string; cards: PipCard[]; why?: PipTrace & { about?: string } } = cmd
+          ? this.command(key, project, name ?? "", cmd[2])
+          : this.reply(key, project, text);
+        const trace: PipTrace = cmd
+          ? { tools: [], mode: "command", usd: 0, promptVersion: "pip@3" }
+          : {
+              tools: [
+                { name: "project_get", ok: true, ms: 14 },
+                ...out.cards.map((c) => ({ name: toolOf(c), ok: true, ms: 40 })),
+              ],
+              model: "anthropic/claude-sonnet-5-5",
+              mode: "menu",
+              usage: { inTok: 1800 + text.length * 4, outTok: 90 + out.reply.length },
+              usd: 0.002,
+              promptVersion: "pip@3",
+              cards: out.cards.map((c) => ({ title: cardTitle(c), why: cardWhy(c) })),
+            };
+        this.push(key, {
+          id: uid("pi"),
+          at: iso(),
+          kind: "pip",
+          text: out.reply,
+          cards: out.cards,
+          model: "mock",
+          usd: trace.usd,
+          trace,
+          ...(out.why ? { why: out.why } : {}),
+        });
       } finally {
         c.busy = false;
       }
@@ -214,6 +312,132 @@ export class MockPip {
     await later(700);
     const c = this.connections.find((x) => x.name === name);
     return c ? structuredClone(c) : null;
+  }
+
+  // ---- slash commands: no model call (but /compact) ----
+  command(
+    key: string,
+    project: string | undefined,
+    name: string,
+    arg: string,
+  ): { reply: string; cards: PipCard[]; why?: PipTrace & { about?: string } } {
+    const c = this.conv(key);
+    const s = project ? this.host.state(project) : null;
+    if (name === "why") {
+      const items = c.items.slice(0, -1);
+      const prev = [...items].reverse().find((i) => i.kind === "pip" && !!i.trace && i.trace.mode !== "command");
+      if (prev?.kind !== "pip" || !prev.trace) return { reply: "There's no answer of mine to explain yet.", cards: [] };
+      const idx = items.indexOf(prev);
+      const asked = [...items.slice(0, idx)].reverse().find((i) => i.kind === "user");
+      return {
+        reply: "Here's how I got that answer.",
+        cards: [],
+        why: { ...prev.trace, about: asked?.kind === "user" ? asked.text : undefined },
+      };
+    }
+    if (name === "compact") {
+      const keep = 6;
+      const items = c.items.filter((i) => i.kind !== "thinking");
+      if (items.length <= keep + 1)
+        return { reply: "Nothing to fold yet: the conversation is still short.", cards: [] };
+      const folded = items.slice(0, items.length - keep - 1);
+      const asks = folded.flatMap((i) => (i.kind === "user" ? [`- You asked: ${i.text}`] : [])).slice(-6);
+      const done = folded.flatMap((i) =>
+        i.kind === "pip"
+          ? i.cards.flatMap((k) => (k.type === "plan" && k.status === "done" ? [`- Done: ${k.title}`] : []))
+          : [],
+      );
+      const text = [...asks, ...done, "- You prefer short answers and approve anything that spends."].join("\n");
+      // tokens, estimated as characters / 4: the folded items before, the summary after
+      const before = Math.round(folded.reduce((n, i) => n + JSON.stringify(i).length, 0) / 4);
+      const after = Math.round(text.length / 4);
+      const freed = {
+        items: folded.length,
+        before,
+        after,
+        freed: Math.max(0, before - after),
+        method: "estimate" as const,
+      };
+      const summary: PipSummary = { text, upTo: folded.at(-1)?.id ?? "", at: iso(), freed };
+      c.summary = summary;
+      this.send(key, { type: "summary", summary });
+      const f = new Intl.NumberFormat();
+      return {
+        reply: `Folded ${freed.items} messages into my summary. That freed about ${f.format(freed.freed)} tokens of my context (${f.format(before)} → ${f.format(after)}). You can read and correct it in the divider.`,
+        cards: [],
+      };
+    }
+    if (!s || !project) return { reply: "Open a project first: that command works on one project.", cards: [] };
+    if (name === "undo") {
+      const last = this.host.lastChange(project);
+      if (!last) return { reply: "There's nothing to undo yet.", cards: [] };
+      const id = uid("card");
+      return {
+        reply: "This is the newest change.",
+        cards: [
+          this.card(
+            key,
+            {
+              id,
+              type: "plan",
+              title: `Undo: ${last.reason}`,
+              detail: `Made by ${last.by}. The project goes back to just before it.`,
+              who: [],
+              usd: null,
+              sec: [1, 2],
+              effects: ["Nothing else changes."],
+              confirmLabel: "Undo it",
+              status: "proposed",
+            },
+            async () => {
+              await this.host.undo(project, last.seq, `Undo from Pip: ${last.reason}`);
+              const card = this.pending.get(id)?.card;
+              if (card?.type === "plan") this.update(key, { ...card, status: "done", result: { text: "Undone." } });
+            },
+          ),
+        ],
+      };
+    }
+    const b = s.budget;
+    const n = Number(arg.replace(/[^0-9.]/g, ""));
+    const money = (v: number) => `$${v.toFixed(v < 10 ? 2 : 0)}`;
+    if (!arg.trim() || !Number.isFinite(n) || n <= 0)
+      return { reply: `${budgetWords(s)} To change it: /budget 10.`, cards: [] };
+    const id = uid("card");
+    const up = n > b.capUsd;
+    const more = Math.max(0, Math.round((n - b.capUsd) / 0.08));
+    return {
+      reply: up ? "Here's what a higher cap allows." : "Here's what a lower cap means.",
+      cards: [
+        this.card(
+          key,
+          {
+            id,
+            type: "plan",
+            title: `${up ? "Raise" : "Lower"} the cap to ${money(n)}`,
+            detail: `From ${money(b.capUsd)} to ${money(n)}.`,
+            who: [],
+            usd: null,
+            sec: null,
+            effects: up
+              ? [`Room for about ${more} more steps.`, "The crew still asks at 80% of the new cap."]
+              : [
+                  n < b.spentUsd + b.reservedUsd
+                    ? "That's below what's already spent: the crew stops and asks."
+                    : "The crew asks sooner.",
+                ],
+            confirmLabel: up ? "Raise it" : "Lower it",
+            status: "proposed",
+          },
+          async () => {
+            this.host.setCap(project, n);
+            const card = this.pending.get(id)?.card;
+            if (card?.type === "plan")
+              this.update(key, { ...card, status: "done", result: { text: `The cap is ${money(n)} now.` } });
+          },
+        ),
+      ],
+    };
   }
 
   // ---- the script ----
@@ -447,13 +671,7 @@ export class MockPip {
       };
     }
 
-    if (/how much|cost|money|budget|spend/.test(t) && s) {
-      const b = s.budget;
-      return {
-        reply: `So far $${(b.spentUsd + b.reservedUsd).toFixed(2)} of the $${b.capUsd} cap.${b.estTotalUsd ? ` The whole video should land around $${b.estTotalUsd[0].toFixed(0)}–${b.estTotalUsd[1].toFixed(0)}.` : ""} The crew asks before going over.`,
-        cards: [],
-      };
-    }
+    if (/how much|cost|money|budget|spend/.test(t) && s) return { reply: budgetWords(s), cards: [] };
 
     if (/each project|all.*projects|projects doing/.test(t)) {
       const list = this.host.titles();
@@ -488,7 +706,7 @@ function statusAnswer(s: ProjectState): string {
   const working = s.tasks.filter((x) => x.status === "working");
   switch (w.kind) {
     case "needs":
-      return `They're waiting for you: ${low(w.text.replace(/^Waiting for you: /, ""))}. "Show me" under my line takes you there.`;
+      return `They're waiting for you: ${low(w.text.replace(/^Waiting for you: /, "")).replace(/[.?!]$/, "")}. "Show me" under my line takes you there.`;
     case "problem":
       return `The crew stopped: ${low(w.problem?.text ?? w.text).replace(/\.$/, "")}. "${w.problem ? PROBLEM_BUTTON[w.problem.action] : "Try again"}" under my line fixes it.`;
     case "paused":
@@ -535,4 +753,40 @@ function etaAnswer(s: ProjectState): string {
         ? `About ${duration(eta)} if nothing needs you${asks ? `; the crew will stop ${asks} more ${asks === 1 ? "time" : "times"} for you to check` : ""}.`
         : "Soon, but I can't say how long yet: the next step hasn't given an estimate.";
   }
+}
+
+// ---- traces for /why ----
+function toolOf(c: PipCard): string {
+  if (c.type === "files") return "files_list";
+  if (c.type === "form") return "connection_add";
+  if (c.type === "cant") return "feature_request";
+  if (/subtitles/i.test(c.title)) return "subtitles_translate";
+  if (/crew/i.test(c.title)) return "crew_request_change";
+  return "project_fork";
+}
+const cardTitle = (c: PipCard) =>
+  c.type === "plan" || c.type === "form" ? c.title : c.type === "files" ? "Files" : "Can't";
+function cardWhy(c: PipCard): string {
+  if (c.type === "plan")
+    return c.who.length ? "It changes the video, so the crew does it." : "It writes or spends, so you confirm first.";
+  if (c.type === "cant") return "Not supported yet; logged as a request.";
+  if (c.type === "form") return "Adding a connection runs something, so you confirm first.";
+  return "Reading only, so shown directly.";
+}
+
+/** spent, reserved, cap and the estimate, without "$0 cap" or "$0–0" */
+function budgetWords(s: ProjectState): string {
+  const b = s.budget;
+  const m = (v: number) => (v >= 10 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`);
+  const used = b.spentUsd + b.reservedUsd;
+  const spent =
+    used <= 0
+      ? "Nothing spent yet."
+      : `${m(b.spentUsd)} spent${b.reservedUsd > 0 ? `, ${m(b.reservedUsd)} set aside for steps in progress` : ""}.`;
+  const cap = b.capUsd > 0 ? ` The cap is ${m(b.capUsd)}.` : " No budget cap is set.";
+  const est =
+    b.estTotalUsd && b.estTotalUsd[1] > 0
+      ? ` The whole video should cost about ${b.estTotalUsd[0] === b.estTotalUsd[1] ? m(b.estTotalUsd[1]) : `${m(b.estTotalUsd[0])} to ${m(b.estTotalUsd[1])}`}.`
+      : "";
+  return `${spent}${cap}${est}${b.capUsd > 0 ? " The crew asks before going over." : ""}`;
 }

@@ -450,3 +450,16 @@
     padding-inline: var(--space-3);
   }
 }
+
+.activity-behind .channel-list {
+  padding-inline-end: var(--space-2);
+  scrollbar-gutter: stable;
+}
+@container (max-width: 34rem) {
+  .activity-pip .activity-head .pip-face {
+    --pip: 3rem;
+  }
+  .activity-behind .channel-list {
+    max-block-size: 10rem;
+  }
+}

@@ -5,7 +5,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ApiError } from "./api.ts";
 import { client } from "./client.ts";
 import { hasVideo, humanStatus, PHASES, phaseOf } from "./human.ts";
-import type { PipCard, PipEvent, PipItem, ProjectState, ServerEvent } from "./types.ts";
+import type { PipCard, PipEvent, PipItem, PipSummary, ProjectState, ServerEvent } from "./types.ts";
 
 export const WORKSPACE = "_workspace";
 export const keyOf = (project?: string | null) => project || WORKSPACE;
@@ -22,6 +22,7 @@ export type Conv = {
   seen: number;
   listening: boolean;
   model?: string;
+  summary?: PipSummary | null;
   /** a prefilled, editable question ("About the animator's work: "), bumped each time someone asks for one */
   draft?: { text: string; n: number };
 };
@@ -64,6 +65,7 @@ function load(key: string) {
           loaded: true,
           unavailable: null,
           thinking: c.busy ?? s.thinking,
+          summary: c.summary ?? s.summary ?? null,
           model: c.model,
           seen: Math.max(s.seen, pipCount(items)),
         };
@@ -118,6 +120,10 @@ export function pipEvent(key: string, e: PipEvent) {
   if (e.type === "error") {
     quiet(key, false);
     set(key, (s) => ({ ...s, thinking: false, note: `Pip stopped: ${e.message}` }));
+    return;
+  }
+  if (e.type === "summary") {
+    set(key, (s) => ({ ...s, summary: e.summary }));
     return;
   }
   if (e.type === "card") {
@@ -310,3 +316,19 @@ export function suggestions(state: ProjectState | null): string[] {
   if (!state.tasks.some((t) => t.startedAt)) return ["What happens when I start?", "How much will it cost?"];
   return ["What's the crew doing?", "How long until it's done?", "Change something"];
 }
+
+/** save the person's correction to Pip's summary; Pip uses it from the next turn */
+export async function saveSummary(project: string | null | undefined, text: string) {
+  const key = keyOf(project);
+  const next = await client.pipSummary(project || undefined, text);
+  set(key, (s) => ({ ...s, summary: next ?? (s.summary ? { ...s.summary, text } : s.summary) }));
+}
+
+// ---- slash commands ----
+export const COMMANDS: { name: string; hint: string; example?: string; arg?: boolean }[] = [
+  { name: "/undo", hint: "Undo the last change" },
+  { name: "/budget", hint: "Change the budget cap", example: "/budget 10", arg: true },
+  { name: "/why", hint: "Why Pip answered that" },
+  { name: "/compact", hint: "Fold older messages into Pip's summary" },
+  { name: "/context", hint: "What's in Pip's memory right now" },
+];

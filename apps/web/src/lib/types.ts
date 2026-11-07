@@ -276,7 +276,9 @@ export type ServerEvent =
   /** extension: merge these top-level fields (the mock uses it for sceneStatus, findings, art, crew, files, time) */
   | { event: "x-state"; data: Partial<ProjectState> }
   /** Pip's progress on this project's conversation (or the workspace one on /api/events) */
-  | { event: "pip"; data: PipEvent };
+  | { event: "pip"; data: PipEvent }
+  /** one more message between Pip and the crew */
+  | { event: "channel"; data: ChannelMsg };
 
 export type ConnState = "connecting" | "open" | "retrying";
 
@@ -312,16 +314,68 @@ export type PipCard =
       status: "open" | "submitted" | "done" | "failed";
       result?: { added: PipAdded[] };
     };
+/** how a Pip turn ran, stored on its item (for /why) */
+export type PipTrace = {
+  tools: { name: string; ok: boolean; ms?: number }[];
+  model?: string;
+  mode?: "agent" | "menu" | "command";
+  usage?: { inTok?: number; outTok?: number; in?: number; out?: number };
+  usd?: number;
+  promptVersion?: string;
+  /** which cards it made and why */
+  cards?: { title: string; why?: string }[];
+};
 export type PipItem =
   | { id: string; at: string; kind: "user"; text: string }
-  | { id: string; at: string; kind: "pip"; text: string; cards: PipCard[]; model?: string; usd?: number }
+  | {
+      id: string;
+      at: string;
+      kind: "pip";
+      text: string;
+      cards: PipCard[];
+      model?: string;
+      usd?: number;
+      trace?: PipTrace;
+      /** a /why reply: the trace of the answer it explains */
+      why?: PipTrace & { about?: string };
+    }
   | { id: string; at: string; kind: "thinking" };
+/** Pip's summary of the earlier conversation: everything up to `upTo` is folded into `text` */
+export type PipSummary = {
+  text: string;
+  upTo: string;
+  at: string;
+  /** what the compact freed in Pip's context, in tokens */
+  freed?: { items: number; before: number; after: number; freed: number; method: "count" | "estimate" };
+};
 /** the `pip` SSE event (assumed shape: the spec names only `type`) */
 export type PipEvent =
   | { type: "thinking"; done?: boolean }
   | { type: "item"; item: PipItem }
   | { type: "card"; card: PipCard; itemId?: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /** after /compact or an auto-compact (assumed shape) */
+  | { type: "summary"; summary: PipSummary };
+/** GET /api/pip/context: what Pip's model holds right now */
+export type PipContextPart = {
+  id: "system" | "facts" | "tools" | "summary" | "messages" | "reserve";
+  label: string;
+  tokens: number;
+  detail?: string;
+};
+export type PipContext = {
+  model: string;
+  provider?: string;
+  window: number | null;
+  method: "count" | "estimate";
+  mode?: "agent" | "menu";
+  total: number;
+  parts: PipContextPart[];
+  /** where the window size came from */
+  windowSource?: "provider" | "table" | "unknown";
+  /** how the tokens were counted: "anthropic count_tokens", "llama.cpp /tokenize", "chars/4 × 1.12 from 40 calls" */
+  countSource?: string;
+};
 export type PipConversation = {
   items: PipItem[];
   name: string;
@@ -329,8 +383,24 @@ export type PipConversation = {
   mode?: "agent" | "menu";
   /** a turn is running (the page opened mid-answer) */
   busy?: boolean;
+  /** assumed: the current summary, when the conversation was compacted */
+  summary?: PipSummary | null;
 };
 export type PipDecision = { project?: string; decision: "confirm" | "decline"; edit?: string };
+
+// ---- the crew channel: Pip directing the crew ("Behind the scenes") ----
+export type ChannelKind = "brief" | "report" | "ask" | "answer";
+export type ChannelMsg = {
+  id: string;
+  at: string;
+  /** "pip" or a role */
+  from: string;
+  to: string;
+  kind: ChannelKind;
+  text: string;
+  ref?: string;
+  replyTo?: string;
+};
 
 // ---- connections: the person's own MCP servers ----
 export type ConnectionTrust = "ask" | "read_only";
@@ -404,6 +474,12 @@ export interface Client {
   pipCard(cardId: string, d: PipDecision): Promise<PipCard | null>;
   /** the workspace stream (/api/events): Pip's workspace-level events */
   subscribeWorkspace(on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void): () => void;
+  /** GET /api/pip/context: what Pip's model holds right now (the /context view) */
+  pipContext(project?: string): Promise<PipContext>;
+  /** PUT /api/pip/summary: the person's correction to Pip's summary */
+  pipSummary(project: string | undefined, text: string): Promise<PipSummary>;
+  /** the crew channel's history */
+  channel(project: string): Promise<ChannelMsg[]>;
   connections(): Promise<Connection[]>;
   addConnections(json: string): Promise<{ added: PipAdded[] }>;
   updateConnection(name: string, patch: { enabled?: boolean; trust?: ConnectionTrust }): Promise<Connection | null>;

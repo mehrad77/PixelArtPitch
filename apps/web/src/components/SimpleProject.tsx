@@ -2,13 +2,13 @@
 // that needs the person, if any. Money is one quiet line. Everything else (stages, tracks, models, tasks) is in
 // Studio, one toggle away in the app header and remembered (pap.view). Watching rules as in Studio: nothing the crew does moves the
 // playhead or the focus.
-import { Button, Callout, Popover, Skeleton, Steps, Timeline, TimelineItem } from "@shabboo/kit/react";
+import { Button, Callout, Popover, Skeleton, Steps } from "@shabboo/kit/react";
 import { useCallback, useEffect, useState } from "react";
+import { channelSummary, useChannel } from "../lib/channel.ts";
 import { client } from "../lib/client.ts";
 import { usePublishProject } from "../lib/current.ts";
-import { clock } from "../lib/format.ts";
 import { isControlTarget, type ProjectView, useProject, useThrottled } from "../lib/hooks.ts";
-import { crewStateOf, effectOf, humanStatus, milestones, PHASES, phaseOf, plainUsd } from "../lib/human.ts";
+import { crewStateOf, effectOf, humanStatus, PHASES, phaseOf, plainUsd } from "../lib/human.ts";
 import { usePipOpenRequest } from "../lib/pip.ts";
 import { usePlayback } from "../lib/playback.ts";
 import { Link } from "../lib/router.tsx";
@@ -49,10 +49,8 @@ function SimpleProject({ id, state, view }: { id: string; state: ProjectState; v
   const pb = usePlayback(state.timeline.duration, id);
   usePublishProject(id, state);
   const [steer, setSteer] = useState<{ t: number; x: number; y: number } | null>(null);
-  // Pip's sheet: opened by asking or by pressing Pip's face, folded by Esc or a handoff to the crew
-  const [pipOpen, setPipOpen] = useState(false);
-  // "Ask Pip about this" from a face or the steer popover opens the sheet with a draft
-  usePipOpenRequest(id, () => setPipOpen(true));
+  // "Ask Pip about this" from a face or the steer popover: the draft lands in the field, which is always on screen
+  usePipOpenRequest(id, () => document.getElementById("pip-ask-input")?.scrollIntoView({ block: "nearest" }));
   const phase = phaseOf(state);
   const b = state.budget;
   const money = plainUsd(b.spentUsd + b.reservedUsd, b.capUsd);
@@ -120,16 +118,9 @@ function SimpleProject({ id, state, view }: { id: string; state: ProjectState; v
       </div>
       {/* the workers first, quietly; then Pip, who talks to you: the sentence, the thread, the field */}
       <div className="sp-crew">
-        <CrewStrip
-          projectId={id}
-          state={state}
-          lead={<PipCrewFace project={id} state={state} open={pipOpen} setOpen={setPipOpen} />}
-          pipProject={id}
-        />
+        <CrewStrip projectId={id} state={state} lead={<PipCrewFace project={id} state={state} />} pipProject={id} />
       </div>
-      <StatusLine projectId={id} state={state} onNeeds={focusNeeds} pipOpen={pipOpen} setPipOpen={setPipOpen} />
-      <NeedsYouCard projectId={id} state={state} />
-      <SoFar state={state} />
+      <StatusLine projectId={id} state={state} onNeeds={focusNeeds} />
       {steer && (
         <SteerPopover
           projectId={id}
@@ -145,21 +136,11 @@ function SimpleProject({ id, state, view }: { id: string; state: ProjectState; v
 }
 
 /** the one sentence, said by Pip, and under it why nothing moves and the one thing to do about it */
-function StatusLine({
-  projectId,
-  state,
-  onNeeds,
-  pipOpen,
-  setPipOpen,
-}: {
-  projectId: string;
-  state: ProjectState;
-  onNeeds: () => void;
-  pipOpen: boolean;
-  setPipOpen: (v: boolean) => void;
-}) {
+function StatusLine({ projectId, state, onNeeds }: { projectId: string; state: ProjectState; onNeeds: () => void }) {
   const st = humanStatus(state);
   const live = useThrottled(st.text, 10000);
+  // what Pip and the crew said to each other lately, in one plain sentence
+  const behind = channelSummary(useChannel(projectId));
   // while nobody has started yet, a few big faces keep the person company
   const starting = !state.tasks.some((t) => t.startedAt) && st.tone !== "needs";
   return (
@@ -168,11 +149,14 @@ function StatusLine({
         <div className="sp-said" data-tone={st.tone} data-hero={starting ? "" : undefined}>
           {starting && <CrewHero />}
           <div className="sp-status-text">
-            <p>{st.text}</p>
-            <WaitLine projectId={projectId} state={state} mainText={st.text} onNeeds={onNeeds} />
+            <p dir="auto">{st.text}</p>
+            <WaitLine projectId={projectId} state={state} mainText={st.text} onNeeds={onNeeds} hideNeeds />
+            {behind && <p className="sp-behind small">{behind}</p>}
           </div>
         </div>
-        <PipAsk project={projectId} state={state} open={pipOpen} setOpen={setPipOpen} />
+        {/* what needs you is Pip's question, said here, above the field */}
+        <NeedsYouCard projectId={projectId} state={state} variant="pip" />
+        <PipAsk project={projectId} state={state} />
       </PipLine>
       <p className="visually-hidden" role="status" aria-live="polite">
         {live}
@@ -235,46 +219,5 @@ function PauseControl({ projectId, state }: { projectId: string; state: ProjectS
         </p>
       )}
     </>
-  );
-}
-
-/** what's done, on one line; Show all opens the whole list */
-function SoFar({ state }: { state: ProjectState }) {
-  const ms = milestones(state);
-  return (
-    <section className="sp-sofar" aria-labelledby="sp-sofar-h">
-      <h2 id="sp-sofar-h" className="label">
-        So far
-      </h2>
-      {ms.length === 0 ? (
-        <p className="small muted">Nothing finished yet. Milestones show here as the crew reaches them.</p>
-      ) : (
-        <>
-          <ol className="sp-sofar-line small">
-            {ms.slice(-4).map((m) => (
-              <li key={m.id}>{m.text}</li>
-            ))}
-          </ol>
-          {ms.length > 0 && (
-            <Popover id="sp-sofar-all" label="Show all" variant="quiet" size="lg" placement="block-start">
-              <Timeline label="Everything so far">
-                {[...ms].reverse().map((m, i) => (
-                  <TimelineItem
-                    key={m.id}
-                    title={m.text}
-                    start={m.at || undefined}
-                    dates={m.at ? clock(new Date(m.at)) : ""}
-                    current={i === 0}
-                    headingLevel={3}
-                  >
-                    {m.image && <img className="sp-ms-img pixelated" src={m.image} alt="" />}
-                  </TimelineItem>
-                ))}
-              </Timeline>
-            </Popover>
-          )}
-        </>
-      )}
-    </section>
   );
 }

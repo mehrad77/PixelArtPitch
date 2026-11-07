@@ -56,7 +56,26 @@ export function needsItems(s: ProjectState): Item[] {
   return all;
 }
 
-export function NeedsYouCard({ projectId, state }: { projectId: string; state: ProjectState }) {
+/** what Pip says when it hands you the item: in the simple view the item is Pip's question, not a separate card */
+function pipSays(item: Item, s: ProjectState): string {
+  if (item.kind === "question")
+    return `The ${memberOf(item.q.from as Role).label.toLowerCase()} needs a pick from you.`;
+  if (item.kind === "gate")
+    return `This one's your call: ${GATE_TITLE[item.gate.id].charAt(0).toLowerCase()}${GATE_TITLE[item.gate.id].slice(1)}`;
+  if (item.kind === "narration") return "The pictures are done. Your turn: the narration.";
+  return problemOf(s) ? "I need you for this one." : "One thing for you.";
+}
+
+export function NeedsYouCard({
+  projectId,
+  state,
+  variant = "card",
+}: {
+  projectId: string;
+  state: ProjectState;
+  /** pip: said by Pip, inside Pip's block, instead of a card of its own */
+  variant?: "card" | "pip";
+}) {
   const items = needsItems(state);
   const [cur, setCur] = useState<string | null>(null);
   if (!items.length) return null;
@@ -75,9 +94,23 @@ export function NeedsYouCard({ projectId, state }: { projectId: string; state: P
     img = [...state.tasks].reverse().find((t) => t.role === item.q.from && t.lastImage)?.lastImage;
   }
   return (
-    <section id="needs-you" className="needs" aria-labelledby="needs-title" tabIndex={-1}>
+    <section
+      id="needs-you"
+      className={variant === "pip" ? "needs needs-pip" : "needs"}
+      aria-labelledby="needs-title"
+      tabIndex={-1}
+    >
+      {variant === "pip" && <p className="visually-hidden">{pipSays(item, state)}</p>}
       <p className="needs-head label" role="status">
-        The crew needs you{items.length > 1 ? ` · ${i + 1} of ${items.length}` : ""}
+        {variant === "pip" ? (
+          items.length > 1 ? (
+            <bdi>{`${i + 1} of ${items.length}`}</bdi>
+          ) : (
+            ""
+          )
+        ) : (
+          `The crew needs you${items.length > 1 ? ` · ${i + 1} of ${items.length}` : ""}`
+        )}
         {items.length > 1 && (
           <button
             type="button"

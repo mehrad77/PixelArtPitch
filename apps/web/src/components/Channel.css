@@ -1,0 +1,44 @@
+/* behind the scenes: small faces, the kind as a muted verb, the words in the serif voice */
+.channel-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.channel-msg {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2);
+  align-items: start;
+}
+.channel-face {
+  display: inline-grid;
+  padding-block-start: 2px;
+}
+.channel-face .crew-face {
+  --face: 1.5rem;
+  animation: none;
+  box-shadow: none;
+}
+.channel-body {
+  min-inline-size: 0;
+}
+.channel-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.channel-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  color: var(--text-muted);
+}
+.channel-text {
+  font-family: var(--font-serif);
+  font-size: var(--step--1);
+  line-height: 1.45;
+}
+.channel-msg[data-from="pip"] .channel-text {
+  color: var(--text);
+}

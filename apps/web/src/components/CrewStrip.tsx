@@ -138,7 +138,7 @@ export function CrewStrip({
   const rows = crewRows(state);
   const step = useStep(rows.some((r) => r.mood === "working"));
   const pip = usePip(pipProject ?? projectId);
-  const thoughts = useThoughts(state, lead ? pip : null);
+  const thoughts = useThoughts(state, lead ? pip : null, projectId);
   const box = useRef<HTMLElement>(null);
   // hidden by default: the activity view opens only when the person asks for it from a face
   const [watching, setWatching] = useState<string | null>(null);

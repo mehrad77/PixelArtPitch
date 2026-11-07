@@ -4,6 +4,7 @@ import type {
   ActivityEntry,
   AnswerInput,
   ApiErrorBody,
+  ChannelMsg,
   Client,
   Connection,
   ConnectionTrust,
@@ -20,8 +21,10 @@ import type {
   PatchOpT,
   PipAdded,
   PipCard,
+  PipContext,
   PipConversation,
   PipDecision,
+  PipSummary,
   ProjectState,
   ProjectSummary,
   QuestionT,
@@ -206,6 +209,21 @@ export class HttpClient implements Client {
     const res = await this.post<PipCard | { card?: PipCard } | null>(`/api/pip/cards/${enc(cardId)}`, d);
     if (res && "type" in res) return res;
     return (res as { card?: PipCard } | null)?.card ?? null;
+  }
+  pipContext(project?: string) {
+    return this.get<PipContext>(`/api/pip/context${project ? `?project=${enc(project)}` : ""}`);
+  }
+  pipSummary(project: string | undefined, text: string) {
+    return this.req<PipSummary>("PUT", "/api/pip/summary", project ? { project, text } : { text });
+  }
+  async channel(project: string) {
+    try {
+      const res = await this.get<ChannelMsg[] | { messages: ChannelMsg[] }>(`/api/p/${enc(project)}/channel`);
+      return Array.isArray(res) ? res : (res?.messages ?? []);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return [];
+      throw e;
+    }
   }
   subscribeWorkspace(on: (e: ServerEvent) => void, onConn?: (s: ConnState) => void) {
     return subscribeSse("/api/events", on, onConn);

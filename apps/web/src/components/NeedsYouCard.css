@@ -64,3 +64,21 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* said by Pip: no card of its own, a message in Pip's column with the same actions */
+.needs-pip {
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface-raised);
+}
+.needs-pip .needs-say {
+  margin: 0;
+}
+.needs-pip .needs-head:empty {
+  display: none;
+}
+.needs-pip .needs-head {
+  color: var(--text-muted);
+}

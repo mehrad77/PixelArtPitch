@@ -70,7 +70,7 @@ export function pipThought(thinking: boolean, last: PipItem | undefined): string
   if (c.type === "cant") return "Can't do that one yet";
   if (c.type === "form")
     return c.status === "done" ? "Connected" : c.status === "failed" ? "That didn't connect" : "Here's the form";
-  if (c.status === "done") return `Done: ${low(c.title)}`;
+  if (c.status === "done") return c.who.length ? "Handed it to the crew" : `Done: ${low(c.title)}`;
   if (c.status === "running") return "Working on it";
   if (c.status === "failed") return "That didn't work";
   if (c.status === "declined") return "Okay, not now";

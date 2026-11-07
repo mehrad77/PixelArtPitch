@@ -155,8 +155,8 @@
   border-radius: calc(var(--radius) * 2);
   background: var(--surface-raised);
 }
-.pip-sheet[hidden] {
-  display: none;
+.pip-sheet {
+  position: relative;
 }
 .pip-sheet-head {
   display: flex;
@@ -508,4 +508,158 @@ a.pip-file:hover {
   .pip-line {
     padding-inline-start: var(--space-3);
   }
+}
+
+/* ---- the slash menu: above the field, a quiet list ---- */
+.pip-cmds {
+  position: absolute;
+  inset-block-end: calc(100% + var(--space-1));
+  inset-inline: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  padding: var(--space-1);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--stroke-control);
+}
+.pip-cmds[hidden] {
+  display: none;
+}
+.pip-cmd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.pip-cmd[aria-selected="true"] {
+  background: var(--state-selected);
+}
+.pip-cmd:hover {
+  background-image: linear-gradient(var(--state-hover), var(--state-hover));
+}
+.pip-cmd-name {
+  color: var(--text-accent);
+  font-size: var(--step--1);
+}
+.pip-cmd-hint {
+  color: var(--text-muted);
+  font-size: var(--step--1);
+}
+
+/* ---- the summary divider: what it covers stays above, a little quieter ---- */
+.pip-thread > [data-old] {
+  opacity: 0.62;
+}
+.pip-summary {
+  display: grid;
+}
+.pip-summary-box {
+  border-block: 1px solid var(--stroke);
+  padding-block: var(--space-1);
+}
+.pip-summary-text {
+  margin: 0 0 var(--space-2);
+  white-space: pre-line;
+  color: var(--text-muted);
+}
+.pip-summary-edit {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* ---- /why: one calm line, the details folded ---- */
+.pip-why {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface-sunken);
+}
+.pip-why p {
+  margin: 0;
+}
+.pip-why-list,
+.pip-why-cards {
+  margin: var(--space-1) 0;
+  padding-inline-start: var(--space-3);
+  list-style: none;
+}
+.pip-why-list li[data-ok="true"] .pip-mark {
+  color: var(--status-success);
+}
+.pip-why-list li[data-ok="false"] .pip-mark {
+  color: var(--status-error);
+}
+.pip-why-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-1) 0;
+}
+.pip-why-meta dd {
+  margin: 0;
+}
+
+/* "New message ↓": the reader scrolled up, so the thread doesn't jump; this takes them down */
+.pip-new {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-accent);
+  color: var(--text-on-fill);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+[dir="rtl"] .pip-new {
+  translate: 50% 0;
+}
+.pip-new:focus-visible {
+  outline: var(--focus-ring, 2px solid var(--stroke-strong));
+  outline-offset: 2px;
+}
+.pip-panel-thread {
+  position: relative;
+  min-block-size: 0;
+}
+
+/* a milestone among the messages: like the summary divider, quieter than anything said */
+.pip-marker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+}
+.pip-marker::before,
+.pip-marker::after {
+  content: "";
+  flex: 1;
+  border-block-start: 1px solid var(--stroke);
+}
+
+/* the simple view, newest first: the field on top, the thread under it, no inner scroll */
+.pip-ask[data-order="newest"] .pip-sheet {
+  padding-block: var(--space-3);
+}
+.pip-ask[data-order="newest"] .pip-sheet:has(.pip-thread:empty) {
+  display: none;
+}
+.pip-cmds[data-below] {
+  inset-block-start: calc(100% + var(--space-1));
+  inset-block-end: auto;
+}
+/* "New from Pip ↑": pinned near the top of the window while the reader is further down */
+.pip-new-up {
+  position: fixed;
+  inset-block-start: calc(var(--topbar-h, 2.75rem) + var(--space-3));
+  z-index: var(--z-sticky);
 }

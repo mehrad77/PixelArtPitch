@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { forwardChannel } from "./channel.ts";
 import { client } from "./client.ts";
 import { currentView, onViewChange, type View } from "./human.ts";
 import { forwardPip } from "./pip.ts";
@@ -94,6 +95,7 @@ export function useProject(id: string | null): ProjectView {
       );
     const on = (e: ServerEvent) => {
       if (e.event === "pip") return forwardPip(id, e);
+      if (e.event === "channel") return forwardChannel(id, e);
       setSeq((x) => x + 1);
       if (e.event === "patch") {
         setHistory((h) => (h.some((x) => x.seq === e.data.seq) ? h : [...h, e.data]));
