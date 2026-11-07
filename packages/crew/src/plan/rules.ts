@@ -851,6 +851,8 @@ export function finishWithin(
     ctx: Pick<RulesCtx, "env" | "rev">;
     /** review rounds the run would make (settings): the second one can go only when there is one */
     reviewRounds?: number;
+    /** trim only these tasks (the card's list, applied as shown) */
+    only?: Set<string>;
   },
 ): { tasks: PlanTaskT[]; ops: PlanOpT[]; trims: TrimT[]; fits: boolean; restUsd: number } {
   const ts = tasks.map((t) => ({ ...t }));
@@ -859,7 +861,8 @@ export function finishWithin(
   const sat = o.satisfied ?? (() => false);
   const rest = () => restP90(realRemaining(ts, sat));
   const fits = () => rest() <= o.leftUsd + 1e-9;
-  const open = (t: PlanTaskT) => (t.status === "pending" || t.status === "ready") && !sat(t);
+  const open = (t: PlanTaskT) =>
+    (t.status === "pending" || t.status === "ready") && !sat(t) && (!o.only || o.only.has(t.id));
   const reason = "to finish within the budget";
   const drop = (t: PlanTaskT, what: TrimT["what"]) => {
     t.status = "dropped";
@@ -898,7 +901,10 @@ export function finishWithin(
   if (!fits() && (o.reviewRounds ?? 2) >= 2) {
     const second = ts.filter((t) => t.kind === "review.final" && (t.round ?? 1) >= 2 && open(t));
     for (const t of second) drop(t, "review_round");
-    const first = ts.find((t) => t.kind === "review.final" && isLive(t) && (t.round ?? 1) === 1 && !t.lastRound);
+    const first = ts.find(
+      (t) =>
+        t.kind === "review.final" && isLive(t) && (t.round ?? 1) === 1 && !t.lastRound && (!o.only || o.only.has(t.id)),
+    );
     if (!second.length && first) {
       first.lastRound = true;
       ops.push({ op: "trim", task: first.id, what: "review_round", reason });

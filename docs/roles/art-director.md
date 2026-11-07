@@ -38,7 +38,7 @@ Read first: [ASSET-KINDS.md](../ASSET-KINDS.md), [PAP-STANDARD.md](../PAP-STANDA
 - Never let a private asset be marked public.
 
 ## When to ask (through the Producer)
-- Ask: any likeness or logo; references marked `rights: "unsure"`; more than 3 variants for a character (cost).
+- Ask: any likeness or logo; references marked `rights: "unsure"`; more variants than the project's setting (cost; 3 at most).
 - Don't ask: palette choice, which library asset fits, the critique itself.
 
 ## Worked example

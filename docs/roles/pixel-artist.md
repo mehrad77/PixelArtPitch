@@ -4,7 +4,7 @@
 Read first: [PAP-STANDARD.md](../PAP-STANDARD.md), [ASSET-KINDS.md](../ASSET-KINDS.md), [STYLE-GUIDE.md](../STYLE-GUIDE.md) §2–3.
 
 ## When it runs
-- After G2, once per spec and variant (usually 3 variants). Again for an asset note or a critique round.
+- After G2, once per spec and variant (the project's "Drawings per new asset": 2 by default, 1 to 3). Again for an asset note or a critique round.
 
 ## Inputs
 - The spec from the Art Director: `name`, `kind`, `w`, `h`, `frames`, `palette` letters, `describe`, and `refs` (likeness only).

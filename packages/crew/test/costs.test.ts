@@ -514,12 +514,20 @@ test("the 80% card leads with Finish within $5, lists exactly what goes, and off
   );
   // "Needs you" counts the question once
   assert.deepEqual((w.pip as any).crewCards(w.p, { budget: true }), ["budget"]);
+  // Pip's turns spend a little more while the card waits: the confirm still applies exactly what the card listed
+  w.gateway.ledger.insert({ ...(w.gateway.ledger.query({ project: w.p.id })[0] as any), task: "t_pip", usd: 0.3 });
   // the person picks Finish within: a code revision with trigger budget, the raise card settles, the crew goes on
   w.pip!.decide(w.p.id, finish.id, "confirm");
   const plan = w.c.planNow(w.p);
   assert.equal(plan.by, "code");
   assert.equal(plan.trigger, "budget");
   assert.equal(plan.tasks.find((x: PlanTaskT) => x.id === "t_draw_moth_v2").status, "dropped");
+  assert.deepEqual(
+    plan.ops.map((o: any) => o.task),
+    ["t_draw_moth_v2"],
+    "nothing beyond the card's list",
+  );
+  assert.equal(plan.tasks.find((x: PlanTaskT) => x.id === "t_draw_moth_v1").critiques, undefined);
   const after = w.items().find((it: any) => it.id === item.id);
   assert.equal(after.cards[1].status, "declined", "the raise card is settled");
   assert.equal(w.c.affordable(w.p, w.r, t), true, "the overrun is answered for this cap");

@@ -1663,7 +1663,7 @@ export class Crew {
       spentUsd: number;
       suggestUsd: number;
       /** what "Finish within" would leave out, in the person's words, and whether the rest then fits */
-      finish?: { trims: string[]; fits: boolean; restUsd: number };
+      finish?: { trims: string[]; fits: boolean; restUsd: number; shortUsd: number };
     },
   ) => void;
 
@@ -2004,13 +2004,29 @@ export class Crew {
       }
       const now = this.finishPlan(p);
       const words = now ? now.trims.map((x) => trimWords(x, this.planNow(p)?.tasks ?? [])) : [];
+      // a confirm applies exactly what the card lists, priced at what was left when it was asked
+      if (now?.trims.length)
+        this.finishOffers.set(p.id, {
+          cap: b.capUsd,
+          leftUsd: b.capUsd - spentUsd,
+          ids: now.trims.map((x) => x.task),
+        });
       try {
         this.onOverrun?.(p, {
           needUsd: t.estUsd[1],
           capUsd: b.capUsd,
           spentUsd,
           suggestUsd: this.suggestUsd(p, spentUsd),
-          ...(words.length ? { finish: { trims: words, fits: !!now?.fits, restUsd: now?.restUsd ?? 0 } } : {}),
+          ...(words.length && now
+            ? {
+                finish: {
+                  trims: words,
+                  fits: now.fits,
+                  restUsd: now.restUsd,
+                  shortUsd: Math.max(0, now.restUsd - (b.capUsd - spentUsd)),
+                },
+              }
+            : {}),
         });
       } catch {}
     }
@@ -2061,6 +2077,10 @@ export class Crew {
   finishWithinBudget(p: OpenProject, o: { auto?: boolean } = {}) {
     const r = this.runs.get(p.id) ?? null;
     const cap = p.doc().budget.capUsd;
+    // the card's own offer (what it listed, at what was left then); `auto` and a stale offer price it now
+    const offer = o.auto ? undefined : this.finishOffers.get(p.id);
+    const mine = offer?.cap === cap ? offer : undefined;
+    this.finishOffers.delete(p.id);
     let trims: TrimT[] = [];
     let fits = false;
     let before: PlanTaskT[] = [];
@@ -2068,10 +2088,11 @@ export class Crew {
       before = ts;
       const { spentUsd } = this.deps.gateway.spent(p.id);
       const out = finishWithin(ts, {
-        leftUsd: cap - spentUsd,
+        leftUsd: mine?.leftUsd ?? cap - spentUsd,
         satisfied: this.satisfied(p),
         ctx,
         reviewRounds: this.reviewRounds(),
+        ...(mine ? { only: new Set(mine.ids) } : {}),
       });
       trims = out.trims;
       fits = out.fits;
@@ -2092,6 +2113,8 @@ export class Crew {
         this.onFinish?.(p, { capUsd: cap, trims: words, fits });
       } catch {}
     this.unwait(p, r ?? undefined);
+    // the run that asked already ended: confirming starts the crew again (as a held card does, §1.8)
+    if (!r) this.restartIdle(p);
     // the executor waits for a resume after an overrun: wake it once it does
     setTimeout(() => {
       r?.resume?.();
@@ -2099,6 +2122,8 @@ export class Crew {
     }, 0);
     return { trims, fits };
   }
+  /** the "Finish within" card's offer per project: what it listed, and what was left of the cap when it asked */
+  private finishOffers = new Map<string, { cap: number; leftUsd: number; ids: string[] }>();
   /** at `auto` the crew trimmed to finish within the cap by itself: Pip says what went (a visible assumption) */
   onFinish?: (p: OpenProject, o: { capUsd: number; trims: string[]; fits: boolean }) => void;
   /** the person declined the overrun card: go on with what fits (P1b) */

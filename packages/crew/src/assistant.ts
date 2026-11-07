@@ -2183,7 +2183,7 @@ export class Pip {
       capUsd: number;
       spentUsd: number;
       suggestUsd: number;
-      finish?: { trims: string[]; fits: boolean; restUsd: number };
+      finish?: { trims: string[]; fits: boolean; restUsd: number; shortUsd?: number };
     },
   ): string {
     const want = Math.max(o.suggestUsd, o.capUsd + 0.5);
@@ -2193,11 +2193,12 @@ export class Pip {
         title: `Finish within ${money(o.capUsd)}`,
         detail: o.finish.fits
           ? `The crew leaves out a few extras so the rest fits the ${money(o.capUsd)} cap.`
-          : `The crew leaves out every extra it can; the rest may still need up to ${money(o.finish.restUsd)} more than is left, and the crew asks again if it does.`,
+          : `The crew leaves out every extra it can; the rest may still need up to ${money(o.finish.shortUsd ?? o.finish.restUsd)} more than is left, and the crew asks again if it does.`,
         who: [],
         usd: [0, 0],
         sec: null,
-        effects: [...o.finish.trims.slice(0, 8).map((t) => `Leaves out ${t}.`), "Everything else is made as planned."],
+        // every trim, so the card says exactly what goes
+        effects: [...o.finish.trims.map((t) => `Leaves out ${t}.`), "Everything else is made as planned."],
         confirmLabel: `Finish within ${money(o.capUsd)}`,
         action: { tool: "", input: {}, projectId: p.id, crew: "finish" },
       });
