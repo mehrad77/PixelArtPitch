@@ -101,6 +101,8 @@ export const Behavior = z.object({
     "dissolve",
     "dust",
     "sparkle",
+    "fly",
+    "sit",
   ]),
   at: TimeExpr.optional(),
   until: TimeExpr.optional(),

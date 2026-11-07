@@ -1,0 +1,190 @@
+{
+  "pap": 1,
+  "rev": 0,
+  "id": "rooftop",
+  "title": "Rooftop",
+  "canvas": {
+    "w": 320,
+    "h": 180,
+    "fps": 30,
+    "palette": "pap-night@1"
+  },
+  "brief": {
+    "idea": "A one-scene sampler of the rooftop backdrop, the fly and sit behaviours, the glow effect and the sign label.",
+    "purpose": "launch",
+    "audience": "crew members learning the engine menu",
+    "ask": "copy the layers you need",
+    "lengthSec": 8,
+    "tone": ["calm", "night"],
+    "narration": "none"
+  },
+  "script": {
+    "cues": [
+      {
+        "id": "c01",
+        "text": "Up on the roof, the night shift reads by lantern light."
+      }
+    ],
+    "timing": {
+      "mode": "estimate",
+      "minCue": 1.6
+    }
+  },
+  "composition": {
+    "hold": 0.5,
+    "endHold": 2.5,
+    "duration": "E(c01)+endHold"
+  },
+  "scenes": [
+    {
+      "id": "roof",
+      "kind": "decl",
+      "title": "Reading on the roof",
+      "from": 0,
+      "to": "duration",
+      "cues": ["c01"],
+      "recipes": [
+        {
+          "id": "backdrop_rooftop",
+          "params": {
+            "chimneys": [236]
+          }
+        }
+      ],
+      "layers": [
+        {
+          "id": "sign",
+          "kind": "widget",
+          "z": 5,
+          "props": {
+            "widget": "label",
+            "text": "READING ROOM",
+            "x": 56,
+            "y": 108
+          }
+        },
+        {
+          "id": "glow",
+          "kind": "fx",
+          "z": -30,
+          "props": {
+            "fx": "glow",
+            "x": 136,
+            "y": 120,
+            "size": 24,
+            "pulse": 1,
+            "period": 1.8
+          }
+        },
+        {
+          "id": "lantern",
+          "kind": "group",
+          "z": -20,
+          "props": {
+            "x": 136,
+            "y": 120
+          },
+          "children": [
+            { "id": "lantern_post", "kind": "shape", "props": { "x": -1, "y": 6, "w": 3, "h": 22, "colour": "k" } },
+            { "id": "lantern_wood", "kind": "shape", "props": { "x": 0, "y": 6, "w": 1, "h": 22, "colour": "n" } },
+            { "id": "lantern_ring", "kind": "shape", "props": { "x": -1, "y": -7, "w": 3, "h": 1, "colour": "q" } },
+            { "id": "lantern_cage", "kind": "shape", "props": { "x": -3, "y": -5, "w": 7, "h": 10, "colour": "k" } },
+            { "id": "lantern_roof", "kind": "shape", "props": { "x": -2, "y": -6, "w": 5, "h": 1, "colour": "q" } },
+            { "id": "lantern_flame", "kind": "shape", "props": { "x": -2, "y": -4, "w": 5, "h": 8, "colour": "H" } },
+            { "id": "lantern_core", "kind": "shape", "props": { "x": -1, "y": -1, "w": 3, "h": 4, "colour": "B" } },
+            { "id": "lantern_bars", "kind": "shape", "props": { "x": 0, "y": -4, "w": 1, "h": 8, "colour": "k" } }
+          ]
+        },
+        {
+          "id": "moth",
+          "kind": "sprite",
+          "z": 12,
+          "props": {
+            "asset": "moth",
+            "x": 136,
+            "y": 112,
+            "anchor": "bottom"
+          },
+          "behaviors": [
+            {
+              "kind": "fly",
+              "at": "S(c01)",
+              "params": {
+                "path": [[158, 104], [136, 92], [114, 104]],
+                "loop": true,
+                "speed": 22,
+                "bob": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "owl",
+          "kind": "actor",
+          "z": 10,
+          "props": {
+            "asset": "owl",
+            "x": -20,
+            "y": 64,
+            "artFaces": "right"
+          },
+          "behaviors": [
+            {
+              "kind": "fly",
+              "at": "S(c01)",
+              "until": "S(c01)+4.2",
+              "params": {
+                "path": [[100, 50], [200, 70]],
+                "speed": 56
+              }
+            },
+            {
+              "kind": "sit",
+              "at": "S(c01)+4.2",
+              "params": {
+                "x": 243,
+                "y": 125,
+                "land": 0.6,
+                "sfx": "land"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "audio": {
+    "sfx": {}
+  },
+  "assets": [
+    {
+      "id": "font",
+      "src": "lib:font-5x8@1"
+    },
+    {
+      "id": "moon",
+      "src": "lib:moon@1"
+    },
+    {
+      "id": "skyline",
+      "src": "lib:skyline@1"
+    },
+    {
+      "id": "owl",
+      "src": "lib:owl@1"
+    },
+    {
+      "id": "moth",
+      "src": "lib:moth@1"
+    }
+  ],
+  "budget": {
+    "capUsd": 0
+  },
+  "notes": [
+    {
+      "by": "engine",
+      "text": "Public example: the rooftop backdrop, fly and sit, the glow fx and the label sign in one scene."
+    }
+  ]
+}

@@ -40,6 +40,7 @@ Rules:
 3. Since the outline is nearly as dark as the sky, the edge that reads is the **first ring inside the outline**. At least 40% of those cells must reach **1.7:1** against the sky (a hard rule); aim for 60% or more (below that is a soft warning). See [PAP-STANDARD.md](PAP-STANDARD.md).
 4. Use clusters, not noise: no lone pixels, and no checkerboard dithering unless the spec asks for it.
 5. New art faces **right** unless the spec says otherwise. The library characters face **left**. Recipes default to `faces: "left"`, so set `faces: "right"` for right-facing art.
+6. **Light sources** (lamps, lanterns, windows) glow in whole palette bands, never a blended halo: the `glow` fx steps from a dark outer tone to a bright core (default `A n c H`), and `B` or `O` may only be the core.
 
 ## 4. Icon first, little text
 
@@ -47,6 +48,7 @@ Rules:
 |---|---|
 | On-screen text besides the caption | **At most 1** element at a time, **≤ 3 words**, about 12 characters |
 | Labels, HUD sentences, speech bubbles | None. Use an icon, a bar, pips or a marker instead. |
+| A sign in the world (`label` widget) | Allowed as the scene's one text, ≤ 3 words. It is a painted board on posts, hung from a bar or on its own, never a floating box. |
 | Text that repeats the caption | Never |
 | Title text | 1–2 words (`title_card`) |
 | Lint | `text-crowding` fires at 2 texts of 4+ words at once; `text-clipped` fires on any text off the frame for ≥ 0.5 s |

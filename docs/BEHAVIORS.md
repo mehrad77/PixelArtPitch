@@ -23,7 +23,7 @@ Most scenes need only [recipes](RECIPES.md). Use hand-written layers when no rec
 
 | kind | props (defaults) | notes |
 |---|---|---|
-| backdrop | style night/plain, sky, band true, stars 70, moon true, moonX 262, moonY 18, skyline true | fills the frame; parallax follows the camera |
+| backdrop | style night/plain/rooftop, sky, band true, stars 70, moon true, moonX 262, moonY 18, skyline true, chimneys [252] (rooftop only) | fills the frame; parallax follows the camera. `rooftop` draws a slate roof whose ridge is y=148 (see [backdrop_rooftop](RECIPES.md#backdrop_rooftop)) |
 | tiled | asset "tiles", frame "ground-top", fill "ground", y 148, tile 16, fromX, toX, gaps [] | a ground row |
 | sprite | **asset**, frame, frames [] + fps 4, x, y, anchor topLeft/bottom/center, flip, outline, alpha 1, scale 1–4, colour | `frames` cycles |
 | actor | **asset**, x 160 (feet centre), y 148 (feet), facing, artFaces "left", runFps 10, idleFps 2.5, dust true, outline, frames {} | picks idle, run, jump or wave by itself |
@@ -31,14 +31,15 @@ Most scenes need only [recipes](RECIPES.md). Use hand-written layers when no rec
 | panel | x, y, **w**, **h**, border "G", fill "k", alpha 0.88 | dark box with a shadow |
 | group | x, y, alpha + `children` | moves its children together |
 | shape | shape rect/box/disc/line, x, y, w, h, r, x2, y2, colour, alpha | |
-| fx | **fx**: sparkle, ring, dust, twinkle, flash, fireworks, shootingStar; x, y, at, every, colour, n, size, dur, w, h | effects without a sprite |
-| widget | **widget**: banner, toast, nameTag, hudSlots, qblock, counter, flagpole (props below) | ready-made UI |
+| fx | **fx**: sparkle, ring, dust, twinkle, flash, fireworks, shootingStar, glow; x, y, at, every, colour, n, size, dur, w, h; glow also tones, pulse, period | effects without a sprite ([glow](#glow) below) |
+| widget | **widget**: banner, toast, nameTag, label, hudSlots, qblock, counter, flagpole (props below) | ready-made UI |
 
 **Actors** choose their frame from what the asset has:
 - `run0`–`run3` while walking. Without those, they alternate `idle0`/`idle1` with a 1 px bob.
 - `jump` in the air, falling back to `give`.
 - `wave`, falling back to `give`.
-- To force a pose, use `keys.state` with `"idle" | "run" | "jump" | "wave" | "auto"`.
+- While a [`fly`](#fly-needs-at) moves them: `move0`–`move3`, falling back to `run0`–`run3`, then `idle0`/`idle1`. While they [`sit`](#sit-needs-at): `perch0`/`perch1`, falling back to `idle0`/`idle1`. Sprites pick the same way during fly and sit.
+- To force a pose, use `keys.state` with `"idle" | "run" | "jump" | "wave" | "fly" | "perch" | "auto"`.
 
 **Widgets**
 
@@ -51,6 +52,53 @@ Most scenes need only [recipes](RECIPES.md). Use hand-written layers when no rec
 | qblock | asset "qblock", x, y 78, hit, bump 6, sfx "bump" | bump at `hit` |
 | counter | label, from 0, **to**, **at**, dur 1, x, y, align, scale, pad, colour "B", sfx "coin" | coin at the end |
 | flagpole | x 240, y 148, height 96, asset "props", frames [flag0, flag1], raise, dur 1.6, sfx true | flagpole, flag, fanfare |
+| label | **text**, x 160 (board centre), y 100 (board top), style "wood", mount "posts", scale 1, colour "P" | none |
+
+### label
+A painted sign in the world: a board with a lit top-left edge, a dark bottom-right edge, wood grain and four nails, and the words painted on it. Use it for a shop sign, a door plaque or a place name. It is the scene's one text (STYLE-GUIDE §4). The board is as wide as the words plus 14 px, and `8 × scale + 8` px tall (16 at scale 1). Words wider than 200 px end in "...".
+
+| prop | default | what |
+|---|---|---|
+| **text** | | 1–3 words, about 12 characters |
+| x | 160 | centre x of the board |
+| y | 100 | top y of the board |
+| style | wood | `wood`: dark planks (`n`, lit `c`, shade `A`); `slate`: a grey stone plaque (`F`, lit `Y`, shade `f`) |
+| mount | posts | `posts`: two legs down to the ground (y=148); `hang`: two cords up to a bar 8 px above the board; `none`: the board alone |
+| scale | 1 | 1–2, text scale |
+| colour | "P" | paint colour of the words |
+
+```json
+{ "id": "sign", "kind": "widget", "z": 5, "props": { "widget": "label", "text": "READING ROOM", "x": 56, "y": 108 } }
+```
+**Mistakes:**
+- A sentence on the board. Keep to 1–3 words, as on a real sign.
+- `mount: "posts"` on a sign up in the sky: the legs reach all the way down to the ground. Use `hang` or `none` up there.
+- A board bottom below y=146 (the caption zone). With its 2 px shadow the board takes `8 × scale + 10` px, so at scale 1 keep `y` at 128 or less.
+- A sign over a character's body (`covers-actor`): stand it beside them.
+
+`nameTag` is the small name tag `walk_in` and `spawn_join` draw for their `label` param. It stays a plain box; use a `label` widget when the words belong to the place.
+
+### glow
+Radial light for lamps, lanterns, windows and fires. It paints whole bands of palette colours from an outer tone to a bright core, with no blended colours. A band only lights cells darker than itself, so a brighter thing under the glow keeps its colour. Put it under the lamp and the characters (a lower `z`, for example −45 under the backdrop's lamp at −40).
+
+| prop | default | what |
+|---|---|---|
+| x, y | 160, 60 | centre of the light (the flame or bulb) |
+| size | 18 | outer radius in pixels, 1–160 |
+| tones | ["A", "n", "c", "H"] | palette letters from the outer band to the core, 1–8. Inner bands are narrower, so the light falls off from a small core |
+| pulse | 0 | 0–8: how many pixels the radius breathes in and out (0 is steady) |
+| period | 2 | 0.2–20 seconds per breath |
+| at | scene start | the light comes on |
+
+```json
+{ "id": "lamp_glow", "kind": "fx", "z": -45, "props": { "fx": "glow", "x": 24, "y": 122, "size": 16, "pulse": 1, "period": 1.8 } }
+```
+That lights the default lamp at x=24. A cool light: `"tones": ["N", "I", "D", "Q"]`.
+**Mistakes:**
+- A glow above a character's `z`: it is opaque, so it paints over their dark outline. Keep it under them.
+- `B` or `O` as an outer band. Brass and orange are for tiny doses: use them for the core tone only (the `glow-tones` lint warns).
+- A `#rrggbb` colour or a letter not in the palette in `tones` (a compile error, then a `glow-tones` lint error).
+- A `pulse` above 2. Real lamps flicker by a pixel; more looks like a heartbeat.
 
 ## Keys
 `keys` animate a prop over time: `{ "prop": [{ "t": time, "v": value, "ease": name }] }`.
@@ -59,7 +107,7 @@ Most scenes need only [recipes](RECIPES.md). Use hand-written layers when no rec
 - **Keyable on every kind:** x, y, alpha, visible.
 - **Keyable per kind:**
   - sprite: frame, scale
-  - actor: state, facing
+  - actor: state (`idle`, `run`, `jump`, `wave`, `fly`, `perch`, `auto`), facing
   - text: text, colour, scale
   - shape: w, h, colour
   - panel: w, h
@@ -215,6 +263,51 @@ Follows another layer's position (with its visibility), for name tags or carried
 ```
 **Mistake:** attaching to an id that does not exist. Recipe ids are `<recipe>_<part>`.
 
+### fly *(needs at)*
+Flies from where the layer is through the `path` points at `speed`, with a bob, cycling the move frames (`move0`–`move3`, else `run0`–`run3`, else `idle0`/`idle1`). It turns to face the way it goes: an actor through `artFaces`, a sprite as if its art faces right (set `flip: true` on art drawn facing left). A one-way flight slows over its last 0.4 s and then hovers at the last point. With `loop: true` it flies back to its start and goes round again until `until`. After `until` it stays where it got to, with its idle frames, so a `sit` can take over.
+
+| param | default | range |
+|---|---|---|
+| **path** | | `[[x, y], ...]`, 1 point or more, in the layer's own terms (an actor's feet, a sprite's anchor) |
+| speed | 24 | 2–200 px/s |
+| loop | false | |
+| bob | 2 | 0–20 px |
+| bobPeriod | 0.8 | 0.1–10 s |
+| fps | 8 | 1–24 move frames per second |
+
+```json
+{ "kind": "fly", "at": "S(c01)", "until": "S(c01)+4.2", "params": { "path": [[100, 50], [200, 70]], "speed": 56 } }
+```
+A moth circling a lantern at (136, 120): `{ "kind": "fly", "at": "S(c01)", "params": { "path": [[158, 104], [136, 92], [114, 104]], "loop": true, "speed": 22, "bob": 1 } }` on a sprite placed at (136, 112).
+**Mistakes:**
+- A path that ends inside the caption zone (y > 146) or off the frame for a long time.
+- A one-way flight longer than its window: the distance over `speed` (plus 0.2 s) must fit before `until`, or it never reaches the last point.
+- A loop on a creature that should land: give the `fly` an `until` and start the `sit` there.
+
+### sit *(needs at)*
+Lands on an anchor and holds there with the perch frames (`perch0`/`perch1`, else `idle0`/`idle1`). The anchor is (`x`, `y`), or another layer's position with `on` (it follows that layer as it moves). Then `dx`, `dy` are added. Over `land` seconds it glides in from wherever it is on a small hop, still flapping. It squashes for 0.1 s on touchdown and plays `sfx`. After `until` it stays on the anchor with its idle frames. With no `x`, `y` or `on`, it perches where it is.
+
+| param | default | range |
+|---|---|---|
+| on | "" | layer id to sit on; "" for a fixed point |
+| x, y | where the layer is | anchor, in the layer's own terms (an actor's feet, a sprite's anchor) |
+| dx, dy | 0 | −400–400 |
+| land | 0.4 | 0–3 s (0: already there, no squash) |
+| lift | 6 | −60–60 px, how high the landing hop bows |
+| fps | 1.5 | 0.1–12 perch frames per second |
+| squash | true | |
+| sfx | null | sound at `at + land` |
+
+**SFX:** `sfx` on touchdown.
+```json
+{ "kind": "sit", "at": "S(c01)+4.2", "params": { "x": 243, "y": 125, "land": 0.6, "sfx": "land" } }
+```
+That lands an actor's feet on top of a `backdrop_rooftop` chimney at x=236. On a moving layer: `{ "kind": "sit", "at": "S(c02)", "params": { "on": "walk_in_hero", "dy": -24 } }` rides on the hero's head.
+**Mistakes:**
+- Listing `sit` before the `fly` it ends. Behaviours apply in list order, so keep them in time order: `fly`, then `sit`, then any later `fly`.
+- An `on` id that does not exist, or the layer itself (a compile error that names the problem).
+- `y` as the top of the creature: `y` is where its feet (or a sprite's anchor) go. For a sprite with the default `anchor: "topLeft"`, use `"anchor": "bottom"` so `y` is the perch line.
+
 ### dissolve *(needs at)*
 A pixel dissolve, in or out. Two texts at the same spot, one `out` and one `in` at the same `at`, make a swap.
 
@@ -248,7 +341,7 @@ A ring of sparkles around the layer's centre.
 
 ## Sound
 Scenes collect sounds into `compiled.sfx`, which the mixer adds to `audio.sfx.events`:
-- **Behaviours:** jumpArc gives jump and land; arc, appear and disappear give their `sfx`.
+- **Behaviours:** jumpArc gives jump and land; arc, appear, disappear and sit give their `sfx`.
 - **Widgets:** listed above.
 - **Recipes:** listed in [RECIPES.md](RECIPES.md).
 - **Scene starts:** every scene but the first starts with a whoosh.

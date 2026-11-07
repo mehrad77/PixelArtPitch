@@ -25,7 +25,7 @@ A recipe is a ready-made beat. Pick one, fill a few params, and the engine draws
 - **Art direction:** `faces` says which way the hero art looks. It defaults to `"left"`, like every library character. Set `"faces": "right"` for art drawn looking right.
 - **Screen layout:** 320×180 px. The ground top is y=148. Captions sit below y=146, so keep words above that.
 
-The menu, in order of use: [backdrop_night](#backdrop_night) · [title_card](#title_card) · [walk_in](#walk_in) · [block_bump](#block_bump) · [item_collect](#item_collect) · [spawn_join](#spawn_join) · [toast](#toast) · [banner](#banner) · [crowd_cheer](#crowd_cheer) · [flag_raise](#flag_raise) · [end_card_loop](#end_card_loop)
+The menu, in order of use: [backdrop_night](#backdrop_night) · [backdrop_rooftop](#backdrop_rooftop) · [title_card](#title_card) · [walk_in](#walk_in) · [block_bump](#block_bump) · [item_collect](#item_collect) · [spawn_join](#spawn_join) · [toast](#toast) · [banner](#banner) · [crowd_cheer](#crowd_cheer) · [flag_raise](#flag_raise) · [end_card_loop](#end_card_loop)
 
 ---
 
@@ -46,6 +46,24 @@ Night sky with twinkling stars, a moon, a two-row parallax skyline, ground tiles
 { "id": "backdrop_night", "params": { "decor": [{ "frame": "signpost", "x": 260 }] } }
 ```
 **Mistakes:** putting decor where a character stops (it hides them); `gaps` wider than a jump.
+
+## backdrop_rooftop
+The city from up high: the night sky with stars and the moon, the skyline lower than from the street, and a slate roof whose ridge is the ground line (y=148), with brick chimneys. Characters stand on the ridge with no other changes. Light comes from the upper left: the ridge caps, the slates and the chimney bricks are lit on their top and left edges and dark on their right and bottom edges. Use it instead of `backdrop_night` (not with it): a scene with this backdrop gets no street tiles, lamp or bush.
+**Slots:** `moon`, `skyline` (fixed ids), `props` (only with `decor`). **Anchors:** none. **SFX:** none.
+
+| param | type | default | range | what |
+|---|---|---|---|---|
+| stars | int | 70 | 0–200 | how many stars |
+| moon | bool | true | | draw the moon |
+| skyline | bool | true | | draw the skyline beyond the roof |
+| chimneys | list | [252] | | world x of each chimney's left edge; each is 14 px wide and 22 px tall, its top at y=126. `[]` for none |
+| decor | list | [] | | props on the roof: `[{ "frame": "lamp" \| "bush" \| "signpost", "x": 24 }]` |
+
+```json
+{ "id": "backdrop_rooftop", "params": { "chimneys": [236] } }
+```
+A bird that lands on that chimney sits at its top centre: `{ "kind": "sit", "params": { "x": 243, "y": 125 } }` (x = chimney x + 7, y = 125). See `examples/rooftop/pitch.json` for a whole scene.
+**Mistakes:** using it together with `backdrop_night` (two skies); a chimney where a character stands (it hides their legs); a lamp or bush as rooftop decor (they are street props; light a lantern with a [`glow`](BEHAVIORS.md#glow) instead).
 
 ## title_card
 A big title drops in, slams down with a shake and a ring, and bobs. An optional subtitle fades in under it.
@@ -261,8 +279,9 @@ The end card. The title drops in, PRESS START bounces in and pulses, and a URL l
 - sprites that vanish into the sky
 - two copies of one character in a scene (`duplicate-actor`)
 - a prop over a character's face (`covers-face`)
-- a toast, panel or banner over a character's body, a third of it or more for 0.3 s (`covers-actor`)
-- banners and toasts off the frame (`text-clipped`)
+- a toast, panel, banner or sign over a character's body, a third of it or more for 0.3 s (`covers-actor`)
+- banners, toasts and signs off the frame (`text-clipped`)
 - frames that are almost all black (`empty-frame`; `lintFrames` checks rendered frames, cuts included)
+- glow tones that are not palette letters, or brass and orange outside the core (`glow-tones`)
 
 `examples/questday/pitch.json` is a complete project built only from recipes, and lints clean.

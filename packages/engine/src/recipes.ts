@@ -174,6 +174,55 @@ export const RECIPES: Recipe[] = [
     },
   },
   {
+    id: "backdrop_rooftop",
+    title: "Rooftop backdrop",
+    description:
+      "The night sky over the city from up high: stars, moon, a lower skyline and a slate roof whose ridge is the ground line, with brick chimneys.",
+    minDurationSec: 0,
+    anchors: [],
+    sfx: [],
+    params: {
+      stars: { t: "int", d: 70, min: 0, max: 200, doc: "how many stars" },
+      moon: { t: "bool", d: true, doc: "draw the moon" },
+      skyline: { t: "bool", d: true, doc: "draw the city skyline beyond the roof" },
+      chimneys: {
+        t: "list",
+        d: [252],
+        doc: "world x of each chimney's left edge (14 px wide, 22 px tall); [] for none",
+      },
+      decor: { t: "list", d: [], doc: "props on the roof: [{ frame: lamp|bush|signpost, x }]" },
+    },
+    expand(p, h) {
+      const layers: LayerT[] = [
+        L(
+          h.id("sky"),
+          "backdrop",
+          { style: "rooftop", stars: p.stars, moon: p.moon, skyline: p.skyline, chimneys: p.chimneys },
+          { z: -100, space: "screen" },
+        ),
+      ];
+      (p.decor as any[]).forEach((d, i) => {
+        if (!d || typeof d.frame !== "string" || typeof d.x !== "number") {
+          h.issues.push({
+            path: `${h.path}.params.decor[${i}]`,
+            message: "decor needs frame and x",
+            fix: '{ "frame": "lamp", "x": 24 }',
+          });
+          return;
+        }
+        layers.push(
+          L(
+            h.id(`decor${i}`),
+            "sprite",
+            { asset: "props", frame: d.frame, x: d.x, y: G, anchor: "bottom" },
+            { z: -40 },
+          ),
+        );
+      });
+      return { layers };
+    },
+  },
+  {
     id: "title_card",
     title: "Title card",
     description: "A big title drops in and slams down with a shake and a ring; an optional subtitle fades in under it.",

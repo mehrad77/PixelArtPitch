@@ -118,7 +118,11 @@ export const DECL_KINDS = [
 
 export const KIND_SPECS: Record<string, Spec> = {
   backdrop: {
-    style: en(["night", "plain"], "night", "night: sky band, stars, moon and skyline; plain: flat sky colour"),
+    style: en(
+      ["night", "plain", "rooftop"],
+      "night",
+      "night: sky band, stars, moon and skyline; plain: flat sky colour; rooftop: the night sky over a slate roof whose ridge is the feet line (y=148)",
+    ),
     sky: colour(null, "sky colour (default: the palette sky)"),
     band: bool(true, "a soft lighter band near the horizon"),
     stars: int(70, "number of twinkling stars", 0, 200),
@@ -126,6 +130,8 @@ export const KIND_SPECS: Record<string, Spec> = {
     moonX: num(262, "moon x", -40, 340),
     moonY: num(18, "moon y", -40, 120),
     skyline: bool(true, "draw the two parallax skyline rows"),
+    // rooftop only; no default here, so night and plain backdrops compile exactly as before (the draw uses [252])
+    chimneys: { t: "list", doc: "rooftop: world x of each brick chimney's left edge (default [252]; [] for none)" },
   },
   tiled: {
     asset: str("tiles", "tile asset"),
@@ -162,7 +168,11 @@ export const KIND_SPECS: Record<string, Spec> = {
     dust: bool(true, "footstep puffs while walking and dust on landing"),
     scale: int(1, "whole-pixel scale: 2 draws the character twice as big, feet on the same line", 1, 3),
     outline: colour(null, "1 px outline colour"),
-    frames: { t: "obj", d: {}, doc: '{ idle?: [..], run?: [..], jump?: "..", wave?: ".." } frame names' },
+    frames: {
+      t: "obj",
+      d: {},
+      doc: '{ idle?: [..], run?: [..], jump?: "..", wave?: "..", fly?: [..], perch?: [..] } frame names',
+    },
   },
   text: {
     text: { t: "str", req: true, doc: "the words (upper case reads best)" },
@@ -203,7 +213,7 @@ export const KIND_SPECS: Record<string, Spec> = {
     fx: {
       t: "enum",
       req: true,
-      of: ["sparkle", "dust", "ring", "twinkle", "flash", "fireworks", "shootingStar"],
+      of: ["sparkle", "dust", "ring", "twinkle", "flash", "fireworks", "shootingStar", "glow"],
       doc: "effect",
     },
     x: num(160, "centre x", -2000, 4000),
@@ -216,12 +226,21 @@ export const KIND_SPECS: Record<string, Spec> = {
     dur: num(0.5, "duration of one burst", 0.05, 5),
     w: int(288, "area width for fireworks/twinkle", 1, 320),
     h: int(60, "area height for fireworks/twinkle", 1, 180),
+    // glow only; no defaults here, so the other effects compile exactly as before (the draw fills them in)
+    tones: { t: "strs", doc: 'glow: palette letters from the outer band to the core (default ["A", "n", "c", "H"])' },
+    pulse: {
+      t: "num",
+      min: 0,
+      max: 8,
+      doc: "glow: how many pixels the radius breathes in and out (default 0: steady)",
+    },
+    period: { t: "num", min: 0.2, max: 20, doc: "glow: seconds per breath when pulse is set (default 2)" },
   },
   widget: {
     widget: {
       t: "enum",
       req: true,
-      of: ["banner", "toast", "nameTag", "hudSlots", "qblock", "counter", "flagpole"],
+      of: ["banner", "toast", "nameTag", "label", "hudSlots", "qblock", "counter", "flagpole"],
       doc: "which widget",
     },
   },
@@ -254,6 +273,19 @@ export const WIDGET_SPECS: Record<string, Spec> = {
     x: num(160, "centre x of the tag", -2000, 4000),
     y: num(100, "top y", -400, 400),
     colour: colour("T", "border colour"),
+  },
+  label: {
+    text: { t: "str", req: true, doc: "what the sign says, 1-3 words" },
+    x: num(160, "centre x of the board", -2000, 4000),
+    y: num(100, "top y of the board", -400, 400),
+    style: en(["wood", "slate"], "wood", "wood: dark painted planks; slate: a grey stone plaque"),
+    mount: en(
+      ["posts", "hang", "none"],
+      "posts",
+      "posts: two legs down to the ground (y=148); hang: two cords up to a bar; none: the board alone",
+    ),
+    scale: int(1, "text scale", 1, 2),
+    colour: colour("P", "paint colour of the words"),
   },
   hudSlots: {
     x: num(4, "left", 0, 316),
@@ -421,6 +453,34 @@ export const BEHAVIOR_SPECS: Record<string, { needsAt: boolean; doc: string; par
       size: num(18, "how far the ring grows", 4, 80),
     },
   },
+  fly: {
+    needsAt: true,
+    doc: "fly from where the layer is through `path` at `speed`, bobbing and cycling move frames; `loop` keeps circling",
+    params: {
+      path: { t: "list", req: true, doc: "[[x, y], ...] points to fly through, in the layer's own space" },
+      speed: num(24, "pixels per second", 2, 200),
+      loop: bool(false, "after the last point fly back to the start and go round again until `until`"),
+      bob: num(2, "bob height in pixels", 0, 20),
+      bobPeriod: num(0.8, "seconds per bob", 0.1, 10),
+      fps: num(8, "move frames per second", 1, 24),
+    },
+  },
+  sit: {
+    needsAt: true,
+    doc: "land on an anchor (a point, or another layer) and hold there, showing the perch frames",
+    params: {
+      on: str("", 'layer id to sit on (it follows that layer); "" for a fixed point'),
+      x: { t: "num", min: -2000, max: 4000, doc: "anchor x (default: where the layer is)" },
+      y: { t: "num", min: -400, max: 400, doc: "anchor y (default: where the layer is)" },
+      dx: num(0, "offset x from the anchor", -400, 400),
+      dy: num(0, "offset y from the anchor", -400, 400),
+      land: num(0.4, "seconds gliding onto the anchor (0: already there)", 0, 3),
+      lift: num(6, "how high the landing hop bows", -60, 60),
+      fps: num(1.5, "perch frames per second", 0.1, 12),
+      squash: bool(true, "squash for a moment on touchdown"),
+      sfx: sfx(null, "sound on touchdown"),
+    },
+  },
 };
 
 /** props a key may animate, per kind (x/y for every kind that has them) */
@@ -432,7 +492,7 @@ export const KEYABLE: Record<string, Record<string, "num" | "str" | "bool">> = {
   shape: { w: "num", h: "num", colour: "str" },
   panel: { w: "num", h: "num" },
 };
-export const ACTOR_STATES = ["auto", "idle", "run", "jump", "wave"] as const;
+export const ACTOR_STATES = ["auto", "idle", "run", "jump", "wave", "fly", "perch"] as const;
 
 /** where HUD slot i sits for a hudSlots widget at (x, y) */
 export const hudSlot = (x: number, y: number, i: number): [number, number] => [x + 3 + i * 15, y + 3];

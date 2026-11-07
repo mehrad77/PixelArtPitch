@@ -3,7 +3,7 @@
 // against the closed vocabulary in decl-spec.ts; drawDecl() is a pure function of t over the compiled,
 // JSON-serialisable result, so it can run in the render sandbox (no eval, no zod, no Math.random) or the browser.
 import type { DeclSceneT, LayerT } from "@pap/schema";
-import { clamp, type Engine, type Frames, lerp, type Rows, rnd } from "./core.ts";
+import { clamp, type Engine, type Frames, lerp, type RGBT, type Rows, rnd } from "./core.ts";
 import { type At, checkSpec, DeclError, type DeclIssue, timeOf } from "./decl-check.ts";
 import {
   ACTOR_STATES,
@@ -132,8 +132,42 @@ function compileBehaviors(path: string, l: LayerT, c: CompileCtx, show: [number,
     const at = b.at !== undefined ? timeOf(`${p}.at`, b.at, c.issues, c.at) : (show?.[0] ?? c.from);
     const until = b.until !== undefined ? timeOf(`${p}.until`, b.until, c.issues, c.at) : (show?.[1] ?? c.to);
     const params = checkSpec(`${p}.params`, spec.params, b.params as Record<string, unknown>, c.issues, c.at);
+    if (b.kind === "fly" && Array.isArray(params.path)) params.path = flyPath(`${p}.params.path`, params.path, c);
     return { kind: b.kind, at, until, p: params };
   });
+}
+
+/** a fly path as clean [x, y] number pairs (problems go to c.issues) */
+function flyPath(path: string, list: unknown[], c: CompileCtx): [number, number][] {
+  const ok = (v: unknown, a: number, b: number) => typeof v === "number" && Number.isFinite(v) && v >= a && v <= b;
+  if (!list.length)
+    c.issues.push({ path, message: "a fly path needs at least one point", fix: 'e.g. "path": [[120, 60], [200, 40]]' });
+  return list.map((pt, i) => {
+    if (Array.isArray(pt) && pt.length === 2 && ok(pt[0], -2000, 4000) && ok(pt[1], -400, 400))
+      return [pt[0], pt[1]] as [number, number];
+    c.issues.push({
+      path: `${path}[${i}]`,
+      message: `expected an [x, y] point, got ${JSON.stringify(pt)}`,
+      fix: "write each point as [x, y] with plain numbers, e.g. [160, 60]",
+    });
+    return [0, 0] as [number, number];
+  });
+}
+
+/** sit "on" ids that name no layer (or the layer itself), checked once every id in the scene is known */
+function checkSitTargets(layers: CLayer[], ids: Set<string>, base: string, issues: DeclIssue[]) {
+  for (const l of layers) {
+    l.behaviors.forEach((b, i) => {
+      if (b.kind !== "sit" || !b.p.on) return;
+      if (b.p.on === l.id || !ids.has(b.p.on))
+        issues.push({
+          path: `${base}.layer ${l.id}.behaviors[${i}].params.on`,
+          message: b.p.on === l.id ? `${l.id} cannot sit on itself` : `no layer "${b.p.on}" to sit on`,
+          fix: `use another layer's id (recipe ids are <recipe>_<part>), or "" with x and y for a fixed point`,
+        });
+    });
+    checkSitTargets(l.children, ids, base, issues);
+  }
 }
 
 function compileLayer(path: string, l: LayerT, c: CompileCtx): CLayer | null {
@@ -181,9 +215,27 @@ function compileLayer(path: string, l: LayerT, c: CompileCtx): CLayer | null {
     : null;
   const cp = checkSpec(`${path}.props`, spec, props, c.issues, c.at);
   for (const k of ["asset", "iconAsset"]) if (typeof cp[k] === "string" && cp[k]) c.assets.add(cp[k]);
-  if (l.kind === "backdrop" && cp.style === "night") {
+  if (l.kind === "backdrop" && (cp.style === "night" || cp.style === "rooftop")) {
     if (cp.moon) c.assets.add("moon");
     if (cp.skyline) c.assets.add("skyline");
+  }
+  if (l.kind === "backdrop" && Array.isArray(cp.chimneys))
+    (cp.chimneys as unknown[]).forEach((x, i) => {
+      if (typeof x !== "number" || !Number.isFinite(x))
+        c.issues.push({
+          path: `${path}.props.chimneys[${i}]`,
+          message: `expected a world x, got ${JSON.stringify(x)}`,
+          fix: "write each chimney as a plain number, e.g. [40, 252]",
+        });
+    });
+  if (l.kind === "fx" && cp.fx === "glow" && Array.isArray(cp.tones)) {
+    const tones = cp.tones as string[];
+    if (!tones.length || tones.length > 8 || tones.some((k) => !/^[A-Za-z]$/.test(k)))
+      c.issues.push({
+        path: `${path}.props.tones`,
+        message: `glow tones must be 1-8 palette letters, got ${JSON.stringify(tones)}`,
+        fix: 'list palette letters from the outer band to the core, e.g. ["A", "n", "c", "H"]',
+      });
   }
   if (l.kind === "widget" && cp.widget === "hudSlots")
     cp.items = (cp.items as any[]).map((it, i) => {
@@ -244,6 +296,7 @@ function collectSfx(layers: CLayer[], pauses: CompiledScene["pauses"], out: { t:
         out.push({ t: R(b.at), type: "jump" }, { t: R(b.at + b.p.dur), type: "land" });
       else if (b.kind === "arc" && b.p.sfx) out.push({ t: R(b.at + b.p.dur), type: b.p.sfx });
       else if ((b.kind === "appear" || b.kind === "disappear") && b.p.sfx) out.push({ t: R(b.at), type: b.p.sfx });
+      else if (b.kind === "sit" && b.p.sfx) out.push({ t: R(b.at + b.p.land), type: b.p.sfx });
     }
     const p = l.props;
     if (l.kind === "widget") {
@@ -394,9 +447,10 @@ export function compileDecl(scene: DeclSceneT, at: At, opts: CompileOpts = {}): 
   out.sfx.forEach((s, i) => {
     if (SFX.has(s.type)) sfx.push({ t: timeOf(`${base}.recipe sfx[${i}]`, s.t, issues, at), type: s.type });
   });
+  const ok = layers.filter((x): x is CLayer => !!x);
+  checkSitTargets(ok, c.ids, base, issues);
   if (issues.length) throw new DeclError(issues);
 
-  const ok = layers.filter((x): x is CLayer => !!x);
   if (opts.whoosh !== false && from > 0.001) sfx.push({ t: from, type: "whoosh" });
   collectSfx(ok, pauses, sfx);
   const usesText = (ls: CLayer[]): boolean =>
@@ -437,6 +491,8 @@ export type LayerState = {
   facing: string;
   motion: string;
   motionT0: number;
+  /** frame rate of a fly or perch cycle (set by those behaviours) */
+  mfps?: number;
   frame?: string;
   text?: string;
   scale?: number;
@@ -670,6 +726,78 @@ function stateOf(l: CLayer, env: Env, t = env.t, withFx = true): LayerState {
         else if (d >= 0) st.diss = { p: q, dir: "out", block: bp.block };
         break;
       }
+      case "fly": {
+        if (s < 0) break;
+        const pts: [number, number][] = [[st.x, st.y], ...(bp.path as [number, number][])];
+        if (bp.loop) pts.push([st.x, st.y]);
+        const segs = pts.slice(1).map((q, k) => Math.hypot(q[0] - pts[k][0], q[1] - pts[k][1]));
+        const total = segs.reduce((a, v) => a + v, 0);
+        const run = Math.min(s, b.until - b.at);
+        // a loop keeps going round at full speed; a one-way flight slows over its last 0.4 s, like a walk
+        let d = 0;
+        if (total > 0)
+          d = bp.loop
+            ? (bp.speed * run) % total
+            : walkPos(walkPlan(0, { to: total, speed: bp.speed, decel: 0.4 }), run);
+        let k = 0;
+        while (k < segs.length - 1 && d > segs[k]) d -= segs[k++];
+        const [ax, ay] = pts[k];
+        const [bx, by] = pts[k + 1] ?? pts[k];
+        const q = segs[k] > 0 ? Math.min(1, d / segs[k]) : 1;
+        st.x = lerp(ax, bx, q);
+        st.y = lerp(ay, by, q);
+        if (Math.abs(bx - ax) > 0.5) st.facing = bx > ax ? "right" : "left";
+        if (inWin) {
+          st.motion = "fly";
+          st.motionT0 = b.at;
+          st.mfps = bp.fps;
+          st.y += Math.round(Math.sin(((t - b.at) / bp.bobPeriod) * Math.PI * 2) * bp.bob);
+        }
+        break;
+      }
+      case "sit": {
+        if (s < 0) break;
+        let ax = typeof bp.x === "number" ? bp.x : st.x;
+        let ay = typeof bp.y === "number" ? bp.y : st.y;
+        const target = bp.on ? env.byId.get(bp.on) : undefined;
+        if (target && target !== l && !env.busy.has(target.id)) {
+          env.busy.add(l.id);
+          const ts = stateOf(target, env, t, false);
+          env.busy.delete(l.id);
+          ax = ts.x;
+          ay = ts.y;
+          if (target.space === "world" && l.space === "screen") {
+            ax -= env.camX;
+            ay -= env.camY;
+          } else if (target.space === "screen" && l.space === "world") {
+            ax += env.camX;
+            ay += env.camY;
+          }
+        }
+        ax += bp.dx;
+        ay += bp.dy;
+        if (s < bp.land) {
+          // glide in on a small hop, still flapping
+          const q = easeFn("inOut", s / bp.land);
+          const x0 = st.x;
+          st.x = lerp(x0, ax, q);
+          st.y = lerp(st.y, ay, q) - Math.sin(q * Math.PI) * bp.lift;
+          if (Math.abs(ax - x0) > 0.5) st.facing = ax > x0 ? "right" : "left";
+          st.motion = "fly";
+          st.motionT0 = b.at;
+          st.mfps = 8;
+        } else {
+          st.x = ax;
+          st.y = ay;
+          if (inWin) {
+            st.motion = "perch";
+            st.motionT0 = b.at + bp.land;
+            st.mfps = bp.fps;
+          }
+          if (bp.squash && bp.land > 0 && s - bp.land < 0.1) st.sq = true;
+        }
+        break;
+      }
       case "dust":
       case "sparkle": {
         if (!withFx) break;
@@ -778,13 +906,105 @@ function starfield(e: Engine, t: number, cam: number, n: number) {
   }
 }
 
+/** the rooftop backdrop: the night sky, a lower skyline and a slate roof whose ridge is the feet line, with brick
+ * chimneys. Every cell is a palette letter (the sky band aside); light comes from the upper left, so top and left
+ * edges take the lighter tone and right and bottom edges the darker one. */
+function rooftopBackdrop(e: Engine, p: Record<string, any>, t: number, camX: number) {
+  if (p.band && e.RGB.l) for (let y = 70; y < GROUND; y++) e.rect(0, y, e.W, 1, "l", ((y - 70) / (GROUND - 70)) * 0.35);
+  starfield(e, t, camX, p.stars);
+  if (p.moon && e.asset("moon")) e.sprite(e.frame("moon", "moon", [24, 24]), p.moonX - camX * 0.02, p.moonY);
+  // the city sits lower than from the street: we look across it from a roof
+  if (p.skyline && e.asset("skyline"))
+    for (const [layer, par, y] of [
+      ["far", 0.15, GROUND - 40],
+      ["near", 0.4, GROUND - 28],
+    ] as const) {
+      const rows = e.frame("skyline", layer, [96, 40]);
+      const w = rows[0]?.length || 96;
+      const off = mod(camX * par, w);
+      for (let x = -off; x < e.W; x += w) e.sprite(rows, x, y);
+    }
+  const c = (k: string, f = "k") => e.RGB[col(e, k, f)];
+  const cam = Math.round(camX);
+  const chimneys: number[] = Array.isArray(p.chimneys) ? p.chimneys : [252];
+  // the ridge cap: rounded 8 px caps, a lit top, a dark seam between caps and a shadow line under them
+  for (let x = 0; x < e.W; x++) {
+    const i = mod(x + cam, 8);
+    const seam = i === 7;
+    e.px(x, GROUND, seam ? c("e") : i < 3 ? c("w") : c("Y"));
+    e.px(x, GROUND + 1, seam ? c("k") : i < 2 ? c("Y") : c("F"));
+    e.px(x, GROUND + 2, seam ? c("k") : i === 6 ? c("f") : c("F"));
+    e.px(x, GROUND + 3, c("k"));
+  }
+  // slate shingles below the ridge, staggered by half a shingle; the roof slopes toward us, so each row is a
+  // little taller and wider than the one above, and the lower rows fall into shadow
+  let y0 = GROUND + 4;
+  for (let row = 0; y0 < e.H; row++) {
+    const th = 4 + row;
+    const tw = 8 + 2 * row;
+    const deep = row >= 3;
+    for (let j = 0; j < th && y0 + j < e.H; j++)
+      for (let x = 0; x < e.W; x++) {
+        const wx = x + cam + (row % 2) * (tw / 2);
+        const i = mod(wx, tw);
+        const body = deep ? "f" : rnd(Math.floor(wx / tw) * 7 + row * 131) < 0.15 ? "e" : "F";
+        let k = body;
+        if (j === th - 1 || i === tw - 1 || (j === th - 2 && (i === 0 || i === tw - 2))) k = "k";
+        else if (i === tw - 2 || j === th - 2) k = deep ? "k" : "f";
+        else if (j === 0 || i === 0) k = deep ? "F" : "Y";
+        e.px(x, y0 + j, c(k));
+      }
+    y0 += th;
+  }
+  // brick chimneys standing on the ridge: lit left column, dark right column, mortar lines
+  for (const wx of chimneys) {
+    const x0 = Math.round(wx) - cam;
+    if (x0 > e.W + 2 || x0 < -20) continue;
+    const top = GROUND - 22;
+    for (let y = top + 3; y < GROUND + 4; y++)
+      for (let i = 0; i < 14; i++) {
+        const j = y - top - 3;
+        const brickRow = Math.floor(j / 3);
+        const bi = mod(i + (brickRow % 2) * 3, 6);
+        let k = j % 3 === 2 || bi === 5 ? "A" : "R";
+        if (i === 0) k = "k";
+        else if (i === 13) k = "k";
+        else if (i === 12) k = "A";
+        else if (i === 1 && k === "R") k = "r";
+        e.px(x0 + i, y, c(k));
+      }
+    // the stone cap, a little wider than the stack, with the dark flue on top
+    for (let i = -1; i < 15; i++) {
+      e.px(x0 + i, top, i === -1 || i === 14 ? c("k") : i < 6 ? c("W") : c("p"));
+      e.px(x0 + i, top + 1, i === -1 || i === 14 ? c("k") : i < 1 ? c("p") : i > 12 ? c("e") : c("q"));
+      e.px(x0 + i, top + 2, c("k"));
+    }
+    for (let i = 3; i < 11; i++) e.px(x0 + i, top - 1, c(i === 3 ? "e" : "k"));
+  }
+}
+
 const CHECK = ["......T", ".....TT", "T...TT.", "TT.TT..", ".TTT...", "..T...."];
+
+/** frames a creature cycles: fly takes move0.., else run0.., else idle0..; perch takes perch0.., else idle0..;
+ * an asset with none of them falls back to `fallback` */
+export function motionFrames(fr: Frames | null, motion: string, fallback: string[]): string[] {
+  const run = (base: string) => {
+    const out: string[] = [];
+    for (let i = 0; i < 8 && has(fr, `${base}${i}`); i++) out.push(`${base}${i}`);
+    return out;
+  };
+  for (const base of motion === "fly" ? ["move", "run", "idle"] : ["perch", "idle"]) {
+    const list = run(base);
+    if (list.length) return list;
+  }
+  return fallback;
+}
 
 /** pick an actor frame from what the asset actually has (library mentors only have idle0, idle1 and give) */
 export function actorFrame(
   fr: Frames | null,
   props: Record<string, any>,
-  st: Pick<LayerState, "motion" | "motionT0">,
+  st: Pick<LayerState, "motion" | "motionT0" | "mfps">,
   t: number,
 ): { name: string; bob: number } {
   const o = (props.frames ?? {}) as Record<string, any>;
@@ -803,6 +1023,13 @@ export function actorFrame(
       return { name: pick(o.jump, "jump", "give"), bob: 0 };
     case "wave":
       return { name: pick(o.wave, "wave", "give"), bob: 0 };
+    case "fly":
+    case "perch": {
+      const own = st.motion === "fly" ? o.fly : o.perch;
+      const list: string[] = Array.isArray(own) && own.length ? own : motionFrames(fr, st.motion, idle);
+      const rate = st.mfps ?? (st.motion === "fly" ? 8 : 1.5);
+      return { name: list[fpsN(t - st.motionT0, list.length, rate)], bob: 0 };
+    }
     default:
       return { name: idle[fpsN(t, idle.length, props.idleFps)], bob: 0 };
   }
@@ -830,6 +1057,10 @@ function drawLayer(e: Engine, l: CLayer, env: Env, ox: number, oy: number, am: n
     case "backdrop": {
       if (rec) break;
       e.clear(p.sky ?? e.SKY);
+      if (p.style === "rooftop") {
+        rooftopBackdrop(e, p, t, env.camX);
+        break;
+      }
       if (p.style !== "night") break;
       if (p.band && e.RGB.l)
         for (let y = 70; y < GROUND; y++) e.rect(0, y, e.W, 1, "l", ((y - 70) / (GROUND - 70)) * 0.35);
@@ -865,9 +1096,17 @@ function drawLayer(e: Engine, l: CLayer, env: Env, ox: number, oy: number, am: n
       const fr = e.asset(p.asset);
       const frames: string[] = p.frames;
       const t0 = l.show?.[0] ?? env.cs.from;
+      // fly and sit pick the creature's frames (move*, perch*...) from the asset; nothing else reaches this branch
+      const moving = st.motion === "fly" || st.motion === "perch";
+      const still = p.frame || (fr ? Object.keys(fr)[0] : "");
+      const cycle = moving ? motionFrames(fr, st.motion, frames.length ? frames : [still]) : [];
       const name =
         st.frame ??
-        (frames.length ? frames[fpsN(t - t0, frames.length, p.fps)] : p.frame || (fr ? Object.keys(fr)[0] : ""));
+        (moving
+          ? cycle[fpsN(t - st.motionT0, cycle.length, st.mfps ?? (st.motion === "fly" ? 8 : 1.5))]
+          : frames.length
+            ? frames[fpsN(t - t0, frames.length, p.fps)]
+            : still);
       let rows = e.frame(p.asset, name, [16, 16]);
       if (st.sq) rows = squashRows(rows, 1);
       const scale = Math.max(1, Math.round(st.scale ?? p.scale));
@@ -878,7 +1117,8 @@ function drawLayer(e: Engine, l: CLayer, env: Env, ox: number, oy: number, am: n
       box = { x, y, w, h };
       if (!rec)
         e.sprite(rows, x, y, {
-          flip: p.flip,
+          // a flying sprite turns to face where it goes (its art is taken to face right; flip: true for left)
+          flip: moving ? (st.facing === "left") !== p.flip : p.flip,
           outline: p.outline ?? undefined,
           alpha,
           colour: p.colour ?? undefined,
@@ -1051,6 +1291,25 @@ function fxTimes(at: number, every: number, t: number, life: number, until: numb
   return out;
 }
 
+/** radial light in whole palette bands, outer tone first: a cell only ever takes a band's exact colour, and only
+ * where that is brighter than what is already there, so no blended, off-palette colour appears */
+function glowFx(e: Engine, cx: number, cy: number, r: number, tones: RGBT[]) {
+  const n = tones.length;
+  for (let j = -r; j <= r; j++)
+    for (let i = -r; i <= r; i++) {
+      const d2 = i * i + j * j;
+      if (d2 > r * r + r * 0.8) continue;
+      // inner bands are narrower than outer ones, so the light falls off from a small bright core
+      const band = Math.min(n - 1, Math.floor((1 - Math.sqrt(d2) / (r + 1)) ** 1.5 * n));
+      const c = tones[band];
+      const x = cx + i;
+      const y = cy + j;
+      if (!c || x < 0 || y < 0 || x >= e.W || y >= e.H) continue;
+      const k = (y * e.W + x) * 3;
+      if (c[0] + c[1] + c[2] > e.buf[k] + e.buf[k + 1] + e.buf[k + 2]) e.px(x, y, c);
+    }
+}
+
 function drawFx(e: Engine, l: CLayer, env: Env, x: number, y: number) {
   const p = l.props;
   const t = env.t;
@@ -1100,6 +1359,14 @@ function drawFx(e: Engine, l: CLayer, env: Env, x: number, y: number) {
         } else if (cyc < 0.7) e.px(sx, sy, B);
         else e.px(sx, sy, P, 0.4);
       }
+      break;
+    }
+    case "glow": {
+      if (t < at) break;
+      const tones = ((p.tones as string[] | undefined)?.length ? p.tones : ["A", "n", "c", "H"]) as string[];
+      const rgb = tones.map((k) => e.RGB[col(e, k)]);
+      const breath = p.pulse ? Math.round(p.pulse * Math.sin(((t - at) / (p.period ?? 2)) * Math.PI * 2)) : 0;
+      glowFx(e, x, y, Math.max(1, Math.round(p.size) + breath), rgb);
       break;
     }
     case "shootingStar": {
@@ -1181,6 +1448,51 @@ function drawWidget(e: Engine, l: CLayer, env: Env, sx: number, sy: number, alph
         e.rect(sx, sy + 12, 1, 1, c);
       }
       return { x, y: sy, w: w + 2, h: 13 };
+    }
+    case "label": {
+      // a painted sign: planks (or a stone plaque) with a lit top-left edge, a dark lower-right edge and nails,
+      // standing on two posts, hanging from a bar, or on its own
+      const scale = p.scale;
+      const text = clipText(e, p.text, 200, scale);
+      const w = e.measure(text, scale) + 14;
+      const h = 8 * scale + 8;
+      const x = Math.round(sx - w / 2);
+      const y = sy;
+      if (!dry) {
+        const wood = p.style !== "slate";
+        const [lit, body, dark, grain, nail] = (wood ? ["c", "n", "A", "a", "q"] : ["Y", "F", "f", "e", "w"]).map((k) =>
+          col(e, k, "k"),
+        );
+        const ground = l.space === "world" ? GROUND - env.camY : GROUND;
+        if (p.mount === "posts" && y + h < ground)
+          for (const px of [x + 3, x + w - 6]) {
+            e.rect(px, y + h, 3, ground - y - h, col(e, "k"), alpha);
+            e.rect(px + 1, y + h, 1, ground - y - h, col(e, wood ? "n" : "F", "k"), alpha);
+          }
+        if (p.mount === "hang") {
+          e.rect(x - 2, y - 8, w + 4, 3, col(e, "k"), alpha);
+          e.rect(x - 1, y - 7, w + 2, 1, col(e, wood ? "n" : "F", "k"), alpha);
+          for (const cx of [x + 4, x + w - 5]) e.rect(cx, y - 5, 1, 5, col(e, "q", "k"), alpha);
+        }
+        e.rect(x + 2, y + 2, w, h, col(e, "k"), alpha * 0.5);
+        e.rect(x, y, w, h, col(e, "k"), alpha);
+        e.rect(x + 1, y + 1, w - 2, h - 2, body, alpha);
+        if (wood)
+          for (let k = 0; k < w - 8; k += 5) e.rect(x + 3 + k + (k % 2), y + Math.floor(h / 2), 3, 1, grain, alpha);
+        e.rect(x + 1, y + 1, w - 2, 1, lit, alpha);
+        e.rect(x + 1, y + 1, 1, h - 2, lit, alpha);
+        e.rect(x + 1, y + h - 2, w - 2, 1, dark, alpha);
+        e.rect(x + w - 2, y + 1, 1, h - 2, dark, alpha);
+        for (const [nx, ny] of [
+          [x + 3, y + 3],
+          [x + w - 4, y + 3],
+          [x + 3, y + h - 4],
+          [x + w - 4, y + h - 4],
+        ])
+          e.rect(nx, ny, 1, 1, nail, alpha);
+        e.text(text, x + Math.floor(w / 2), y + 4, { align: "center", scale, colour: col(e, p.colour), alpha });
+      }
+      return { x, y, w: w + 2, h: h + 2 };
     }
     case "hudSlots": {
       const W = hudWidth(p.slots);

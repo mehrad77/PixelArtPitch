@@ -301,6 +301,34 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
           message: `${ids.length} copies of "${a}" in one scene (${ids.join(", ")})`,
           fix: "let the later recipe reuse the scene's hero (drop its own hero layer), or pass second: true if two are meant",
         });
+    // ---- glow tones: palette letters only, brass and orange only at the core
+    const walkG = (ls: CompiledScene["layers"]) => {
+      for (const l of ls) {
+        if (l.kind === "fx" && l.props.fx === "glow" && Array.isArray(l.props.tones)) {
+          const tones = l.props.tones as string[];
+          const off = opts.colours ? tones.filter((k) => !opts.colours![k]) : [];
+          if (off.length)
+            add({
+              rule: "glow-tones",
+              severity: "error",
+              scene: s.id,
+              message: `${l.id}: ${off.map((k) => JSON.stringify(k)).join(", ")} ${off.length > 1 ? "are" : "is"} not in the palette`,
+              fix: 'use palette letters, outer band first, e.g. ["A", "n", "c", "H"]',
+            });
+          const loud = tones.slice(0, -1).filter((k) => k === "O" || k === "B");
+          if (loud.length)
+            add({
+              rule: "glow-tones",
+              severity: "warn",
+              scene: s.id,
+              message: `${l.id}: ${loud.join(", ")} used for an outer band (orange and brass are for tiny doses)`,
+              fix: 'keep "B" or "O" for the last (core) tone only, e.g. ["A", "n", "c", "B"]',
+            });
+        }
+        walkG(l.children);
+      }
+    };
+    walkG(cs.layers);
     // ---- sprite edge contrast against the sky
     const drawn = new Set<string>();
     const walkL = (ls: CompiledScene["layers"]) => {
@@ -368,6 +396,7 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
           x.kind === "text" ||
           x.widget === "counter" ||
           x.widget === "nameTag" ||
+          x.widget === "label" ||
           x.widget === "banner" ||
           x.widget === "toast";
         if (isText) {
@@ -389,7 +418,8 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
         // a toast, panel or banner drawn over a character's body (a third of its box or more)
         if (x.kind === "actor") {
           for (const o of seen.slice(seen.indexOf(x) + 1)) {
-            if (!(o.kind === "panel" || o.widget === "toast" || o.widget === "banner")) continue;
+            if (!(o.kind === "panel" || o.widget === "toast" || o.widget === "banner" || o.widget === "label"))
+              continue;
             const key = `${o.id}>${x.id}`;
             const hit = overlap(o, x) >= (x.w * x.h) / 3;
             const run = hit ? (bodyRun.get(key) ?? 0) + every : 0;
