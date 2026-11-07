@@ -460,7 +460,7 @@ export class OpenProject {
       );
       t.attempt = prev.length + 1;
       for (const x of prev)
-        if (x.status === "failed" && !x.supersededBy) {
+        if ((x.status === "failed" || x.status === "cancelled") && !x.supersededBy) {
           x.supersededBy = t.id;
           this.emit("task", x);
         }
