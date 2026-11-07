@@ -1,0 +1,13 @@
+.mixer-strip {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--stroke);
+  background: var(--surface-raised);
+  min-inline-size: 6rem;
+}
+.mixer-fader input {
+  inline-size: 6rem;
+  accent-color: var(--fill-accent-strong);
+}

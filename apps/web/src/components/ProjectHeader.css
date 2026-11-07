@@ -1,0 +1,114 @@
+.ws-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 28rem) auto;
+  grid-template-areas:
+    "title hud actions"
+    "nav nav nav";
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border-block-end: 1px solid var(--stroke);
+  background: var(--surface-raised);
+}
+.ws-title {
+  grid-area: title;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+.ws-title h1 {
+  margin: 0;
+  font-size: var(--step-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hud {
+  grid-area: hud;
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  --meter-label-size: 3.5rem;
+  --meter-value-size: auto;
+}
+.ws-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: end;
+  gap: var(--space-2);
+}
+.ws-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--status-error);
+  font-size: var(--step--1);
+}
+.stage-nav {
+  grid-area: nav;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+}
+.stage-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.stage-group ol {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stage-group a {
+  display: grid;
+  min-block-size: var(--control-h-md);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  text-decoration: none;
+  line-height: 1.2;
+}
+.stage-group a:hover {
+  background: var(--state-hover);
+}
+.stage-group a[aria-current="page"] {
+  border-color: var(--stroke-strong);
+  background: var(--state-selected);
+}
+.stage-name {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+.stage-state {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-muted);
+}
+.stage-group a[data-state="now"] .stage-state {
+  color: var(--text-accent);
+}
+.stage-group a[data-state="needs"] {
+  border-color: var(--text-signal);
+}
+.stage-group a[data-state="needs"] .stage-state {
+  color: var(--text-signal);
+}
+.stage-group a[data-state="done"] .stage-state::before {
+  content: "✓ ";
+}
+@media (max-width: 64rem) {
+  .ws-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title actions"
+      "hud hud"
+      "nav nav";
+  }
+}

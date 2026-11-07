@@ -1,0 +1,11 @@
+.waveform {
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 8rem;
+  block-size: 1.5rem;
+  fill: var(--text-accent);
+  background: var(--surface-sunken);
+}
+.waveform-empty {
+  display: block;
+}

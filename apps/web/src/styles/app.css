@@ -1,0 +1,187 @@
+/* App-wide layout and small utilities. Kit tokens only: no colour or font literal here. */
+:root {
+  --topbar-h: 2.75rem;
+}
+body {
+  margin: 0;
+  background: var(--surface);
+}
+#root {
+  display: contents;
+}
+.app {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100svh;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  block-size: var(--topbar-h);
+  padding-inline: var(--space-3);
+  border-block-end: 1px solid var(--stroke);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+.brand {
+  text-decoration: none;
+  color: var(--text-accent);
+}
+.topnav {
+  display: flex;
+  gap: var(--space-3);
+  flex: 1;
+}
+.topnav a {
+  text-decoration: none;
+  padding-block: var(--space-1);
+  border-block-end: 2px solid transparent;
+}
+.topnav a[aria-current="page"] {
+  border-block-end-color: var(--stroke-strong);
+}
+.page {
+  inline-size: min(100% - 2 * var(--gutter), var(--wide));
+  margin-inline: auto;
+  padding-block: var(--space-5) var(--space-7);
+}
+.page-narrow {
+  inline-size: min(100% - 2 * var(--gutter), 44rem);
+  margin-inline: auto;
+  padding-block: var(--space-5) var(--space-7);
+}
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.page-head h1 {
+  margin-block: 0 var(--space-3);
+  font-size: var(--step-3);
+}
+.h3 {
+  font-size: var(--step-1);
+  margin: 0;
+}
+.h4 {
+  font-size: var(--step-0);
+  margin: 0;
+}
+.muted {
+  color: var(--text-muted);
+}
+.small {
+  font-size: var(--step--1);
+}
+.stack-2,
+.stack-3,
+.stack-4 {
+  display: grid;
+  align-content: start;
+}
+.stack-2 {
+  gap: var(--space-2);
+}
+.stack-3 {
+  gap: var(--space-3);
+}
+.stack-4 {
+  gap: var(--space-4);
+}
+.stack-2 > *,
+.stack-3 > *,
+.stack-4 > * {
+  margin-block: 0;
+}
+.plain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--stroke-strong);
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+.linkish:hover {
+  color: var(--text-accent);
+}
+.decision-error {
+  margin: 0;
+  color: var(--status-error);
+  font-size: var(--step--1);
+}
+.composer .field-group {
+  display: grid;
+  gap: var(--space-2);
+}
+.estimate {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text-muted);
+}
+.refs {
+  display: grid;
+  gap: var(--space-3);
+}
+.ref-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ref-row {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.ref-row p {
+  margin: 0;
+}
+.ref-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ref-head > :last-child {
+  margin-inline-start: auto;
+}
+.ref-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-2);
+}
+.shortcuts {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+}
+.shortcuts :is(th, td) {
+  padding: var(--space-1) var(--space-2);
+  border-block-end: 1px solid var(--stroke-subtle);
+  text-align: start;
+  font-weight: inherit;
+  vertical-align: top;
+}
+.shortcuts th {
+  white-space: nowrap;
+}
+.pixelated {
+  image-rendering: pixelated;
+}

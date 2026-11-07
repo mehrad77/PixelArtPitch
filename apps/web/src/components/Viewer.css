@@ -1,0 +1,112 @@
+.viewer {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-block-size: 0;
+  background: var(--surface-sunken);
+}
+.viewer-stage {
+  display: grid;
+  place-items: center;
+  min-block-size: 0;
+  padding: var(--space-3);
+  container-type: size;
+}
+.viewer-frame {
+  position: relative;
+  inline-size: min(100cqi, 100cqb * 16 / 9);
+  aspect-ratio: 16 / 9;
+  background: var(--surface);
+  outline: 1px solid var(--stroke);
+}
+.viewer-frame canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+.pixelated {
+  image-rendering: pixelated;
+}
+.ov-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* one line every 8 source pixels: 40 columns, 22.5 rows */
+  background-image:
+    linear-gradient(to right, var(--stroke) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--stroke) 1px, transparent 1px);
+  background-size: calc(100% / 40) calc(100% / 22.5);
+  opacity: 0.6;
+}
+.ov-safe {
+  position: absolute;
+  /* action-safe 5%, title-safe 10% */
+  inset: 5%;
+  border: 1px dashed var(--text-muted);
+  pointer-events: none;
+}
+.ov-safe-title {
+  position: absolute;
+  inset: 5.5%;
+  border: 1px dashed var(--text-signal);
+}
+.ov-caption {
+  position: absolute;
+  inset-inline: 7.5%;
+  inset-block-end: 6%;
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  background: var(--overlay);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  text-align: center;
+  pointer-events: none;
+}
+.viewer-tags {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+.viewer-error {
+  position: absolute;
+  inset-inline: var(--space-3);
+  inset-block-start: 40%;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--status-warning);
+  color: var(--text);
+  font-size: var(--step--1);
+}
+.viewer-bar {
+  margin: 0;
+  min-inline-size: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border-block-start: 1px solid var(--stroke);
+  background: var(--surface-raised);
+}
+.timecode {
+  font-size: var(--step-0);
+  font-variant-numeric: tabular-nums;
+}
+.overlays {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+.transport,
+.overlays {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.viewer-scene {
+  min-inline-size: 8ch;
+}

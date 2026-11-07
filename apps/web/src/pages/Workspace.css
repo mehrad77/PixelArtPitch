@@ -1,0 +1,96 @@
+.workspace {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) minmax(11rem, 30vh);
+  flex: none;
+  block-size: calc(100svh - var(--topbar-h));
+  min-block-size: 36rem;
+  overflow: hidden;
+}
+.digest {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border-block-end: 1px solid var(--stroke-subtle);
+  font-size: var(--step--1);
+}
+.digest p {
+  flex: 1;
+  margin: 0;
+}
+.ws-main {
+  display: grid;
+  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr) minmax(18rem, 25rem);
+  min-block-size: 0;
+}
+.ws-left,
+.ws-right {
+  min-block-size: 0;
+  overflow-y: auto;
+  background: var(--surface);
+}
+.ws-left {
+  border-inline-end: 1px solid var(--stroke);
+}
+.ws-right {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-inline-start: 1px solid var(--stroke);
+}
+.ws-right .tabs {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  background: var(--surface);
+}
+.tab-panel {
+  min-block-size: 0;
+  overflow-y: auto;
+}
+.pad {
+  padding: var(--space-3);
+}
+.notes-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notes-list p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--step--1);
+}
+.note-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+}
+.answered summary {
+  cursor: pointer;
+  padding-block: var(--space-2);
+}
+@media (max-width: 64rem) {
+  .workspace {
+    block-size: auto;
+    overflow: visible;
+    grid-template-rows: auto;
+  }
+  .ws-main {
+    grid-template-columns: 1fr;
+  }
+  .ws-main .viewer {
+    grid-row: 1;
+    min-block-size: 18rem;
+  }
+  .ws-left,
+  .ws-right {
+    overflow: visible;
+    border: 0;
+    border-block-start: 1px solid var(--stroke);
+  }
+  .tracks {
+    min-block-size: 16rem;
+  }
+}

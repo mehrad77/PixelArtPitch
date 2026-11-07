@@ -1,0 +1,66 @@
+.patch {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-block-end: 1px solid var(--stroke-subtle);
+}
+.patch-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+}
+.patch-author {
+  font-weight: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+.patch-reason {
+  margin: 0;
+  font-size: var(--step--1);
+}
+.patch-ops {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+  font-size: var(--step--1);
+}
+.patch-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin-block: var(--space-1);
+}
+.patch-compare pre {
+  margin: 0;
+  max-block-size: 10rem;
+  overflow: auto;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  white-space: pre-wrap;
+  background: var(--surface-sunken);
+}
+.diff-del {
+  border-inline-start: 2px solid var(--code-token-deleted);
+}
+.diff-del::before {
+  content: "− ";
+  color: var(--code-token-deleted);
+}
+.diff-add {
+  border-inline-start: 2px solid var(--code-token-inserted);
+}
+.diff-add::before {
+  content: "+ ";
+  color: var(--code-token-inserted);
+}
+.patch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.patch-why {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}

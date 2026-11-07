@@ -1,0 +1,100 @@
+.stage-panel {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.stage-title {
+  margin: 0;
+  font-size: var(--step-1);
+}
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.board-card {
+  display: grid;
+  gap: var(--space-1);
+}
+.board-thumb {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--stroke-control);
+  background: var(--surface-sunken);
+  cursor: pointer;
+  aspect-ratio: 16 / 9;
+}
+.board-thumb img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+.board-meta {
+  display: grid;
+  font-size: var(--step--1);
+}
+.variants {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.variant {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--stroke);
+}
+.variant[data-chosen] {
+  border-color: var(--stroke-strong);
+  background: var(--state-selected);
+}
+.variant img {
+  inline-size: 5rem;
+  block-size: 5rem;
+  object-fit: contain;
+  background: var(--surface-sunken);
+}
+.variant p {
+  margin: var(--space-1) 0 0;
+}
+.findings {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.finding {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  inline-size: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--stroke-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--step--1);
+  text-align: start;
+  cursor: pointer;
+}
+.finding:hover {
+  background: var(--state-hover);
+}
+.mixer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.task-list li + li,
+.checklist li + li {
+  margin-block-start: var(--space-1);
+}

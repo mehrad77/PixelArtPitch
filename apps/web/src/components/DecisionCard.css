@@ -1,0 +1,25 @@
+.decision {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--stroke-control);
+  border-inline-start: 3px solid var(--text-signal);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.decision[data-answered] {
+  border-inline-start-color: var(--stroke);
+  gap: var(--space-1);
+}
+.decision p {
+  margin: 0;
+}
+.decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.decision-error {
+  color: var(--status-error);
+  font-size: var(--step--1);
+}
