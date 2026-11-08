@@ -75,7 +75,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | Method + path | Body / query | Returns |
 |---|---|---|
 | `GET /api/session` | | `{ version, token, workspace: { roots: string[], libraryDir, seedDir } }`: `libraryDir` is the person's library, where publish writes (`settings.paths.library`); `seedDir` is the repo's read-only `library/` |
-| `GET /api/projects` | | `ProjectSummary[]` |
+| `GET /api/projects` | | `ProjectSummary[]`. `finished` is true when the project has an exported video (not the rough cut's `proxy.mp4`) and no crew is running on it |
 | `POST /api/projects` | `{ title, brief, budgetUsd, dir? }` | `{ id }` (a new folder under the first project root unless `dir`) |
 | `POST /api/projects/open` | `{ dir }` | `{ id }` |
 | `GET /api/p/:id` | | `ProjectState` |
@@ -84,7 +84,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/p/:id/undo` | `{ seq, reason }` | `{ rev, seq }` |
 | `GET /api/p/:id/frame` | `?t=<scene seconds>&scale=1..6` | `image/png` (cached by input hash) |
 | `GET /api/p/:id/contact` | `?every=1` | `image/png` |
-| `GET /api/p/:id/proxy.mp4` | Range | the latest x4 preview with sound (`404` until built; an SSE `render` event announces it) |
+| `GET /api/p/:id/proxy.mp4` | Range | the rough cut, playable with its sound: `out/proxy.mp4` at scale 2 with `out/audio.wav`, written by each `review.final` (PIP-ORCHESTRATION §1.14). `404` until built; the SSE `render { kind: "proxy", url: "files/proxy.mp4" }` announces it. It never counts as a finished video |
 | `POST /api/p/:id/tools/:name` | `{ input }` | `ToolResult` |
 | `POST /api/p/:id/questions/:qid/answer` | `{ optionId?, value?, note? }` | `QuestionT`. A hold's question (`hold: true`, from Pip, PIP-ORCHESTRATION §1.11) lifts the hold and acts on the choice: `retry`, `accept` go on; `redo_director` re-plans the scenes in `blocks`, then goes on; `tell` with words in `note` makes them the person's change, which resumes the run. `fix_key`, and `tell` without a `note`, can't act yet: the question comes back still `open` (same id). Any other lift (Resume, Try again, a saved key, a change) marks it `withdrawn` |
 | `POST /api/p/:id/notes` | `{ target, category, text?, assignee? }` | `Note` |

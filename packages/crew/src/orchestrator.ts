@@ -17,6 +17,7 @@ import {
   type ChannelMsg,
   cutWords,
   type GateId,
+  isFinalVideo,
   type Note,
   type OpenProject,
   OWNER_STAGE,
@@ -28,6 +29,7 @@ import {
   type Task,
   type ToolContext,
   type Workspace,
+  writeProxy,
 } from "@pap/tools";
 import { z } from "zod";
 import type { Gateway } from "./gateway.ts";
@@ -2052,6 +2054,8 @@ export class Crew {
     });
     this.gateWaiters.get(`${p.id}:${gate}`)?.(v);
     this.gateWaiters.delete(`${p.id}:${gate}`);
+    // the answer settles the wait: the line leaves "Waiting for you…" for the stage that runs now (a hold stays)
+    if (v.verdict !== "changes") this.unwait(p, this.runs.get(p.id));
     return g;
   }
 
@@ -2592,7 +2596,7 @@ export class Crew {
       `Done: ${
         p
           .files()
-          .filter((f) => f.kind === "video")
+          .filter(isFinalVideo)
           .map((f) => f.name)
           .join(", ") || "no video"
       } in out/.`,
@@ -4627,6 +4631,9 @@ export class Crew {
       const ren = await p.renderer_();
       const sheet = await contactSheet(ren, { every: 1 });
       writeFileSync(join(p.dir, "out", "contact.png"), sheet);
+      // the rough cut, playable with its sound: out/proxy.mp4 (render { kind: "proxy" }), inside the review's render
+      // slot; a failure never stops the review
+      await this.proxy(p);
       const stills = (await Promise.all(d.scenes.map((s) => this.sceneStills(p, s.id)))).flat();
       rev = (
         await this.ask(p, r, t, {
@@ -4711,6 +4718,21 @@ export class Crew {
     return { status: "done" };
   }
 
+  /** out/proxy.mp4 in the background (one at a time per project); a failure is only logged */
+  private proxies = new Map<string, Promise<unknown>>();
+  private proxy(p: OpenProject) {
+    const prev = this.proxies.get(p.id) ?? Promise.resolve();
+    const next = prev
+      .then(() => writeProxy(p))
+      .catch((e: any) =>
+        p.emit("log", { level: "warn", text: `no playable rough cut: ${String(e?.message ?? e).slice(0, 160)}` }),
+      )
+      .finally(() => {
+        if (this.proxies.get(p.id) === next) this.proxies.delete(p.id);
+      });
+    this.proxies.set(p.id, next);
+    return next;
+  }
   /** G3: the rough cut; in a person's change run, blockers left on its scenes stop the crew here for the person */
   private async rough(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const left = r.change ? this.report(p, r, "waiting").openBlockers : [];

@@ -10,6 +10,8 @@ import { dirname, join } from "node:path";
 import { Role, type RoleT } from "@pap/schema";
 import {
   type ChangeCategory,
+  cutWords,
+  isFinalVideo,
   languageName,
   noteOwner,
   type OpenProject,
@@ -17,6 +19,7 @@ import {
   outFiles,
   PAP_HOME,
   type PipFileT,
+  plainText,
   type Registry,
   STAGES,
   StoreError,
@@ -30,7 +33,7 @@ import type { Gateway } from "./gateway.ts";
 import { estimateInputTokens } from "./llm/budget.ts";
 import { costUsd, priceFor } from "./llm/prices.ts";
 import { BudgetError, type ChatMessage, type ContentPart, type ToolSpec } from "./llm/types.ts";
-import { type CrewSnapshot, type RunReport, STAGE_LINE } from "./orchestrator.ts";
+import { type CrewSnapshot, humanize, type ProblemAction, type RunReport, STAGE_LINE } from "./orchestrator.ts";
 import { routeChange } from "./plan/route.ts";
 import { fill, card as promptCard } from "./prompts.ts";
 
@@ -79,6 +82,8 @@ export type PipCard =
   | { id: string; type: "files"; files: PipFile[] }
   | PlanCard
   | { id: string; type: "cant"; text: string; nearest?: string }
+  /** a problem only the person can fix, as Pip's one button ("Fix the key"): `fix` is the action, `provider` the one */
+  | { id: string; type: "fix"; text: string; fix: ProblemAction; provider?: string }
   | FormCard;
 /** how a turn was made, for /why (stored on the item; built from what ran, never by asking the model) */
 export type PipTrace = {
@@ -163,7 +168,16 @@ type StoredItem =
 /** the card as the UI may see it: the action (tool, input, project) stripped */
 export function publicCard(c: StoredCard): PipCard {
   const { action: _a, tool: _t, input: _i, projectId: _p, ...rest } = c as StoredCard & Record<string, unknown>;
-  return rest as PipCard;
+  // the words a person reads: no library refs or plan task ids (§1.14)
+  const r = rest as Record<string, any>;
+  const plain = (x: unknown) => (typeof x === "string" ? plainText(x) : x);
+  return {
+    ...r,
+    ...(typeof r.title === "string" ? { title: plain(r.title) } : {}),
+    ...(typeof r.detail === "string" ? { detail: plain(r.detail) } : {}),
+    ...(Array.isArray(r.effects) ? { effects: r.effects.map(plain) } : {}),
+    ...(r.result && typeof r.result.text === "string" ? { result: { ...r.result, text: plain(r.result.text) } } : {}),
+  } as PipCard;
 }
 export function publicItem(i: StoredItem): PipItem {
   return i.kind === "pip" ? ({ ...i, cards: i.cards.map(publicCard) } as PipItem) : i;
@@ -819,7 +833,9 @@ export class Pip {
               ? `a files card (${c.files.length} files)`
               : c.type === "cant"
                 ? `a can't card (${c.text.slice(0, 80)})`
-                : `a ${c.form} form`,
+                : c.type === "fix"
+                  ? `a "${c.text}" button`
+                  : `a ${c.form} form`,
         )
         .join("; ");
       return this.reply(
@@ -979,9 +995,33 @@ export class Pip {
 
   private sorry(e: any, model: string) {
     const budget = e instanceof BudgetError || e?.code === "budget";
+    if (budget)
+      return {
+        text: "I've reached the budget for questions here. Raise the project's cap, or ask again tomorrow from the Projects page.",
+        cards: [] as StoredCard[],
+        usd: 0,
+        model,
+      };
+    // the provider's problem in the person's words (a rejected key, no credit, a provider turned off), and its fix
+    const h = humanize(e, "assistant");
+    if (h.action === "fix_key")
+      return {
+        text: `${h.text} I can't answer until it's fixed in Settings → Providers.`,
+        cards: [
+          {
+            id: rid("card"),
+            type: "fix",
+            text: "Fix the key",
+            fix: h.action,
+            ...(h.provider ? { provider: h.provider } : {}),
+          },
+        ] as StoredCard[],
+        usd: 0,
+        model,
+      };
     return {
-      text: budget
-        ? "I've reached the budget for questions here. Raise the project's cap, or ask again tomorrow from the Projects page."
+      text: /reach|running|busy/i.test(h.text)
+        ? `Sorry: ${h.text}`
         : "Sorry, I can't reach my model right now. Is the model server running?",
       cards: [] as StoredCard[],
       usd: 0,
@@ -1030,7 +1070,9 @@ export class Pip {
                 ? `[files: ${c.files.map((f) => f.name).join(", ")}]`
                 : c.type === "cant"
                   ? `[can't: ${c.text}]`
-                  : `[form: ${c.title}, ${c.status}]`,
+                  : c.type === "fix"
+                    ? `[fix: ${c.text}]`
+                    : `[form: ${c.title}, ${c.status}]`,
           )
           .join(" ");
         return { role: "assistant", content: `${it.text}${cards ? ` ${cards}` : ""}` };
@@ -1571,7 +1613,7 @@ export class Pip {
         // open review notes the model chose to include: each one is shown, never folded in silently
         const also = ((input.alsoNotes as string[] | undefined) ?? []).map((id) => {
           const note = p.state.notes.find((x) => x.id === id);
-          return note ? `Also fixes ${note.id}: ${note.text.slice(0, 140)}` : null;
+          return note ? `Also fixes ${note.id}: ${cutWords(note.text, 140)}` : null;
         });
         if (also.some((x) => x === null)) return { error: "alsoNotes has an id that isn't a note; use note_list" };
         // what happens to it is what the crew's state says now: started now, queued behind its work, or waiting
@@ -1608,7 +1650,7 @@ export class Pip {
               : `The ${ROLE_NAME(owner)} gets your note and redoes that part, then the Reviewer checks.`;
         c = {
           ...base,
-          title: `Ask the crew: ${String(input.text).slice(0, 60)}`,
+          title: `Ask the crew: ${cutWords(String(input.text), 60)}`,
           detail,
           who,
           usd: est ? [+est.usd[0].toFixed(2), +est.usd[1].toFixed(2)] : null,
@@ -1926,7 +1968,7 @@ export class Pip {
     switch (m.intent) {
       case "files": {
         const all = outFiles(p!);
-        const main = all.filter((f) => f.kind === "video" || f.kind === "subtitles");
+        const main = all.filter((f) => isFinalVideo(f) || f.kind === "subtitles");
         if (!all.length)
           return { cards: [cant("There are no files yet.", "The crew writes them when the video is exported.")] };
         return { cards: [{ id: rid("card"), type: "files", files: main.length ? main : all }] };
@@ -2451,12 +2493,16 @@ function settleCard(c: StoredPlan, r: RunReport, p: OpenProject) {
   if (r.reboarded.length) parts.push(`The Director re-planned ${scenes(r.reboarded)}.`);
   if (r.redone.length) parts.push(`The Animator redid ${scenes(r.redone)}.`);
   if (!r.reboarded.length && !r.redone.length) parts.push("No scene changed.");
-  for (const a of r.approximated) parts.push(`Approximated: ${a}`);
+  // what the Director did instead, in plain words; an empty one says nothing
+  for (const a of r.approximated) {
+    const words = plainText(a, p.plainCtx());
+    if (words) parts.push(`Approximated: ${words}`);
+  }
   if (r.openBlockers.length)
     parts.push(
       `Still wrong: ${r.openBlockers
         .slice(0, 3)
-        .map((b) => `${b.scene ? `${scenes([b.scene])}: ` : ""}${b.text.split(/(?<=\.)\s/)[0].slice(0, 140)}`)
+        .map((b) => `${b.scene ? `${scenes([b.scene])}: ` : ""}${cutWords(b.text.split(/(?<=\.)\s/)[0], 140)}`)
         .join(" ")}`,
     );
   if (r.status === "waiting") parts.push("The crew waits for you at the rough cut.");

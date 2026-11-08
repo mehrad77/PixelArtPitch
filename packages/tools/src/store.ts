@@ -27,6 +27,7 @@ import {
   resolveTimeline,
 } from "@pap/schema";
 import { Question, QuestionInput, type QuestionT } from "./registry.ts";
+import { cutWords, type PlainCtx, plainText } from "./words.ts";
 
 export const PAP_HOME = process.env.PAP_HOME ?? join(homedir(), ".pixelartpitch");
 
@@ -206,6 +207,8 @@ class Mutex {
 }
 
 export type PapEvent = { seq: number; event: string; data: unknown; ts: string };
+/** a finished video in out/: an .mp4 that isn't the rough cut's proxy (out/proxy.mp4) */
+export const isFinalVideo = (f: { name: string; kind: string }) => f.kind === "video" && f.name !== "proxy.mp4";
 
 /** a line in Pip's chat for something that happened, derived from the event log (times are the events' own) */
 export type Marker = {
@@ -229,6 +232,10 @@ const READY_WORD: Record<string, string> = {
   g3_rough: "Rough cut ready",
   g4_final: "Final cut ready",
 };
+/** a marker's words as a person reads them: plain (no ids), cut on a word boundary */
+export function plainMarker(m: Marker, ctx: PlainCtx = {}): Marker {
+  return { ...m, text: cutWords(plainText(m.text, ctx), 140) };
+}
 /** one event's marker, if it is one; `prev` is the gate's last status (a repeat of it is no news) */
 export function markerOf(e: PapEvent, prev?: string): Marker | null {
   const d = e.data as any;
@@ -268,6 +275,8 @@ export function markerOf(e: PapEvent, prev?: string): Marker | null {
     const opt = (d.options ?? []).find((o: any) => o.id === d.answer?.optionId);
     const label = opt?.label ?? d.answer?.optionId ?? "";
     const script = /which script/i.test(String(d.question));
+    // the script pick passes G1, whose marker says it: the question's own would be the same line twice
+    if (script && (d.blocks ?? []).includes("script")) return null;
     return {
       id: `${d.id}:answer@${e.seq}`,
       at: e.ts,
@@ -356,25 +365,34 @@ export class OpenProject {
     // the chat's markers, live: a derived `milestone` event (not stored; GET derives them from the log again)
     if (event !== "milestone") {
       const prev = event === "gate" ? this.gateSeen.get((data as any)?.id) : undefined;
-      const m = markerOf(e, prev);
+      const m0 = markerOf(e, prev);
       if (event === "gate") this.gateSeen.set((data as any)?.id, (data as any)?.status);
-      if (m) this.events.emit("event", { seq: 0, event: "milestone", data: m, ts: e.ts });
+      const m = m0 ? plainMarker(m0, this.plainCtx()) : null;
+      const key = m ? `${m.kind}|${m.text}` : "";
+      if (m && key !== this.lastMarker) this.events.emit("event", { seq: 0, event: "milestone", data: m, ts: e.ts });
+      if (m) this.lastMarker = key;
     }
     return e;
   }
   private gateSeen = new Map<string, string>();
+  /** the last live marker's kind and words: the same again in a row isn't news */
+  private lastMarker = "";
   /** every marker in the event log, oldest first */
   markers(): Marker[] {
     const out: Marker[] = [];
     const last = new Map<string, string>();
     const seen = new Set<string>();
+    const ctx = this.plainCtx();
     for (const e of this.eventsSince(0)) {
       const m = markerOf(e, e.event === "gate" ? last.get((e.data as any)?.id) : undefined);
       if (e.event === "gate") last.set((e.data as any)?.id, (e.data as any)?.status);
-      if (m && !seen.has(m.id)) {
-        seen.add(m.id);
-        out.push(m);
-      }
+      if (!m || seen.has(m.id)) continue;
+      seen.add(m.id);
+      const plain = plainMarker(m, ctx);
+      // the same words twice in a row are one marker (a pick and the gate it passes)
+      const prev = out.at(-1);
+      if (prev && prev.kind === plain.kind && prev.text === plain.text) continue;
+      out.push(plain);
     }
     return out;
   }
@@ -716,8 +734,19 @@ export class OpenProject {
     this.emit("scene", { id, ...v });
   }
   /** post on the crew channel: appended to runs/channel.jsonl and sent as a `channel` event */
+  /** what plainText may name in this project: its scenes and assets */
+  plainCtx(): PlainCtx {
+    const d = this._doc;
+    return { scenes: d.scenes.map((s) => ({ id: s.id, title: s.title })), assets: d.assets.map((a) => a.id) };
+  }
   say(m: Omit<ChannelMsg, "id" | "at">): ChannelMsg {
-    const msg: ChannelMsg = { id: `m_${randomUUID().slice(0, 8)}`, at: new Date().toISOString(), ...m };
+    // the channel is read by people: no library refs, task ids or scene ids (§1.14)
+    const msg: ChannelMsg = {
+      id: `m_${randomUUID().slice(0, 8)}`,
+      at: new Date().toISOString(),
+      ...m,
+      text: plainText(m.text, this.plainCtx()),
+    };
     appendFileSync(join(this.dir, "runs", "channel.jsonl"), `${JSON.stringify(msg)}\n`);
     this.emit("channel", msg);
     return msg;

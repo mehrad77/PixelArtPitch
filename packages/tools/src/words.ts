@@ -13,3 +13,36 @@ export function cutWords(s: string, max: number): string {
   const cut = (at > room * 0.4 ? head.slice(0, at) : t.slice(0, room)).replace(/[\s,;:.–-]+$/, "");
   return `${cut}…`;
 }
+
+/** what plainText may name: the project's scenes (id → title), its asset ids, and plan task labels by id */
+export type PlainCtx = {
+  scenes?: { id: string; title?: string }[];
+  assets?: string[];
+  tasks?: Record<string, string>;
+};
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** an asset id as a person reads it: "cast-developer" → "developer", "props-small" → "props small" */
+export const assetName = (id: string) => id.replace(/^cast-/, "").replace(/[-_]+/g, " ");
+/**
+ * Text for a person (PIP-ORCHESTRATION §1.14): no `lib:owl@1` (the asset's name), no plan task ids (`t_draw_owl_v2`:
+ * its label when known, else nothing), scene ids that look like ids (`s02_moth`, or any id after "scene ") as the
+ * scene's title, and asset ids with dashes as names. Leftover "()" and doubled spaces are tidied.
+ */
+export function plainText(s: string, ctx: PlainCtx = {}): string {
+  let t = s.replace(/\blib:([a-z0-9-]+)@\d+\b/g, (_, id: string) => assetName(id));
+  t = t.replace(/\bt_[a-z0-9_]+\b/g, (id) => ctx.tasks?.[id] ?? "");
+  for (const sc of ctx.scenes ?? []) {
+    if (!sc.title) continue;
+    t = t.replace(new RegExp(`\\bscene ${esc(sc.id)}\\b`, "gi"), `"${sc.title}"`);
+    if (/[_\d]/.test(sc.id)) t = t.replace(new RegExp(`\\b${esc(sc.id)}\\b`, "g"), `"${sc.title}"`);
+  }
+  for (const a of ctx.assets ?? [])
+    if (/[-_]/.test(a) && !/^lib:/.test(a))
+      t = t.replace(new RegExp(`(?<![\\w/.:-])${esc(a)}(?![\\w-])`, "g"), assetName(a));
+  return t
+    .replace(/\(\s*[,;]?\s*\)/g, "")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/([,;])\s*(?=[,;.])/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}

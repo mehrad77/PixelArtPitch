@@ -608,6 +608,15 @@ In P5 the engine could make an owl sit, a moth fly and a lantern glow, but no re
 - **Board checks.** `checkBoard` checks `who` and `follow` against the asset list, and a `spawn_join` without `who` gets "fix: cast moth as who" with the first asset the brief names that isn't already in that scene (`castOf`).
 - **The Writer's angles aren't cut.** The script pick's option detail keeps whole cues: those that fit 280 characters, then "…" (`cueDetail`).
 
+### 1.14 What a person reads (v0.3, after the P5 run)
+
+- **A playable rough cut.** `review.final` writes `out/contact.png` as before (`contactSheet`, `every: 1`) and then `out/proxy.mp4`: `writeProxy` (`packages/tools/src/defs.ts`) encodes the cut at scale 2 with `out/audio.wav` (mixed first when the project has none) through the export's own `encode()`, inside the review's render slot, and emits `render { kind: "proxy", url: "files/proxy.mp4" }`. A failure is logged and the review goes on. `isFinalVideo` keeps the proxy out of "has a video" (the Projects page's `finished`, the Projects line, Pip's files card, the run's digest).
+- **No ids in the words.** `plainText(text, ctx)` (`packages/tools/src/words.ts`): `lib:owl@1` → "owl", a plan task id (`t_draw_owl_v2`) → its label when known, else nothing, a scene id that looks like one (`s02_moth`, or any id after "scene ") → its title in quotes, an asset id with dashes → its name ("cast-developer" → "developer"); leftover "()" and doubled spaces go. Applied to every channel message (`OpenProject.say`), every marker (live and from the log), Pip's cards as sent (`publicCard`: title, detail, effects, result) and the handoff card's "Approximated:" lines (an empty one is dropped).
+- **Cuts on a word boundary.** `cutWords(text, max)` ends with "…" and never mid-word: markers (140), Pip's change card title (60) and its "Also fixes" lines, the "Still wrong" lines, the hold question.
+- **One marker per thing.** The script pick's question gives no marker of its own (G1's "You picked the script" says it), and `markers()` and the live `milestone` events drop a marker with the same kind and words as the one before it.
+- **Pip on a provider error.** `Pip.sorry()` reads the error with `humanize()`: a rejected key or no credit replies "Your Anthropic key was rejected. I can't answer until it's fixed in Settings → Providers." with a card `{ type: "fix", text: "Fix the key", fix: "fix_key", provider }`, never "can't reach my model".
+- **Status follows the run.** Answering a gate (`Crew.gate`, any verdict but `changes`) takes the line off "Waiting for you…" onto the running stage ("Exporting your video"), unless a hold still stands. The Try again card ends a held line with one full stop.
+
 ---
 
 ## 2. Instances (the members that come and go)

@@ -21,6 +21,7 @@ import { Brief, Cue, PatchOp, type ProjectT, type RoleT, SfxType, TimeExpr } fro
 import { z } from "zod";
 import { fitRuns, speechRuns } from "./align.ts";
 import { defineTool, fail, ok, QuestionInput, type ToolContext } from "./registry.ts";
+import type { OpenProject } from "./store.ts";
 
 const b64 = (u: Uint8Array) => Buffer.from(u).toString("base64");
 const pngImg = (data: Uint8Array, caption?: string) => ({ mediaType: "image/png" as const, data, caption });
@@ -875,6 +876,35 @@ export const exportVideo = defineTool({
     });
   },
 });
+
+/**
+ * The rough cut as a playable proxy (PIP-ORCHESTRATION §1.14): `out/proxy.mp4` at scale 2 with the mix in
+ * `out/audio.wav` (mixed now when the project has none), through the export's own `encode()`. Emits
+ * `render { kind: "proxy" }` when it is written.
+ */
+export async function writeProxy(
+  p: OpenProject,
+  o: { onProgress?: (fraction: number) => void } = {},
+): Promise<{ file: string; seconds: number }> {
+  const out = join(p.dir, "out");
+  mkdirSync(out, { recursive: true });
+  const r = await p.renderer_();
+  const audio = join(out, "audio.wav");
+  if (!existsSync(audio)) {
+    await writeSfx(p.project(), r, join(out, "sfx.wav"));
+    const m = writeMusic(p.project(), join(out, "music.wav"));
+    mix(p.project(), { sfx: join(out, "sfx.wav"), music: m ? join(out, "music.wav") : undefined, out: audio });
+  }
+  const res = await encode(r, {
+    out: join(out, "proxy.mp4"),
+    scale: 2,
+    crf: 23,
+    audio,
+    ...(o.onProgress ? { onProgress: o.onProgress } : {}),
+  });
+  p.emit("render", { type: "render", kind: "proxy", url: "files/proxy.mp4" });
+  return { file: "out/proxy.mp4", seconds: res.seconds };
+}
 
 export const CORE_TOOLS = [
   projectList,

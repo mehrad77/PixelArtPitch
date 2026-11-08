@@ -1,6 +1,6 @@
 // Small studio routes (docs/API.md): the change preview passes its body to the crew and checks it first.
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -32,7 +32,9 @@ function setup(crew: Record<string, unknown>) {
       },
       body: JSON.stringify(body),
     });
-  return { id, post, workspace };
+  const get = (path: string) =>
+    app.request(path, { headers: { host: "127.0.0.1:5997", cookie: `pap_session=${token}`, "x-pap-token": token } });
+  return { id, post, get, workspace };
 }
 
 test("POST /api/p/:id/changes/preview: the crew's dry preview, its body checked first", async () => {
@@ -60,6 +62,30 @@ test("POST /api/p/:id/changes/preview: the crew's dry preview, its body checked 
     const bad = await post(`/api/p/${id}/changes/preview`, { gate: "g9", text: "x" });
     assert.equal(bad.status, 400);
     assert.ok(((await bad.json()) as any).error.fix);
+  } finally {
+    workspace.closeAll();
+  }
+});
+
+test("GET /api/projects: finished means a video and no crew working; the rough cut's proxy isn't one", async () => {
+  let running = true;
+  const status = () => ({
+    budget: { capUsd: 1, spentUsd: 0, reservedUsd: 0, estTotalUsd: null },
+    time: { startedAt: null, etaSec: null, deadline: null },
+    crew: { running, paused: false, stage: "deliver", lastActiveAt: null, queued: 0 },
+  });
+  const { id, workspace, get } = setup({ status });
+  try {
+    const p = workspace.get(id);
+    mkdirSync(join(p.dir, "out"), { recursive: true });
+    writeFileSync(join(p.dir, "out", "proxy.mp4"), "x");
+    const row = async () => ((await (await get("/api/projects")).json()) as any[]).find((x) => x.id === id);
+    running = false;
+    assert.equal((await row()).finished, false, "a proxy alone isn't a finished video");
+    writeFileSync(join(p.dir, "out", "questday.mp4"), "x");
+    assert.equal((await row()).finished, true);
+    running = true;
+    assert.equal((await row()).finished, false, "a live rerun isn't finished");
   } finally {
     workspace.closeAll();
   }

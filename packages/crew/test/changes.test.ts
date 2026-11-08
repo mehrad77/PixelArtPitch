@@ -2,7 +2,7 @@
 // close with the revision that applies them (no third cut after the export), and auto skipping the leftover G3.
 // Over FakeProvider and the fictional QuestDay example only.
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -209,7 +209,11 @@ test("auto: leftover blockers on the changed scene are logged and the cut export
   for (const s of p.doc().scenes) p.setSceneStatus(s.id, { version: "render", state: "ready" });
   p.setStage("deliver");
   const logs: string[] = [];
-  p.events.on("event", (e: any) => e.event === "log" && logs.push(String(e.data?.text ?? "")));
+  const renders: any[] = [];
+  p.events.on("event", (e: any) => {
+    if (e.event === "log") logs.push(String(e.data?.text ?? ""));
+    if (e.event === "render") renders.push(e.data);
+  });
   const note = p.addNote({
     target: { scene: "grind" },
     category: "art",
@@ -221,6 +225,9 @@ test("auto: leftover blockers on the changed scene are logged and the cut export
   await wait(() => !crew.status(p).crew.running && p.state.status.line === "Your video is ready");
   assert.notEqual(p.state.gates.find((g) => g.id === "g3_rough")?.status, "open", "no G3 at auto");
   assert.ok(logs.some((t) => /exporting without asking \(auto\)/.test(t)));
+  // the review wrote a playable rough cut with its sound, and said so
+  assert.ok(existsSync(join(p.dir, "out", "proxy.mp4")), "out/proxy.mp4");
+  assert.ok(renders.some((r) => r.kind === "proxy" && r.url === "files/proxy.mp4"));
 });
 
 // ---------------------------------------------------------------- the crew knows its tools (§1.13)
@@ -296,4 +303,13 @@ test("the script pick keeps whole cues: a word-safe cut after the last cue that 
   assert.equal(cueDetail(cues, 60), "Night falls on the city. A sleepy owl opens a book.…");
   assert.ok(!/ear$/.test(cueDetail(cues, 70).replace(/…$/, "")));
   assert.match(cueDetail(["one very long cue that never fits in a short space at all"], 20), /…$/);
+});
+
+test("answering a gate takes the line off 'Waiting for you…' and onto the stage that runs", async () => {
+  const { crew, p } = await crewOn(tuneAndShip);
+  p.setStage("deliver");
+  p.setGate("g3_rough", { status: "open", items: [{ label: "Rough cut" }] });
+  p.setStatus({ line: "Waiting for you: the Reviewer still sees 2 problems in the scenes you changed" });
+  crew.gate(p, "g3_rough", { verdict: "approve", by: "user" });
+  assert.equal(p.state.status.line, "Exporting your video");
 });

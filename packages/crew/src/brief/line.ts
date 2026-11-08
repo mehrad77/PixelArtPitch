@@ -3,7 +3,7 @@
 // person; the oldest clauses go first when there are more.
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import type { OpenProject, Workspace } from "@pap/tools";
+import { isFinalVideo, type OpenProject, type Workspace } from "@pap/tools";
 
 export type LinePart = { projectId: string; kind: "finished" | "working" | "waiting" | "failed"; text: string };
 export type WorkspaceLine = { text: string; parts: LinePart[] };
@@ -136,7 +136,7 @@ export function lineRows(
     } catch {
       continue;
     }
-    const video = p.files().filter((f) => f.kind === "video");
+    const video = p.files().filter(isFinalVideo);
     let finishedAt: number | undefined;
     for (const f of video)
       try {

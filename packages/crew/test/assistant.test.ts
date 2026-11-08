@@ -1041,7 +1041,7 @@ test("chat markers come from the event log, with the events' own times", async (
       "stage: Plan ready",
       "answer: You picked the script: The walker",
       "gate: Rough cut ready",
-      "export: Your video is ready",
+      // v0.3: the same words twice in a row are one marker (kind + text)
       "export: Your video is ready",
       "change: Change done: add two NPCs",
     ],
@@ -1130,4 +1130,45 @@ test("/context measures the next call without a model call and leaves nothing in
     delete (fake as any).countTokens;
     delete (fake as any).contextWindow;
   }
+});
+
+// ---------------------------------------------------------------- v0.3: readable words (§1.14)
+test("Pip's reply to a rejected key says so with a Fix the key card, not 'can't reach my model'", async () => {
+  const { ProviderError } = await import("../src/llm/index.ts");
+  const { pip, id } = await setup();
+  script([
+    { error: new ProviderError("401 authentication_error: invalid x-api-key", 401, "authentication_error", false) },
+  ]);
+  const item = (await pip!.ask(id, "how is it going?").done) as any;
+  assert.match(item.text, /^Your fake key was rejected\./);
+  assert.doesNotMatch(item.text, /can't reach my model/);
+  const fix = item.cards.find((c: any) => c.type === "fix");
+  assert.ok(fix, "a Fix the key card");
+  assert.equal(fix.fix, "fix_key");
+  assert.equal(fix.provider, "fake");
+});
+
+test("the Try again card ends its held line once, with one full stop", async () => {
+  const { pip, p } = await setup();
+  (pip as any).deps.crewSnapshot = () => ({
+    running: true,
+    paused: true,
+    held: "the animator couldn't finish: the moth can't fly here.",
+    stage: "animate",
+    line: "",
+    gates: [],
+    passed: [],
+    questions: 1,
+    pendingCard: false,
+    failed: [],
+    fallbacks: [],
+    reviewPending: false,
+    working: [],
+    retryRoles: [],
+  });
+  const res = pip!.planCards("crew_retry", {}, p) as any;
+  const card = res.cards[0];
+  assert.equal(card.title, "Try again");
+  assert.doesNotMatch(card.detail, /\.\./);
+  assert.match(card.detail, /fly here\. It goes on from where it stopped\./);
 });

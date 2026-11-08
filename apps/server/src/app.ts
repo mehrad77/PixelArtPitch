@@ -13,7 +13,7 @@ import { InstanceKey } from "@pap/crew/plan/instances";
 import { libraryAssetDir, libraryIndex, userLibraryDir } from "@pap/render";
 import { buildReport, type Report } from "@pap/report";
 import type { GateId, Registry, ToolContext } from "@pap/tools";
-import { type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
+import { isFinalVideo, type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
@@ -336,7 +336,8 @@ export function createApp(o: ServerOpts) {
             // projects made before status tracking only have a stage
             phase: Math.max(p.state.status?.phase ?? 0, PHASE[p.state.stage] ?? 0),
             milestones: p.state.milestones.length,
-            finished: p.files().some((f) => f.kind === "video"),
+            // a finished video (not the rough cut's proxy) and no crew working on it now: a live rerun isn't finished
+            finished: p.files().some(isFinalVideo) && !(st?.crew?.running ?? false),
             working: p.state.tasks.filter((t) => t.status === "working").map((t) => t.role),
             thumb: `/api/p/${p.id}/frame?t=${Math.max(0.5, Math.min(p.timeline().duration - 0.5, p.timeline().duration * 0.4)).toFixed(2)}&scale=1`,
           };
