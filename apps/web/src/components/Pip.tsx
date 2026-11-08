@@ -42,7 +42,7 @@ import {
   suggestions,
   usePip,
 } from "../lib/pip.ts";
-import { planCrew, planDiff, titleWords } from "../lib/plancard.ts";
+import { planCrew, planDiff, planUsd, titleWords } from "../lib/plancard.ts";
 import { Link } from "../lib/router.tsx";
 import { type Marker, type Turn, turnsOf } from "../lib/thread.ts";
 import type { PipCard, PipFile, PipItem, PipSummary, ProjectState, RefType, RoleT } from "../lib/types.ts";
@@ -56,7 +56,6 @@ import "./Pip.css";
 type Project = string | null | undefined;
 
 // ---- small words ----
-const range = (r: [number, number], f: (n: number) => string) => (r[0] === r[1] ? f(r[0]) : `${f(r[0])}–${f(r[1])}`);
 function timeWords(sec: [number, number]): string {
   if (sec[1] < 60) return `Under a minute`;
   const lo = Math.max(1, Math.round(sec[0] / 60));
@@ -582,9 +581,7 @@ function PlanCard({
   const diff = planDiff(card);
   // the crew by instance ("Animator · scene 2"), the planner first on a revision (the Director when it re-plans)
   const named = card.revision || card.whoInstances?.length ? planCrew(card) : null;
-  const meta = [card.sec ? timeWords(card.sec) : null, card.usd && !diff ? range(card.usd, usdPlain) : null].filter(
-    Boolean,
-  );
+  const meta = [card.sec ? timeWords(card.sec) : null, planUsd(card)].filter(Boolean);
   const confirm = async () => {
     if (working) return;
     if (card.editable && !edit.trim()) return setErr(`Write the ${card.editable.label.toLowerCase()} first.`);
@@ -657,9 +654,11 @@ function PlanCard({
           <span className="pip-plan-new">
             about <bdi>{diff.to}</bdi>
           </span>
-          <span className="pip-plan-delta" data-up={diff.up ? "" : undefined}>
-            <bdi>{diff.delta}</bdi>
-          </span>
+          {diff.delta && (
+            <span className="pip-plan-delta" data-up={diff.up ? "" : undefined}>
+              <bdi>{diff.delta}</bdi>
+            </span>
+          )}
         </p>
       )}
       <p className="pip-plan-detail" dir="auto">

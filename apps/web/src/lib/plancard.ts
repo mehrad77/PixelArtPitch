@@ -9,7 +9,7 @@ type Plan = Extract<PipCard, { type: "plan" }>;
 
 const money = (v: number) => usdPlain(Math.round(v * 100) / 100);
 
-/** "$1.04" → "about $1.95", "+$0.91"; null for a card that is no revision */
+/** "$1.04" → "about $1.95", "+$0.91" (no delta when the price stays); null for a card that is no revision */
 export function planDiff(card: Plan): { from: string; to: string; delta: string; up: boolean } | null {
   const r = card.revision;
   if (!r) return null;
@@ -17,9 +17,19 @@ export function planDiff(card: Plan): { from: string; to: string; delta: string;
   return {
     from: money(r.fromUsd),
     to: money(r.toUsd),
-    delta: `${d >= 0 ? "+" : "−"}${money(Math.abs(d))}`,
+    delta: d === 0 ? "" : `${d > 0 ? "+" : "−"}${money(Math.abs(d))}`,
     up: d >= 0,
   };
+}
+
+/**
+ * The price on the card's meta line ("$0.40", "$0.20–$0.60"), or null: a revision says it as a diff, and a card that
+ * costs nothing (the budget pair's "Finish within" and "Raise the cap") shows no "$0"
+ */
+export function planUsd(card: Plan): string | null {
+  if (!card.usd || card.revision || card.usd[1] <= 0) return null;
+  const [lo, hi] = card.usd;
+  return lo === hi ? money(lo) : `${money(lo)}–${money(hi)}`;
 }
 
 /** the title without its price ("Plan change: $1.04 → about $1.95" → "Plan change"), when the diff says the price */

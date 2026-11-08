@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { cardRank, laterCard, revertCard } from "../src/lib/cards.ts";
+import { channelSummary } from "../src/lib/channel-words.ts";
 import { needsYouCount } from "../src/lib/derive.ts";
 import { humanStatus, PROBLEM_BUTTON } from "../src/lib/human.ts";
 import {
@@ -21,7 +22,17 @@ import {
   waitingInstances,
 } from "../src/lib/instances.ts";
 import { applyEvent } from "../src/lib/reducer.ts";
-import type { Draft, Instance, PipCard, PipItem, ProjectState, Role, ServerEvent, Task } from "../src/lib/types.ts";
+import type {
+  ChannelMsg,
+  Draft,
+  Instance,
+  PipCard,
+  PipItem,
+  ProjectState,
+  Role,
+  ServerEvent,
+  Task,
+} from "../src/lib/types.ts";
 import { COPIED, copyLine, MockDrafts } from "../src/mock/drafts.ts";
 import { fixtureChanges, fixtureInstances, instanceChange } from "../src/mock/fixture-crew.ts";
 import { JOURNEY, Journey, journeyFlags, OVERRUN_CAP } from "../src/mock/journey.ts";
@@ -490,6 +501,8 @@ type Scn = {
   s: ProjectState;
   /** every state after a batch, with the status and crew.held the client would send */
   states: ProjectState[];
+  /** the crew channel so far */
+  chans: ChannelMsg[];
   step: () => void;
   act: (a: Parameters<Journey["act"]>[0]) => void;
   /** step until `until` holds (or the run ends) */
@@ -506,6 +519,7 @@ function scenario(name: "revision" | "overrun" | "publish" | "keyfail", auto = t
       budget: { ...blank().budget, capUsd: capUsd ?? JOURNEY.capUsd },
     },
     states: [],
+    chans: [],
     step: () => take(sim.step()),
     act: (a) => take(sim.act(a)),
     run: (until, max = 300) => {
@@ -513,7 +527,10 @@ function scenario(name: "revision" | "overrun" | "publish" | "keyfail", auto = t
     },
   };
   const take = (batch: ServerEvent[]) => {
-    for (const e of batch) o.s = applyEvent(o.s, e);
+    for (const e of batch) {
+      o.s = applyEvent(o.s, e);
+      if (e.event === "channel") o.chans.push(e.data as ChannelMsg);
+    }
     // as MockClient.pushStatus and syncCrew do
     const own = sim.statusNow;
     o.s = {
@@ -591,8 +608,11 @@ test("scenario overrun: at 80% of a $1.50 cap, 'Finish within' leads, 'Raise the
   assert.equal(sc.s.status?.waiting, "budget");
   assert.match(
     sc.s.status?.line ?? "",
-    /^Waiting for you: 80% of the \$1\.5 cap is spent\. Finish within it, or raise/,
+    /^Waiting for you: 80% of the \$1\.50 cap is spent\. Finish within it, or raise it to \$2\.$/,
   );
+  // Pip's line under the status ends once: no "$2.00?."
+  const said = channelSummary([{ ...sc.chans.at(-1)!, at: new Date().toISOString() }]);
+  assert.equal(said, "Paused the crew: 80% of the $1.50 cap is spent.");
   assert.equal(needsYouCount(sc.s), 1);
   // nothing new starts while the question is open
   const working = sc.s.tasks.filter((t) => t.status === "working").length;
@@ -661,6 +681,14 @@ test("scenario keyfail: a rejected key holds the run, Pip says so, the founder i
   assert.equal(sc.s.crew?.held, "Your Anthropic key was rejected");
   const h = humanStatus(sc.s);
   assert.equal(h.text, "Your Anthropic key was rejected.");
+  assert.equal(h.tone, "needs", "a hold waits on you: no red Stopped");
+  // Pip's channel line is a sentence to the crew, not "I briefed the producer: Hold: …"
+  const hold = sc.chans.findLast((m) => m.from === "pip" && m.to === "crew");
+  assert.equal(hold?.text, "Paused the crew: your Anthropic key was rejected.");
+  assert.equal(
+    channelSummary([{ ...hold!, at: new Date().toISOString() }]),
+    "Paused the crew: your Anthropic key was rejected.",
+  );
   assert.equal(h.problem?.action, "fix_key");
   assert.equal(PROBLEM_BUTTON[h.problem?.action ?? "retry"], "Fix the key");
   assert.deepEqual([...stuckInstances(sc.s)], ["pixel-artist:founder"], "the founder's face is stuck");

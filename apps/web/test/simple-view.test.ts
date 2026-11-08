@@ -6,12 +6,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { scoped, splitAbout } from "../src/lib/about.ts";
 import { groupTitle, progressLine, stepsOf, stepWords } from "../src/lib/activity.ts";
+import { channelSummary, nameOf } from "../src/lib/channel-words.ts";
 import { needsYouCount } from "../src/lib/derive.ts";
 import { draftFrames, liveFrame } from "../src/lib/draft.ts";
-import { askedByGate, humanStatus } from "../src/lib/human.ts";
+import { askedByGate, humanStatus, milestones, sentence, theMember } from "../src/lib/human.ts";
 import { stuckInstances, waitingInstances } from "../src/lib/instances.ts";
 import { isPick, needsItems, previewOf } from "../src/lib/needs.ts";
-import { planCrew, planDiff, titleWords } from "../src/lib/plancard.ts";
+import { planCrew, planDiff, planUsd, titleWords } from "../src/lib/plancard.ts";
 import { applyEvent } from "../src/lib/reducer.ts";
 import { turnsOf } from "../src/lib/thread.ts";
 import type {
@@ -24,6 +25,7 @@ import type {
   QuestionT,
   Task,
 } from "../src/lib/types.ts";
+import { Q_PUBLISH } from "../src/mock/journey.ts";
 import { mockProgress } from "../src/mock/progress.ts";
 
 function blank(): ProjectState {
@@ -295,4 +297,109 @@ test("stuck only for a live problem: a problem while the crew runs past it is no
   assert.deepEqual([...stuckInstances(s)], ["animator:s01"]);
   const running = { ...s, crew: { state: "running", running: true } } as ProjectState;
   assert.deepEqual([...stuckInstances(running)], []);
+});
+
+const failed = (over: Partial<Task> = {}): Task =>
+  ({
+    id: "t1",
+    role: "pixel-artist",
+    kind: "asset.draw",
+    title: "Drawing founder",
+    status: "failed",
+    usd: 0,
+    error: { message: "401 invalid api key" },
+    ...over,
+  }) as Task;
+
+test("a held run waits on you (needs, with its button); a run that broke off still reads Stopped", () => {
+  const problem = { text: "Your Anthropic key was rejected.", action: "fix_key" as const, taskId: "t1" };
+  const held: ProjectState = {
+    ...blank(),
+    tasks: [failed({ status: "cancelled" })],
+    status: { line: "Waiting for you: Your Anthropic key was rejected", phase: 2, problem },
+    crew: { state: "running", running: true, held: "Your Anthropic key was rejected" } as ProjectState["crew"],
+  };
+  const h = humanStatus(held);
+  assert.equal(h.tone, "needs");
+  assert.equal(h.text, "Your Anthropic key was rejected.");
+  assert.equal(h.problem?.action, "fix_key", "the Fix the key button still has its problem");
+  // a real failure, nothing held, the crew idle: Stopped (the red prefix's tone)
+  const broke: ProjectState = { ...blank(), tasks: [failed()], crew: { state: "idle" } as ProjectState["crew"] };
+  const b = humanStatus(broke);
+  assert.equal(b.tone, "problem");
+  assert.match(b.text, /stopped/);
+});
+
+test("the Librarian's publish question is a pick of its own two answers, and the Librarian is named as itself", () => {
+  const s = { ...blank(), questions: [Q_PUBLISH("2026-11-08T10:00:00Z")] };
+  const q = s.questions[0];
+  assert.ok(isPick(q, s));
+  assert.ok(!isPick({ ...q, from: "producer" }, s), "another member's yes/no keeps its card");
+  assert.equal(theMember("librarian"), "the Librarian");
+  assert.equal(theMember("pixel-artist"), "the artist");
+  assert.equal(humanStatus(s).text, "The Librarian has a question for you.");
+});
+
+test("the budget pair costs nothing, so the card shows no $0; a priced card and a moved revision keep theirs", () => {
+  const card: Extract<PipCard, { type: "plan" }> = {
+    id: "c_finish",
+    type: "plan",
+    title: "Finish within $1.50",
+    detail: "",
+    who: [],
+    usd: [0, 0],
+    sec: null,
+    effects: [],
+    confirmLabel: "Finish within $1.50",
+    status: "proposed",
+  };
+  assert.equal(planUsd(card), null);
+  assert.equal(planUsd({ ...card, usd: [0.4, 0.4] }), "$0.40");
+  assert.equal(planUsd({ ...card, usd: [0.2, 0.6] }), "$0.20–$0.60");
+  const rev = { ...card, usd: [0.5, 0.9] as [number, number], revision: { fromUsd: 1, toUsd: 1, planner: "pip" } };
+  assert.equal(planUsd(rev as typeof card), null, "a revision says its price as a diff");
+  assert.equal(planDiff(rev as typeof card)?.delta, "", "no +$0 chip when the price stays");
+});
+
+test("a sentence ends once: Pip's crew line as is, a question keeps its mark, the crew is the crew", () => {
+  assert.equal(sentence("raise it to $2.00?"), "raise it to $2.00?");
+  assert.equal(sentence("Your key was rejected"), "Your key was rejected.");
+  assert.equal(nameOf("crew"), "the crew");
+  const at = new Date().toISOString();
+  const m = {
+    id: "m1",
+    at,
+    from: "pip",
+    to: "crew",
+    kind: "brief" as const,
+    text: "Paused the crew: your key was rejected.",
+  };
+  assert.equal(channelSummary([m]), "Paused the crew: your key was rejected.");
+  const ask = { ...m, to: "writer", text: "Can you shorten scene 2?" };
+  assert.equal(channelSummary([ask]), "I briefed the writer: Can you shorten scene 2?");
+});
+
+test("a picked drawing names its asset; without a name it says Picked the drawing", () => {
+  const judge = (id: string, title: string): Task =>
+    ({
+      id,
+      role: "art-director",
+      kind: "asset.judge",
+      title,
+      status: "done",
+      usd: 0,
+      endedAt: "2026-11-08T10:00:00Z",
+    }) as Task;
+  const s = {
+    ...blank(),
+    tasks: [judge("j1", "Choosing the best founder variants"), judge("j2", "Choosing the best cat variants")],
+  };
+  assert.deepEqual(
+    milestones(s).map((m) => m.text),
+    ["Founder drawn", "Cat drawn"],
+  );
+  assert.deepEqual(
+    milestones({ ...blank(), tasks: [judge("j3", "Pick")] }).map((m) => m.text),
+    ["Picked the drawing"],
+  );
 });

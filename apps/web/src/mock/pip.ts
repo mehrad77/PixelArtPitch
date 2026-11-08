@@ -3,7 +3,16 @@
 // person's line, thinking, then Pip's item; a confirmed card goes running → done over its own events.
 import { ApiError } from "../lib/api.ts";
 import { duration } from "../lib/format.ts";
-import { effectOf, humanStatus, memberOf, PROBLEM_BUTTON, plainTitle, waitReason } from "../lib/human.ts";
+import {
+  effectOf,
+  humanStatus,
+  isHeld,
+  PROBLEM_BUTTON,
+  plainTitle,
+  sentence,
+  theMember,
+  waitReason,
+} from "../lib/human.ts";
 import { parseMcpJson } from "../lib/mcp.ts";
 import type {
   Connection,
@@ -789,7 +798,7 @@ export class MockPip {
       const list = this.host.titles();
       return {
         reply: list.length
-          ? list.map((p) => `${p.title}: ${humanStatus(p.state).text.replace(/\.$/, "")}.`).join(" ")
+          ? list.map((p) => `${p.title}: ${sentence(humanStatus(p.state).text)}`).join(" ")
           : "No projects yet. Ask me to start one.",
         cards: [],
       };
@@ -820,9 +829,9 @@ function statusAnswer(s: ProjectState): string {
     case "needs":
       return `They're waiting for you: ${low(w.text.replace(/^Waiting for you: /, "")).replace(/[.?!]$/, "")}. "Show me" under my line takes you there.`;
     case "problem":
-      return `The crew stopped: ${low(w.problem?.text ?? w.text).replace(/\.$/, "")}. "${w.problem ? PROBLEM_BUTTON[w.problem.action] : "Try again"}" under my line fixes it.`;
+      return `${isHeld(s) ? "The crew is paused" : "The crew stopped"}: ${sentence(low(w.problem?.text ?? w.text))} "${w.problem ? PROBLEM_BUTTON[w.problem.action] : "Try again"}" under my line fixes it.`;
     case "paused":
-      return `Nobody's working: ${low(w.text).replace(/\.$/, "")}. ${effectOf({ kind: "resume" }, s).text || "Resume picks up where they left off."} Nothing is spent while paused.`;
+      return `Nobody's working: ${sentence(low(w.text))} ${effectOf({ kind: "resume" }, s).text || "Resume picks up where they left off."} Nothing is spent while paused.`;
     case "not_started":
       return `Nobody has started yet. ${effectOf({ kind: "start" }, s).text.replace(/^Starts/, "Start sends")}`;
     case "stopped": {
@@ -835,7 +844,7 @@ function statusAnswer(s: ProjectState): string {
       return `${w.text}. Nothing is lost while they wait.`;
     default: {
       if (!working.length) return "They're between steps; the next one starts in a moment.";
-      const who = working.map((x) => `the ${memberOf(x.role).label.toLowerCase()} is ${low(plainTitle(x, s))}`);
+      const who = working.map((x) => `${theMember(x.role)} is ${low(plainTitle(x, s))}`);
       const said = andList(who);
       return `${said.charAt(0).toUpperCase()}${said.slice(1)}. ${w.kind === "working" ? `${w.text}.` : ""}`.trim();
     }

@@ -17,12 +17,14 @@ const GATE_ORDER: GateId[] = ["g0_brief", "g1_script", "g2_animatic", "g3_rough"
 /**
  * A pick: a one-of question whose options are the real alternatives (the script angles), shown all at once with
  * "Use this one" on each. A gate's own question is one; so is the Writer's single-choice question that blocks the
- * script (a run whose G1 isn't open yet). The Producer's brief questions keep the recommended-first card.
+ * script (a run whose G1 isn't open yet), and the Librarian's yes/no ("Add it to your library?"), whose two answers are
+ * its buttons. The Producer's brief questions keep the recommended-first card.
  */
 export const isPick = (q: QuestionT, s: ProjectState) =>
-  q.kind === "single" &&
-  q.options.length > 1 &&
-  (askedByGate(s).has(q.id) || (q.blocks.includes("script") && q.from === "writer"));
+  (q.kind === "yesno" && q.from === "librarian" && q.options.length === 2) ||
+  (q.kind === "single" &&
+    q.options.length > 1 &&
+    (askedByGate(s).has(q.id) || (q.blocks.includes("script") && q.from === "writer")));
 
 export function needsItems(s: ProjectState): NeedsItem[] {
   const own = askedByGate(s);

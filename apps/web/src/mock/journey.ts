@@ -186,6 +186,12 @@ export type JourneyStatus = {
   problem?: { text: string; action: "fix_key" | "retry"; taskId: string; provider?: string };
   waiting?: "plan" | "budget";
 };
+/** the server's pausedLine: Pip's channel line for a hold, as a plain sentence */
+export function pausedLine(why: string): string {
+  const w = why.trim().replace(/^Waiting for you: /, "");
+  const low = /^(Your|The|A|An|This|It|Every|No)\b/.test(w) ? w.charAt(0).toLowerCase() + w.slice(1) : w;
+  return `Paused the crew: ${/[.?!]$/.test(low) ? low : `${low}.`}`;
+}
 const money = (n: number) => `$${n < 1 ? n.toFixed(2) : n.toFixed(2).replace(/\.00$/, "")}`;
 
 export class Journey {
@@ -611,7 +617,7 @@ export class Journey {
       line: `Waiting for you: ${this.held}`,
       problem: { text, action: "fix_key", taskId: row.id, provider: "anthropic" },
     };
-    this.channel("pip", "crew", "brief", `Hold: ${text}`, n.id);
+    this.channel("pip", "crew", "brief", pausedLine(text), n.id);
     const kept = this.nodes.filter((x) => x.status === "done").length;
     const waiting = this.nodes.filter((x) => !["done", "skipped", "dropped"].includes(x.status)).length;
     const keptWords = kept ? `${kept} finished step${kept === 1 ? " is" : "s are"} kept` : "nothing was lost";
@@ -668,9 +674,13 @@ export class Journey {
     this.cards.set(raise.id, raise);
     this.pip(`The crew is near the budget: ${money(this.spent)} of ${money(this.cap)} spent.`, [finish, raise], false);
     this.waits.set(`card:${finish.id}`, this.tick);
-    const line = `Waiting for you: 80% of the $${this.cap} cap is spent. Finish within it, or raise it to $${want.toFixed(2)}?`;
-    this.statusNow = { line, waiting: "budget" };
-    this.channel("pip", "crew", "brief", `Hold: ${line.replace(/^Waiting for you: /, "")}`, next.id);
+    // as the server says it (Crew.askBudget): statements, so the web ends each sentence once
+    const why = `80% of the ${money(this.cap)} cap is spent`;
+    this.statusNow = {
+      line: `Waiting for you: ${why}. Finish within it, or raise it to ${money(want)}.`,
+      waiting: "budget",
+    };
+    this.channel("pip", "crew", "brief", pausedLine(why), next.id);
   }
   /** publish: the founder is drawn and new, so the Librarian asks once whether it goes into the person's library */
   askToPublish() {

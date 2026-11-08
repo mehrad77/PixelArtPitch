@@ -7,7 +7,7 @@ import { type FormEvent, useState } from "react";
 import { client } from "../lib/client.ts";
 import { GATE_STAGE } from "../lib/derive.ts";
 import { signedDuration, signedUsd } from "../lib/format.ts";
-import { effectOf, GATE_TITLE, memberOf, problemOf } from "../lib/human.ts";
+import { effectOf, GATE_TITLE, problemOf, theMember } from "../lib/human.ts";
 import { isPick, type NeedsItem, needsItems, previewOf } from "../lib/needs.ts";
 import { LinkButton } from "../lib/router.tsx";
 import type { Gate, ProjectState, QuestionT, Role } from "../lib/types.ts";
@@ -17,13 +17,12 @@ import { ProblemButton } from "./ProblemButton.tsx";
 import "./NeedsYouCard.css";
 
 type Item = NeedsItem;
+const upFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** what Pip says when it hands you the item: in the simple view the item is Pip's question, not a separate card */
 function pipSays(item: Item, s: ProjectState): string {
-  if (item.kind === "question")
-    return `The ${memberOf(item.q.from as Role).label.toLowerCase()} needs a pick from you.`;
-  if (item.kind === "gate" && item.pick)
-    return `The ${memberOf(item.pick.from as Role).label.toLowerCase()} needs a pick from you.`;
+  if (item.kind === "question") return `${upFirst(theMember(item.q.from as Role))} needs a pick from you.`;
+  if (item.kind === "gate" && item.pick) return `${upFirst(theMember(item.pick.from as Role))} needs a pick from you.`;
   if (item.kind === "gate")
     return `This one's your call: ${GATE_TITLE[item.gate.id].charAt(0).toLowerCase()}${GATE_TITLE[item.gate.id].slice(1)}`;
   if (item.kind === "narration") return "The pictures are done. Your turn: the narration.";
@@ -167,7 +166,7 @@ function QuestionItem({ projectId, q }: { projectId: string; q: QuestionT }) {
         {q.question}
       </h2>
       <p className="muted small">
-        From the {memberOf(q.from as Role).label.toLowerCase()}. {q.why}
+        From {theMember(q.from as Role)}. {q.why}
       </p>
       {!open && pick && (
         <div className="needs-option">
@@ -254,17 +253,48 @@ function PickItem({ projectId, q }: { projectId: string; q: QuestionT }) {
     try {
       await client.answer(projectId, q.id, a);
     } catch (e) {
-      setErr(`${(e as Error).message}. Try again, or let the crew decide.`);
+      setErr(`${(e as Error).message}. Try again${q.kind === "yesno" ? "" : ", or let the crew decide"}.`);
       setBusy(null);
     }
   };
+  // a yes/no (the Librarian's "Add it to your library?"): its two answers are the buttons, and nobody else decides
+  if (q.kind === "yesno")
+    return (
+      <div className="needs-pick-wrap" aria-busy={busy ? "true" : undefined}>
+        <h2 id="needs-title" className="h4" dir="auto">
+          {q.question}
+        </h2>
+        <p className="muted small" dir="auto">
+          From {theMember(q.from as Role)}. {q.why}
+        </p>
+        <div className="needs-actions">
+          {q.options.map((o) => (
+            <Button
+              key={o.id}
+              className={o.id === q.recommendedId ? "needs-primary" : undefined}
+              size="sm"
+              variant={o.id === q.recommendedId ? "primary" : "ghost"}
+              aria-busy={busy === o.id ? "true" : undefined}
+              onClick={() => !busy && send({ optionId: o.id })}
+            >
+              {o.label}
+            </Button>
+          ))}
+        </div>
+        {err && (
+          <p className="decision-error" role="status">
+            {err}
+          </p>
+        )}
+      </div>
+    );
   return (
     <div className="needs-pick-wrap" aria-busy={busy ? "true" : undefined}>
       <h2 id="needs-title" className="h4" dir="auto">
         {q.question}
       </h2>
       <p className="muted small" dir="auto">
-        From the {memberOf(q.from as Role).label.toLowerCase()}. {q.why}
+        From {theMember(q.from as Role)}. {q.why}
       </p>
       <ul className="needs-picks" aria-labelledby="needs-title">
         {q.options.map((o) => {

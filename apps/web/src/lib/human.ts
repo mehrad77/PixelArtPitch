@@ -79,12 +79,19 @@ export const CREW: Member[] = [
   { id: "reviewer", label: "Reviewer", roles: ["reviewer"], hue: 7 },
 ];
 export const memberOf = (role: Role) => CREW.find((m) => m.roles.includes(role)) ?? CREW[0];
+/** who asks or speaks, in a sentence: "the writer", "the artist"; the Librarian is named as itself, not its department */
+export const theMember = (role: Role) =>
+  role === "librarian" ? "the Librarian" : `the ${memberOf(role).label.toLowerCase()}`;
+const upFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** a sentence ends once: "…$2.00?" stays, "…was rejected" gets its full stop */
+export const sentence = (s: string) => (/[.?!…]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
 
 /** a task's title as the person reads it: "Drawing your hero", "Animating scene 2 of 5" */
+/** the asset a drawing task is about, from its title ("Choosing the best hero variants" → "hero") */
+export const assetNameOf = (t: Task) =>
+  t.title.match(/^(?:Drawing|Spec for|Choosing the best|Judging)\s+([a-z][\w ]*?)(?:\s+variants?)?(?:,|$)/i)?.[1];
 export function plainTitle(t: Task, s: ProjectState): string {
-  const name = t.title.match(
-    /^(?:Drawing|Spec for|Choosing the best|Judging)\s+([a-z][\w ]*?)(?:\s+variants?)?(?:,|$)/i,
-  )?.[1];
+  const name = assetNameOf(t);
   switch (t.kind) {
     case "producer.plan":
       return "Planning your video";
@@ -166,9 +173,11 @@ export const unrecoveredFailures = (s: ProjectState) => {
  * The server's problem when it sends one, else the newest failure no later try recovered. While the crew is
  * running nothing is a problem, except a held run's own ("Waiting for you: Your key was rejected", live on `status`).
  */
+/** the run is held for the person (a rejected key, Pip's hold): a wait on them, not a stop */
+export const isHeld = (s: ProjectState) =>
+  !!s.crew?.held || (!!s.status?.problem && /^Waiting for you/.test(s.status.line ?? ""));
 export function problemOf(s: ProjectState): Problem | undefined {
-  const held = !!s.crew?.held || (!!s.status?.problem && /^Waiting for you/.test(s.status.line ?? ""));
-  if (crewRunning(s) && !held) return undefined;
+  if (crewRunning(s) && !isHeld(s)) return undefined;
   if (s.status?.problem) return s.status.problem;
   const f = unrecoveredFailures(s).at(-1);
   if (!f) return undefined;
@@ -259,7 +268,7 @@ export function humanStatus(s: ProjectState): HumanStatus {
     const tail = more > 0 ? ` ${more === 1 ? "One more thing" : `${more} more things`} after that.` : "";
     if (q)
       return {
-        text: `The ${memberOf(q.from as Role).label.toLowerCase()} has a question for you.${tail}`,
+        text: `${upFirst(theMember(q.from as Role))} has a question for you.${tail}`,
         tone: "needs",
       };
   }
@@ -269,19 +278,20 @@ export function humanStatus(s: ProjectState): HumanStatus {
   const behind = qs.find((q) => gates.some((g) => q.blocks.includes(GATE_AT[g.id])));
   if (behind)
     return {
-      text: `The ${memberOf(behind.from as Role).label.toLowerCase()} has a question for you.${tail}`,
+      text: `${upFirst(theMember(behind.from as Role))} has a question for you.${tail}`,
       tone: "needs",
     };
   if (gates[0]) return { text: `${GATE_READY[gates[0].id]}${tail}`, tone: "needs" };
   if (qs[0])
     return {
-      text: `The ${memberOf(qs[0].from as Role).label.toLowerCase()} has a question for you.${tail}`,
+      text: `${upFirst(theMember(qs[0].from as Role))} has a question for you.${tail}`,
       tone: "needs",
     };
   if (needsNarration(s))
     return { text: "The pictures are done. Record your narration when you're ready.", tone: "needs" };
   const problem = problemOf(s);
-  if (problem) return { text: problem.text, tone: "problem", problem };
+  // a held run waits on you ("Fix the key"); only a run that broke off reads Stopped
+  if (problem) return { text: problem.text, tone: isHeld(s) ? "needs" : "problem", problem };
   // the crew waits on a card in Pip's thread (a plan change, the budget): a wait for you, not a problem
   if (s.status?.line && /^Waiting for you/.test(s.status.line)) return { text: s.status.line, tone: "needs" };
   const crew = crewStateOf(s);
@@ -309,20 +319,27 @@ const DONE_TEXT: Record<string, string> = {
   "producer.plan": "Plan ready",
   "writer.angles": "Script written · 3 options",
   "director.storyboard": "Storyboard ready",
-  "asset.judge": "Hero drawn",
   "review.final": "Checked for mistakes",
 };
 /** the server's milestones when it sends them, else derived from finished tasks; oldest first */
+/** a finished task's milestone words: the asset a judge picked is named ("Founder drawn") */
+function doneText(t: Task): string | undefined {
+  if (t.kind !== "asset.judge") return DONE_TEXT[t.kind];
+  const name = assetNameOf(t);
+  return name ? `${upFirst(name.toLowerCase())} drawn` : "Picked the drawing";
+}
 export function milestones(s: ProjectState): Milestone[] {
   if (s.milestones?.length) return [...s.milestones].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   const out: Milestone[] = [];
   const done = s.tasks.filter((t) => t.status === "done");
   const seen = new Set<string>();
   for (const t of done) {
-    const text = DONE_TEXT[t.kind];
-    if (!text || seen.has(t.kind)) continue;
-    seen.add(t.kind);
-    out.push({ id: `m:${t.kind}`, at: t.endedAt ?? t.startedAt ?? "", text, image: t.lastImage });
+    const text = doneText(t);
+    // one milestone per kind, and per asset for the drawings
+    const key = t.kind === "asset.judge" ? `${t.kind}:${text}` : t.kind;
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: `m:${key}`, at: t.endedAt ?? t.startedAt ?? "", text, image: t.lastImage });
   }
   const tunes = s.tasks.filter((t) => t.kind === "scene.tune");
   if (tunes.length && tunes.every((t) => t.status === "done" || isRecovered(t, s.tasks))) {

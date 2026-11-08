@@ -31,7 +31,8 @@ const GROUPS: { id: string; title: string; kinds: Kind[] }[] = [
 function kindOf(p: ProjectSummary): Kind {
   if (p.draft) return "draft";
   if (p.needsYou > 0) return "needs";
-  if (p.status?.problem) return "problem";
+  // a held run ("Waiting for you: Your key was rejected") waits on you; only a run that broke off is stuck
+  if (p.status?.problem) return /^Waiting for you/.test(p.status.line) ? "needs" : "problem";
   if (p.finished) return "finished";
   if (p.running) return "working";
   // an older server sends none of the overview fields: anything past the brief has started
