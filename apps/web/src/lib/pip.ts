@@ -42,8 +42,14 @@ export type Conv = {
   listening: boolean;
   model?: string;
   summary?: PipSummary | null;
-  /** a prefilled, editable question ("About the animator's work: "), bumped each time someone asks for one */
-  draft?: { text: string; n: number; about?: { instance: string } };
+  /** words put in the field (the /new examples, the steer popover), bumped each time; the field takes them once */
+  draft?: { text: string; n: number };
+  /**
+   * "Ask Pip about this": what the next message is about, shown as a clearable chip in the field ("About the moth ×")
+   * and never as text the person has to edit around. Sent as the turn's `about` (an instance) and as an "About …:"
+   * lead the server strips before it matches commands; cleared once a message goes.
+   */
+  about?: { label: string; instance?: string; n: number };
 };
 
 const EMPTY: Conv = {
@@ -373,16 +379,37 @@ export const MAKE_ANOTHER = "Make another like this";
 
 // ---- the default path: ask Pip, not the crew member ----
 const OPEN_EVENT = "pap:pip-open";
-/** open Pip's conversation with a draft the person can edit and send; whoever shows Pip opens it */
-export function askPipAbout(project: string | null | undefined, text: string, about?: { instance: string }) {
+/** one counter for every fill and scope, so a consumed draft's number never comes back */
+let bumps = 0;
+/**
+ * Open Pip's conversation scoped to something ("the moth", "the writer's work"): the field shows it as a chip the
+ * person can clear, and the message they type goes with it. Whoever shows Pip opens it.
+ */
+export function askPipAbout(project: string | null | undefined, about: { label: string; instance?: string }) {
   const key = keyOf(project);
-  set(key, (s) => ({ ...s, draft: { text, n: (s.draft?.n ?? 0) + 1, ...(about ? { about } : {}) } }));
+  set(key, (s) => ({ ...s, about: { ...about, n: ++bumps } }));
   window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { key } }));
 }
+/** clear the scope chip (its ×, or a sent message) */
+export function clearAbout(project: string | null | undefined) {
+  const key = keyOf(project);
+  if (get(key).about) set(key, (s) => ({ ...s, about: undefined }));
+}
+export { scoped, splitAbout } from "./about.ts";
 /** put words in a conversation's field without opening anything (the /new examples: they fill, never send) */
 export function fillPip(project: string | null | undefined, text: string) {
   const key = keyOf(project);
-  set(key, (s) => ({ ...s, draft: { text, n: (s.draft?.n ?? 0) + 1 } }));
+  set(key, (s) => ({ ...s, draft: { text, n: ++bumps } }));
+}
+/** words for the field that open Pip too (the steer popover's "At 0:12 (scene 2): too dark") */
+export function openPipWith(project: string | null | undefined, text: string) {
+  fillPip(project, text);
+  window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { key: keyOf(project) } }));
+}
+/** the field took its words: they are gone from the store, so a field that mounts later doesn't fill again */
+export function consumeDraft(project: string | null | undefined, n: number) {
+  const key = keyOf(project);
+  if (get(key).draft?.n === n) set(key, (s) => ({ ...s, draft: undefined }));
 }
 /** run `fn` when someone asks to open this conversation */
 export function usePipOpenRequest(project: string | null | undefined, fn: () => void) {

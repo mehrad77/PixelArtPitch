@@ -588,3 +588,59 @@
     white-space: normal;
   }
 }
+
+/* each model step named from its prompt card, with its mark in view when the details are folded */
+.activity-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.activity-step-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--icon-lg);
+  block-size: var(--icon-lg);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--who-hue, var(--text-muted));
+}
+/* the working step, live: the line, the answer's newest words, the drawing as it grows */
+.activity-bubble[data-kind="live"] .activity-bubble-inner {
+  border-style: dashed;
+  border-inline-start-style: solid;
+}
+.activity-tail {
+  margin: var(--space-1) 0 0;
+  max-block-size: 4.5lh;
+  overflow: hidden;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:is(:lang(fa), :lang(ar)) .activity-tail {
+  font-family: var(--font-arabic);
+}
+.live-canvas {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  margin: var(--space-2) 0 0;
+}
+.live-canvas canvas {
+  display: block;
+  max-inline-size: 100%;
+  border: 1px solid var(--stroke);
+  background: var(--surface-sunken);
+  image-rendering: pixelated;
+}
+.live-canvas figcaption {
+  margin: 0;
+}
+.activity-problem {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  margin-block: var(--space-1);
+}

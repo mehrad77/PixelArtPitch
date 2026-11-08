@@ -82,3 +82,42 @@
 .needs-pip .needs-head {
   color: var(--text-muted);
 }
+
+/* a pick (the script angles): every option, each with its own "Use this one"; the recommended one says so in words */
+.needs-pick-wrap {
+  display: grid;
+  gap: var(--space-2);
+}
+.needs-picks {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.needs-pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+}
+.needs-pick[data-rec] {
+  border-color: var(--stroke-control);
+  background: var(--state-selected);
+}
+.needs-pick-text {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.needs-pick-text p {
+  margin: 0;
+}
+@media (max-width: 40rem) {
+  .needs-pick {
+    grid-template-columns: 1fr;
+  }
+}

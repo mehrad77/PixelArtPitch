@@ -1119,7 +1119,7 @@ export const Q_ANGLE = (at: string): QuestionT => ({
     { id: "numbers", label: "The numbers", detail: "What finishing more tasks is worth, for investors." },
   ],
   recommendedId: "walker",
-  blocks: ["storyboard"],
+  blocks: ["script"],
   timeoutSec: null,
   from: "writer",
   askedAt: at,

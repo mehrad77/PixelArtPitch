@@ -25,6 +25,8 @@ import {
   askPip,
   COMMANDS,
   type Conv,
+  clearAbout,
+  consumeDraft,
   decidePip,
   fillPip,
   hasNews,
@@ -34,11 +36,15 @@ import {
   openDraft,
   pipMood,
   saveSummary,
+  scoped,
   setListening,
+  splitAbout,
   suggestions,
   usePip,
 } from "../lib/pip.ts";
+import { planCrew, planDiff, titleWords } from "../lib/plancard.ts";
 import { Link } from "../lib/router.tsx";
+import { type Marker, type Turn, turnsOf } from "../lib/thread.ts";
 import type { PipCard, PipFile, PipItem, PipSummary, ProjectState, RefType, RoleT } from "../lib/types.ts";
 import { BriefCard, BriefFieldsCard, briefLines, settledFields } from "./BriefCards.tsx";
 import { ConductContext, CrewFace } from "./CrewStrip.tsx";
@@ -104,7 +110,7 @@ function PipLive({ conv }: { conv: Conv }) {
 }
 
 // ---- the thread ----
-export type Marker = { id: string; at: string; text: string };
+export type { Marker };
 
 export function PipThread({
   project,
@@ -146,7 +152,12 @@ export function PipThread({
         const row =
           it.kind === "user" ? (
             <li key={it.id} className="pip-user" data-old={old ? "" : undefined}>
-              <p dir="auto">{it.text}</p>
+              {splitAbout(it.text).about && (
+                <p className="pip-user-about small muted" dir="auto">
+                  About <bdi>{splitAbout(it.text).about}</bdi>
+                </p>
+              )}
+              <p dir="auto">{splitAbout(it.text).text}</p>
               {it.files && <SentFiles names={it.files} />}
             </li>
           ) : it.kind === "pip" ? (
@@ -190,28 +201,25 @@ export function PipThread({
   );
 }
 
-/** one message of the thread */
-function ItemRow({
-  it,
-  project,
-  old,
-  onHandoff,
-}: {
-  it: PipItem;
-  project: Project;
-  old?: boolean;
-  onHandoff?: () => void;
-}) {
-  if (it.kind === "user")
+/** one message inside a turn (a `div`: the turn is the list item): the person's bubble, or Pip's */
+function ItemRow({ it, project, onHandoff }: { it: PipItem; project: Project; onHandoff?: () => void }) {
+  if (it.kind === "user") {
+    const said = splitAbout(it.text);
     return (
-      <li className="pip-user" data-old={old ? "" : undefined}>
-        <p dir="auto">{it.text}</p>
+      <div className="pip-user pip-bubble">
+        {said.about && (
+          <p className="pip-user-about small muted" dir="auto">
+            About <bdi>{said.about}</bdi>
+          </p>
+        )}
+        <p dir="auto">{said.text}</p>
         {it.files && <SentFiles names={it.files} />}
-      </li>
+      </div>
     );
+  }
   if (it.kind !== "pip") return null;
   return (
-    <li className="pip-says" data-old={old ? "" : undefined}>
+    <div className="pip-says pip-bubble">
       {it.text && (
         <p className="pip-text" dir="auto">
           {it.text}
@@ -221,7 +229,7 @@ function ItemRow({
       {it.cards.map((c) => (
         <PipCardView key={c.id} project={project} card={c} onHandoff={onHandoff} />
       ))}
-    </li>
+    </div>
   );
 }
 
@@ -242,7 +250,7 @@ function SentFiles({ names }: { names: string[] }) {
 }
 
 const Thinking = () => (
-  <li className="pip-says pip-thinking" aria-hidden="true">
+  <div className="pip-says pip-bubble pip-thinking" aria-hidden="true">
     <p className="pip-text">
       Pip is thinking
       <span className="pip-dots">
@@ -251,35 +259,8 @@ const Thinking = () => (
         <span>.</span>
       </span>
     </p>
-  </li>
+  </div>
 );
-
-type Turn = { key: string; at: number; items: PipItem[]; marker?: Marker; old: boolean; thinking?: boolean };
-
-/** the turns, oldest first: the person's message with Pip's reply under it; a message Pip starts, or a milestone, is a
- * turn of its own */
-function turnsOf(items: PipItem[], marks: Marker[], upTo: string | null, thinking: boolean): Turn[] {
-  const out: Turn[] = [];
-  let folded = upTo != null;
-  for (const it of items) {
-    const last = out.at(-1);
-    const joins = it.kind === "pip" && last && !last.marker && last.items.length === 1 && last.items[0].kind === "user";
-    if (joins) last.items.push(it);
-    else out.push({ key: it.id, at: Date.parse(it.at) || 0, items: [it], old: folded });
-    if (it.id === upTo) folded = false;
-  }
-  // a milestone older than the last folded message belongs with the folded part
-  const cutAt = upTo ? Date.parse(items.find((i) => i.id === upTo)?.at ?? "") || 0 : 0;
-  for (const m of marks)
-    out.push({ key: m.id, at: Date.parse(m.at), items: [], marker: m, old: !!upTo && Date.parse(m.at) <= cutAt });
-  out.sort((a, b) => a.at - b.at);
-  if (thinking) {
-    const newest = [...out].reverse().find((t) => !t.marker);
-    if (newest && newest.items.length === 1 && newest.items[0].kind === "user") newest.thinking = true;
-    else out.push({ key: "thinking", at: Date.now(), items: [], old: false, thinking: true });
-  }
-  return out;
-}
 
 /** the simple view's thread: turns newest first, each read top-down; what the summary folded comes last, under its
  * divider */
@@ -306,16 +287,24 @@ function NewestThread({
   const turns = turnsOf(items, marks, upTo, conv.thinking).reverse();
   const recent = turns.filter((t) => !t.old);
   const folded = turns.filter((t) => t.old);
+  // each turn is one list item, read top-down (your message, then Pip's reply); the turns run newest first
   const row = (t: Turn) =>
     t.marker ? (
       <MarkerRow key={t.key} m={t.marker} />
     ) : (
-      <Fragment key={t.key}>
+      <li key={t.key} className="pip-turn" data-by={t.by} data-old={t.old ? "" : undefined}>
+        {t.at > 0 && t.key !== "thinking" && (
+          <p className="pip-turn-time">
+            <time dateTime={new Date(t.at).toISOString()}>
+              <bdi>{clock(new Date(t.at))}</bdi>
+            </time>
+          </p>
+        )}
         {t.items.map((it) => (
-          <ItemRow key={it.id} it={it} project={project} old={t.old} onHandoff={onHandoff} />
+          <ItemRow key={it.id} it={it} project={project} onHandoff={onHandoff} />
         ))}
         {t.thinking && <Thinking />}
-      </Fragment>
+      </li>
     );
   return (
     <ol className="pip-thread" data-order="newest" aria-label="Conversation, newest first">
@@ -589,7 +578,13 @@ function PlanCard({
   const [err, setErr] = useState<string | null>(null);
   const crew = membersOf(card.who);
   const working = card.status === "running";
-  const meta = [card.sec ? timeWords(card.sec) : null, card.usd ? range(card.usd, usdPlain) : null].filter(Boolean);
+  // a plan change shows its price as a diff, so the range of the delta isn't repeated under it
+  const diff = planDiff(card);
+  // the crew by instance ("Animator · scene 2"), the planner first on a revision (the Director when it re-plans)
+  const named = card.revision || card.whoInstances?.length ? planCrew(card) : null;
+  const meta = [card.sec ? timeWords(card.sec) : null, card.usd && !diff ? range(card.usd, usdPlain) : null].filter(
+    Boolean,
+  );
   const confirm = async () => {
     if (working) return;
     if (card.editable && !edit.trim()) return setErr(`Write the ${card.editable.label.toLowerCase()} first.`);
@@ -613,19 +608,60 @@ function PlanCard({
     <article className="pip-card" data-type="plan" data-status={card.status} aria-label={card.title}>
       <header className="pip-plan-head">
         <h3 className="pip-plan-title" dir="auto">
-          {card.title}
+          {titleWords(card)}
         </h3>
-        {crew.length > 0 && (
+        {named ? (
           <span className="pip-who">
             <span className="pip-who-faces" aria-hidden="true">
-              {crew.map((m) => (
-                <CrewFace key={m.id} member={m} mood={working ? "working" : card.status === "done" ? "done" : "idle"} />
+              {named.roles.slice(0, 5).map((r) => (
+                <CrewFace
+                  key={r}
+                  member={memberOf(r)}
+                  role={r}
+                  mood={working ? "working" : card.status === "done" ? "done" : "idle"}
+                />
               ))}
             </span>
-            <span className="small muted">{and(crew.map((m) => m.label))}</span>
+            <span className="small muted" dir="auto">
+              {named.planner ? `${named.planner} re-planned` : null}
+              {named.planner && named.names.length ? " · brings in " : null}
+              {named.names.length ? and(named.names.slice(0, 5)) : null}
+              {named.names.length > 5 ? ` and ${named.names.length - 5} more` : null}
+            </span>
           </span>
+        ) : (
+          crew.length > 0 && (
+            <span className="pip-who">
+              <span className="pip-who-faces" aria-hidden="true">
+                {crew.map((m) => (
+                  <CrewFace
+                    key={m.id}
+                    member={m}
+                    mood={working ? "working" : card.status === "done" ? "done" : "idle"}
+                  />
+                ))}
+              </span>
+              <span className="small muted">{and(crew.map((m) => m.label))}</span>
+            </span>
+          )
         )}
       </header>
+      {diff && (
+        <p className="pip-plan-diff">
+          <span className="visually-hidden">From </span>
+          <s className="pip-plan-old">
+            <bdi>{diff.from}</bdi>
+          </s>
+          <span aria-hidden="true"> → </span>
+          <span className="visually-hidden"> to </span>
+          <span className="pip-plan-new">
+            about <bdi>{diff.to}</bdi>
+          </span>
+          <span className="pip-plan-delta" data-up={diff.up ? "" : undefined}>
+            <bdi>{diff.delta}</bdi>
+          </span>
+        </p>
+      )}
       <p className="pip-plan-detail" dir="auto">
         {card.detail}
       </p>
@@ -795,15 +831,13 @@ function Composer({
   const [ctxOpen, setCtxOpen] = useState(false);
   const own = useRef<HTMLInputElement>(null);
   const field = inputRef ?? own;
-  // a draft from "Ask Pip about this": fill the field, and focus it when this field is the one on top
+  // words for the field (the /new examples, the steer popover): taken once, then gone from the store, so a field that
+  // mounts later (the sheet folding back, the drawer opening) never fills them in again
   const draft = conv.draft;
-  // "Ask Pip about this" on a crew member: the turn goes with `about: {instance}` while its words are in the field
-  const about = useRef<{ instance: string; text: string } | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per new draft
-  useEffect(() => {
-    if (!draft) return;
-    setText(draft.text);
-    about.current = draft.about ? { ...draft.about, text: draft.text } : null;
+  // "Ask Pip about this": the scope chip ("About the moth ×"); the message goes with it, then it clears
+  const about = conv.about;
+  /** focus the field when it is the one on top (not behind a modal it isn't in) */
+  const focusTop = () =>
     requestAnimationFrame(() => {
       const el = field.current;
       if (!el?.offsetParent) return;
@@ -812,7 +846,17 @@ function Composer({
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per new draft
+  useEffect(() => {
+    if (!draft) return;
+    setText(draft.text);
+    consumeDraft(project, draft.n);
+    focusTop();
   }, [draft?.n]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per new scope
+  useEffect(() => {
+    if (about) focusTop();
+  }, [about?.n]);
 
   // the slash menu: "/" as the first character lists the commands, filtered as you type
   const slash = text.startsWith("/");
@@ -837,12 +881,14 @@ function Composer({
     onSent?.();
     setText("");
     setDismissed(false);
-    const on = about.current && body.startsWith(about.current.text.trim()) ? about.current : null;
-    const ok = onSend
-      ? await onSend(body, on ? { instance: on.instance } : undefined)
-      : await askPip(project, body, on ? { about: { instance: on.instance } } : {});
-    if (ok) about.current = null;
-    else setText(body);
+    // a command goes bare; a message goes with its scope ("About the moth: …") and the instance it names
+    const on = about && !body.startsWith("/") ? about : undefined;
+    const words = scoped(on, body);
+    const inst = on?.instance ? { instance: on.instance } : undefined;
+    const ok = onSend ? await onSend(words, inst) : await askPip(project, words, inst ? { about: inst } : {});
+    if (ok) {
+      if (on) clearAbout(project);
+    } else setText(body);
   };
   const pick = (i: number) => {
     const c = matches[i];
@@ -884,10 +930,29 @@ function Composer({
   };
   return (
     <>
-      <form className="pip-bar" onSubmit={send}>
+      <form className="pip-bar" onSubmit={send} data-scoped={about ? "" : undefined}>
         <label htmlFor={inputId} className="visually-hidden">
-          {label}
+          {about ? `${label}, about ${about.label}` : label}
         </label>
+        {about && (
+          <span className="pip-scope" id={`${inputId}-scope`}>
+            <span className="pip-scope-text" dir="auto">
+              About <bdi>{about.label}</bdi>
+            </span>
+            <button
+              type="button"
+              className="pip-scope-clear"
+              aria-label={`Clear: about ${about.label}`}
+              title="Ask about everything"
+              onClick={() => {
+                clearAbout(project);
+                field.current?.focus();
+              }}
+            >
+              <Icon name="close" size="sm" />
+            </button>
+          </span>
+        )}
         <input
           ref={field}
           id={inputId}

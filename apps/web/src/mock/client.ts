@@ -66,6 +66,7 @@ import {
 } from "./fixtures.ts";
 import { JOURNEY, Journey, type JourneyFlags, journeyFlags } from "./journey.ts";
 import { blobUrl, MockPip, srtOf } from "./pip.ts";
+import { mockProgress } from "./progress.ts";
 
 /** the journey flags (PIP-JOURNEY §6), read once at boot and kept for the tab: journey=todo, speed, slots, auto */
 function bootFlags(): JourneyFlags & { journey: string | null } {
@@ -589,7 +590,7 @@ class MockBackend {
         { id: "numbers", label: "The numbers", detail: "Nine hundred walkers a week, for the investors." },
       ],
       recommendedId: "walker",
-      blocks: ["storyboard"],
+      blocks: ["script"],
       timeoutSec: null,
       from: "writer",
       askedAt: iso(-1200),
@@ -665,6 +666,12 @@ class MockBackend {
   /** one journey tick, and the ETA counting down while the crew works (the run's minutes, compressed) */
   journeyTick(p: MockProject, j: Journey) {
     this.play(p, j.step());
+    // each working task's model call, live (the server's `progress` event): transient, never in the journey's log
+    for (const t of p.state.tasks) {
+      const at = Date.parse(t.startedAt ?? "");
+      const live = Number.isFinite(at) ? mockProgress(t, (Date.now() - at) / 1000, FLAGS.speed) : null;
+      if (live) this.emit(p, { event: "progress", data: { what: "task", ...live } });
+    }
     const eta = p.state.time.etaSec;
     if (eta && !j.waits.size && !j.ended)
       this.x(p, { time: { ...p.state.time, etaSec: [Math.max(30, eta[0] - 10), Math.max(30, eta[1] - 12)] } });

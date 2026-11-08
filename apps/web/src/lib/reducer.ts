@@ -12,11 +12,21 @@ const upsert = <T extends { id: string }>(list: T[], item: T): T[] => {
 /** how many live activity lines to keep per task */
 export const ACTIVITY_KEEP = 500;
 
+const drop = <T>(m: Record<string, T>, k: string): Record<string, T> => {
+  const { [k]: _gone, ...rest } = m;
+  return rest;
+};
+
 /** returns the next state, or the same object when the event needs a refetch (patch) or changes nothing here */
 export function applyEvent(s: ProjectState, e: ServerEvent): ProjectState {
   switch (e.event) {
-    case "task":
-      return { ...s, tasks: upsert(s.tasks, e.data) };
+    case "task": {
+      const next = { ...s, tasks: upsert(s.tasks, e.data) };
+      // a task that stopped working has no live call any more
+      return e.data.status !== "working" && s.progress?.[e.data.id]
+        ? { ...next, progress: drop(s.progress, e.data.id) }
+        : next;
+    }
     case "question":
       return { ...s, questions: upsert(s.questions, e.data) };
     case "note":
@@ -48,7 +58,16 @@ export function applyEvent(s: ProjectState, e: ServerEvent): ProjectState {
     case "activity": {
       const { task, ...entry } = e.data;
       const list = [...(s.activity?.[task] ?? []), entry].slice(-ACTIVITY_KEEP);
-      return { ...s, activity: { ...s.activity, [task]: list } };
+      const next = { ...s, activity: { ...s.activity, [task]: list } };
+      // the answer (or the error) ends the live call; the next call's progress starts it again
+      return (entry.kind === "answer" || entry.kind === "error") && s.progress?.[task]
+        ? { ...next, progress: drop(s.progress, task) }
+        : next;
+    }
+    case "progress": {
+      if (e.data.what !== "task") return s;
+      const { what: _w, ...p } = e.data;
+      return { ...s, progress: { ...s.progress, [p.taskId]: p } };
     }
     case "x-state":
       return { ...s, ...e.data };

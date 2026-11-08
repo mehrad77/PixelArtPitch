@@ -163,10 +163,9 @@ export function CrewRow({
           size="sm"
           variant="ghost"
           onClick={() =>
-            askPipAbout(
-              state.doc.id,
-              `About the ${dept.label.toLowerCase()}'s ${plainTitle(lead, state).toLowerCase()}: `,
-            )
+            askPipAbout(state.doc.id, {
+              label: `the ${dept.label.toLowerCase()}'s ${plainTitle(lead, state).toLowerCase()}`,
+            })
           }
         >
           Ask Pip
@@ -276,10 +275,9 @@ function TaskDrawer({
             variant="primary"
             onClick={() => {
               onClose();
-              askPipAbout(
-                projectId,
-                `About the ${ROLE_LABEL[task.role].toLowerCase()}'s ${plainTitle(task, state).toLowerCase()}: `,
-              );
+              askPipAbout(projectId, {
+                label: `the ${ROLE_LABEL[task.role].toLowerCase()}'s ${plainTitle(task, state).toLowerCase()}`,
+              });
             }}
           >
             Ask Pip about this
@@ -497,7 +495,7 @@ function InstanceRow({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => askPipAbout(state.doc.id, `About the ${i.label}: `, { instance: i.id })}
+          onClick={() => askPipAbout(state.doc.id, { label: `the ${i.label}`, instance: i.id })}
         >
           Ask Pip
         </Button>

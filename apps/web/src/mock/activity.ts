@@ -185,8 +185,9 @@ const SCRIPTS: Record<string, Script> = {
     answer: { files: ["final.mp4", "final.vtt"] },
   },
 };
+/** a code-only step (an import, a cast, an export): tools and steps, no model call (card "") */
 const FALLBACK: Script = {
-  card: "crew/step",
+  card: "",
   prompt: "Do the next step of the plan.",
   tools: [{ name: "read_project", input: {}, result: { ok: true } }],
   answer: { ok: true },
@@ -209,7 +210,16 @@ export function opening(t: Task): Beat[] {
   const s = scriptOf(t);
   return [
     { kind: "step", title: t.title },
-    { kind: "model", title: `Asked ${short(t.model)} (${s.card})`, detail: { prompt: s.prompt, images: [] } },
+    ...(s.card
+      ? [
+          {
+            kind: "model" as const,
+            title: `Asked ${short(t.model)} (${s.card})`,
+            // the server logs the task kind with the call: one card serves a critique and a repair
+            detail: { prompt: s.prompt, images: [], kind: t.kind },
+          },
+        ]
+      : []),
   ];
 }
 
@@ -225,6 +235,8 @@ export function closing(t: Task): Beat[] {
   const tokens = 400 + ((t.title.length * 37) % 900);
   const out: Beat[] = [];
   if (s.patch) out.push({ kind: "patch", title: `Changed the project: ${s.patch.reason}`, detail: s.patch.ops });
+  // a code-only step has no answer: it says what it did
+  if (!s.card) return [...out, { kind: "step", title: `Done: ${t.title.charAt(0).toLowerCase()}${t.title.slice(1)}` }];
   out.push({
     kind: "answer",
     title: `Answered in ${4 + (tokens % 11)} s · ${tokens} tokens${t.usd ? ` · $${t.usd.toFixed(3)}` : ""}`,

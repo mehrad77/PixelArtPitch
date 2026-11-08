@@ -1,65 +1,29 @@
 // The one thing that needs the person, under the film: open gates first, then open questions (oldest first), then
-// narration to record. One at a time, with "1 of 3" when there are more. A picture on the start side, the
-// recommended answer preselected, and "Looks good" as the primary button. Nothing here takes the focus; Q does.
+// narration to record (the order is lib/needs.ts). One at a time, with "1 of 3" when there are more. A picture on the
+// start side, the recommended answer preselected, and "Looks good" as the primary button; a pick (the script angles)
+// shows every option with "Use this one" on each. Nothing here takes the focus; Q does.
 import { Badge, Button, Checkbox, Field, Fieldset, Radio } from "@shabboo/kit/react";
 import { type FormEvent, useState } from "react";
 import { client } from "../lib/client.ts";
 import { GATE_STAGE } from "../lib/derive.ts";
 import { signedDuration, signedUsd } from "../lib/format.ts";
-import { effectOf, GATE_TITLE, memberOf, needsNarration, problemOf } from "../lib/human.ts";
+import { effectOf, GATE_TITLE, memberOf, problemOf } from "../lib/human.ts";
+import { isPick, type NeedsItem, needsItems, previewOf } from "../lib/needs.ts";
 import { LinkButton } from "../lib/router.tsx";
-import type { Gate, GateId, ProjectState, QuestionT, Role } from "../lib/types.ts";
+import type { Gate, ProjectState, QuestionT, Role } from "../lib/types.ts";
 import { DecisionCard } from "./DecisionCard.tsx";
 import { EffectButton } from "./EffectAction.tsx";
 import { ProblemButton } from "./ProblemButton.tsx";
 import "./NeedsYouCard.css";
 
-type Item =
-  | { key: string; kind: "gate"; gate: Gate }
-  | { key: string; kind: "question"; q: QuestionT }
-  | {
-      key: string;
-      kind: "narration";
-    }
-  | {
-      key: string;
-      kind: "problem";
-    };
-const GATE_ORDER: GateId[] = ["g0_brief", "g1_script", "g2_animatic", "g3_rough", "g4_final"];
-
-export function needsItems(s: ProjectState): Item[] {
-  const gates = s.gates
-    .filter((g) => g.status === "open")
-    .sort((a, b) => GATE_ORDER.indexOf(a.id) - GATE_ORDER.indexOf(b.id))
-    .map((gate): Item => ({ key: `g:${gate.id}`, kind: "gate", gate }));
-  const qs = s.questions
-    .filter((q) => q.status === "open")
-    .sort((a, b) => Date.parse(a.askedAt) - Date.parse(b.askedAt))
-    .map((q): Item => ({ key: `q:${q.id}`, kind: "question", q }));
-  const nar: Item[] = needsNarration(s) ? [{ key: "narration", kind: "narration" }] : [];
-  // a question that blocks a gate's stage is the real choice behind that gate ("which angle?" before "happy with
-  // the script?"): it goes just ahead of its gate
-  const out: Item[] = [];
-  const used = new Set<string>();
-  for (const g of gates) {
-    if (g.kind !== "gate") continue;
-    for (const q of qs)
-      if (q.kind === "question" && !used.has(q.key) && q.q.blocks.includes(GATE_STAGE[g.gate.id])) {
-        out.push(q);
-        used.add(q.key);
-      }
-    out.push(g);
-  }
-  const all = [...out, ...qs.filter((q) => !used.has(q.key)), ...nar];
-  // a problem only the person can fix: the status line carries it alone; behind other asks it waits in the queue
-  if (all.length && problemOf(s)) all.push({ key: "problem", kind: "problem" });
-  return all;
-}
+type Item = NeedsItem;
 
 /** what Pip says when it hands you the item: in the simple view the item is Pip's question, not a separate card */
 function pipSays(item: Item, s: ProjectState): string {
   if (item.kind === "question")
     return `The ${memberOf(item.q.from as Role).label.toLowerCase()} needs a pick from you.`;
+  if (item.kind === "gate" && item.pick)
+    return `The ${memberOf(item.pick.from as Role).label.toLowerCase()} needs a pick from you.`;
   if (item.kind === "gate")
     return `This one's your call: ${GATE_TITLE[item.gate.id].charAt(0).toLowerCase()}${GATE_TITLE[item.gate.id].slice(1)}`;
   if (item.kind === "narration") return "The pictures are done. Your turn: the narration.";
@@ -84,15 +48,10 @@ export function NeedsYouCard({
     items.findIndex((x) => x.key === cur),
   );
   const item = items[i];
-  const tl = state.timeline;
-  let img: string | undefined;
-  if (item.kind === "gate") {
-    const ref = item.gate.items.find((x) => x.ref)?.ref;
-    const sc = ref ? tl.scenes.find((x) => x.id === ref) : undefined;
-    if (sc) img = client.frameUrl(projectId, (sc.from + sc.to) / 2, 1) || undefined;
-  } else if (item.kind === "question") {
-    img = [...state.tasks].reverse().find((t) => t.role === item.q.from && t.lastImage)?.lastImage;
-  }
+  const img = previewOf(item, state, {
+    frame: (t) => client.frameUrl(projectId, t, 1),
+    file: (name) => client.fileUrl(projectId, name),
+  });
   return (
     <section
       id="needs-you"
@@ -124,10 +83,14 @@ export function NeedsYouCard({
       <div className="needs-body" data-image={img ? "" : undefined}>
         {img && <img className="needs-preview pixelated" src={img} alt="" />}
         <div className="needs-main">
-          {item.kind === "gate" ? (
+          {item.kind === "gate" && item.pick ? (
+            <PickItem key={item.key} projectId={projectId} q={item.pick} />
+          ) : item.kind === "gate" ? (
             <GateItem key={item.key} projectId={projectId} gate={item.gate} state={state} />
           ) : item.kind === "question" ? (
-            item.q.kind === "multi" || item.q.kind === "number" ? (
+            isPick(item.q, state) ? (
+              <PickItem key={item.key} projectId={projectId} q={item.q} />
+            ) : item.q.kind === "multi" || item.q.kind === "number" ? (
               <>
                 <h2 id="needs-title" className="h4">
                   {item.q.question}
@@ -274,6 +237,89 @@ function QuestionItem({ projectId, q }: { projectId: string; q: QuestionT }) {
         )}
       </div>
     </form>
+  );
+}
+
+/**
+ * A pick (the script angles): every option at once, each with "Use this one"; the recommended one says so in words and
+ * takes the primary button. Answering it passes the gate it stands for (the server's pickScript waits on it).
+ */
+function PickItem({ projectId, q }: { projectId: string; q: QuestionT }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const base = `needs-pick-${q.id}`;
+  const send = async (a: { optionId: string; note?: string }) => {
+    setBusy(a.optionId);
+    setErr(null);
+    try {
+      await client.answer(projectId, q.id, a);
+    } catch (e) {
+      setErr(`${(e as Error).message}. Try again, or let the crew decide.`);
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="needs-pick-wrap" aria-busy={busy ? "true" : undefined}>
+      <h2 id="needs-title" className="h4">
+        {q.question}
+      </h2>
+      <p className="muted small">
+        From the {memberOf(q.from as Role).label.toLowerCase()}. {q.why}
+      </p>
+      <ul className="needs-picks" aria-labelledby="needs-title">
+        {q.options.map((o) => {
+          const rec = o.id === q.recommendedId;
+          return (
+            <li key={o.id} className="needs-pick" data-rec={rec ? "" : undefined}>
+              <div className="needs-pick-text">
+                <p id={`${base}-${o.id}`} dir="auto">
+                  {o.label}
+                  {rec && (
+                    <>
+                      {" "}
+                      <Badge tone="info" variant="text" size="sm">
+                        Recommended
+                      </Badge>
+                    </>
+                  )}
+                </p>
+                {o.detail && (
+                  <p className="muted small" dir="auto">
+                    {o.detail}
+                  </p>
+                )}
+              </div>
+              <Button
+                className={rec ? "needs-primary" : undefined}
+                size="sm"
+                variant={rec ? "primary" : "ghost"}
+                aria-describedby={`${base}-${o.id}`}
+                aria-busy={busy === o.id ? "true" : undefined}
+                onClick={() => !busy && send({ optionId: o.id })}
+              >
+                Use this one
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+      {err && (
+        <p className="decision-error" role="status">
+          {err}
+        </p>
+      )}
+      {!q.rights && (
+        <div className="needs-actions">
+          <button
+            type="button"
+            className="linkish small"
+            onClick={() => !busy && send({ optionId: q.recommendedId, note: "Let Producer decide" })}
+          >
+            Let the crew decide
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

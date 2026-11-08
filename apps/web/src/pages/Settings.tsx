@@ -15,6 +15,7 @@ import {
 } from "@shabboo/kit/react";
 import { type FormEvent, useMemo, useState } from "react";
 import { client } from "../lib/client.ts";
+import { setExperiment, useExperiment } from "../lib/experiments.ts";
 import { n, usd } from "../lib/format.ts";
 import { useLoad } from "../lib/hooks.ts";
 import { Link } from "../lib/router.tsx";
@@ -23,7 +24,16 @@ import { Connections } from "./Connections.tsx";
 import { Roles } from "./SettingsRoles.tsx";
 import "./Settings.css";
 
-export const SETTINGS_TABS = ["setup", "providers", "models", "roles", "defaults", "connections", "mcp"] as const;
+export const SETTINGS_TABS = [
+  "setup",
+  "providers",
+  "models",
+  "roles",
+  "defaults",
+  "connections",
+  "mcp",
+  "experimental",
+] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 const TAB_LABEL: Record<SettingsTab, string> = {
   setup: "Setup",
@@ -33,6 +43,7 @@ const TAB_LABEL: Record<SettingsTab, string> = {
   defaults: "Defaults",
   connections: "Connections",
   mcp: "MCP",
+  experimental: "Experimental",
 };
 
 export function SettingsPage({ tab }: { tab: SettingsTab }) {
@@ -67,9 +78,27 @@ export function SettingsPage({ tab }: { tab: SettingsTab }) {
           {tab === "defaults" && <Defaults settings={s.data} onSaved={s.reload} />}
           {tab === "connections" && <Connections />}
           {tab === "mcp" && <Mcp />}
+          {tab === "experimental" && <Experimental />}
         </section>
       )}
     </main>
+  );
+}
+
+// ---- experimental: tries, per browser (lib/experiments.ts), off by default ----
+function Experimental() {
+  const canvas = useExperiment("liveCanvas");
+  return (
+    <div className="stack-4">
+      <p className="muted">Things we are trying out. They are kept in this browser only and may change or go away.</p>
+      <Switch
+        id="exp-live-canvas"
+        label="Live canvas"
+        hint="While the Pixel artist draws, its grid shows row by row as the answer streams, in the crew drawer and the face's popover."
+        checked={canvas}
+        onChange={(e) => setExperiment("liveCanvas", e.currentTarget.checked)}
+      />
+    </div>
   );
 }
 

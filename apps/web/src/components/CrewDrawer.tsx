@@ -8,8 +8,18 @@ import { mergeEntries } from "../lib/activity.ts";
 import { useChannel } from "../lib/channel.ts";
 import { client } from "../lib/client.ts";
 import { clock, duration, usd } from "../lib/format.ts";
-import { memberOf, modelShort, modelWords, problemOf, visibleTasks } from "../lib/human.ts";
-import { bubbleOfReason, crewGroups, ghostLine, msgsOf, OUTCOME_WORD, ROLE_HUE, timeAlive } from "../lib/instances.ts";
+import { memberOf, modelShort, modelWords, plainTitle, problemOf, visibleTasks } from "../lib/human.ts";
+import {
+  bubbleOfReason,
+  crewGroups,
+  ghostLine,
+  msgsOf,
+  OUTCOME_WORD,
+  ROLE_HUE,
+  stuckInstances,
+  timeAlive,
+  waitingInstances,
+} from "../lib/instances.ts";
 import { askPipAbout, hasNews, pipMood, usePip, usePipOpenRequest } from "../lib/pip.ts";
 import type { ActivityEntry, ChannelMsg, Instance, InstanceLog, ProjectState, Task } from "../lib/types.ts";
 import { type ActivityProps, Compose, PipPane, pipLine, TaskGroup } from "./AgentActivity.tsx";
@@ -17,6 +27,7 @@ import { BehindTheScenes } from "./Channel.tsx";
 import { CrewFace, type Mood, useStep } from "./CrewStrip.tsx";
 import { DirectControls } from "./DirectControls.tsx";
 import { PipFace } from "./PipFace.tsx";
+import { ProblemButton } from "./ProblemButton.tsx";
 import "./AgentActivity.css";
 
 type Kind = "working" | "upNext" | "finished";
@@ -24,12 +35,12 @@ const GROUP_WORD: Record<Kind, string> = { working: "Working", upNext: "Up next"
 
 const startOf = (t: Task) => Date.parse(t.startedAt ?? "") || Number.POSITIVE_INFINITY;
 
-/** the face an instance shows in the drawer */
+/** the face an instance shows in the drawer: stuck only for a live problem; needs you from a waiting row or plan task */
 function moodOf(i: Instance, kind: Kind, s: ProjectState, stuck: Set<string>): Mood {
   if (kind === "finished") return i.outcome === "stopped" || i.outcome === "failed" ? "stopped" : "done";
-  if (kind === "upNext") return "later";
   if (stuck.has(i.id)) return "stuck";
-  if (s.tasks.some((t) => t.instance === i.id && t.status === "waiting_user")) return "needs";
+  if (waitingInstances(s).has(i.id)) return "needs";
+  if (kind === "upNext") return "later";
   return "working";
 }
 
@@ -77,8 +88,7 @@ export function CrewDrawer({
   const pipKey = pipProject === undefined ? projectId : pipProject;
   const pip = usePip(pipKey);
   usePipOpenRequest(pipKey, () => setSel("pip"));
-  const p = problemOf(state);
-  const stuck = new Set(state.tasks.filter((t) => t.id === p?.taskId && t.instance).map((t) => t.instance as string));
+  const stuck = stuckInstances(state);
   const step = useStep(groups.working.length > 0);
   const kinds: Kind[] = ["working", "upNext", "finished"];
   const kindOf = (id: string): Kind | null => kinds.find((k) => groups[k].some((i) => i.id === id)) ?? null;
@@ -182,7 +192,8 @@ export function CrewDrawer({
               currentScene={currentScene}
               onAsk={() => {
                 setSel("pip");
-                askPipAbout(pipKey, `About the ${inst.label}${pipKey ? "" : ` on ${state.doc.title}`}: `, {
+                askPipAbout(pipKey, {
+                  label: `the ${inst.label}${pipKey ? "" : ` on ${state.doc.title}`}`,
                   instance: inst.id,
                 });
               }}
@@ -194,12 +205,12 @@ export function CrewDrawer({
   );
 }
 
-/** a working member's one line: its task, or that it waits on you, or the problem */
+/** a working member's one line: its task, or that it waits on you, or the live problem */
 function lineOf(i: Instance, s: ProjectState, stuck: Set<string>): string {
-  if (stuck.has(i.id)) return s.status?.problem?.text ?? "Stuck";
-  const t = s.tasks.find((x) => x.instance === i.id && (x.status === "working" || x.status === "waiting_user"));
-  if (t?.status === "waiting_user") return "Waiting for you";
-  return t?.title ?? "Working";
+  if (stuck.has(i.id)) return problemOf(s)?.text ?? "Stuck";
+  if (waitingInstances(s).has(i.id)) return "Waiting for you";
+  const t = s.tasks.find((x) => x.instance === i.id && x.status === "working");
+  return t ? plainTitle(t, s) : "Working";
 }
 
 const timeEl = (iso: string | null | undefined) =>
@@ -384,6 +395,14 @@ function InstancePane({
               {ghostLine(inst.id, state)}
             </p>
           )}
+          {mood === "stuck" && problemOf(state) && (
+            <div className="activity-problem">
+              <p className="activity-now" dir="auto">
+                {problemOf(state)?.text}
+              </p>
+              <ProblemButton projectId={projectId} state={state} problem={problemOf(state)!} />
+            </div>
+          )}
           {inst.reason && (
             <p className="activity-now activity-reason" dir="auto">
               Joined “{bubbleOfReason(inst.reason)}.”
@@ -399,7 +418,7 @@ function InstancePane({
             <p className="activity-empty muted">
               {kind === "upNext"
                 ? `${inst.label} hasn't started yet. What it does will show up here.`
-                : "Nothing to show yet."}
+                : "Nothing has happened here yet."}
             </p>
           )}
           {groups.map((g) => (
@@ -415,6 +434,7 @@ function InstancePane({
                 loading={g.loading}
                 failed={g.failed}
                 headModel={inst.model ?? undefined}
+                live={state.progress?.[g.t.id]}
               />
             </Fragment>
           ))}

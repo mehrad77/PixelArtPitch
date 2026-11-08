@@ -3,7 +3,7 @@ import { Badge, Button, Callout, Checkbox, DescriptionList, EmptyState, Table, T
 import { client } from "../lib/client.ts";
 import { DEPARTMENTS, GATE_STAGE, ROLE_LABEL, STAGE_LABEL, TASK_STATUS } from "../lib/derive.ts";
 import { bytes, n, secs, usd, words } from "../lib/format.ts";
-import { VERSION_WORD } from "../lib/human.ts";
+import { askedByGate, VERSION_WORD } from "../lib/human.ts";
 import { LinkButton } from "../lib/router.tsx";
 import type { ProjectState, Stage } from "../lib/types.ts";
 import { DecisionCard, GateCard } from "./DecisionCard.tsx";
@@ -39,7 +39,11 @@ export function StagePanel(props: Props) {
 }
 
 function Gates({ projectId, state, stage }: Props) {
-  const gates = state.gates.filter((g) => GATE_STAGE[g.id] === stage);
+  // an open gate that is a pick (G1's angle question) is answered by its question's card, not by "Looks good"
+  const own = askedByGate(state);
+  const gates = state.gates.filter(
+    (g) => GATE_STAGE[g.id] === stage && !(g.status === "open" && g.items.some((i) => i.ref && own.has(i.ref))),
+  );
   return (
     <>
       {gates.map((g) => (
@@ -157,7 +161,9 @@ function BriefPanel(p: Props) {
 
 function ScriptPanel(p: Props) {
   const tl = p.state.timeline;
-  const qs = p.state.questions.filter((q) => q.status === "open" && q.blocks.includes("script"));
+  // the angle pick blocks the script (and is G1's own question): every option shows here, as in the simple view
+  const own = askedByGate(p.state);
+  const qs = p.state.questions.filter((q) => q.status === "open" && (q.blocks.includes("script") || own.has(q.id)));
   const text = new Map(p.state.doc.script.cues.map((c) => [c.id, c.text]));
   const total = tl.cues.reduce((a, c) => a + words(c.text), 0);
   return (

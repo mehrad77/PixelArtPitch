@@ -2,7 +2,7 @@
 // member's tasks as a calm thread of what it did and found (model calls, tool calls, changes, answers, errors),
 // and a message box that sends it a note. Hidden by default; opened from a face's popover or a Studio Details drawer.
 // Live lines land at the bottom; the thread follows them only when the reader is already there.
-import { Badge, Button, Disclosure, Drawer, Field, Switch, Tag } from "@shabboo/kit/react";
+import { Badge, Button, Disclosure, Drawer, Field, Icon, Switch, Tag } from "@shabboo/kit/react";
 import {
   type CSSProperties,
   type FormEvent,
@@ -16,22 +16,29 @@ import {
 import {
   answerStats,
   entryLine,
+  groupTitle,
   mergeEntries,
   parseModel,
   parseTool,
   pretty,
+  progressLine,
   promptOf,
+  type StepWords,
+  stepsOf,
   toolWords,
+  variantOf,
 } from "../lib/activity.ts";
 import { client } from "../lib/client.ts";
 import { TASK_STATUS } from "../lib/derive.ts";
+import { useExperiment } from "../lib/experiments.ts";
 import { clock, duration } from "../lib/format.ts";
 import { useLoad } from "../lib/hooks.ts";
 import { isRecovered, type Member, modelShort, modelWords, retriesOf } from "../lib/human.ts";
 import { askPipAbout, type Conv, hasNews, markSeen, pipMood, usePip, usePipOpenRequest } from "../lib/pip.ts";
 import { navigate } from "../lib/router.tsx";
-import type { ActivityEntry, ProjectState, Role, Task } from "../lib/types.ts";
+import type { ActivityEntry, ProjectState, Role, Task, TaskProgress } from "../lib/types.ts";
 import { Clamp } from "./Clamp.tsx";
+import { LiveCanvas } from "./LiveCanvas.tsx";
 
 /** a reviewer's verdict word ("fix:", "ship:") reads as plain words */
 function plainSummary(s: string | undefined): string | undefined {
@@ -347,7 +354,7 @@ function DepartmentActivity({
                     <p className="activity-empty muted">
                       {row.mood === "later"
                         ? `${row.m.label} hasn't started yet. What it does will show up here.`
-                        : "Nothing to show yet."}
+                        : "Nothing has happened here yet."}
                     </p>
                   )}
                   {groups.map((g) => (
@@ -360,6 +367,7 @@ function DepartmentActivity({
                       loading={g.loading}
                       failed={g.failed}
                       headModel={nowModel}
+                      live={state.progress?.[g.t.id]}
                     />
                   ))}
                 </div>
@@ -376,10 +384,9 @@ function DepartmentActivity({
                   variant="ghost"
                   onClick={() => {
                     setSel("pip");
-                    askPipAbout(
-                      pipKey,
-                      `About the ${row.m.label.toLowerCase()}'s work${pipKey ? "" : ` on ${state.doc.title}`}: `,
-                    );
+                    askPipAbout(pipKey, {
+                      label: `the ${row.m.label.toLowerCase()}'s work${pipKey ? "" : ` on ${state.doc.title}`}`,
+                    });
                   }}
                 >
                   Ask Pip about this
@@ -480,6 +487,7 @@ export function TaskGroup({
   loading,
   failed,
   headModel,
+  live,
 }: {
   task: Task;
   tries: number;
@@ -489,6 +497,8 @@ export function TaskGroup({
   failed: boolean;
   /** the model the member's header already names: a task on the same one doesn't repeat it */
   headModel?: string;
+  /** the working step's model call as it streams (the `progress` event) */
+  live?: TaskProgress;
 }) {
   const st = TASK_STATUS[task.status];
   const ownModel = task.model && task.model !== "mixed" && task.model !== headModel ? task.model : undefined;
@@ -498,15 +508,18 @@ export function TaskGroup({
     Date.parse(task.endedAt ?? "") ||
     (task.status === "working" ? Date.now() : Date.parse(entries.at(-1)?.at ?? "") || Date.now());
   const lastAnswer = entries.findLastIndex((e) => e.kind === "answer");
+  // each model step named from its prompt card ("Drew variant 2"); an answer takes its call's name
+  const steps = stepsOf(entries, task.title);
+  const streaming = task.status === "working" && live ? live : undefined;
   const meta = [
     showTry && (task.attempt ?? 1) > 1 ? `try ${task.attempt}` : !showTry && tries > 1 ? `${tries} tries` : null,
     Number.isFinite(from) ? duration((to - from) / 1000) : null,
   ].filter(Boolean);
   return (
-    <section className="activity-group" aria-label={task.title}>
+    <section className="activity-group" aria-label={groupTitle(task)}>
       <h4 className="activity-group-head">
         <span className="activity-group-title">
-          {task.title}
+          {groupTitle(task)}
           {meta.length > 0 && <span className="muted"> · {meta.join(" · ")}</span>}
           {ownModel && <span className="muted"> · {modelShort(ownModel)}</span>}
         </span>
@@ -525,17 +538,26 @@ export function TaskGroup({
       {failed && !entries.length && (
         <p className="muted small">Couldn't load what it did. Close and open this again.</p>
       )}
-      {!loading && !failed && !entries.length && (
+      {!loading && !failed && !entries.length && !streaming && (
         <p className="muted small">
-          {task.status === "upcoming" || task.status === "queued" ? "Not started yet." : "No record kept for this one."}
+          {task.status === "upcoming" || task.status === "queued"
+            ? "Not started yet."
+            : task.status === "working"
+              ? "Starting…"
+              : "No record kept for this one."}
         </p>
       )}
       <ol className="activity-bubbles">
         {entries.map((e, i) => (
           <li key={`${e.at}|${e.kind}|${e.title}`} className="activity-bubble" data-kind={e.kind}>
-            <Bubble entry={e} task={task} last={i === lastAnswer} />
+            <Bubble entry={e} task={task} last={i === lastAnswer} step={steps[i]} />
           </li>
         ))}
+        {streaming && (
+          <li className="activity-bubble activity-live" data-kind="live">
+            <LiveStep live={streaming} task={task} />
+          </li>
+        )}
       </ol>
     </section>
   );
@@ -562,7 +584,54 @@ const Code = ({ text }: { text: string }) => (
   </pre>
 );
 
-function Bubble({ entry: e, task, last }: { entry: ActivityEntry; task: Task; last: boolean }) {
+/** the step's mark: a small icon that stays in view when the step's details are folded */
+function StepMark({ step }: { step: StepWords }) {
+  return (
+    <span className="activity-step-mark" aria-hidden="true">
+      <Icon name={step.icon} size="sm" />
+    </span>
+  );
+}
+
+/**
+ * The working step, live (docs/API.md `progress`): "Thinking… about 4,200 tokens · 48 s", the answer's newest words
+ * as they stream, and, with the live-canvas experiment on, a drawing's grid row by row.
+ */
+export function LiveStep({ live, task }: { live: TaskProgress; task: Task }) {
+  const canvas = useExperiment("liveCanvas");
+  const v = variantOf(task.title);
+  return (
+    <div className="activity-bubble-inner">
+      <p className="activity-step">
+        <span className="activity-step-mark" aria-hidden="true">
+          <Icon name={live.phase === "writing" ? "edit" : "flask"} size="sm" />
+        </span>
+        <span>{progressLine(live)}</span>
+      </p>
+      {canvas && live.draft && (
+        <LiveCanvas draft={live.draft} palette={live.palette} label={v ? `Variant ${v}` : undefined} />
+      )}
+      {live.tail && live.phase === "writing" && !(canvas && live.draft) && (
+        <p className="activity-tail mono small" dir="auto" translate="no">
+          …{live.tail.slice(-280)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Bubble({
+  entry: e,
+  task,
+  last,
+  step,
+}: {
+  entry: ActivityEntry;
+  task: Task;
+  last: boolean;
+  /** the model step this entry is (a call) or answers */
+  step?: StepWords | null;
+}) {
   const time = (
     <time className="activity-time" dateTime={e.at}>
       {clock(new Date(e.at))}
@@ -576,18 +645,19 @@ function Bubble({ entry: e, task, last }: { entry: ActivityEntry; task: Task; la
       body = (
         <>
           {/* the model is in the member's header; a call only names it when it went elsewhere (an escalation) */}
-          <p>
-            {model && task.model && modelShort(task.model) !== modelShort(model) ? (
-              <>
-                Asked{" "}
-                <span className="muted mono" translate="no" title={model}>
-                  {model}
-                </span>{" "}
-                instead
-              </>
-            ) : (
-              "Sent the prompt"
-            )}
+          <p className="activity-step">
+            {step && <StepMark step={step} />}
+            <span>
+              {step?.ask ?? "Sent the prompt"}
+              {model && task.model && modelShort(task.model) !== modelShort(model) && (
+                <>
+                  {" · on "}
+                  <span className="muted mono" translate="no" title={model}>
+                    {model}
+                  </span>
+                </>
+              )}
+            </span>
           </p>
           {prompt && <Lazy summary="Show prompt">{() => <Code text={card ? `${card}\n\n${prompt}` : prompt} />}</Lazy>}
         </>
@@ -637,7 +707,11 @@ function Bubble({ entry: e, task, last }: { entry: ActivityEntry; task: Task; la
     case "answer":
       body = (
         <>
-          <Clamp lines={3}>{last && task.summary ? plainSummary(task.summary) : "Here's what I came up with."}</Clamp>
+          <p className="activity-step">
+            {step && <StepMark step={step} />}
+            <span>{step?.done ?? "Answered"}</span>
+          </p>
+          {last && task.summary && <Clamp lines={3}>{plainSummary(task.summary)}</Clamp>}
           <p className="muted small">{answerStats(e.title)}</p>
           {e.detail !== undefined && <Lazy summary="Show answer">{() => <Code text={pretty(e.detail)} />}</Lazy>}
         </>

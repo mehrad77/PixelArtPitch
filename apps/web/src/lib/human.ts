@@ -224,6 +224,23 @@ const GATE_READY: Record<GateId, string> = {
   g3_rough: "The first cut is ready for a look.",
   g4_final: "The video is ready to export.",
 };
+/**
+ * The questions an open gate stands for (its `items[].ref` names them: G1's "which angle?"): the gate shows them as its
+ * own pick, so they are one thing that waits on you, not two
+ */
+export const askedByGate = (s: ProjectState): Set<string> =>
+  new Set(
+    s.gates
+      .filter((g) => g.status === "open")
+      .flatMap((g) => g.items.map((i) => i.ref ?? ""))
+      .filter((ref) => s.questions.some((q) => q.id === ref && q.status === "open")),
+  );
+/** the open questions that are not a gate's own pick */
+export const openAsks = (s: ProjectState) => {
+  const own = askedByGate(s);
+  return s.questions.filter((q) => q.status === "open" && !own.has(q.id));
+};
+
 export const needsNarration = (s: ProjectState) =>
   s.doc.brief.narration === "user" &&
   phaseOf(s) === 3 &&
@@ -232,7 +249,20 @@ export const needsNarration = (s: ProjectState) =>
 
 export function humanStatus(s: ProjectState): HumanStatus {
   const gates = s.gates.filter((g) => g.status === "open");
-  const qs = s.questions.filter((q) => q.status === "open");
+  const qs = openAsks(s);
+  const own = askedByGate(s);
+  // a gate that is a pick ("which angle?") says so: the member that asks has a question for you
+  const pick = gates.find((g) => g.items.some((i) => i.ref && own.has(i.ref)));
+  if (pick) {
+    const q = s.questions.find((x) => pick.items.some((i) => i.ref === x.id));
+    const more = gates.length + qs.length - 1;
+    const tail = more > 0 ? ` ${more === 1 ? "One more thing" : `${more} more things`} after that.` : "";
+    if (q)
+      return {
+        text: `The ${memberOf(q.from as Role).label.toLowerCase()} has a question for you.${tail}`,
+        tone: "needs",
+      };
+  }
   const more = gates.length + qs.length - 1;
   const tail = more > 0 ? ` ${more === 1 ? "One more thing" : `${more} more things`} after that.` : "";
   // a question behind an open gate is asked first (the card shows it first too)

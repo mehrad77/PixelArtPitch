@@ -16,6 +16,7 @@ import {
   useState,
 } from "react";
 import { leadTask } from "../lib/derive.ts";
+import { useExperiment } from "../lib/experiments.ts";
 import { CREW, type Member, memberOf, plainTitle, problemOf, visibleTasks } from "../lib/human.ts";
 import {
   bubbleOfReason,
@@ -30,11 +31,14 @@ import {
   qualifier,
   ROLE_GLYPH,
   ROLE_HUE,
+  waitingInstances,
 } from "../lib/instances.ts";
 import { askPipAbout, usePip } from "../lib/pip.ts";
 import type { ConnState, Instance, ProjectState, Role, Task } from "../lib/types.ts";
 import { AgentActivity } from "./AgentActivity.tsx";
+import { LiveCanvas } from "./LiveCanvas.tsx";
 import { useReducedMotion } from "./PipFace.tsx";
+import { ProblemButton } from "./ProblemButton.tsx";
 import { ThoughtLayer, useThoughts } from "./Thoughts.tsx";
 import "./CrewStrip.css";
 
@@ -262,13 +266,16 @@ function DepartmentStrip({ projectId, state, lead, pipProject }: StripProps) {
                 <div className="crew-face-panel">
                   <p className="label">{m.label}</p>
                   <p>{line}</p>
+                  {mood === "stuck" && problemOf(state) && (
+                    <ProblemButton projectId={projectId} state={state} problem={problemOf(state)!} />
+                  )}
                   {img && <img className="pixelated" src={img} alt={`Latest from the ${m.label.toLowerCase()}`} />}
                   <button
                     type="button"
                     className="linkish crew-face-ask"
                     onClick={() => {
                       document.getElementById(`crew-face-${m.id}`)?.hidePopover?.();
-                      askPipAbout(projectId, `About the ${m.label.toLowerCase()}'s work: `);
+                      askPipAbout(projectId, { label: `the ${m.label.toLowerCase()}'s work` });
                     }}
                   >
                     Ask Pip about this
@@ -338,7 +345,10 @@ function InstanceStrip({ projectId, state, lead, pipProject, conn }: StripProps)
   const still = useReducedMotion();
   const groups = crewGroups(state);
   const stuck = new Set(groups.working.filter((i) => i.state !== "live").map((i) => i.id));
-  const waiting = new Set(state.tasks.filter((t) => t.status === "waiting_user").map((t) => t.instance));
+  // needs you: a row waiting on the person, or a plan task waiting on them (the publish question, the angle pick)
+  const waiting = waitingInstances(state);
+  const canvas = useExperiment("liveCanvas");
+  const problem = problemOf(state);
   // the server caps the ghosts at 3, nearest first; the row keeps that cap whatever arrives
   const ghosts = all.filter((i) => i.ghost && i.state !== "live" && !stuck.has(i.id)).slice(0, 3);
 
@@ -459,14 +469,18 @@ function InstanceStrip({ projectId, state, lead, pipProject, conn }: StripProps)
         // the ✓ (or ■) holds for 2 s, then the face folds toward the counter
         setPhase(i.id, { phase: "hold", inst: i });
         clearTimeout(timers.current.get(i.id));
-        timers.current.set(
-          i.id,
-          setTimeout(() => {
-            // it fades (and, with motion, shrinks) out in place; the line under the row counts it at once
-            setPhase(i.id, { phase: "fold", inst: i });
-            settle(i.id, "fold");
-          }, FINISH_HOLD_MS),
-        );
+        // it fades (and, with motion, shrinks) out in place; the line under the row counts it at once. Never while its
+        // popover is open or focus is on it: a faded face left its popover floating, unanchored and stale, over the
+        // card under the row, where a press meant for "Change something" opened this member's drawer instead
+        const fold = () => {
+          if (busy(i.id)) {
+            timers.current.set(i.id, setTimeout(fold, 500));
+            return;
+          }
+          setPhase(i.id, { phase: "fold", inst: i });
+          settle(i.id, "fold");
+        };
+        timers.current.set(i.id, setTimeout(fold, FINISH_HOLD_MS));
         continue;
       }
       if (wasFinished && i.state !== "finished") {
@@ -485,8 +499,11 @@ function InstanceStrip({ projectId, state, lead, pipProject, conn }: StripProps)
         settle(i.id, "enter");
         shown.current.add(i.id);
       } else if (!visible(i) && shown.current.has(i.id) && was?.ghost && i.state !== "finished") {
-        // a ghost off the horizon fades in place
+        // a ghost off the horizon fades in place; its popover, if open, closes with it (never left floating)
         shown.current.delete(i.id);
+        document
+          .querySelector<HTMLElement>(`[data-instance="${CSS.escape(i.id)}"] [popover]:popover-open`)
+          ?.hidePopover?.();
         if (stillRef.current) setPhase(i.id, null);
         else {
           setPhase(i.id, { phase: "leave", inst: was });
@@ -581,7 +598,7 @@ function InstanceStrip({ projectId, state, lead, pipProject, conn }: StripProps)
       : ghost
         ? ghostLine(i.id, state)
         : mood === "stuck"
-          ? (state.status?.problem?.text ?? "Stuck.")
+          ? (problem?.text ?? "Stuck.")
           : mood === "needs"
             ? "Waiting for you."
             : working
@@ -626,13 +643,18 @@ function InstanceStrip({ projectId, state, lead, pipProject, conn }: StripProps)
               </p>
             )}
             <p dir="auto">{line}</p>
-            {img && <img className="pixelated" src={img} alt={`Latest from the ${i.label}`} />}
+            {mood === "stuck" && problem && <ProblemButton projectId={projectId} state={state} problem={problem} />}
+            {canvas && working && state.progress?.[working.id]?.draft ? (
+              <LiveCanvas draft={state.progress[working.id].draft ?? ""} palette={state.progress[working.id].palette} />
+            ) : (
+              img && <img className="pixelated" src={img} alt={`Latest from the ${i.label}`} />
+            )}
             <button
               type="button"
               className="linkish crew-face-ask"
               onClick={() => {
                 document.getElementById(pid)?.hidePopover?.();
-                askPipAbout(projectId, `About the ${i.label}: `, { instance: i.id });
+                askPipAbout(projectId, { label: `the ${i.label}`, instance: i.id });
               }}
             >
               Ask Pip about this

@@ -55,6 +55,49 @@
 .pip-bar:focus-within {
   box-shadow: inset 0 0 0 1px var(--stroke-strong);
 }
+/* "Ask Pip about this": the scope as a chip at the field's start, cleared with its × or by sending */
+.pip-scope {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  max-inline-size: 60%;
+  padding-inline: var(--space-2) 0;
+  border-radius: var(--radius-pill);
+  background: var(--state-selected);
+  box-shadow: inset 0 0 0 1px var(--stroke-control);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+.pip-scope-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:is(:lang(fa), :lang(ar)) .pip-scope {
+  font-family: var(--font-arabic);
+}
+.pip-scope-clear {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: var(--target-min);
+  min-block-size: var(--target-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.pip-scope-clear:hover {
+  background-image: linear-gradient(var(--state-hover), var(--state-hover));
+  color: var(--text);
+}
+.pip-scope-clear:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
 .pip-input {
   flex: 1;
   min-inline-size: 0;
@@ -268,6 +311,40 @@
 }
 .pip-plan-detail {
   font-family: var(--font-serif);
+}
+/* a plan change's price as a diff: the old total dimmed and struck, the new one large, the delta as a chip */
+.pip-plan-diff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+.pip-plan-old {
+  color: var(--text-muted);
+  font-size: var(--step--1);
+  text-decoration-thickness: 1px;
+}
+.pip-plan-new {
+  color: var(--text);
+  font-size: var(--step-2);
+  line-height: 1.1;
+}
+.pip-plan-delta {
+  align-self: center;
+  padding-block: 0;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--stroke-control);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+.pip-plan-delta[data-up] {
+  background: var(--state-selected);
+}
+:is(:lang(fa), :lang(ar)) .pip-plan-delta {
+  font-family: var(--font-arabic);
 }
 .pip-who {
   display: inline-flex;
@@ -639,6 +716,14 @@ a.pip-file:hover {
   font-family: var(--font-mono);
   font-size: var(--step--2);
 }
+/* a long milestone wraps in the middle; its time stays on one line */
+.pip-marker > bdi {
+  flex: 0 1 auto;
+  text-align: center;
+}
+.pip-marker > time {
+  white-space: nowrap;
+}
 .pip-marker::before,
 .pip-marker::after {
   content: "";
@@ -728,4 +813,55 @@ a.pip-file:hover {
   align-items: center;
   gap: var(--space-1);
   color: var(--text-muted);
+}
+
+/* ---- the simple view's thread as turns, newest first: a turn is read top-down (your bubble at the inline end,
+   Pip's reply at the inline start under it); clear space between turns, each with its time; milestones stay quiet
+   hairlines between them ---- */
+.pip-thread[data-order="newest"] {
+  gap: var(--space-5);
+}
+.pip-turn {
+  display: grid;
+  gap: var(--space-2);
+}
+.pip-turn-time {
+  justify-self: center;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+}
+.pip-turn .pip-bubble {
+  max-inline-size: min(85%, var(--measure));
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+  border-radius: calc(var(--radius) * 3);
+}
+.pip-turn .pip-user {
+  justify-self: end;
+  border-end-end-radius: var(--radius);
+  background: var(--state-selected);
+  box-shadow: inset 0 0 0 1px var(--stroke-control);
+  font-size: var(--step-0);
+}
+.pip-turn .pip-says {
+  justify-self: start;
+  border-end-start-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--stroke);
+}
+/* a reply that carries a card takes the turn's width (a card sizes to its container, not its words) */
+.pip-turn .pip-says:has(.pip-card, .pip-why) {
+  justify-self: stretch;
+  max-inline-size: 100%;
+}
+.pip-turn[data-old] {
+  opacity: 0.62;
+}
+.pip-user-about {
+  font-family: var(--font-mono);
+}
+:is(:lang(fa), :lang(ar)) .pip-user-about,
+:is(:lang(fa), :lang(ar)) .pip-turn-time {
+  font-family: var(--font-arabic);
 }

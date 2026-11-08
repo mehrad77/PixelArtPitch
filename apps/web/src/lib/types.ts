@@ -209,6 +209,20 @@ export type ActivityEntry = {
   image?: string;
 };
 
+/** a model call as it streams (docs/API.md, the `progress` event); tokens are estimated from characters */
+export type TaskProgress = {
+  taskId: string;
+  phase: "thinking" | "writing";
+  tokens: number;
+  seconds: number;
+  /** the newest part of the answer so far */
+  tail: string;
+  /** a drawing's raw answer so far (DrawOut JSON), for the live canvas */
+  draft?: string;
+  /** the drawing's palette letters → colours */
+  palette?: Record<string, string>;
+};
+
 export type ProjectState = {
   doc: ProjectT;
   rev: number;
@@ -232,6 +246,8 @@ export type ProjectState = {
   milestones?: Milestone[];
   /** client only: live activity per task id, the newest ~500 each */
   activity?: Record<string, ActivityEntry[]>;
+  /** client only: each working task's live model call (the `progress` event), dropped when its answer lands */
+  progress?: Record<string, TaskProgress>;
   /** PIP-ORCHESTRATION §4.1: the production plan and the crew instances (optional until the server sends them) */
   plan?: PlanView | null;
   instances?: Instance[];
@@ -327,6 +343,8 @@ export type ServerEvent =
   | { event: "milestone"; data: Milestone }
   /** one more transcript line for a task, as it happens (no persisted id) */
   | { event: "activity"; data: ActivityEntry & { task: string } }
+  /** transient: a working task's model call as it streams (`what: "task"`), or the export's share done */
+  | { event: "progress"; data: ({ what: "task" } & TaskProgress) | { what: "export"; fraction: number } }
   /** extension: merge these top-level fields (the mock uses it for sceneStatus, findings, art, crew, files, time) */
   | { event: "x-state"; data: Partial<ProjectState> }
   /** Pip's progress on this project's conversation (or the workspace one on /api/events) */
@@ -365,7 +383,14 @@ export type PipCard =
       /** PIP-JOURNEY N2: the instances, when `who` can't say which ("Animator · scene 2") */
       whoInstances?: { instance: string; label: string }[];
       /** PIP-ORCHESTRATION §4.4: a revision over the 20% line, or a change */
-      revision?: { rev: number; ops: PlanRevisionSummary["ops"]; fromUsd: number; toUsd: number };
+      revision?: {
+        rev: number;
+        ops: PlanRevisionSummary["ops"];
+        fromUsd: number;
+        toUsd: number;
+        /** who re-planned: the Director when the storyboard expanded, Pip, the Producer (budget), the Reviewer */
+        planner?: Role | "pip";
+      };
     }
   | { id: string; type: "cant"; text: string; nearest?: string }
   | {

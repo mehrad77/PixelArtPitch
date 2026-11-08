@@ -1,6 +1,6 @@
 // Views over ProjectState: departments, stage states, timeline clips. Pure functions, no React.
 
-import { CLIP_STATE_WORD, isRecovered, VERSION_WORD } from "./human.ts";
+import { CLIP_STATE_WORD, isRecovered, openAsks, VERSION_WORD } from "./human.ts";
 import type {
   ClipState,
   GateId,
@@ -142,7 +142,8 @@ export const STAGE_STATE_WORD: Record<StageState, string> = {
  * card while the crew waits on it (`status.waiting`), and the plan's other waits from the last fetch.
  */
 export const needsYouCount = (s: ProjectState) =>
-  s.questions.filter((q) => q.status === "open").length +
+  // a gate's own pick (G1's angle question) is one thing, not two
+  openAsks(s).length +
   s.gates.filter((g) => g.status === "open").length +
   (s.plan?.pending ? 1 : 0) +
   (s.status?.waiting === "budget" ? 1 : 0) +

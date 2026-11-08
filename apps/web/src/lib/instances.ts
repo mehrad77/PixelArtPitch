@@ -1,6 +1,7 @@
 // The crew as instances (docs/PIP-JOURNEY.md §3): the pure half of the row, the drawer and Studio's Crew tab. Who
-// shows where, what each face is called, the sentences the row says and the words over Pip. No JSX and type-only
-// imports, so the node test reads it directly.
+// shows where, what each face is called, the sentences the row says and the words over Pip. No JSX and only node-safe
+// imports (human.ts), so the node test reads it directly.
+import { problemOf } from "./human.ts";
 import type { ChannelMsg, Instance, PlanGate, PlanRevisionSummary, PlanTaskView, ProjectState, Role } from "./types.ts";
 
 /** the server sends instances (P2's server fills `instances`; an older one sends none, so the departments stay) */
@@ -193,10 +194,31 @@ export function ghostWord(id: string, s: ProjectState): string {
   return nextTaskOf(id, s.plan?.tasks ?? [])?.status === "ready" ? "waiting for a free slot" : "up next";
 }
 
-/** the instance a stuck face belongs to: the failed task the problem names */
+/** the instance a stuck face belongs to: the failed task a live problem names (none while the crew runs past it) */
 export function stuckInstances(s: ProjectState): Set<string> {
-  const id = s.status?.problem?.taskId;
+  const id = problemOf(s)?.taskId;
   return new Set(s.tasks.filter((t) => t.id === id && t.instance).map((t) => t.instance as string));
+}
+
+/**
+ * The instances that wait on the person ("needs you"): a row waiting on the person (`waiting_user`), a plan task
+ * waiting on the person (`waiting_person`), and for the person's picks a member asks (G1's angle, the rights OK) the
+ * member it depends on, as the server's instance fold does (ASKED_BY_DEP)
+ */
+export function waitingInstances(s: ProjectState): Set<string> {
+  const out = new Set<string>();
+  for (const t of s.tasks) if (t.status === "waiting_user" && t.instance) out.add(t.instance);
+  const plan = s.plan?.tasks ?? [];
+  for (const t of plan) {
+    if (t.status !== "waiting_person") continue;
+    if (t.role !== "person" && t.instance) out.add(t.instance);
+    else if (t.gate === "g1_script" || t.gate === "rights")
+      for (const d of t.dependsOn) {
+        const dep = plan.find((x) => x.id === d);
+        if (dep && dep.role !== "person" && dep.instance) out.add(dep.instance);
+      }
+  }
+  return out;
 }
 
 /** an instance record for a plan task that has none on the wire yet (a planned member, far off the horizon) */

@@ -5,7 +5,7 @@
 import { Button, Field, Fieldset, Radio } from "@shabboo/kit/react";
 import { type FormEvent, useLayoutEffect, useRef, useState } from "react";
 import { mss } from "../lib/human.ts";
-import { askPipAbout } from "../lib/pip.ts";
+import { openPipWith } from "../lib/pip.ts";
 import type { NoteCategory } from "../lib/types.ts";
 
 const CHIPS: { label: string; category: NoteCategory }[] = [
@@ -75,7 +75,7 @@ export function SteerPopover({
     const where = `At ${mss(t)}${scene ? ` (scene ${scene})` : ""}`;
     const draft = `${where}: ${[what, text.trim()].filter(Boolean).join(". ")}`;
     close();
-    askPipAbout(projectId, draft);
+    openPipWith(projectId, draft);
   };
 
   return (
