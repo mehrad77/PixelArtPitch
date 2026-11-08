@@ -2,7 +2,7 @@
 # usage: PAP_E2E_HOME=<home> watch.sh   a line whenever a project's needs, running state or status line changes;
 # ends when the watchdog stops the studio or the server exits
 P=$(dirname "$0")
-H="${PAP_E2E_HOME:?set PAP_E2E_HOME to the driver's --home}"
+H="${PAP_E2E_HOME:?set PAP_E2E_HOME to the --home of driver.ts}"
 prev=""
 while true; do
   cur=$("$P/api.sh" GET /api/projects 2>/dev/null | python3 -c '
