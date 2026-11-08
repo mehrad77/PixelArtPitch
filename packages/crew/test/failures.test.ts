@@ -19,7 +19,7 @@ const { ModelGateway } = await import("../src/gateway-impl.ts");
 const { FakeProvider, FAKE_CAPS, Ledger, SecretStore, defaultSettings, setPriceOverride, ProviderError, BudgetError } =
   await import("../src/llm/index.ts");
 const { errorKind, holdsRun } = await import("../src/llm/http.ts");
-const { Crew, humanize, retryRevision } = await import("../src/orchestrator.ts");
+const { Crew, humanize, pausedLine, retryRevision } = await import("../src/orchestrator.ts");
 const rules = await import("../src/plan/rules.ts");
 const { Executor, heldClosure, stuckError } = await import("../src/plan/executor.ts");
 const { openNeeds, needsCount, needsWords, lineOf } = await import("../src/brief/line.ts");
@@ -375,6 +375,11 @@ test("a rejected key in a fallback handler holds the run (no stand-in), tells th
   assert.ok(p.state.paused, "a held run reads as paused, so the web shows its problem");
   assert.equal(crew.status(p).crew.running, true, "the run is held, not ended");
   assert.equal(holds.length, 1, "Pip is told once");
+  // Pip's channel line is a plain sentence, not "Hold: …"
+  assert.ok(
+    p.channel().some((m) => m.from === "pip" && m.text === "Paused the crew: your fake key was rejected."),
+    "the hold reads as Pip's sentence",
+  );
   const plan = crew.planNow(p)!;
   assert.ok(!plan.tasks.some((t) => t.outcome === "fallback"), "no 'kept as built' stand-in");
   assert.ok(!plan.tasks.some((t) => t.status === "failed"));
@@ -399,6 +404,16 @@ test("a rejected key in a fallback handler holds the run (no stand-in), tells th
   const after = crew.planNow(p)!;
   assert.ok(after.tasks.filter((t) => !t.expand).every((t) => ["done", "skipped"].includes(t.status)));
   assert.ok(!after.tasks.some((t) => t.outcome === "fallback"));
+});
+
+test("a hold reads as Pip's sentence: lower-case lead, a name keeps its capital, one full stop", () => {
+  assert.equal(pausedLine("Your Anthropic key was rejected."), "Paused the crew: your Anthropic key was rejected.");
+  assert.equal(pausedLine("Anthropic has no credit left"), "Paused the crew: Anthropic has no credit left.");
+  assert.equal(
+    pausedLine("Waiting for you: the plan changed more than 6 times in one run"),
+    "Paused the crew: the plan changed more than 6 times in one run.",
+  );
+  assert.equal(pausedLine("Is the hero right?"), "Paused the crew: Is the hero right?");
 });
 
 test("retry over the crew: a fallback from an earlier run is redone, the revision is the person's", async () => {

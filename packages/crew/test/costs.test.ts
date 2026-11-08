@@ -503,7 +503,12 @@ test("the 80% card leads with Finish within $5, lists exactly what goes, and off
   assert.equal(finish.title, "Finish within $5");
   assert.deepEqual(finish.effects, ["Leaves out the second drawing of moth.", "Everything else is made as planned."]);
   assert.match(raise.title, /^Raise the cap to \$/);
-  assert.match(w.p.state.status.line, /^Waiting for you: .*Finish within it, or raise it/);
+  assert.match(
+    w.p.state.status.line,
+    /^Waiting for you: 80% of the \$5 cap is spent\. Finish within it, or raise it to \$[\d.]+\.$/,
+  );
+  assert.doesNotMatch(w.p.state.status.line, /\?/, "a statement: the web ends it once, never '?.'");
+  assert.equal(w.p.channel().at(-1)?.text, "Paused the crew: 80% of the $5 cap is spent.");
   assert.equal(w.p.state.status.waiting, "budget");
   assert.deepEqual(
     w.c

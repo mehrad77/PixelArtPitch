@@ -123,6 +123,17 @@ const PROVIDER_WORD: Record<string, string> = {
   llamacpp: "llama.cpp",
 };
 /** "anthropic" → "Anthropic"; an unknown id stays as it is */
+/**
+ * Pip's channel line for a hold, as a plain sentence: "Paused the crew: your Anthropic key was rejected." A leading
+ * "Your"/"The" goes lower case; a name ("Anthropic") keeps its capital.
+ */
+export function pausedLine(why: string): string {
+  const w = why.trim().replace(/^Waiting for you: /, "");
+  const low = /^(Your|The|A|An|This|It|Every|No)\b/.test(w) ? w.charAt(0).toLowerCase() + w.slice(1) : w;
+  return `Paused the crew: ${/[.?!]$/.test(low) ? low : `${low}.`}`;
+}
+/** "$1.50", "$2": as Pip's cards say it */
+const usd = (n: number) => `$${n < 1 ? n.toFixed(2) : n.toFixed(2).replace(/\.00$/, "")}`;
 export const providerWord = (id?: string) => (id ? (PROVIDER_WORD[id] ?? id) : "the model provider");
 export type ProblemAction = "retry" | "change_model" | "add_budget" | "fix_key";
 /** the provider an error is about: the gateway tags it, else the id in "provider "x" is turned off" */
@@ -817,7 +828,7 @@ export class Crew {
         p.say({ from: "pip", to: "crew", kind: "brief", text: `Asked the person: ${d.question}` });
       } else if (d.kind === "hold" && !r.held) {
         r.held = d.why;
-        p.say({ from: "pip", to: "crew", kind: "brief", text: `Hold: ${d.why}` });
+        p.say({ from: "pip", to: "crew", kind: "brief", text: pausedLine(d.why) });
       }
     }
     if (sig) {
@@ -1022,7 +1033,7 @@ export class Crew {
       r.revisions++;
       if (r.revisions > MAX_REVISIONS_PER_RUN && !r.held) {
         r.held = `the plan changed more than ${MAX_REVISIONS_PER_RUN} times in one run`;
-        p.say({ from: "pip", to: "crew", kind: "brief", text: `Hold: ${r.held}` });
+        p.say({ from: "pip", to: "crew", kind: "brief", text: pausedLine(r.held) });
         p.setStatus({ line: `Waiting for you: ${r.held}` });
         r.paused = true;
       }
@@ -1449,7 +1460,7 @@ export class Crew {
       waiting: undefined,
     });
     p.emit("log", { level: "error", text: `crew held: ${String((e as any)?.message ?? e).slice(0, 200)}` });
-    p.say({ from: "pip", to: "crew", kind: "brief", text: `Hold: ${h.text}`, ...(t ? { ref: t.id } : {}) });
+    p.say({ from: "pip", to: "crew", kind: "brief", text: pausedLine(h.text), ...(t ? { ref: t.id } : {}) });
     const tasks = this.planNow(p)?.tasks ?? [];
     try {
       this.onHold?.(p, {
@@ -2064,16 +2075,18 @@ export class Crew {
     }
     // only real remaining work: nothing the project already has, nothing a run-time guard would skip (§1.6)
     const want = Math.max(this.suggestUsd(p, spentUsd), b.capUsd + 0.5);
-    const line = fits
-      ? `Waiting for you: ${Math.round(b.askAtFraction * 100)}% of the $${b.capUsd} cap is spent. Finish within it, or raise it to $${want.toFixed(2)}?`
-      : `Waiting for you: the next step could cost $${t.estUsd[1].toFixed(2)} and $${Math.max(0, b.capUsd - spentUsd).toFixed(2)} is left`;
+    // statements, no question mark: the line is also Pip's word to the crew, and the web ends a sentence once
+    const why = fits
+      ? `${Math.round(b.askAtFraction * 100)}% of the ${usd(b.capUsd)} cap is spent`
+      : `the next step could cost ${usd(t.estUsd[1])} and ${usd(Math.max(0, b.capUsd - spentUsd))} is left`;
+    const line = `Waiting for you: ${why}${fits ? `. Finish within it, or raise it to ${usd(want)}.` : ""}`;
     // a wait for the person, not a problem: the budget card is in Pip's thread (the status line names it)
     p.setStatus({ line, waiting: "budget" });
     p.say({
       from: "pip",
       to: "crew",
       kind: "brief",
-      text: `Hold: ${line.replace(/^Waiting for you: /, "")}`,
+      text: pausedLine(why),
       ref: t.id,
     });
   }

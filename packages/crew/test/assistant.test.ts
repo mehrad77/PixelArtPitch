@@ -893,7 +893,8 @@ test("channel: a blocked report gets at most 2 redo rounds, then Pip holds and t
   assert.match(w.p.state.status.line, /already had 2 redo rounds/);
   const ch = w.p.channel();
   assert.equal(ch.filter((m) => m.from === "pip" && /^Redo grind/.test(m.text)).length, 2);
-  assert.ok(ch.some((m) => m.from === "pip" && /^Hold:/.test(m.text)));
+  assert.ok(ch.some((m) => m.from === "pip" && /^Paused the crew: /.test(m.text)));
+  assert.ok(!ch.some((m) => /^Hold:/.test(m.text)), "no 'Hold:' prefix");
   assert.ok(ch.some((m) => m.from === "animator" && /^blocked: .*Couldn't: no recipe makes him fly/.test(m.text)));
   w.crewImpl.pause(w.p, "now");
   w.crewImpl.resume(w.p);
