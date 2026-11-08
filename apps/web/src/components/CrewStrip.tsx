@@ -211,91 +211,40 @@ type StripProps = {
   pipProject?: string;
 };
 
-/** the crew row: crew instances once there are any (PIP-ORCHESTRATION §2), the departments otherwise */
+/** the crew row: Pip first, then one face per crew member (PIP-ORCHESTRATION §2); before Pip has brought anyone
+ * in, Pip alone. The old one-face-per-department row is gone, so the row never changes shape mid-project */
 export { hasInstances };
 export function CrewStrip(props: StripProps) {
-  return hasInstances(props.state) ? <InstanceStrip {...props} /> : <DepartmentStrip {...props} />;
+  const state = hasInstances(props.state)
+    ? props.state
+    : { ...props.state, instances: departmentInstances(props.state) };
+  return <InstanceStrip {...props} state={state} />;
 }
 
-function DepartmentStrip({ projectId, state, lead, pipProject }: StripProps) {
-  const rows = crewRows(state);
-  const step = useStep(rows.some((r) => r.mood === "working"));
-  const pip = usePip(pipProject ?? projectId);
-  const thoughts = useThoughts(state, lead ? pip : null, projectId);
-  const box = useRef<HTMLElement>(null);
-  // hidden by default: the activity view opens only when the person asks for it from a face
-  const [watching, setWatching] = useState<string | null>(null);
-  const watch = (id: string) => {
-    document.getElementById(`crew-face-${id}`)?.hidePopover?.();
-    setWatching(id);
-  };
-  const stopWatching = () => {
-    const id = watching;
-    setWatching(null);
-    if (id) requestAnimationFrame(() => document.getElementById(`crew-face-btn-${id}`)?.focus());
-  };
-  const holds = (id: string) => ({
-    onMouseEnter: () => thoughts.hold(id, true),
-    onMouseLeave: () => thoughts.hold(id, false),
-    onFocus: () => thoughts.hold(id, true),
-    onBlur: () => thoughts.hold(id, false),
+/** a project with no crew instances yet (before Pip's plan, or an older project): its departments, in the same row
+ * and the same shapes; working ones live, finished ones counted under the row, the rest quiet upcoming faces */
+function departmentInstances(state: ProjectState): Instance[] {
+  return crewRows(state).map(({ m, mood, tasks }) => {
+    const live = mood === "working" || mood === "needs" || mood === "stuck";
+    const done = mood === "done";
+    const at = tasks.find((t) => t.startedAt)?.startedAt ?? null;
+    return {
+      id: m.id,
+      role: m.roles[0],
+      label: m.label,
+      model: null,
+      state: live ? "live" : done ? "finished" : "planned",
+      ghost: !live && !done,
+      running: live ? 1 : 0,
+      spawnedAt: at,
+      endedAt: done ? (tasks.at(-1)?.endedAt ?? null) : null,
+      lives: at ? [{ from: at, to: done ? (tasks.at(-1)?.endedAt ?? null) : null }] : [],
+      reason: "",
+      tasks: tasks.map((t) => t.id),
+      usd: tasks.reduce((n, t) => n + (t.usd ?? 0), 0),
+      outcome: done ? "done" : null,
+    };
   });
-  return (
-    <section className="crew-strip" aria-labelledby="crew-strip-h" ref={box}>
-      <h2 id="crew-strip-h" className="visually-hidden">
-        The crew
-      </h2>
-      <ul className="crew-faces">
-        {lead && (
-          <li className="crew-lead" data-thought-anchor="pip" {...holds("pip")}>
-            {lead}
-          </li>
-        )}
-        {rows.map(({ m, mood, img, line }, i) => {
-          const name = `${m.label}, ${MOOD_WORD[mood]}`;
-          return (
-            <li key={m.id} style={{ "--face-i": i } as CSSProperties} data-thought-anchor={m.id} {...holds(m.id)}>
-              <Popover
-                id={`crew-face-${m.id}`}
-                label={name}
-                variant="quiet"
-                size="sm"
-                trigger={<CrewFace member={m} mood={mood} step={step + i} size={mood === "working" ? "lg" : "md"} />}
-                triggerProps={{ className: "crew-face-btn", title: name, id: `crew-face-btn-${m.id}` }}
-              >
-                <div className="crew-face-panel">
-                  <p className="label">{m.label}</p>
-                  <p>{line}</p>
-                  {mood === "stuck" && problemOf(state) && (
-                    <ProblemButton projectId={projectId} state={state} problem={problemOf(state)!} />
-                  )}
-                  {img && <img className="pixelated" src={img} alt={`Latest from the ${m.label.toLowerCase()}`} />}
-                  <button
-                    type="button"
-                    className="linkish crew-face-ask"
-                    onClick={() => {
-                      document.getElementById(`crew-face-${m.id}`)?.hidePopover?.();
-                      askPipAbout(projectId, { label: `the ${m.label.toLowerCase()}'s work` });
-                    }}
-                  >
-                    Ask Pip about this
-                  </button>
-                  <button type="button" className="linkish crew-face-watch" onClick={() => watch(m.id)}>
-                    See what it's doing
-                  </button>
-                </div>
-              </Popover>
-            </li>
-          );
-        })}
-      </ul>
-      <ThoughtLayer bubbles={thoughts.bubbles} box={box} />
-      <p className="visually-hidden" role="status" aria-live="polite">
-        {thoughts.live}
-      </p>
-      {watching && <AgentActivity projectId={projectId} state={state} memberId={watching} onClose={stopWatching} />}
-    </section>
-  );
 }
 
 /** a few big discs, partly off the edges, behind the status line while the crew is getting started */
@@ -525,6 +474,25 @@ function InstanceStrip({ projectId, state, lead, pipProject, conn }: StripProps)
     },
     [],
   );
+
+  // a face comes out of Pip and goes back behind it: before paint, each moving face learns where Pip is from its
+  // own resting place (--pip-x/--pip-y); measured once per move, with the animation off so the offset is from rest
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measures again whenever a face changes phase
+  useLayoutEffect(() => {
+    const pip = box.current?.querySelector(".crew-lead")?.getBoundingClientRect();
+    if (!pip) return;
+    for (const li of box.current?.querySelectorAll<HTMLLIElement>(".crew-inst[data-phase]") ?? []) {
+      const phase = li.dataset.phase ?? "";
+      if (phase === "hold" || li.dataset.pipFor === phase) continue;
+      const anim = li.style.animation;
+      li.style.animation = "none";
+      const at = (li.querySelector(".crew-face") ?? li).getBoundingClientRect();
+      li.style.animation = anim;
+      li.style.setProperty("--pip-x", `${Math.round(pip.left + pip.width / 2 - (at.left + at.width / 2))}px`);
+      li.style.setProperty("--pip-y", `${Math.round(pip.top + pip.height / 2 - (at.top + at.height / 2))}px`);
+      li.dataset.pipFor = phase;
+    }
+  }, [phases]);
 
   const onAnimEnd = (id: string, phase: Phase | undefined) => (e: AnimationEvent<HTMLLIElement>) => {
     if (e.target !== e.currentTarget) return;

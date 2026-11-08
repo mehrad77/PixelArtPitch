@@ -222,6 +222,9 @@
   gap: var(--space-3);
 }
 .crew-inst-row > .crew-lead {
+  /* above the faces, so a face coming out of Pip, or going back, passes behind it */
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   min-block-size: 4.5rem;
@@ -267,43 +270,67 @@
   background: var(--fill-disabled, var(--surface-raised));
   color: var(--text-muted);
 }
-/* a dismissed face fades out in place, also under reduced motion; with motion it shrinks too (below) */
-.crew-inst[data-phase="fold"] {
-  animation: crew-leave calc(var(--dur-step) * 4) var(--ease-dither) forwards;
+/* a dismissed face fades out in place, also under reduced motion; with motion it shrinks and closes its gap (below) */
+.crew-inst[data-phase="fold"],
+.crew-inst[data-phase="leave"] {
+  animation: crew-leave var(--dur-fast) linear forwards;
 }
-/* the moves (PIP-JOURNEY §3.1): stepped, from the kit's pixel motion tokens; with reduced motion nothing moves */
+/* the moves (PIP-JOURNEY §3.1): short and smooth, so a busy row never lags behind the crew; with reduced motion
+   nothing moves */
 @media (prefers-reduced-motion: no-preference) {
   .crew-strip[data-instances] .crew-face {
     transition:
-      background-color var(--dur-step) var(--ease-step),
-      outline-color var(--dur-step) var(--ease-step);
+      background-color var(--dur-fast) var(--ease-enter),
+      outline-color var(--dur-fast) var(--ease-enter);
   }
+  /* a new face comes out of Pip (--pip-x/--pip-y, set by CrewStrip from where Pip sits) and flies to its place */
   .crew-inst[data-phase="enter"] {
-    animation: crew-enter calc(var(--dur-step) * 4) var(--ease-dither) both;
-    animation-delay: calc(var(--dur-step) * var(--enter-i, 0));
+    animation: crew-enter var(--dur-slow) var(--ease-enter) both;
+    animation-delay: calc(var(--dur-fast) * 0.5 * var(--enter-i, 0));
   }
-  /* a redo comes back from Pip's side, like a first entrance (D5) */
+  /* a redo comes back out of Pip, like a first entrance (D5) */
   .crew-inst[data-phase="return"] {
-    animation: crew-enter calc(var(--dur-step) * 4) var(--ease-dither) both;
+    animation: crew-enter var(--dur-slow) var(--ease-enter) both;
   }
-  .crew-inst[data-phase="fold"] {
-    animation: crew-fold calc(var(--dur-step) * 4) var(--ease-dither) forwards;
-  }
+  /* a finished face flies back and tucks in behind Pip, then its slot closes, so the faces after it slide over
+     instead of jumping into a hole */
+  .crew-inst[data-phase="fold"],
   .crew-inst[data-phase="leave"] {
-    animation: crew-leave calc(var(--dur-step) * 4) var(--ease-dither) forwards;
+    /* lets the slot close from its own width (auto) to 0; a browser without it closes the slot at the end */
+    interpolate-size: allow-keywords;
+    min-inline-size: 0;
+    animation: crew-fold calc(var(--dur-slow) * 1.5) var(--ease-exit) forwards;
   }
-  /* Pip's side is the inline start */
   @keyframes crew-enter {
-    from {
-      translate: calc(var(--space-2) * -1 * var(--flow, 1)) 0;
-      scale: 0.5;
+    0% {
+      translate: var(--pip-x, 0) var(--pip-y, 0);
+      scale: 0.3;
       opacity: 0;
+    }
+    25% {
+      opacity: 1;
     }
   }
   @keyframes crew-fold {
-    to {
-      scale: 0.5;
+    0% {
+      inline-size: auto;
+    }
+    50% {
+      opacity: 1;
+    }
+    60% {
+      translate: var(--pip-x, 0) var(--pip-y, 0);
+      scale: 0.3;
       opacity: 0;
+      inline-size: auto;
+      margin-inline-end: 0;
+    }
+    100% {
+      translate: var(--pip-x, 0) var(--pip-y, 0);
+      scale: 0.3;
+      opacity: 0;
+      inline-size: 0;
+      margin-inline-end: calc(var(--space-3) * -1);
     }
   }
 }
@@ -311,9 +338,6 @@
   to {
     opacity: 0;
   }
-}
-.crew-inst:dir(rtl) {
-  --flow: -1;
 }
 /* the header's small faces keep only the glyphs */
 .crew-btn-faces .crew-face-end {

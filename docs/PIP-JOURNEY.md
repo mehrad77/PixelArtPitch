@@ -153,15 +153,19 @@ The order is Pip first, then live faces in join order, then ghosts. The row hold
 - **Popover** (pressing a face): label, Pip's reason for bringing it in ("Brought in the Writer for three script angles."), the line about it, its last picture, "Ask Pip about this", "See what it's doing". A ghost's popover says "Starts after the script pick" or "Waiting for a free slot. 3 are working".
 - **The finished line.** "See who worked" opens the crew drawer on its Finished group (the newest finished member selected). The count counts a member as soon as its ✓ hold ends, so it ticks up while the face fades.
 
-**Motion.** Faces are pixel UI, so every move is stepped. Durations come from the kit tokens.
+**Motion.** Pip brings the crew in and takes them back: a face comes out of Pip and merges back behind it when it is done. Moves are short and smooth (`--ease-enter` in, `--ease-exit` out), so a busy row keeps up with the crew; only the conducting baton steps. Durations come from the kit tokens.
+
+**One row.** The row is always Pip, then one face per crew member. A project with no crew instances yet (before Pip's plan, or an older project) shows its departments in the same row and shapes: working ones live, finished ones in the count under the row, the rest as quiet upcoming faces.
+
+**Thought bubbles** sit over the face they belong to, placed from where each face rests, so faces spawning together never pull their bubbles toward Pip. They are laid out again when faces join or leave, the row resizes, or the page scrolls. When there is no room above the row (under the sticky header or the window's top), they hang below the faces, with the dots trailing up.
 
 | Event | Without reduced motion | With reduced motion |
 |---|---|---|
-| Enter (a face first shows in the row, live or as a ghost) | It enters from Pip's side: an inline offset of −8px (+8px under `:dir(rtl)`) → 0, scale 0.5 → 1, opacity 0 → 1, all on `--ease-dither` over `calc(var(--dur-step) * 4)`. Several in one batch stagger by `--dur-step`. | It appears in place |
-| Ghost → live (`spawn` or `live` on a face already shown) | The edge turns from dashed to solid and the hue fills, `--ease-step` over `--dur-step`. Nothing moves. | instant |
-| Ghost leaves the horizon (a pick opens) | opacity → 0 in place, `--ease-dither`, `calc(var(--dur-step) * 4)` | gone |
-| Finish (`end`) | The glyphs swap to `^ ^ ✓` (a whole step). After 2 s it fades and shrinks out in place: scale 1 → 0.5 and opacity → 0, no slide, `--ease-dither`, `calc(var(--dur-step) * 4)`. The count in the line under the row ticks up as it goes; then the row reflows in one step. | The ✓ still holds for 2 s, then it fades out in place (no shrink) |
-| Return (`revive`, D5) | as an entrance: it comes back into the row from Pip's side (−8px inline → 0); the finished count goes down by one | appears |
+| Enter (a face first shows in the row, live or as a ghost) | It comes out of Pip: it starts at Pip's centre (`--pip-x`/`--pip-y`, measured from where the face will rest), at scale 0.3 and hidden, and flies to its place, on `--ease-enter` over `--dur-slow`. Pip sits above the row, so the face appears from behind it. Several in one batch stagger by half of `--dur-fast`. | It appears in place |
+| Ghost → live (`spawn` or `live` on a face already shown) | The edge turns from dashed to solid and the hue fills, `--ease-enter` over `--dur-fast`. Nothing moves. | instant |
+| Ghost leaves the horizon (a pick opens) | The same merge as a finish: back behind Pip, then the slot closes | fades out over `--dur-fast` |
+| Finish (`end`) | The glyphs swap to `^ ^ ✓` (a whole step). After 2 s it merges back behind Pip over `--dur-slow` × 1.5 on `--ease-exit`: it flies to Pip's centre and shrinks to 0.3, fading as it reaches Pip; then its slot closes, so the faces after it slide over instead of jumping into a hole. The count in the line under the row ticks up as it goes. | The ✓ still holds for 2 s, then it fades out over `--dur-fast` (no flight, no slide) |
+| Return (`revive`, D5) | as an entrance: it comes back out of Pip; the finished count goes down by one | appears |
 | Pip conducting | once per batch that has a `spawn` or a `revive` (§3.2) | a still baton for 1.2 s |
 
 - Only live changes animate, never what loads. Take a baseline of the instances on mount and again on every reconnect (`conn` back to `open`), as `useThoughts` does, and animate only what changed against it.

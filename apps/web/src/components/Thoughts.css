@@ -52,6 +52,15 @@
   margin-inline-start: -2px;
   inset-block-start: calc(100% + 12px);
 }
+/* under the faces when there is no room above: the dots trail up to the face */
+.thought[data-below] .thought-dot[data-n="1"] {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + 2px);
+}
+.thought[data-below] .thought-dot[data-n="2"] {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + 12px);
+}
 @media (prefers-reduced-motion: no-preference) {
   .thought[data-placed] {
     animation: thought-in var(--dur-moderate) var(--ease-enter);

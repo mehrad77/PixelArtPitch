@@ -143,18 +143,38 @@ export function useThoughts(
   return { bubbles, hold, live, push, say };
 }
 
-type Spot = { x: number; y: number; tail: number; rtl: boolean; w: number };
+/** `below`: no room above the row (under the sticky header or the window's top), so the bubble hangs under the faces
+ * with its dots pointing up; `y` is then measured down from the row's bottom */
+type Spot = { x: number; y: number; tail: number; rtl: boolean; w: number; below: boolean };
+
+/** an element's left edge in the page from layout alone (offsetLeft ignores transforms, so an animating face counts
+ * where it will rest) */
+function restingLeft(el: HTMLElement): number {
+  let x = 0;
+  for (let n: HTMLElement | null = el; n; n = n.offsetParent as HTMLElement | null) x += n.offsetLeft;
+  return x;
+}
+function restingTop(el: HTMLElement): number {
+  let y = 0;
+  for (let n: HTMLElement | null = el; n; n = n.offsetParent as HTMLElement | null) y += n.offsetTop;
+  return y;
+}
 
 /** the bubbles, laid out over the faces inside `box` (each face carries data-thought-anchor="<member>") */
 export function ThoughtLayer({ bubbles, box }: { bubbles: Bubble[]; box: RefObject<HTMLElement | null> }) {
   const refs = useRef(new Map<number, HTMLDivElement>());
   const [spots, setSpots] = useState<Record<number, Spot>>({});
   const key = bubbles.map((b) => `${b.id}`).join(",");
-  // biome-ignore lint/correctness/useExhaustiveDependencies: lays out again when the set of bubbles changes
-  useLayoutEffect(() => {
+  const bubblesRef = useRef(bubbles);
+  bubblesRef.current = bubbles;
+  const lay = useCallback(() => {
     const el = box.current;
     if (!el) return;
+    const bubbles = bubblesRef.current;
     const rect = el.getBoundingClientRect();
+    const boxLeft = restingLeft(el);
+    const boxTop = restingTop(el);
+    let faceBottom = 0;
     // the row, kept inside the viewport too
     const lo = Math.max(0, 8 - rect.left);
     const W = Math.min(rect.width, document.documentElement.clientWidth - rect.left - 8);
@@ -164,8 +184,11 @@ export function ThoughtLayer({ bubbles, box }: { bubbles: Bubble[]; box: RefObje
         const node = refs.current.get(b.id);
         const face = el.querySelector<HTMLElement>(`[data-thought-anchor="${b.member}"]`);
         if (!node || !face) return null;
-        const f = face.getBoundingClientRect();
-        return { b, w: Math.min(node.offsetWidth, W - lo), h: node.offsetHeight, cx: f.left + f.width / 2 - rect.left };
+        // where the face rests, not where its enter or fold animation has it this frame: a face spawning beside
+        // others is still flying out of Pip when its bubble is placed
+        const cx = restingLeft(face) - boxLeft + face.offsetWidth / 2;
+        faceBottom = Math.max(faceBottom, restingTop(face) - boxTop + face.offsetHeight);
+        return { b, w: Math.min(node.offsetWidth, W - lo), h: node.offsetHeight, cx };
       })
       .filter((x): x is NonNullable<typeof x> => !!x)
       .sort((a, z) => a.cx - z.cx);
@@ -191,15 +214,45 @@ export function ThoughtLayer({ bubbles, box }: { bubbles: Bubble[]; box: RefObje
       tierH[tier] = Math.max(tierH[tier] ?? 0, it.h);
       placed.push({ id: it.b.id, x, tier, w: it.w, cx: it.cx });
     }
+    // above the row when every tier fits between it and whatever covers the page's top (the sticky header);
+    // otherwise below the faces
+    const tall = tierH.reduce((n, h) => n + h + GAP + 10, 0) + 12;
+    const cover = document.querySelector(".topbar")?.getBoundingClientRect().bottom ?? 0;
+    const below = rect.top - Math.max(0, cover) < tall;
     const next: Record<number, Spot> = {};
     for (const p of placed) {
       let y = 0;
       for (let t = 0; t < p.tier; t++) y += (tierH[t] ?? 0) + GAP + 10;
+      if (below) y += faceBottom;
       const tail = Math.max(14, Math.min(p.w - 14, p.cx - p.x));
-      next[p.id] = { x: rtl ? rect.width - p.x - p.w : p.x, y, tail: rtl ? p.w - tail : tail, rtl, w: p.w };
+      next[p.id] = { x: rtl ? rect.width - p.x - p.w : p.x, y, tail: rtl ? p.w - tail : tail, rtl, w: p.w, below };
     }
     setSpots((s) => (JSON.stringify(s) === JSON.stringify(next) ? s : next));
-  }, [key]);
+  }, [box]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: lays out again when the set of bubbles changes
+  useLayoutEffect(lay, [key, lay]);
+  // and again when faces join or leave the row, or the row changes size, so a bubble follows its face
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    let frame = 0;
+    const soon = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(lay);
+    };
+    const mo = new MutationObserver(soon);
+    mo.observe(el, { childList: true, subtree: true });
+    const ro = new ResizeObserver(soon);
+    ro.observe(el);
+    // scrolling changes the room above the row
+    addEventListener("scroll", soon, { passive: true, capture: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      mo.disconnect();
+      ro.disconnect();
+      removeEventListener("scroll", soon, { capture: true });
+    };
+  }, [box, lay]);
 
   return (
     <div className="thoughts" aria-hidden="true">
@@ -215,7 +268,14 @@ export function ThoughtLayer({ bubbles, box }: { bubbles: Bubble[]; box: RefObje
             className="thought"
             data-leaving={b.leaving ? "" : undefined}
             data-placed={s ? "" : undefined}
-            style={s ? { insetInlineStart: `${s.x}px`, insetBlockEnd: `calc(100% + ${s.y + 12}px)` } : undefined}
+            data-below={s?.below ? "" : undefined}
+            style={
+              s
+                ? s.below
+                  ? { insetInlineStart: `${s.x}px`, insetBlockStart: `${s.y + 12}px`, insetBlockEnd: "auto" }
+                  : { insetInlineStart: `${s.x}px`, insetBlockEnd: `calc(100% + ${s.y + 12}px)` }
+                : undefined
+            }
           >
             <span className="thought-text" dir="auto">
               {b.text}
