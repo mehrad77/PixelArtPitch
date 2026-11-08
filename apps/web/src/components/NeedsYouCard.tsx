@@ -16,7 +16,7 @@ import { LinkButton } from "../lib/router.tsx";
 import type { Gate, ProjectState, QuestionT } from "../lib/types.ts";
 import { DecisionCard } from "./DecisionCard.tsx";
 import { EffectButton } from "./EffectAction.tsx";
-import { ProblemButton } from "./ProblemButton.tsx";
+import { openProvider, ProblemButton } from "./ProblemButton.tsx";
 import { PreviewButton } from "./SheetDialog.tsx";
 import "./NeedsYouCard.css";
 
@@ -313,7 +313,7 @@ export function QuestionItem({ projectId, q, where, titleId }: Part & { q: Quest
           <button
             type="button"
             className="linkish small"
-            onClick={() => send({ optionId: q.recommendedId, note: "Let Producer decide" })}
+            onClick={() => send({ optionId: q.recommendedId, note: back ?? "Let the crew decide" })}
           >
             {back}
           </button>
@@ -331,7 +331,13 @@ export function QuestionItem({ projectId, q, where, titleId }: Part & { q: Quest
 export function PickItem({ projectId, q, where, titleId }: Part & { q: QuestionT }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [telling, setTelling] = useState(false);
+  const [note, setNote] = useState("");
   const base = `${where}-pick-${q.id}`;
+  // "Write it" opens the note field: the words go there, not into Pip's box
+  useEffect(() => {
+    if (telling) document.getElementById(`${base}-note`)?.focus();
+  }, [telling, base]);
   const back = handBack(q);
   const send = async (a: { optionId: string; note?: string }) => {
     setBusy(a.optionId);
@@ -407,14 +413,59 @@ export function PickItem({ projectId, q, where, titleId }: Part & { q: QuestionT
                 variant={rec ? "primary" : "ghost"}
                 aria-describedby={`${base}-${o.id}`}
                 aria-busy={busy === o.id ? "true" : undefined}
-                onClick={() => !busy && send({ optionId: o.id })}
+                aria-expanded={q.hold && o.id === "tell" ? telling : undefined}
+                onClick={() => {
+                  if (busy) return;
+                  // a hold's two answers that can't act on a click: the key is fixed in Settings (saving it lifts
+                  // the hold), and "Tell Pip" needs the person's words as the note
+                  if (q.hold && o.id === "fix_key") return openProvider();
+                  if (q.hold && o.id === "tell") return setTelling((t) => !t);
+                  send({ optionId: o.id });
+                }}
               >
-                Use this one
+                {q.hold && o.id === "fix_key"
+                  ? "Open Settings"
+                  : q.hold && o.id === "tell"
+                    ? "Write it"
+                    : "Use this one"}
               </Button>
             </li>
           );
         })}
       </ul>
+      {q.hold && telling && (
+        <form
+          className="needs-tell"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!busy && note.trim()) send({ optionId: "tell", note: note.trim() });
+          }}
+        >
+          <Field
+            id={`${base}-note`}
+            label="What should change?"
+            control="textarea"
+            rows={3}
+            size="sm"
+            value={note}
+            onChange={(e) => setNote(e.currentTarget.value)}
+          />
+          <div className="needs-actions">
+            <Button
+              type="submit"
+              size="sm"
+              variant="primary"
+              disabled={!note.trim()}
+              aria-busy={busy === "tell" ? "true" : undefined}
+            >
+              Send to Pip
+            </Button>
+            <button type="button" className="linkish small" onClick={() => setTelling(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
       {err && (
         <p className="decision-error" role="status">
           {err}
@@ -425,7 +476,7 @@ export function PickItem({ projectId, q, where, titleId }: Part & { q: QuestionT
           <button
             type="button"
             className="linkish small"
-            onClick={() => !busy && send({ optionId: q.recommendedId, note: "Let Producer decide" })}
+            onClick={() => !busy && send({ optionId: q.recommendedId, note: back ?? "Let the crew decide" })}
           >
             {back}
           </button>

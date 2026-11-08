@@ -31,9 +31,11 @@ import {
   decidePip,
   fillPip,
   hasNews,
+  isDraftKey,
   MAKE_ANOTHER,
   makeAnotherFrom,
   markSeen,
+  NEW_TALK,
   openDraft,
   peekPip,
   pipMood,
@@ -43,6 +45,7 @@ import {
   splitAbout,
   suggestions,
   usePip,
+  WORKSPACE,
 } from "../lib/pip.ts";
 import { planCrew, planDiff, planUsd, titleWords } from "../lib/plancard.ts";
 import { Link, navigate } from "../lib/router.tsx";
@@ -107,6 +110,9 @@ function PipLive({ conv }: { conv: Conv }) {
 
 // ---- the thread ----
 export type { Marker };
+
+/** a project's conversation (not /new, a draft or the workspace): words for /new never wait in a project's box */
+const isProjectKey = (k: string | null | undefined) => !!k && k !== NEW_TALK && k !== WORKSPACE && !isDraftKey(k);
 
 export function PipThread({
   project,
@@ -899,6 +905,13 @@ function Composer({
   attach?: Attach;
 }) {
   const [text, setText] = useState("");
+  const keyRef = useRef(project);
+  // a field that now shows another conversation (a draft that became its project) starts empty: words typed for one
+  // never wait in another's box
+  if (keyRef.current !== project) {
+    keyRef.current = project;
+    if (text) setText("");
+  }
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   // /context opens a view, not a message: nothing goes into the conversation
@@ -959,10 +972,13 @@ function Composer({
     const on = about && !body.startsWith("/") ? about : undefined;
     const words = scoped(on, body);
     const inst = on?.instance ? { instance: on.instance } : undefined;
+    const sentFrom = project;
     const ok = onSend ? await onSend(words, inst) : await askPip(project, words, inst ? { about: inst } : {});
     if (ok) {
       if (on) clearAbout(project);
-    } else setText(body);
+      // words that didn't go out come back to the field, but only while it still shows that conversation (/new's
+      // first send can start the project and move this field to it before the answer lands)
+    } else if (keyRef.current === sentFrom || !isProjectKey(keyRef.current)) setText(body);
   };
   const pick = (i: number) => {
     const c = matches[i];

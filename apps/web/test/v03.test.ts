@@ -259,6 +259,23 @@ test("scenario hold: a partial cast holds the run and asks with three options; N
   );
 });
 
+test("scenario hold: 'Tell Pip' needs the person's words; with them the hold lifts and the note goes on", () => {
+  const r = play("hold");
+  r.run((s) => open(s, "q_hold"));
+  // no words: as the server, the question stays open and the crew stays held
+  r.act({ type: "answer", qid: "q_hold", optionId: "tell" });
+  assert.ok(open(r.s, "q_hold"), "an empty 'Tell Pip' keeps the question open");
+  assert.ok(r.sim.held, "and the hold");
+  r.act({ type: "answer", qid: "q_hold", optionId: "tell", note: "use the walking founder" });
+  assert.equal(r.sim.held, null, "the note lifts the hold");
+  assert.ok(!open(r.s, "q_hold"), "the question is answered");
+  r.run((s) => s.tasks.some((t) => t.status === "working"), 10);
+  assert.ok(
+    r.s.tasks.some((t) => t.status === "working"),
+    "the run goes on with the note",
+  );
+});
+
 test("scenario holdcard: a Pip card confirmed during a hold starts now, closes the question and resumes", () => {
   const r = play("holdcard");
   r.run(() => r.sim.cards.has("c_hold"));

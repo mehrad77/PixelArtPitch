@@ -126,3 +126,8 @@
     grid-template-columns: 1fr;
   }
 }
+/* a hold's "Tell Pip what to change": the person's words, right under the options */
+.needs-tell {
+  display: grid;
+  gap: var(--space-2);
+}

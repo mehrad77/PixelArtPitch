@@ -243,7 +243,7 @@ const PERSON_GATES = new Set<PlanGate>(["g1_script", "rights", "g3_rough"]);
 const isGate = (n: Node) => n.kind === "gate";
 
 export type JourneyAction =
-  | { type: "answer"; qid: string; optionId?: string }
+  | { type: "answer"; qid: string; optionId?: string; note?: string }
   /** a provider's key was saved, or its test passed: a run held on it goes on (§1.8) */
   | { type: "key"; provider: string }
   /** `changes` at G3 carries the person's note and the ticked scenes */
@@ -713,11 +713,14 @@ export class Journey {
   }
   /** the hold's answer: the crew goes on with it ("Redo with the Director" draws the founder, "Accept the look" goes
    * on with a stand-in; "Tell Pip what to change" keeps the hold for your note) */
-  private answerHold(optionId: string) {
+  private answerHold(optionId: string, note?: string) {
     this.holdAnswered = true;
-    if (optionId === "tell") {
-      this.pip("Say what to change in the field above. The crew waits until you do.", [], false);
-      this.waits.set("ask:hold", this.tick);
+    if (optionId === "tell" && note) {
+      // as the server: the note is routed (the cast is the Director's), the hold lifts and the change runs
+      this.liftPipHold();
+      this.channel("pip", "director", "brief", note.slice(0, 200), "t_cast");
+      this.pip(`Sent your note to the Director: "${note.slice(0, 120)}". The crew goes on with it.`, [], false);
+      this.expandFounder("person");
       return;
     }
     this.liftPipHold();
@@ -1504,6 +1507,8 @@ export class Journey {
                 : null;
       if (!q) return [];
       const optionId = a.optionId ?? q.recommendedId;
+      // as the server: "Tell Pip" with no words keeps the hold's question open
+      if (a.qid === "q_hold" && optionId === "tell" && !a.note?.trim()) return [];
       if (a.qid === "q_publish") {
         const n = this.node("t_publish_founder");
         n.title = optionId === "yes" ? "Published founder" : "Kept founder in this project";
@@ -1529,7 +1534,7 @@ export class Journey {
         if (c && c.status === "proposed")
           this.setCard({ ...c, status: "declined", result: { text: "You answered the question instead." } });
         this.waits.delete("card:c_hold");
-        this.answerHold(optionId);
+        this.answerHold(optionId, a.note?.trim());
       }
       this.settle();
     } else if (a.type === "gate") {
@@ -1773,7 +1778,7 @@ export const Q_HOLD = (at: string): QuestionT => ({
     {
       id: "tell",
       label: "Tell Pip what to change",
-      detail: "Say it in the field above; the crew waits for your note.",
+      detail: "Write what to change; the crew waits for your note.",
     },
   ],
   recommendedId: "redo",

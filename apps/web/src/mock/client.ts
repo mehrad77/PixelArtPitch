@@ -1756,7 +1756,7 @@ export class MockClient implements Client {
     const b = be();
     const p = b.get(id);
     if (p.journey) {
-      b.play(p, p.journey.act({ type: "answer", qid, optionId: a.optionId }));
+      b.play(p, p.journey.act({ type: "answer", qid, optionId: a.optionId, ...(a.note ? { note: a.note } : {}) }));
       const q = p.state.questions.find((x) => x.id === qid);
       if (!q) throw new Error("That question is gone.");
       return clone(q);
