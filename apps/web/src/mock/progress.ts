@@ -40,6 +40,8 @@ function paletteOf(): Record<string, string> {
   return palette;
 }
 
+const CODE_ONLY = new Set(["asset.import", "art.cast", "sound.mix", "deliver.export", "lib.publish"]);
+
 const THINK =
   "The brief asks for this to read at a glance against the night sky, so the light comes from the upper left; ";
 const WRITE =
@@ -47,7 +49,8 @@ const WRITE =
 
 /** the call `t` is making now, `sec` seconds in (the run's own clock, sped up by `speed`) */
 export function mockProgress(t: Task, sec: number, speed = 1): TaskProgress | null {
-  if (t.status !== "working") return null;
+  // code-only steps (an import, a cast, the mix, an export) make no model call: the server sends nothing for them
+  if (t.status !== "working" || CODE_ONLY.has(t.kind)) return null;
   const s = Math.max(0, sec * speed);
   const draws = t.role === "pixel-artist";
   // a drawing thinks briefly and streams its rows fast: the journey's draw is a few ticks long

@@ -18,7 +18,7 @@ import { usePublishProject } from "../lib/current.ts";
 import { buildClips, type Clip, NOTE_CATEGORY, ROLE_LABEL, type TrackId } from "../lib/derive.ts";
 import { ago, FPS, timecode } from "../lib/format.ts";
 import { isControlTarget, useProject, useThrottled } from "../lib/hooks.ts";
-import { isStaleDigest } from "../lib/human.ts";
+import { askedByGate, isStaleDigest } from "../lib/human.ts";
 import { usePipOpenRequest } from "../lib/pip.ts";
 import { usePlayback } from "../lib/playback.ts";
 import type { NoteStatus, NoteTarget, ProjectState, Role, Stage } from "../lib/types.ts";
@@ -136,7 +136,10 @@ function Workspace({
   const clips = useMemo(() => buildClips(state), [state]);
   // "The crew stopped: …" outlives the failure it reports; once a retry recovered it, say nothing
   const openQs = state.questions.filter((q) => q.status === "open");
-  const openGates = state.gates.filter((g) => g.status === "open");
+  // a gate that is a pick (G1's angle question) is answered by its question's card: its own "approve" would pass the
+  // gate while the crew still waits on the pick, so the Inbox shows the question alone, counted once
+  const own = askedByGate(state);
+  const openGates = state.gates.filter((g) => g.status === "open" && !g.items.some((i) => i.ref && own.has(i.ref)));
   const inboxCount = openQs.length + openGates.length;
   // the Inbox already shows an open gate: drop the digest's sentence that repeats it ("Approve it (G2)…")
   const digestText = (isStaleDigest(state) ? "" : state.digest)

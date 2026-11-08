@@ -260,10 +260,10 @@ function PickItem({ projectId, q }: { projectId: string; q: QuestionT }) {
   };
   return (
     <div className="needs-pick-wrap" aria-busy={busy ? "true" : undefined}>
-      <h2 id="needs-title" className="h4">
+      <h2 id="needs-title" className="h4" dir="auto">
         {q.question}
       </h2>
-      <p className="muted small">
+      <p className="muted small" dir="auto">
         From the {memberOf(q.from as Role).label.toLowerCase()}. {q.why}
       </p>
       <ul className="needs-picks" aria-labelledby="needs-title">
