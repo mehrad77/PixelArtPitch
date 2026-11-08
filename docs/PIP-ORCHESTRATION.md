@@ -617,6 +617,11 @@ In P5 the engine could make an owl sit, a moth fly and a lantern glow, but no re
 - **Pip on a provider error.** `Pip.sorry()` reads the error with `humanize()`: a rejected key or no credit replies "Your Anthropic key was rejected. I can't answer until it's fixed in Settings → Providers." with a card `{ type: "fix", text: "Fix the key", fix: "fix_key", provider }`, never "can't reach my model".
 - **Status follows the run.** Answering a gate (`Crew.gate`, any verdict but `changes`) takes the line off "Waiting for you…" onto the running stage ("Exporting your video"), unless a hold still stands. The Try again card ends a held line with one full stop.
 
+### 1.15 Tooling (v0.3, after the P5 run)
+
+- **A stale web build.** `pap serve` compares `apps/web/dist/index.html`'s time with the newest file under `apps/web/src` (`webBuild`, `apps/server/src/build.ts`) and prints a warning when the build is older or missing. `pap serve --build` runs `pnpm --filter @pap/web build` first. `GET /api/build` gives the page the same answer for its banner.
+- **The end-to-end driver** is `scripts/e2e/` ([README](../scripts/e2e/README.md)): `node scripts/e2e/driver.ts --home <throwaway> [--port] [--cap] [--copy <project>]` builds the web app, sets up the throwaway `PAP_HOME` on its first start, serves the studio, logs the workspace events and stops the studio when the whole run passes the cap (default $8). `api.sh`, `pip.sh` and `watch.sh` drive and watch it. It never reads, prints or stores a key.
+
 ---
 
 ## 2. Instances (the members that come and go)

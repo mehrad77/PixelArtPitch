@@ -90,3 +90,30 @@ test("GET /api/projects: finished means a video and no crew working; the rough c
     workspace.closeAll();
   }
 });
+
+test("the web build check: stale when dist/index.html is older than the newest source file", async () => {
+  const { webBuild } = await import("../src/build.ts");
+  const { utimesSync } = await import("node:fs");
+  const web = join(home, `web-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(join(web, "src", "lib"), { recursive: true });
+  mkdirSync(join(web, "dist"), { recursive: true });
+  writeFileSync(join(web, "src", "lib", "a.ts"), "x");
+  writeFileSync(join(web, "dist", "index.html"), "<html>");
+  const at = (f: string, s: number) => utimesSync(f, s, s);
+  at(join(web, "src", "lib", "a.ts"), 2_000_000);
+  at(join(web, "dist", "index.html"), 1_000_000);
+  const stale = webBuild(web);
+  assert.equal(stale.webStale, true);
+  assert.equal(stale.srcAt, new Date(2_000_000_000).toISOString());
+  at(join(web, "dist", "index.html"), 3_000_000);
+  assert.equal(webBuild(web).webStale, false);
+  assert.deepEqual(webBuild(join(web, "nothing")), { webStale: false, builtAt: null, srcAt: null });
+  const { get, workspace } = setup({});
+  try {
+    const b = (await (await get("/api/build")).json()) as any;
+    assert.equal(typeof b.webStale, "boolean");
+    assert.ok("builtAt" in b && "srcAt" in b);
+  } finally {
+    workspace.closeAll();
+  }
+});

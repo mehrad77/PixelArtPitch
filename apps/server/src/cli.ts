@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// pap serve [--port 5141] [--dev]        the studio (UI + API + MCP over HTTP); prints the launch URL
+// pap serve [--port 5141] [--dev] [--build]
+//                                        the studio (UI + API + MCP over HTTP); prints the launch URL. Warns when
+//                                        the web build is older than apps/web/src; --build rebuilds it first
 // pap mcp                                MCP over stdio (proxies to a running `pap serve`, or runs in-process)
 // pap render <project> [--delivery id]   export a video
 // pap still <project> <t> [--scale 4]    one PNG to stdout's path
@@ -9,6 +11,7 @@
 // pap library promote <id> [--from <user-library>] [--to <seed>]
 //                                        copy an asset from your library into the repo's public library/
 //                                        (the standard and the rights checks; docs/RIGHTS.md §5)
+import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { serve } from "@hono/node-server";
@@ -16,6 +19,7 @@ import { checkGolden, loadProject, openRenderer, promoteAsset, userLibraryDir } 
 import { buildReport } from "@pap/report";
 import { buildRegistry, PAP_HOME, Workspace } from "@pap/tools";
 import { createApp, VERSION } from "./app.ts";
+import { webBuild } from "./build.ts";
 import { serveStdio } from "./mcp.ts";
 import { wireCrew } from "./wire.ts";
 
@@ -49,6 +53,20 @@ function running(): { port: number; pid: number; token: string; mcpToken: string
 async function main() {
   if (cmd === "serve") {
     const port = Number(flag("port", "5141"));
+    const web = new URL("../../web/", import.meta.url).pathname;
+    if (rest.includes("--build")) {
+      console.log("Building the studio UI…");
+      const b = spawnSync("pnpm", ["--filter", "@pap/web", "build"], { cwd: join(web, "../.."), stdio: "inherit" });
+      if (b.status !== 0) {
+        console.error("The studio UI didn't build; see the output above.");
+        process.exit(1);
+      }
+    }
+    const build = webBuild(web);
+    if (build.webStale)
+      console.warn(
+        `Warning: the studio UI build (${build.builtAt ?? "missing"}) is older than apps/web/src (${build.srcAt}). Run \`pap serve --build\`, or \`pnpm --filter @pap/web build\`.`,
+      );
     mkdirSync(PAP_HOME, { recursive: true });
     const workspace = new Workspace(roots);
     const registry = buildRegistry();

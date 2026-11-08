@@ -75,6 +75,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | Method + path | Body / query | Returns |
 |---|---|---|
 | `GET /api/session` | | `{ version, token, workspace: { roots: string[], libraryDir, seedDir } }`: `libraryDir` is the person's library, where publish writes (`settings.paths.library`); `seedDir` is the repo's read-only `library/` |
+| `GET /api/build` | | `{ webStale: boolean, builtAt: string \| null, srcAt: string \| null }`: whether the studio UI this server hands out (`apps/web/dist/index.html`) is older than the newest file in `apps/web/src` (PIP-ORCHESTRATION §1.15). The page shows "This studio is running an old build" when it is. With no source next to the server, never stale |
 | `GET /api/projects` | | `ProjectSummary[]`. `finished` is true when the project has an exported video (not the rough cut's `proxy.mp4`) and no crew is running on it |
 | `POST /api/projects` | `{ title, brief, budgetUsd, dir? }` | `{ id }` (a new folder under the first project root unless `dir`) |
 | `POST /api/projects/open` | `{ dir }` | `{ id }` |

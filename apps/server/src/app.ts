@@ -18,12 +18,14 @@ import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import { webBuild } from "./build.ts";
 import { type Connections, redact } from "./connections.ts";
 import { listDocs, REPO_ROOT, readDoc, toolDocs } from "./docs.ts";
 import { McpSession } from "./mcp.ts";
 
 export const VERSION = "0.1.0";
-const WEB_DIST = new URL("../../web/dist/", import.meta.url).pathname;
+const WEB_DIR = new URL("../../web/", import.meta.url).pathname;
+const WEB_DIST = join(WEB_DIR, "dist/");
 
 /** POST /api/p/:id/changes/preview */
 const ChangesPreview = z.object({
@@ -549,6 +551,8 @@ export function createApp(o: ServerOpts) {
     o.crew.run(p, { retry: true }).catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
     return c.json({ ok: true, started: true, resumed: false });
   });
+  // is the studio UI older than its source (PIP-ORCHESTRATION §1.15): the page shows a banner when it is
+  app.get("/api/build", (c) => c.json(webBuild(WEB_DIR)));
   // what a change would do before it runs: the gate's "Change something" and Pip's change card read the same router
   app.post("/api/p/:id/changes/preview", async (c) => {
     if (!o.crew?.previewChange)
