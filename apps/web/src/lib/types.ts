@@ -575,6 +575,8 @@ export interface Client {
   undo(id: string, seq: number, reason: string): Promise<{ rev: number; seq: number }>;
   /** an image URL for the frame at scene time t; `rev` asks for an older revision (extension, for before/after) */
   frameUrl(id: string, t: number, scale?: number, rev?: number): string;
+  /** the project's run report page (`GET /api/p/:id/report/`, docs/REPORT.md), opened in a new tab */
+  reportUrl(id: string): string;
   proxyUrl(id: string): string;
   fileUrl(id: string, name: string): string;
   answer(id: string, qid: string, a: AnswerInput): Promise<QuestionT>;

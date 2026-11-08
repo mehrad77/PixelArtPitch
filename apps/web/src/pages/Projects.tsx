@@ -259,6 +259,8 @@ function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: n
             // a finished one can be the start of the next (PIP-JOURNEY §3.6)
             ...(kind === "finished" ? [{ label: MAKE_ANOTHER, value: "another" }] : []),
             { label: "Open in Studio", value: "studio" },
+            // the run so far as one page (docs/REPORT.md): who worked when, what it cost, what failed
+            { label: "Run report", value: "report" },
             { label: showPath ? "Hide folder path" : "Show folder path", value: "path" },
           ]}
           onSelect={(v) => {
@@ -267,6 +269,8 @@ function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: n
               makeAnother(p.id).catch((e: Error) =>
                 setErr(`Didn't start another one: ${e.message}.${e instanceof ApiError && e.fix ? ` ${e.fix}` : ""}`),
               );
+            } else if (v === "report") {
+              window.open(client.reportUrl(p.id), "_blank", "noopener");
             } else if (v === "studio") {
               setView("studio");
               navigate(`${href}/${p.stage}`);

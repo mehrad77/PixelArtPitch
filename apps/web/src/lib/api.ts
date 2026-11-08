@@ -125,6 +125,9 @@ export class HttpClient implements Client {
   undo(id: string, seq: number, reason: string) {
     return this.post<{ rev: number; seq: number }>(`/api/p/${enc(id)}/undo`, { seq, reason });
   }
+  reportUrl(id: string) {
+    return `/api/p/${enc(id)}/report/`;
+  }
   frameUrl(id: string, t: number, scale = 2, rev?: number) {
     return `/api/p/${enc(id)}/frame?t=${t.toFixed(3)}&scale=${scale}${rev != null ? `&rev=${rev}` : ""}`;
   }

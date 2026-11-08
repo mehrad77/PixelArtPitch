@@ -11,6 +11,7 @@ import { lineOf, lineRows, needsCount, needsWords, openNeeds } from "@pap/crew/b
 import { PHASE } from "@pap/crew/orchestrator";
 import { InstanceKey } from "@pap/crew/plan/instances";
 import { libraryAssetDir, libraryIndex, userLibraryDir } from "@pap/render";
+import { buildReport, type Report } from "@pap/report";
 import type { Registry, ToolContext } from "@pap/tools";
 import { type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { Hono } from "hono";
@@ -386,6 +387,41 @@ export function createApp(o: ServerOpts) {
     const f = join(p.dir, "out", name);
     if (!existsSync(f)) return c.text("not found", 404);
     return fileResponse(f, c.req.header("range"));
+  });
+  // the run report (docs/REPORT.md), built from what is on disk, no model call. The page names its images `img/<file>`
+  // relative to itself, so it is served at …/report/ (the bare path redirects there) and its images at …/report/img/.
+  // Images come only from the build's own list; the page's fetch rebuilds it, its images reuse that build.
+  const reports = new Map<string, Report>();
+  const report = (id: string, fresh: boolean) => {
+    // by the listing, as `pap report` does: read-only, without opening the project or taking its lock
+    const dir = o.workspace.list().find((x) => x.id === id)?.dir;
+    if (!dir) throw new StoreError("not_found", `no project ${id}`, "use a project id from GET /api/projects", 404);
+    let r = fresh ? undefined : reports.get(id);
+    if (!r) {
+      r = buildReport(dir);
+      reports.set(id, r);
+    }
+    return r;
+  };
+  app.get("/api/p/:id/report", (c) => c.redirect(`/api/p/${encodeURIComponent(c.req.param("id"))}/report/`, 302));
+  app.get("/api/p/:id/report/", (c) => {
+    const r = report(c.req.param("id"), true);
+    c.header("cache-control", "no-store");
+    // the page runs on the studio's origin: it may run its own inline script and show its own images, nothing else
+    c.header(
+      "content-security-policy",
+      "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'",
+    );
+    return c.html(r.html);
+  });
+  app.get("/api/p/:id/report/img/:name", (c) => {
+    const name = c.req.param("name");
+    if (!/^[A-Za-z0-9_.-]+$/.test(name) || name.startsWith(".")) return c.text("bad name", 400);
+    const img = report(c.req.param("id"), false).images.find((i) => i.name === `img/${name}`);
+    if (!img) return c.text("not found", 404);
+    return new Response(Buffer.from(img.data), {
+      headers: { "content-type": "image/png", "cache-control": "no-store" },
+    });
   });
   // a drawn variant's sheet (runs/<asset>-v<n>.png): the crew row's "latest image" while an asset is drawn.
   // `/runs/:name` is what older logs' `files/../runs/…` resolves to in the browser, so their images show too.

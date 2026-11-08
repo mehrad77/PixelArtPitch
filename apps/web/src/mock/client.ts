@@ -1627,6 +1627,11 @@ export class MockClient implements Client {
     if (p.history.some((h) => h.undoes === seq)) throw new Error(`Change #${seq} is already reverted`);
     return be().addPatch(p, { kind: "user" }, reason, e.inverse, seq);
   }
+  /** the mock has no run to report on: a placeholder page that says where the real one comes from */
+  reportUrl(id: string) {
+    const html = `<!doctype html><meta charset="utf-8"><title>Run report</title><body style="font:16px system-ui;background:#0e1210;color:#e9e6da;padding:2rem"><h1>Run report</h1><p>The mock studio has no run to report on. With the studio server, this page is <code>pap report ${id.replace(/[^a-z0-9_]/gi, "")}</code>: who worked when, what it cost and what failed.</p></body>`;
+    return URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  }
   frameUrl(id: string, t: number, _scale = 2, rev?: number) {
     const p = be().projects.get(id);
     if (!p) return "";

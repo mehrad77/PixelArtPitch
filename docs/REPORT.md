@@ -33,6 +33,8 @@ It prints the page's path, the number of images, the calls and the cost. Open `i
 - `index.html`: one page with the summary embedded as JSON. It loads nothing from the network.
 - `img/`: the pictures the page shows. These are the kept asset sheets (`asset-<id>.png`), the drawn variants of assets that weren't kept (`<asset>-v<n>.png`), `contact.png` and `animatic-contact.png`. No other file from `out/` is ever copied.
 
+The studio serves the same page at `GET /api/p/:id/report` (docs/API.md), and the ⋯ menu on Projects opens it as "Run report".
+
 From code, use `buildReport(projectDir, { run, ledger, notes, picks, includePrivate, out })` from `@pap/report`. It returns `{ html, summary, images }` (`images` are `{ name, data }`, with `name` like `img/contact.png`). With `out`, it also writes the files.
 
 ## What it reads
@@ -48,6 +50,8 @@ From code, use `buildReport(projectDir, { run, ledger, notes, picks, includePriv
 | `$PAP_HOME/ledger.sqlite` | Every model call: role, model, prompt template, tokens (thinking included), cost, time, stop reason. Opened read-only; missing columns read as 0. |
 
 It never reads `auth.json`, `settings.json`'s keys, or anything under the project's `private/`.
+
+**What is hidden, and what isn't.** Only the images and descriptions of private, likeness and brand assets are left out (unless `--include-private`). Asset ids, task titles and Pip's words are shown as they are, so a private asset's id can still appear in a task title or in Pip's thread.
 
 ## The page, section by section
 
