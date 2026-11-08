@@ -1067,8 +1067,34 @@ export class Crew {
     const tasks = fresh.filter((id) => next.tasks.find((t) => t.id === id && isLive(t)));
     if (!tasks.length) return;
     const ids = p.doc().scenes.map((s) => s.id);
+    // who re-planned: the card names it with the crew it brings in (the Director, when the storyboard expanded)
+    const planner: RoleT | "pip" | undefined =
+      rv.by === "pip"
+        ? "pip"
+        : rv.trigger === "expand"
+          ? "director"
+          : rv.trigger === "budget"
+            ? "producer"
+            : rv.trigger === "conductor"
+              ? "reviewer"
+              : undefined;
+    // the card's copy says what really waits: while some other live work can still run, "everything else keeps
+    // running"; when every task left depends on the held ones, the rest waits too
+    const held = new Set(tasks);
+    const byId = new Map(next.tasks.map((t) => [t.id, t]));
+    const waitsOn = (id: string, seen = new Set<string>()): boolean => {
+      if (held.has(id)) return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return (byId.get(id)?.dependsOn ?? []).some((d) => waitsOn(d, seen));
+    };
+    const othersRun = next.tasks.some(
+      (t) => isLive(t) && t.status !== "waiting_person" && t.role !== "person" && !waitsOn(t.id),
+    );
     const card = this.onPlanCard(p, {
       rev: next.rev,
+      planner,
+      othersRun,
       reason: next.reason,
       fromUsd: next.approvedUsd,
       toUsd: next.estimate.usd[0],
@@ -1098,6 +1124,10 @@ export class Crew {
     p: OpenProject,
     c: {
       rev: number;
+      /** who re-planned (named on the card with the crew it brings in) */
+      planner?: RoleT | "pip";
+      /** other live work runs while the card waits */
+      othersRun: boolean;
       reason: string;
       fromUsd: number;
       toUsd: number;
@@ -2321,10 +2351,30 @@ export class Crew {
     p.log(t.id, {
       kind: "model",
       title: `Asked ${model.split("/").pop()} (${c.id})`,
-      detail: { prompt: userText.slice(0, 6000), images: (o.images ?? []).map((i) => i.caption) },
+      // `kind` names the step in the drawer ("Critiqued variant 1"): one card serves a repair and a critique
+      detail: { prompt: userText.slice(0, 6000), images: (o.images ?? []).map((i) => i.caption), kind: o.kind },
     });
     let thinking = "";
     const started = Date.now();
+    // the live line (docs/API.md `progress`): thinking or writing, about how many tokens, the answer's tail; a drawing
+    // also streams its raw JSON so far and the palette, for the live canvas. Throttled to one event per 250 ms, and a
+    // heartbeat each second so the clock moves while a provider sends nothing
+    const draws = o.prompt.startsWith("pixel-artist/");
+    const colours = draws ? this.palette().colours : undefined;
+    const live = { phase: "thinking" as "thinking" | "writing", chars: 0, tail: "", draft: "", last: 0 };
+    const beat = (force = false) => {
+      const now = Date.now();
+      if (!force && now - live.last < 250) return;
+      live.last = now;
+      p.progress(t.id, {
+        phase: live.phase,
+        tokens: Math.round(live.chars / 4),
+        seconds: Math.round((now - started) / 1000),
+        tail: live.tail.slice(-400),
+        ...(draws ? { draft: live.draft, palette: colours } : {}),
+      });
+    };
+    const heart = setInterval(() => beat(true), 1000);
     const out = await this.deps.gateway
       .json({
         project: p.id,
@@ -2343,13 +2393,25 @@ export class Crew {
         signal: r.abort.signal,
         normalize: o.normalize,
         onEvent: (e) => {
-          if (e.type === "thinking" && e.text && thinking.length < 20000) thinking += e.text;
+          if (e.type === "thinking") {
+            if (e.text && thinking.length < 20000) thinking += e.text;
+            live.chars += e.text?.length ?? 0;
+          } else if (e.type === "tool_call") live.draft = "";
+          else {
+            // a later rung of the structured ladder starts its answer again
+            live.phase = "writing";
+            live.chars += e.text.length;
+            live.tail = (live.tail + e.text).slice(-1200);
+            if (draws && live.draft.length < 60000) live.draft += e.text;
+          }
+          beat();
         },
       })
       .catch((e: any) => {
         p.log(t.id, { kind: "error", title: String(e?.message ?? e).slice(0, 200), thinking: thinking || undefined });
         throw e;
-      });
+      })
+      .finally(() => clearInterval(heart));
     p.log(t.id, {
       kind: "answer",
       title: `Answered in ${((Date.now() - started) / 1000).toFixed(0)} s · ${out.result.usage.outputTokens} tokens${out.result.usd ? ` · $${out.result.usd.toFixed(3)}` : ""}`,
@@ -2635,7 +2697,8 @@ export class Crew {
               detail: a.cues.join(" ").slice(0, 280),
             })),
             recommendedId: `angle_${recommended}`,
-            blocks: ["storyboard"],
+            // the pick is the script gate's own choice: it blocks the script (G1), so the person sees it there
+            blocks: ["script"],
             from: "writer",
           },
           "writer",
@@ -2646,6 +2709,10 @@ export class Crew {
         pick = Number((a.answer?.optionId ?? `angle_${recommended}`).split("_")[1]);
       }
       const chosen = angles[pick] ?? angles[0];
+      p.log(t.id, {
+        kind: "step",
+        title: auto ? `The crew picked "${chosen.name}" (it runs on its own)` : `You picked "${chosen.name}"`,
+      });
       await this.tool(p, "writer", t.id, "script_set_cues", {
         cues: chosen.cues.map((text) => ({ text })),
         reason: `script: the "${chosen.name}" angle`,
@@ -2938,7 +3005,10 @@ export class Crew {
       );
       for (const x of this.planNow(p)?.tasks ?? [])
         if (x.asset && isLive(x) && x.kind !== "lib.publish") planned.add(x.asset);
+      const before = p.doc().assets.length;
       await this.castFor(p, t, scenes, planned);
+      const cast = p.doc().assets.length - before;
+      if (!cast) p.log(t.id, { kind: "step", title: "Everything the scenes use was already in the project" });
       this.done(p, t, { summary: "cast the library art the scenes use" });
     } catch (e) {
       this.failTask(p, t, e);
@@ -3331,7 +3401,21 @@ export class Crew {
     const ok = vs.map((v) => ({ v, x: read(v) })).filter((x): x is { v: number; x: NonNullable<Variant> } => !!x.x);
     if (!ok.length) return this.standIn(p, st, name);
     let best = ok[0];
-    if (ok.length > 1) {
+    const picked = (v: number) => `/api/p/${p.id}/variants/${name}-v${v}.png`;
+    if (ok.length === 1) {
+      // judged by the rules: one variant passed, so it is the pick (a short row, so the drawer shows the step)
+      const tj = this.task(p, {
+        kind: "asset.judge",
+        role: "art-director",
+        title: `Choosing the best ${name}`,
+        ...this.ptOf(pt),
+      });
+      p.log(tj.id, {
+        kind: "step",
+        title: `Picked variant ${best.v}: ${vs.length > 1 ? "the only one that passed the standard" : "the only drawing"}`,
+      });
+      this.done(p, tj, { summary: `variant ${best.v}, the only one that passed`, lastImage: picked(best.v) });
+    } else {
       const tj = this.task(p, {
         kind: "asset.judge",
         role: "art-director",
@@ -3357,7 +3441,8 @@ export class Crew {
           })
         ).data;
         best = ok[j.best - 1] ?? ok[0];
-        this.done(p, tj, { summary: j.reason });
+        // the face and the milestone show the chosen variant, not the last one drawn
+        this.done(p, tj, { summary: j.reason, lastImage: picked(best.v) });
         best.x.judge = j.reason;
       } catch (e) {
         this.failTask(p, tj, e);
@@ -3657,6 +3742,14 @@ export class Crew {
         if (/\bship\b/i.test(next.data.notes)) break;
       }
       const std = checkAsset(toFile(out.data), { colours, sky: palette.sky });
+      // a code-only step: the drawer shows it, so the row never reads "No record kept"
+      p.log(t.id, {
+        kind: "step",
+        title: std.ok
+          ? `Checked variant ${v} against the PAP standard: it passes`
+          : `Checked variant ${v} against the PAP standard: ${std.hard.length} ${std.hard.length === 1 ? "issue" : "issues"}`,
+        ...(std.ok ? {} : { detail: std.hard.slice(0, 8).map((i) => `${i.frame ?? ""} ${i.message}`.trim()) }),
+      });
       const sheet = sheetOf(out.data);
       writeFileSync(join(p.dir, "runs", `${a.name}-v${v}.png`), sheet);
       this.done(p, t, {
@@ -4093,9 +4186,11 @@ export class Crew {
         },
         "librarian",
       );
+      p.log(row.id, { kind: "step", title: `Asked you whether to add ${a.id} to your library` });
       this.setPlanStatus(p, pt.id, "waiting_person");
       yes = (await p.waitAnswer(q.id, r.abort.signal)).answer?.optionId === "yes";
       this.setPlanStatus(p, pt.id, "running");
+      p.log(row.id, { kind: "step", title: yes ? "You said yes" : "You kept it in this project" });
       p.upsertTask({ ...row, status: "working", title: `Publishing ${a.id}` });
     }
     await this.answerPublish(p, a.id, yes ? "yes" : "no");
@@ -4106,6 +4201,7 @@ export class Crew {
     try {
       const png = file.replace(/\.json$/, ".png");
       const out = publishAsset(asset, existsSync(png) ? readFileSync(png) : null);
+      p.log(row.id, { kind: "step", title: `Added ${a.id} to your library`, detail: { dir: out.dir } });
       this.done(p, row, { title: `Published ${a.id}`, summary: out.dir });
     } catch (e) {
       this.failTask(p, row, e);

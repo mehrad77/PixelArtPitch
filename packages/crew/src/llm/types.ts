@@ -130,7 +130,9 @@ export type ChatResult = {
 export type StreamEvent =
   | { type: "text"; text: string }
   | { type: "thinking"; text?: string }
-  | { type: "tool_call"; name: string };
+  | { type: "tool_call"; name: string }
+  /** a tool call's arguments as they stream (the structured "tool" rung's JSON, a drawing's grid) */
+  | { type: "json"; text: string };
 
 /** a model's real context window as its provider reports it */
 export type WindowInfo = { window: number; source: string; note?: string };

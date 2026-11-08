@@ -60,6 +60,8 @@ export type PlanCard = {
     ops: { op: string; task: string; label: string; reason: string }[];
     fromUsd: number;
     toUsd: number;
+    /** who re-planned: "director" when the storyboard expanded, "pip", "producer" (the budget), "reviewer" */
+    planner?: RoleT | "pip";
   };
   /** the crew members a revision card brings in, by instance ("Animator · scene 2"; PIP-JOURNEY N2) */
   whoInstances?: { instance: string; label: string }[];
@@ -2143,6 +2145,8 @@ export class Pip {
     p: OpenProject,
     r: {
       rev: number;
+      planner?: RoleT | "pip";
+      othersRun: boolean;
       reason: string;
       fromUsd: number;
       toUsd: number;
@@ -2164,10 +2168,19 @@ export class Pip {
           .filter((o) => o.op !== "expand")
           .slice(0, 6)
           .map((o) => `${o.op === "add" ? "Adds" : o.op === "drop" ? "Drops" : "Changes"} ${o.label}: ${o.reason}`),
-        "Everything else keeps running while you decide.",
+        // what really waits: other work runs on, or (when everything left needs these tasks) the rest waits too
+        r.othersRun
+          ? "Everything else keeps running while you decide."
+          : "The rest of the video waits for your answer: everything left needs these steps.",
       ],
       confirmLabel: "Go ahead",
-      revision: { rev: r.rev, ops: r.ops, fromUsd: r.fromUsd, toUsd: r.toUsd },
+      revision: {
+        rev: r.rev,
+        ops: r.ops,
+        fromUsd: r.fromUsd,
+        toUsd: r.toUsd,
+        ...(r.planner ? { planner: r.planner } : {}),
+      },
       action: { tool: "", input: {}, projectId: p.id, crew: "pending" },
     });
   }

@@ -418,8 +418,10 @@ export async function readAnthropicStream(
           b.thinking = (b.thinking ?? "") + d.thinking;
           if (d.thinking) onEvent?.({ type: "thinking", text: d.thinking });
         } else if (d.type === "signature_delta") b.signature = d.signature;
-        else if (d.type === "input_json_delta")
+        else if (d.type === "input_json_delta") {
           toolJson[ev.index] = (toolJson[ev.index] ?? "") + (d.partial_json ?? "");
+          if (d.partial_json) onEvent?.({ type: "json", text: d.partial_json });
+        }
         break;
       }
       case "content_block_stop": {

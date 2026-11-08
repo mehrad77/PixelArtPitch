@@ -556,7 +556,10 @@ export async function readOpenAIStream(res: Response, t0: number, onEvent?: (e: 
           calls[i].name += tc.function.name;
           onEvent?.({ type: "tool_call", name: calls[i].name });
         }
-        if (tc.function?.arguments) calls[i].args += tc.function.arguments;
+        if (tc.function?.arguments) {
+          calls[i].args += tc.function.arguments;
+          onEvent?.({ type: "json", text: tc.function.arguments });
+        }
       }
       if (choice.finish_reason) finishReason = choice.finish_reason;
     }

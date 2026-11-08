@@ -651,6 +651,25 @@ export class OpenProject {
     appendFileSync(join(dir, `${taskId.replace(/[^a-z0-9_-]/gi, "")}.jsonl`), `${JSON.stringify(e)}\n`);
     this.events.emit("event", { seq: 0, event: "activity", data: { task: taskId, ...e }, ts: e.at });
   }
+  /**
+   * A model call's live progress (docs/API.md, the `progress` event): transient like `activity` (seq 0, never stored
+   * or replayed), throttled by the caller. `draft` is the raw answer so far, for a drawing's live canvas, and
+   * `palette` its letters' colours.
+   */
+  progress(
+    taskId: string,
+    p: {
+      phase: "thinking" | "writing";
+      tokens: number;
+      seconds: number;
+      tail: string;
+      draft?: string;
+      palette?: Record<string, string>;
+    },
+  ) {
+    const ts = new Date().toISOString();
+    this.events.emit("event", { seq: 0, event: "progress", data: { what: "task", taskId, ...p }, ts });
+  }
   transcript(taskId: string) {
     const f = join(this.dir, "runs", "transcripts", `${taskId.replace(/[^a-z0-9_-]/gi, "")}.jsonl`);
     if (!existsSync(f)) return [];
