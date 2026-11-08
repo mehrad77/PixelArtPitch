@@ -210,6 +210,47 @@ test("one passing variant is picked by the rules: a short row says so, and the f
   assert.equal(row.lastImage, `/api/p/${p.id}/variants/moth-v2.png`, "the chosen variant, not the last one drawn");
   assert.match(transcript(p, row.id)[0].title, /^Picked variant 2/);
   assert.ok(existsSync(join(p.dir, "assets", "moth.json")));
+  assert.ok(!p.state.milestones.some((m: any) => m.text === "Hero drawn"), "a moth is not the hero");
+});
+
+test("'Hero drawn' is the hero's: a creature judged by the rules first never takes it, the character then does", async () => {
+  const { c, p } = await crewOn();
+  const env = {
+    modelFor: () => "fake/model",
+    fallbackFor: () => undefined,
+    caps: () => FAKE_CAPS,
+    laneSize: () => 3,
+    local: () => false,
+  };
+  const judgeOne = async (name: string, kind: string, opts: Record<string, string>) => {
+    const spec = { letters: "kS", description: `A ${name}.`, reads: `a ${name}` };
+    writeFileSync(
+      c.artFile(p, name, "spec"),
+      JSON.stringify({ name, kind, description: spec.description, ...opts, spec, letters: "kS", row: "x" }),
+    );
+    const tpl = templateFor(kind, opts);
+    const rows = Array.from({ length: tpl.h }, () => "k".repeat(tpl.w));
+    writeFileSync(
+      c.artFile(p, name, "v1"),
+      JSON.stringify({
+        frames: { notes: "ship", frames: tpl.frames.map((f: string) => ({ name: f, rows })) },
+        std: { ok: true },
+        model: "fake/model",
+      }),
+    );
+    writeFileSync(join(p.dir, "runs", `${name}-v1.png`), Buffer.from("png"));
+    const judge = rules.mkTask(
+      { id: `t_judge_${name}`, kind: "asset.judge", dependsOn: [], asset: name } as any,
+      { env, rev: 0 } as any,
+    );
+    assert.equal((await c.assetJudge(p, fakeRun(), { ...judge, status: "running" })).status, "done");
+  };
+  await judgeOne("moth", "creature", { size: "16x16", motion: "fly" });
+  assert.ok(!p.state.milestones.some((m: any) => m.id === "asset.judge"), "the moth's judge leaves it free");
+  await judgeOne("pilot", "character", {});
+  const m = p.state.milestones.find((x: any) => x.id === "asset.judge");
+  assert.equal(m?.text, "Hero drawn");
+  assert.equal(m?.image, `/api/p/${p.id}/variants/pilot-v1.png`, "the hero's chosen drawing");
 });
 
 test("a revision card names who re-planned and says when the rest of the video waits on it", async () => {

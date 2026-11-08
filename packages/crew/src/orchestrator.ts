@@ -177,12 +177,14 @@ export const STAGE_LINE: Record<string, string> = {
   review: "Checking for mistakes",
   deliver: "Exporting your video",
 };
+/** the hero's kind: `character` is the walking hero (outputs.ts); a creature, prop or icon never is */
+const HERO_KIND = "character";
 const MILESTONE: Record<string, string> = {
   // "Plan ready" belongs to the production plan now (the first plan after G0)
   "producer.plan": "Brief read",
   "writer.angles": "Script written",
   "director.storyboard": "Storyboard ready",
-  "asset.judge": "Hero drawn",
+  // "Hero drawn" (id asset.judge) fires from castDrawing, and only for the hero: a `character` (HERO_KIND)
   "sound.mix": "Sound mixed",
   "review.final": "Checked for mistakes",
   "deliver.export": "Your video is ready",
@@ -3512,6 +3514,9 @@ export class Crew {
     mkdirSync(join(p.dir, "assets"), { recursive: true });
     writeFileSync(join(p.dir, "assets", `${name}.json`), `${JSON.stringify(file, null, 1)}\n`);
     writeFileSync(join(p.dir, "assets", `${name}.png`), readFileSync(join(p.dir, "runs", `${name}-v${best.v}.png`)));
+    // once per project, for the hero only, from either pick (the judge, or a lone drawing): never a moth or a lamp
+    if (st.kind === HERO_KIND)
+      p.milestone("asset.judge", "Hero drawn", `/api/p/${p.id}/variants/${name}-v${best.v}.png`);
     const d = p.doc();
     // a stand-in cast under this name (an earlier fallback) is replaced in place: one ref per name
     const at = d.assets.findIndex((x) => x.id === name);
