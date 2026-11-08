@@ -229,7 +229,7 @@ test("auto: leftover blockers on the changed scene are logged and the cut export
   assert.ok(logs.some((t) => /exporting without asking \(auto\)/.test(t)));
   // the review wrote a playable rough cut with its sound, and said so
   assert.ok(existsSync(join(p.dir, "out", "proxy.mp4")), "out/proxy.mp4");
-  assert.ok(renders.some((r) => r.kind === "proxy" && r.url === "files/proxy.mp4"));
+  assert.ok(renders.some((r) => r.kind === "proxy" && r.url === `/api/p/${p.id}/proxy.mp4`));
 });
 
 // ---------------------------------------------------------------- the crew knows its tools (§1.13)

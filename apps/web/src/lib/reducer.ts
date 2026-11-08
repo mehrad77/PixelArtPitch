@@ -47,7 +47,9 @@ export function applyEvent(s: ProjectState, e: ServerEvent): ProjectState {
     case "render":
       if (e.data.kind === "final" || e.data.kind === "proxy") {
         const name = e.data.url.split("/").pop() ?? e.data.kind;
-        if (e.data.kind === "final" && !s.files.some((f) => f.url === e.data.url))
+        // a logged "files/x.mp4" (before v0.3.1) would resolve against /p/<id>: the listed file already has the real URL
+        const usable = /^(blob|data|https?):|^\//.test(e.data.url);
+        if (e.data.kind === "final" && usable && !s.files.some((f) => f.url === e.data.url || f.name === name))
           return { ...s, files: [...s.files, { name, url: e.data.url, bytes: 0, kind: "video" }] };
       }
       return s;

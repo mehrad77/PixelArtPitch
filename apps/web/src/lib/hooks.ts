@@ -114,12 +114,11 @@ export function useProject(id: string | null): ProjectView {
         if (e.data.kind === "still") setLastStill(e.data.url);
         // a rebuilt proxy often keeps its URL; a fresh query makes the <video> load it again
         // (a blob: or data: URL is new each time, and a query would break it)
-        if (e.data.kind === "proxy")
-          setProxy(
-            /^(blob|data):/.test(e.data.url)
-              ? e.data.url
-              : `${e.data.url}${e.data.url.includes("?") ? "&" : "?"}v=${Date.now()}`,
-          );
+        if (e.data.kind === "proxy") {
+          // logs before v0.3.1 carry "files/proxy.mp4", which the page would resolve against /p/<id>
+          const url = /^(blob|data|https?):|^\//.test(e.data.url) ? e.data.url : client.proxyUrl(id);
+          setProxy(/^(blob|data):/.test(url) ? url : `${url}${url.includes("?") ? "&" : "?"}v=${Date.now()}`);
+        }
       }
       setState((s) => (s ? applyEvent(s, e) : s));
     };

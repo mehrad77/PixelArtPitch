@@ -355,3 +355,26 @@ test("the stops: drawer leaves the script pick open, sheet the rough cut; pipkey
   const c = item.item.kind === "pip" ? item.item.cards[0] : undefined;
   assert.deepEqual(c && fixOfCard(c), { action: "fix_key", provider: "anthropic" });
 });
+
+test("a logged relative render URL never becomes a file the page can't load", () => {
+  const listed = {
+    name: "lumenbook_pitch.mp4",
+    url: "/api/p/l/files/lumenbook_pitch.mp4",
+    bytes: 9,
+    kind: "video" as const,
+  };
+  const s = { ...blank(), files: [listed] };
+  // P6: "files/x.mp4" resolved against /p/<id> and the player got the app's HTML
+  const old = applyEvent(s, {
+    event: "render",
+    data: { kind: "final", url: "files/lumenbook_pitch.mp4" },
+  } as ServerEvent);
+  assert.deepEqual(old.files, [listed]);
+  const again = applyEvent(s, { event: "render", data: { kind: "final", url: listed.url } } as ServerEvent);
+  assert.equal(again.files.length, 1);
+  const fresh = applyEvent(blank(), {
+    event: "render",
+    data: { kind: "final", url: "/api/p/l/files/new.mp4" },
+  } as ServerEvent);
+  assert.equal(fresh.files[0]?.url, "/api/p/l/files/new.mp4");
+});

@@ -866,7 +866,8 @@ export const exportVideo = defineTool({
       audio: join(out, "audio.wav"),
       onProgress: (f) => ctx.emit({ type: "progress", what: "export", fraction: f }),
     });
-    ctx.emit({ type: "render", kind: "final", url: `files/${del.out}` });
+    // an absolute URL: the page resolves a relative one against /p/<id>, which is the app, not the file
+    ctx.emit({ type: "render", kind: "final", url: `/api/p/${p.id}/files/${encodeURIComponent(del.out)}` });
     return ok({
       file: `out/${del.out}`,
       seconds: res.seconds,
@@ -902,7 +903,7 @@ export async function writeProxy(
     audio,
     ...(o.onProgress ? { onProgress: o.onProgress } : {}),
   });
-  p.emit("render", { type: "render", kind: "proxy", url: "files/proxy.mp4" });
+  p.emit("render", { type: "render", kind: "proxy", url: `/api/p/${p.id}/proxy.mp4` });
   return { file: "out/proxy.mp4", seconds: res.seconds };
 }
 
