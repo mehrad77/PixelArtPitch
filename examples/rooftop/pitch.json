@@ -125,8 +125,7 @@
           "props": {
             "asset": "owl",
             "x": -20,
-            "y": 64,
-            "artFaces": "right"
+            "y": 64
           },
           "behaviors": [
             {

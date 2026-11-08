@@ -325,7 +325,7 @@ test("sit keeps facing the way it came in after touchdown", () => {
       {
         id: "owl",
         kind: "actor",
-        props: { asset: "owl", x: 200, y: 100, artFaces: "right", frames: { perch: ["idle0"] } },
+        props: { asset: "owl", x: 200, y: 100, frames: { perch: ["idle0"] } },
         behaviors: [{ kind: "sit", at: "S(c01)", params: { x: 80, y: 100, land: 0.5 } }],
       },
     ],
@@ -335,16 +335,16 @@ test("sit keeps facing the way it came in after touchdown", () => {
     drawDecl(e, perch, p0 + s);
     return Buffer.from(e.buf);
   };
-  const mirrored = compile({
+  const standing = compile({
     layers: [
       {
         id: "owl",
         kind: "actor",
-        props: { asset: "owl", x: 80, y: 100, artFaces: "right", facing: "left", frames: { idle: ["idle0"] } },
+        props: { asset: "owl", x: 80, y: 100, facing: "left", frames: { idle: ["idle0"] } },
       },
     ],
   });
-  drawDecl(e, mirrored, p0 + 1);
+  drawDecl(e, standing, p0 + 1);
   const want = Buffer.from(e.buf);
   assert.ok(draw(1).equals(want), "after touchdown it still faces left");
 });
@@ -355,7 +355,7 @@ test("fly then sit on an actor: the owl lands where the flight left it, using it
       {
         id: "owl",
         kind: "actor",
-        props: { asset: "owl", x: -20, y: 60, artFaces: "right" },
+        props: { asset: "owl", x: -20, y: 60 },
         behaviors: [
           { kind: "fly", at: "S(c01)", until: "S(c01)+1", params: { path: [[80, 60]], speed: 60, bob: 0 } },
           { kind: "sit", at: "S(c01)+1", params: { x: 200, y: 120, land: 0.5 } },
