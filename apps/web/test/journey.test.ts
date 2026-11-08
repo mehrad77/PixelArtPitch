@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { cardRank, laterCard, revertCard } from "../src/lib/cards.ts";
+import { needsYouCount } from "../src/lib/derive.ts";
+import { humanStatus, PROBLEM_BUTTON } from "../src/lib/human.ts";
 import {
   crewGroups,
   ghostLine,
@@ -14,12 +16,15 @@ import {
   ROLE_GLYPH,
   ROLE_HUE,
   revisionLine,
+  stuckInstances,
   timeAlive,
+  waitingInstances,
 } from "../src/lib/instances.ts";
 import { applyEvent } from "../src/lib/reducer.ts";
-import type { Draft, Instance, PipCard, PipItem, ProjectState, Role, ServerEvent } from "../src/lib/types.ts";
+import type { Draft, Instance, PipCard, PipItem, ProjectState, Role, ServerEvent, Task } from "../src/lib/types.ts";
 import { COPIED, copyLine, MockDrafts } from "../src/mock/drafts.ts";
-import { JOURNEY, Journey } from "../src/mock/journey.ts";
+import { fixtureInstances, instanceChange } from "../src/mock/fixture-crew.ts";
+import { JOURNEY, Journey, journeyFlags, OVERRUN_CAP } from "../src/mock/journey.ts";
 
 const BASE = Date.UTC(2026, 10, 7, 21, 0, 0);
 
@@ -477,4 +482,256 @@ test("Make another like this copies the settings, never the idea or the files, a
   const fresh = d.create();
   assert.equal(fresh.items[0].kind === "pip" && fresh.items[0].text, "What are we making?");
   assert.deepEqual(fresh.draft.fields, {});
+});
+
+// ---- the scenarios (`scenario=…`, PIP-JOURNEY §6): P4's situations with the server's shapes, no paid call ----
+type Scn = {
+  sim: Journey;
+  s: ProjectState;
+  /** every state after a batch, with the status and crew.held the client would send */
+  states: ProjectState[];
+  step: () => void;
+  act: (a: Parameters<Journey["act"]>[0]) => void;
+  /** step until `until` holds (or the run ends) */
+  run: (until?: (s: ProjectState, sim: Journey) => boolean, max?: number) => void;
+};
+function scenario(name: "revision" | "overrun" | "publish" | "keyfail", auto = true, capUsd?: number): Scn {
+  const sim = new Journey({ speed: 1, slots: 3, auto, base: BASE, scenario: name, ...(capUsd ? { capUsd } : {}) });
+  const o: Scn = {
+    sim,
+    s: {
+      ...blank(),
+      // enough of the document for humanStatus
+      doc: { brief: { narration: "none" }, scenes: [], audio: { vo: [] } } as unknown as ProjectState["doc"],
+      budget: { ...blank().budget, capUsd: capUsd ?? JOURNEY.capUsd },
+    },
+    states: [],
+    step: () => take(sim.step()),
+    act: (a) => take(sim.act(a)),
+    run: (until, max = 300) => {
+      for (let t = 0; t < max && !sim.ended && !(until?.(o.s, sim) ?? false); t++) o.step();
+    },
+  };
+  const take = (batch: ServerEvent[]) => {
+    for (const e of batch) o.s = applyEvent(o.s, e);
+    // as MockClient.pushStatus and syncCrew do
+    const own = sim.statusNow;
+    o.s = {
+      ...o.s,
+      status: own ? { phase: 0, ...own } : undefined,
+      crew: { ...(o.s.crew ?? {}), state: "running", running: true, held: sim.held },
+    };
+    o.states.push(o.s);
+  };
+  take(sim.start());
+  return o;
+}
+
+/** the person's two picks, each answered once it is asked (the logo, then the angle) */
+function picks(sc: Scn) {
+  const open = (id: string) => sc.s.questions.some((q) => q.id === id && q.status === "open");
+  sc.run((s) => s.questions.some((q) => q.id === "q_rights" && q.status === "open"));
+  sc.act({ type: "answer", qid: "q_rights" });
+  sc.run(() => open("q_angle"));
+  sc.act({ type: "answer", qid: "q_angle" });
+}
+
+test("scenario revision: a plan change past 20% holds the founder's drawing behind a 'Plan change' card", () => {
+  const sc = scenario("revision", false);
+  // answer the picks by hand, then watch the card arrive
+  picks(sc);
+  sc.run((s) => !!s.plan?.pending);
+  const plan = sc.s.plan;
+  assert.deepEqual(plan?.pending, { rev: 1, cardId: "c_rev", tasks: ["t_draw_founder"] });
+  const card = sc.sim.cards.get("c_rev");
+  assert.equal(card?.title, "Plan change: $1.40 → about $1.95");
+  assert.equal(card?.revision?.planner, "director");
+  assert.deepEqual([card?.revision?.fromUsd, card?.revision?.toUsd], [1.4, 1.95]);
+  assert.equal(card?.confirmLabel, "Go ahead");
+  assert.deepEqual(sc.s.status, {
+    phase: 0,
+    line: "Waiting for you: the plan change in Pip's thread",
+    waiting: "plan",
+  });
+  assert.equal(needsYouCount(sc.s), 1, "the card counts as needing you");
+  // the held drawing never starts while the card waits; scene 4 runs on
+  for (let i = 0; i < 12; i++) sc.step();
+  assert.ok(!sc.s.tasks.some((t) => t.planTask === "t_draw_founder"), "the founder isn't drawn yet");
+  assert.ok(
+    sc.s.tasks.some((t) => t.planTask === "t_tune_s04" && t.status !== "upcoming"),
+    "scene 4 keeps running",
+  );
+  sc.act({ type: "card", cardId: "c_rev", decision: "confirm" });
+  assert.equal(sc.sim.cards.get("c_rev")?.status, "done");
+  assert.equal(sc.s.plan?.pending, undefined);
+  assert.equal(sc.s.plan?.approvedUsd, 1.95, "confirming moves the approved estimate");
+  assert.equal(sc.s.status, undefined);
+  sc.run((s) => s.tasks.some((t) => t.planTask === "t_draw_founder"));
+  assert.ok(sc.s.tasks.some((t) => t.planTask === "t_draw_founder" && t.status === "working"));
+  // a decline drops the drawing and the scenes go on without it
+  const d = scenario("revision", false);
+  picks(d);
+  d.run((s) => !!s.plan?.pending);
+  d.act({ type: "card", cardId: "c_rev", decision: "decline" });
+  assert.equal(d.sim.node("t_draw_founder").status, "dropped");
+  d.run((s) => s.tasks.some((t) => t.planTask === "t_tune_s01"));
+  assert.ok(!d.s.tasks.some((t) => t.planTask === "t_draw_founder"));
+});
+
+test("scenario overrun: at 80% of a $1.50 cap, 'Finish within' leads, 'Raise the cap' follows; one settles the other", () => {
+  const sc = scenario("overrun", true, OVERRUN_CAP);
+  sc.run((_s, sim) => sim.budgetWait);
+  const finish = sc.sim.cards.get("c_finish");
+  const raise = sc.sim.cards.get("c_raise");
+  assert.equal(finish?.title, "Finish within $1.50");
+  assert.deepEqual(finish?.effects, ["Leaves out the second review round.", "Everything else is made as planned."]);
+  assert.equal(raise?.title, "Raise the cap to $2");
+  assert.equal(raise?.confirmLabel, "Set $2");
+  assert.ok(sc.sim.spent >= 0.8 * OVERRUN_CAP, `asked at ${sc.sim.spent}`);
+  assert.equal(sc.s.status?.waiting, "budget");
+  assert.match(
+    sc.s.status?.line ?? "",
+    /^Waiting for you: 80% of the \$1\.5 cap is spent\. Finish within it, or raise/,
+  );
+  assert.equal(needsYouCount(sc.s), 1);
+  // nothing new starts while the question is open
+  const working = sc.s.tasks.filter((t) => t.status === "working").length;
+  sc.step();
+  assert.ok(sc.s.tasks.filter((t) => t.status === "working").length <= working);
+  // auto leaves the question to the person; "Finish within" settles the raise, the second review round never comes
+  for (let i = 0; i < 6; i++) sc.step();
+  assert.equal(sc.sim.cards.get("c_finish")?.status, "proposed", "auto never answers a scenario's own question");
+  sc.act({ type: "card", cardId: "c_finish", decision: "confirm" });
+  sc.run();
+  assert.equal(sc.sim.cards.get("c_finish")?.status, "done");
+  assert.equal(sc.sim.cards.get("c_raise")?.status, "declined");
+  assert.equal(sc.sim.cards.get("c_raise")?.result?.text, "You chose the other way.");
+  assert.ok(!sc.sim.nodes.some((n) => n.id === "t_review_r2"), "no second review round");
+  assert.ok(sc.sim.revisions.some((r) => r.trigger === "budget" && r.ops[0]?.op === "trim"));
+  assert.equal(sc.s.gates.find((g) => g.id === "g4_final")?.status, "passed", "the run still finishes");
+  // the other answer: raising the cap settles "Finish within" and sends the new cap
+  const r = scenario("overrun", false, OVERRUN_CAP);
+  picks(r);
+  r.run((_s, sim) => sim.budgetWait);
+  r.act({ type: "card", cardId: "c_raise", decision: "confirm" });
+  assert.equal(r.sim.cards.get("c_finish")?.status, "declined");
+  assert.equal(r.s.budget.capUsd, 2);
+  assert.equal(r.s.status, undefined);
+});
+
+test("scenario publish: the Librarian asks once, with the server's copy, and shows needs you until answered", () => {
+  const sc = scenario("publish");
+  sc.run((s) => s.questions.some((q) => q.id === "q_publish"));
+  const q = sc.s.questions.find((x) => x.id === "q_publish");
+  assert.equal(q?.question, 'Add "founder" to your asset library?');
+  assert.equal(q?.kind, "yesno");
+  assert.deepEqual(
+    q?.options.map((o) => o.label),
+    ["Yes, add it", "Keep it in this project"],
+  );
+  const row = sc.s.tasks.find((t) => t.kind === "lib.publish");
+  assert.equal(row?.status, "waiting_user");
+  assert.equal(row?.title, "Waiting for you: publish founder?");
+  assert.ok(waitingInstances(sc.s).has("librarian"), "the Librarian's face says needs you");
+  assert.equal(sc.s.instances?.find((i) => i.id === "librarian")?.state, "live");
+  assert.ok(needsYouCount(sc.s) >= 1);
+  sc.act({ type: "answer", qid: "q_publish", optionId: "yes" });
+  sc.run();
+  assert.equal(sc.s.questions.filter((x) => x.id === "q_publish").length, 1, "asked once");
+  assert.equal(sc.s.tasks.find((t) => t.kind === "lib.publish")?.title, "Published founder");
+  assert.equal(sc.s.instances?.find((i) => i.id === "librarian")?.state, "finished");
+});
+
+test("scenario keyfail: a rejected key holds the run, Pip says so, the founder is stuck with 'Fix the key'; a key resumes it", () => {
+  const sc = scenario("keyfail", false);
+  picks(sc);
+  sc.run((_s, sim) => !!sim.hold);
+  const cancelled = sc.s.tasks.find((t) => t.planTask === "t_draw_founder");
+  assert.equal(cancelled?.status, "cancelled", "the attempt's row ends cancelled, not failed");
+  assert.deepEqual(sc.s.status, {
+    phase: 0,
+    line: "Waiting for you: Your Anthropic key was rejected",
+    problem: {
+      text: "Your Anthropic key was rejected.",
+      action: "fix_key",
+      taskId: cancelled?.id,
+      provider: "anthropic",
+    },
+  });
+  assert.equal(sc.s.crew?.held, "Your Anthropic key was rejected");
+  const h = humanStatus(sc.s);
+  assert.equal(h.text, "Your Anthropic key was rejected.");
+  assert.equal(h.problem?.action, "fix_key");
+  assert.equal(PROBLEM_BUTTON[h.problem?.action ?? "retry"], "Fix the key");
+  assert.deepEqual([...stuckInstances(sc.s)], ["pixel-artist:founder"], "the founder's face is stuck");
+  assert.ok(crewGroups(sc.s).working.some((i) => i.id === "pixel-artist:founder"));
+  // nothing new starts while held; the tasks already running finish
+  const before = new Set(sc.s.tasks.map((t) => t.id));
+  for (let i = 0; i < 15; i++) sc.step();
+  assert.ok(sc.s.tasks.filter((t) => !before.has(t.id)).length === 0, "no new task starts while the run is held");
+  // the fix lifts the hold: the drawing runs again as a second attempt, and the run finishes
+  sc.act({ type: "key", provider: "openai" });
+  assert.ok(sc.sim.hold, "another provider's key doesn't lift it");
+  sc.act({ type: "key", provider: "anthropic" });
+  assert.equal(sc.s.status, undefined);
+  assert.equal(sc.s.crew?.held, null);
+  assert.deepEqual([...stuckInstances(sc.s)], []);
+  sc.run((s) => s.tasks.some((t) => t.planTask === "t_draw_founder" && t.status === "working"));
+  assert.equal(sc.s.tasks.find((t) => t.planTask === "t_draw_founder" && t.status === "working")?.attempt, 2);
+  // with auto, the run goes to the hold and stays there until the key is fixed, then reaches the end
+  const a = scenario("keyfail");
+  a.run((_s, sim) => !!sim.hold);
+  for (let i = 0; i < 10; i++) a.step();
+  assert.ok(a.sim.hold, "auto never fixes the key");
+  a.act({ type: "key", provider: "anthropic" });
+  a.run();
+  assert.equal(a.s.gates.find((g) => g.id === "g4_final")?.status, "passed");
+});
+
+test("scenarios read from the flags; the default journey has none", () => {
+  assert.equal(journeyFlags("?journey=todo&scenario=overrun").scenario, "overrun");
+  assert.equal(journeyFlags("?journey=todo&scenario=nope").scenario, null);
+  assert.equal(journeyFlags("?journey=todo").scenario, null);
+});
+
+test("the scripted fixtures' crew row: done members finish, a waiting one is live, the next three are ghosts", () => {
+  const t = (id: string, role: Role, status: Task["status"], extra: Partial<Task> = {}): Task => ({
+    id,
+    kind: "x",
+    role,
+    title: `${role} work`,
+    status,
+    model: "m",
+    usd: 0.1,
+    estUsd: 0.1,
+    instance: role,
+    ...extra,
+  });
+  const s: ProjectState = {
+    ...blank(),
+    crew: { state: "running" },
+    tasks: [
+      t("t_producer", "producer", "done", { startedAt: "2026-11-07T21:00:00Z", endedAt: "2026-11-07T21:01:00Z" }),
+      t("t_writer", "writer", "waiting_user", { startedAt: "2026-11-07T21:01:00Z" }),
+    ],
+  };
+  const all = fixtureInstances(s);
+  const by = Object.fromEntries(all.map((i) => [i.id, i]));
+  assert.equal(by.producer.state, "finished");
+  assert.equal(by.producer.outcome, "done");
+  assert.equal(by.writer.state, "live");
+  assert.ok(waitingInstances({ ...s, instances: all }).has("writer"), "the writer's face needs you");
+  assert.deepEqual(
+    all.filter((i) => i.ghost).map((i) => i.id),
+    ["director", "librarian", "art-director"],
+  );
+  assert.ok(all.every((i) => i.state !== "live" || !i.ghost));
+  // an idle project lists only the members it has rows for, with no ghosts
+  const idle = fixtureInstances({ ...s, crew: { state: "idle" } });
+  assert.deepEqual(
+    idle.map((i) => i.id),
+    ["producer", "writer"],
+  );
+  assert.equal(instanceChange(undefined, by.writer), "spawn");
+  assert.equal(instanceChange(by.writer, { ...by.writer, state: "finished" }), "end");
 });

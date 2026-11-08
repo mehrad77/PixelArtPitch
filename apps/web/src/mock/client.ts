@@ -52,6 +52,7 @@ import type {
 import { type Beat, closing, failure, middle, opening, wholeRun } from "./activity.ts";
 import { drawFrame, drawLogo, drawSheet } from "./art.ts";
 import { MockDrafts } from "./drafts.ts";
+import { fixtureInstances, instanceChange } from "./fixture-crew.ts";
 import {
   CUES_ANGLE,
   estimateCues,
@@ -64,21 +65,23 @@ import {
   SETTINGS,
   scenesFor,
 } from "./fixtures.ts";
-import { JOURNEY, Journey, type JourneyFlags, journeyFlags } from "./journey.ts";
+import { JOURNEY, Journey, type JourneyFlags, journeyFlags, OVERRUN_CAP } from "./journey.ts";
 import { blobUrl, MockPip, srtOf } from "./pip.ts";
 import { mockProgress } from "./progress.ts";
 
-/** the journey flags (PIP-JOURNEY §6), read once at boot and kept for the tab: journey=todo, speed, slots, auto */
+/** the journey flags (PIP-JOURNEY §6), read once at boot and kept for the tab: journey=todo, speed, slots, auto, scenario */
 function bootFlags(): JourneyFlags & { journey: string | null } {
   let search = location.search;
   try {
     const q = new URLSearchParams(search);
-    if (["journey", "speed", "slots", "auto"].some((k) => q.has(k))) sessionStorage.setItem("pap-journey", search);
+    if (["journey", "speed", "slots", "auto", "scenario"].some((k) => q.has(k)))
+      sessionStorage.setItem("pap-journey", search);
     else search = sessionStorage.getItem("pap-journey") ?? search;
   } catch {}
   return { ...journeyFlags(search), journey: new URLSearchParams(search).get("journey") };
 }
-export const FLAGS = typeof location !== "undefined" ? bootFlags() : { speed: 1, slots: 3, auto: false, journey: null };
+export const FLAGS =
+  typeof location !== "undefined" ? bootFlags() : { speed: 1, slots: 3, auto: false, scenario: null, journey: null };
 
 const TICK_MS = 1000;
 const iso = (offsetSec = 0) => new Date(Date.now() + offsetSec * 1000).toISOString();
@@ -143,7 +146,19 @@ function timelineOf(doc: ProjectT): TimelineJSON {
 }
 
 function task(id: string, role: Role, title: string, status: Task["status"], extra: Partial<Task> = {}): Task {
-  return { id, kind: KIND[id] ?? role, role, title, status, model: ROLE_MODELS[role], usd: 0, estUsd: 0.3, ...extra };
+  // one member per role in the scripted fixtures (fixture-crew.ts): the row names it, as the server's rows do
+  return {
+    id,
+    kind: KIND[id] ?? role,
+    role,
+    title,
+    status,
+    model: ROLE_MODELS[role],
+    usd: 0,
+    estUsd: 0.3,
+    instance: role,
+    ...extra,
+  };
 }
 
 function newProject(
@@ -492,6 +507,7 @@ class MockBackend {
     };
     if (FLAGS.journey === "todo") {
       this.journeyFixtures();
+      this.seedInstances();
       return;
     }
     this.projects.set("lantern", newProject("lantern", "Lantern · demo night", {}, 6, true));
@@ -543,6 +559,11 @@ class MockBackend {
       };
     example.phase = 99;
     this.projects.set("example", example);
+    this.seedInstances();
+  }
+  /** the scripted fixtures start with their crew row as their rows say (the journey's projects build their own) */
+  seedInstances() {
+    for (const p of this.projects.values()) if (!p.journey) p.state.instances = fixtureInstances(p.state, ROLE_MODELS);
   }
 
   get(id: string) {
@@ -633,7 +654,8 @@ class MockBackend {
         involvement: "key",
         references: d.refs.map((r) => ({ file: r.name, type: r.type, rights: r.rights, note: "" })),
       },
-      typeof f.budget === "number" ? f.budget : JOURNEY.capUsd,
+      // the overrun scenario's cap puts its 80% line inside the run
+      FLAGS.scenario === "overrun" ? OVERRUN_CAP : typeof f.budget === "number" ? f.budget : JOURNEY.capUsd,
       false,
       makeQuestDayDoc,
     );
@@ -656,6 +678,7 @@ class MockBackend {
       sceneIds: p.state.timeline.scenes.map((sc) => sc.id),
       logo: d.refs.some((r) => r.type === "logo"),
       logoIcon: d.refs.some((r) => r.type === "logo") ? drawLogo() : undefined,
+      capUsd: p.state.budget.capUsd,
       files: () => {
         const rows = mockFiles("questday-pitch.mp4", cues, 2_400_000);
         return { rows, pip: rows.map((r) => ({ name: r.name, kind: r.kind, sizeBytes: r.bytes, url: r.url })) };
@@ -684,9 +707,14 @@ class MockBackend {
         if (e.data.type === "item") {
           for (const c of e.data.item.kind === "pip" ? e.data.item.cards : [])
             if (c.type === "plan" && c.status === "proposed")
-              this.pip.card(id, c, async () => {
-                this.play(p, p.journey?.act({ type: "card", cardId: c.id, decision: "confirm" }) ?? []);
-              });
+              this.pip.card(
+                id,
+                c,
+                async () => {
+                  this.play(p, p.journey?.act({ type: "card", cardId: c.id, decision: "confirm" }) ?? []);
+                },
+                () => this.play(p, p.journey?.act({ type: "card", cardId: c.id, decision: "decline" }) ?? []),
+              );
           this.pip.push(id, e.data.item);
         } else if (e.data.type === "card") this.pip.update(id, e.data.card);
         continue;
@@ -703,6 +731,11 @@ class MockBackend {
       this.x(p, { crew: { state: "idle" } });
   }
 
+  /** a provider's key was saved or tested: journeys held on it go on (the server's Crew.providerFixed) */
+  providerFixed(provider: string) {
+    for (const p of this.projects.values())
+      if (p.journey?.hold?.provider === provider) this.play(p, p.journey.act({ type: "key", provider }));
+  }
   emit(p: MockProject, e: ServerEvent) {
     p.state = applyEvent(p.state, e);
     p.seq++;
@@ -717,6 +750,7 @@ class MockBackend {
     if (patch.status === "working" && !next.startedAt) next.startedAt = iso();
     if (patch.status === "done") next.endedAt = iso();
     this.emit(p, { event: "task", data: next });
+    this.syncInstances(p);
     this.log(p, role, `${next.title}: ${next.status}`);
     // what the server logs on the way: the step and the model call, then the change and the answer, or the error
     if (patch.status && patch.status !== old?.status) {
@@ -764,18 +798,37 @@ class MockBackend {
     const m: Milestone = { id: `m_${p.seq}`, at: iso(), text, ...(image ? { image } : {}) };
     this.emit(p, { event: "milestone", data: m });
   }
+  /** a scripted fixture's crew row, re-derived from its rows: the changed members go out as `instance` events */
+  syncInstances(p: MockProject) {
+    if (p.journey) return;
+    const prev = new Map((p.state.instances ?? []).map((i) => [i.id, i]));
+    for (const next of fixtureInstances(p.state, ROLE_MODELS)) {
+      const change = instanceChange(prev.get(next.id), next);
+      if (change) this.emit(p, { event: "instance", data: { instance: next, change } });
+    }
+  }
   /** what the server will send as `status`: the same plain sentence the client derives, plus the problem */
   pushStatus(p: MockProject) {
     this.syncCrew(p);
+    this.syncInstances(p);
     const bare: ProjectState = { ...p.state, status: undefined };
     const h = humanStatus(bare);
     const eta = bare.time.etaSec;
-    const st: ProjectStatus = {
-      line: h.text,
-      phase: Math.min(PHASES.length - 1, phaseOf(bare)),
-      ...(eta && eta[1] > 0 ? { etaSec: (eta[0] + eta[1]) / 2 } : {}),
-      ...(problemOf(bare) ? { problem: problemOf(bare) } : {}),
-    };
+    // a journey scenario that holds the run or waits on a card says so, as the server's status does
+    const own = p.journey?.statusNow;
+    const st: ProjectStatus = own
+      ? {
+          line: own.line,
+          phase: Math.min(PHASES.length - 1, phaseOf(bare)),
+          ...(own.problem ? { problem: own.problem } : {}),
+          ...(own.waiting ? { waiting: own.waiting } : {}),
+        }
+      : {
+          line: h.text,
+          phase: Math.min(PHASES.length - 1, phaseOf(bare)),
+          ...(eta && eta[1] > 0 ? { etaSec: (eta[0] + eta[1]) / 2 } : {}),
+          ...(problemOf(bare) ? { problem: problemOf(bare) } : {}),
+        };
     const key = JSON.stringify(st);
     if (key === p.lastStatus) return;
     p.lastStatus = key;
@@ -793,6 +846,7 @@ class MockBackend {
       stage: p.state.stage,
       lastActiveAt: last,
       queued: p.state.tasks.filter((t) => t.status === "queued").length,
+      held: p.journey?.held ?? null,
     };
     const c = p.state.crew;
     if (
@@ -801,7 +855,8 @@ class MockBackend {
       c.paused === crew.paused &&
       c.stage === crew.stage &&
       c.lastActiveAt === crew.lastActiveAt &&
-      c.queued === crew.queued
+      c.queued === crew.queued &&
+      (c.held ?? null) === crew.held
     )
       return;
     this.x(p, { crew });
@@ -1837,6 +1892,7 @@ export class MockClient implements Client {
     const b = be();
     const pr = b.settings.providers.find((x) => x.id === provider);
     if (pr) pr.hasKey = true;
+    b.providerFixed(provider);
     return { hasKey: true as const };
   }
   async testProvider(provider: string) {
@@ -1851,6 +1907,7 @@ export class MockClient implements Client {
       };
     if (!pr.hasKey && !["ollama", "llamacpp"].includes(pr.kind))
       return { ok: false, models: [], error: "No key saved. Paste a key, save it, then test again." };
+    be().providerFixed(provider);
     return {
       ok: true,
       models: be()

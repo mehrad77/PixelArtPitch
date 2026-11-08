@@ -78,7 +78,9 @@ type Conv = {
   listeners: Set<(e: ServerEvent) => void>;
   summary: PipSummary | null;
 };
-type Pending = { key: string; card: PipCard; run: (edit?: string) => Promise<void> };
+/** `decline`: the card's owner hears a decline too (the journey's crew cards: a revision drops its tasks, the budget
+ * question settles its other card) */
+type Pending = { key: string; card: PipCard; run: (edit?: string) => Promise<void>; decline?: () => void };
 
 export class MockPip {
   convs = new Map<string, Conv>();
@@ -263,6 +265,13 @@ export class MockPip {
     const p = this.pending.get(cardId);
     if (!p) throw new ApiError(404, { code: "no_card", message: "That card is gone" });
     if (d.decision === "decline") {
+      if (p.decline) {
+        if (p.card.type === "plan" && p.card.status !== "proposed")
+          throw new ApiError(409, { code: "card_done", message: "Already decided" });
+        this.pending.delete(cardId);
+        p.decline();
+        return structuredClone(this.cardNow(p));
+      }
       if (p.card.type === "plan") this.update(p.key, { ...p.card, status: "declined" });
       if (p.card.type === "form" && p.card.form === "mcp_add")
         this.update(p.key, { ...p.card, status: "failed", result: { added: [] } });
@@ -311,9 +320,20 @@ export class MockPip {
   }
 
   /** a card whose run is kept here, server-side, like the real { tool, input } */
-  card<C extends PipCard>(key: string, card: C, run: (edit?: string) => Promise<void> = async () => {}): C {
-    this.pending.set(card.id, { key, card, run });
+  card<C extends PipCard>(
+    key: string,
+    card: C,
+    run: (edit?: string) => Promise<void> = async () => {},
+    decline?: () => void,
+  ): C {
+    this.pending.set(card.id, { key, card, run, ...(decline ? { decline } : {}) });
     return card;
+  }
+  /** a card as its conversation holds it now */
+  private cardNow(p: Pending): PipCard {
+    for (const i of this.conv(p.key).items)
+      if (i.kind === "pip") for (const c of i.cards) if (c.id === p.card.id) return c;
+    return p.card;
   }
 
   // ---- connections ----

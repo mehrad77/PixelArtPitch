@@ -581,14 +581,24 @@ The faces at each moment are the §2 checkpoint table.
   |---|---|
   | `speed=N` | divides every delay (default 1) |
   | `slots=N` | concurrency (default 3); `slots=1` gives 1 live + 3 Animator ghosts in 7c |
-  | `auto=1` | types the step 2 message and drops the logo 3 ticks after an empty `/new` opens, answers each card and pick with its recommended option (Mine for the rights) and presses Start, types the step 10 message at the first G3, confirms its card, approves G3 the second time and asks the step 12 question, each 3 ticks after it opens; the run goes end to end with no clicks |
+  | `auto=1` | types the step 2 message and drops the logo 3 ticks after an empty `/new` opens, answers each card and pick with its recommended option (Mine for the rights) and presses Start, types the step 10 message at the first G3, confirms its card, approves G3 the second time and asks the step 12 question, each 3 ticks after it opens; the run goes end to end with no clicks. With a `scenario`, it stops at the scenario's own moment and leaves that to you |
+
+- **Scenarios** (`scenario=…`, with `journey=todo`; read once at boot and kept with the other flags). Each plays one of the P4 run's situations on top of the journey, with the server's own card and status shapes (`Pip.revisionCard`, `overrunCard`, `holdNotice`; the orchestrator's `holdRun`, `overrun` and `publish`). The default journey, without one, is unchanged. Start a project from `/new` after loading the address, e.g. `/?mock=1&journey=todo&scenario=keyfail&speed=2`.
+
+  | Scenario | What happens | Where it waits |
+  |---|---|---|
+  | `revision` | The cast's founder drawing is past 20% of what was approved: Pip posts "Plan change: $1.40 → about $1.95" (`revision: { fromUsd, toUsd, planner: "director" }`, "Go ahead"); `plan.pending` holds the drawing, scene 4 runs on; the status says "Waiting for you: the plan change in Pip's thread" (`waiting: "plan"`) | `card:c_rev`. Confirm runs the drawing and moves `approvedUsd` to $1.95; decline drops it |
+  | `overrun` | The cap is $1.50. When a task is about to start with 80% spent, Pip posts "The crew is near the budget: …" with two cards, "Finish within $1.50" (lists "Leaves out the second review round.") and "Raise the cap to $2"; nothing new starts; `waiting: "budget"` | `card:c_finish`. Answering one settles the other ("You chose the other way.", or "Kept as it is." on a decline); "Finish within" writes a `budget` revision and the review runs once; "Raise" sends the new cap |
+  | `publish` | Once the founder is drawn, the Librarian asks `Add "founder" to your asset library?` (yes/no); its row is `waiting_user` "Waiting for you: publish founder?", so its face and the drawer say needs you | `answer:q_publish`. The row ends "Published founder" or "Kept founder in this project" |
+  | `keyfail` | The founder's draw gets a rejected key: its row ends `cancelled`, the run holds (nothing new starts), the status is "Waiting for you: Your Anthropic key was rejected" with `problem { text, action: "fix_key", provider: "anthropic" }` and `crew.held`; Pip posts the hold notice; the founder's face is stuck with "Fix the key" | `key:anthropic`. Saving the Anthropic key in Settings › Providers, or a passing test, lifts the hold: "Back to work: the hold is lifted.", and the drawing runs again as attempt 2 |
 
 - **Determinism.**
   - The ids come from counters (`t_1`, `pip_1`, `ch_1`, `m_1`, `draft_1`, `c_q1`, `c_b2`), never from `Date.now()`. `mock/pip.ts`'s `uid` stays for the other intents.
   - No `Math.random`. Every timestamp is the run's start + tick × 1 s ÷ `speed`.
   - The logo fixture is a drawn, fictional "Q" badge (`drawLogo` in `mock/art.ts`).
 - **Time.** One tick is 1 s ÷ `speed`. The displayed durations are the compressed ones: the Finished list says "4 s", not "3 min". Tests match patterns, not durations.
-- **Waits.** The run waits for a person's action: `card:<id>`, `answer:<qid>`, `gate:<id>`, `ask:<text>`. With `auto=1`, each one resolves 3 ticks after it opens.
+- **Waits.** The run waits for a person's action: `card:<id>`, `answer:<qid>`, `gate:<id>`, `ask:<text>`, `key:<provider>`. With `auto=1`, each one resolves 3 ticks after it opens (a card with its confirm), except a scenario's own (`card:c_rev`, `card:c_finish`, `answer:q_publish`, `key:anthropic`), which waits for you.
+- **The older fixtures** (Lantern, Harbor lights, Night market, the example) have a crew row too: `mock/fixture-crew.ts` derives one member per role from their task rows (live while a row works or waits on you, finished once every row ended, the next three as ghosts while the crew runs), and the mock sends the changes as `instance` events.
 
 The Tick column counts from that row's trigger. A row with no trigger keeps counting from the last trigger above it. The ids are the server's instance keys (`writer`, `animator:s01`, `pixel-artist:founder`). Every `instance` event is `{instance, change}` (ORCHESTRATION §4.3), and a status-only `plan` view follows every change of a task's status (the UI reads `ready` from it for "waiting for a free slot").
 
@@ -645,6 +655,7 @@ The `ledger` events follow each task's `usd` from §2 as it ends. Pip's six mete
 14. a channel message finds its instance by role and `ref`, and the plan revisions read as one line each.
 15. a late reply never moves a card back from where its events took it (a form's "submitted" after its done, a fork's "running" after done), and a failed press reverts only a card still in its optimistic state;
 16. "Make another like this" copies the settings (`COPIED`) and never the idea or the files, opens with the copy line, and the idea alone brings the brief card; a fresh draft still opens on "What are we making?".
+17. the scenarios: `revision` holds the drawing behind its card and confirming moves `approvedUsd`; `overrun` asks at 80% of $1.50, starts nothing while it asks, and one card settles the other; `publish` asks once and the Librarian needs you; `keyfail` cancels the row, holds with "Fix the key" on a stuck founder, starts nothing, and lifts only for that provider; the scripted fixtures' crew row.
 
 ## 7. Needs from the backend
 
