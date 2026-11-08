@@ -29,6 +29,16 @@ Fixes for what the P5 run showed: Pip and the crew now share one picture of the 
 - **Pip's reply to a rejected key** says so, with a Fix the key button.
 - **Reports read as sentences**, and the Reviewer's says what it found ("Found 6 problems in scenes 2 and 4.").
 
+### The studio
+- **Asks in Pip's chat, in the crew drawer too.** Open questions and gates show inline in Pip's thread, answerable there.
+- **Turns read on their own.** Each exchange is its own block, read top to bottom; milestones are a separate "newest first" track.
+- **The page goes to what needs you.** A new ask glides into view; while you type, a "Needs you" pill points to it instead.
+- **The contact sheet opens full screen**, frame by frame (← →, Esc closes).
+- **The rough cut plays with sound** once its proxy exists; without one the player says it's a silent preview and keeps the last good frame.
+- **Pip's questions show every option**, Pip is never "the producer", and a hold's "Fix the key" and "Tell Pip what to change" act (Settings, or a field on the card).
+- **G3's "Change something" shows who will do it and what it costs**, from the server's routing, not "the animator redoes all of animation".
+- **A rerun is Working on Projects**, not ✓ Finished; Pip's box never keeps words typed on New video; an old UI build says so in a banner.
+
 ### For contributors
 - `pap serve` warns when the studio UI build is older than its source; `--build` rebuilds it, and `GET /api/build` tells the page.
 - `scripts/e2e/` holds the end-to-end driver: a throwaway home, the web app built first, a spend watchdog, no keys.
