@@ -73,6 +73,7 @@ export function pipThought(thinking: boolean, last: PipItem | undefined): string
   if (!c) return last.text || "Answered you";
   if (c.type === "files") return "Here are your files";
   if (c.type === "cant") return "Can't do that one yet";
+  if (c.type === "fix") return "Needs you to fix something";
   if (c.type === "form")
     return c.status === "done" ? "Connected" : c.status === "failed" ? "That didn't connect" : "Here's the form";
   if (c.status === "done") return c.who.length ? "Handed it to the crew" : `Done: ${low(c.title)}`;

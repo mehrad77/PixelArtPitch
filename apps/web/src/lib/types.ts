@@ -130,6 +130,8 @@ export type QuestionT = {
   answer?: { optionId?: string; value?: unknown; note?: string; by: string };
   /** PIP-JOURNEY N15: the plan's `rights` node for a likeness or logo; only the person answers it */
   rights?: { asset: string; private: true };
+  /** v0.3: Pip holds the run until this is answered (from "pip", kind "single"); the crew can't decide it for you */
+  hold?: boolean;
 };
 
 /** the resolved timeline as JSON (the server's Timeline without its `at` function) */
@@ -393,6 +395,9 @@ export type PipCard =
       };
     }
   | { id: string; type: "cant"; text: string; nearest?: string }
+  /** v0.3: a problem only the person can fix, as a card in Pip's reply (a rejected key: "Fix the key") */
+  // `action` may be missing: the server's publicCard strips a card's `action`; a fix card without one is "fix_key"
+  | { id: string; type: "fix"; text?: string; action?: ProblemAction; fix?: ProblemAction; provider?: string }
   | {
       id: string;
       type: "form";
@@ -460,6 +465,8 @@ export type PipItem =
       trace?: PipTrace;
       /** a /why reply: the trace of the answer it explains */
       why?: PipTrace & { about?: string };
+      /** v0.3: Pip couldn't answer, and the fix is the person's (a rejected key): rendered as its one button */
+      problem?: { text?: string; action: ProblemAction; provider?: string };
     }
   | { id: string; at: string; kind: "thinking" };
 /** Pip's summary of the earlier conversation: everything up to `upTo` is folded into `text` */
@@ -646,7 +653,25 @@ export interface Client {
   instanceLog(id: string, iid: string): Promise<InstanceLog | null>;
   /** GET /api/p/:id/plan/revisions: every plan revision, oldest first; [] when the server has none */
   planRevisions(id: string): Promise<PlanRevisionSummary[]>;
+  // ---- v0.3 ----
+  /** POST /api/p/:id/changes/preview: who a change goes to and what it costs, with no model call; null when the
+   * server has no such route */
+  changesPreview(id: string, body: ChangesPreviewInput): Promise<ChangesPreview | null>;
+  /** GET /api/build: whether the served web build is older than its sources; null when the server can't say */
+  build(): Promise<BuildInfo | null>;
 }
+
+export type ChangesPreviewInput = { gate?: GateId; text: string; items?: string[] };
+/** the routed change, dry: the member it goes to (and every role it touches), the scenes, the price and the time */
+export type ChangesPreview = {
+  role: Role;
+  roles: Role[];
+  scenes: string[];
+  usd: [number, number];
+  sec: [number, number];
+  summary: string;
+};
+export type BuildInfo = { webStale: boolean; builtAt: string | null; srcAt: string | null };
 
 // ---- Pip runs the show (PIP-ORCHESTRATION §4.2, the wire contract; PIP-JOURNEY for what the UI does with it) ----
 export type PlanGate = "g0_brief" | "g1_script" | "g2_animatic" | "rights" | "g3_rough" | "g4_final";

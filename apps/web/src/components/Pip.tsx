@@ -19,8 +19,9 @@ import {
 } from "react";
 import { isSensitive, REF_TYPE_LABEL } from "../lib/brief.ts";
 import { useChannel } from "../lib/channel.ts";
+import { fixOfCard, fixOfItem, type PipFix } from "../lib/fix.ts";
 import { bytes, clock, duration } from "../lib/format.ts";
-import { type Member, memberOf, modelWords, usdPlain } from "../lib/human.ts";
+import { memberOf, modelWords, PROBLEM_BUTTON, providerName, usdPlain } from "../lib/human.ts";
 import {
   askPip,
   COMMANDS,
@@ -34,6 +35,7 @@ import {
   makeAnotherFrom,
   markSeen,
   openDraft,
+  peekPip,
   pipMood,
   saveSummary,
   scoped,
@@ -43,14 +45,16 @@ import {
   usePip,
 } from "../lib/pip.ts";
 import { planCrew, planDiff, planUsd, titleWords } from "../lib/plancard.ts";
-import { Link } from "../lib/router.tsx";
-import { type Marker, type Turn, turnsOf } from "../lib/thread.ts";
-import type { PipCard, PipFile, PipItem, PipSummary, ProjectState, RefType, RoleT } from "../lib/types.ts";
+import { Link, navigate } from "../lib/router.tsx";
+import { cutWords, dedupeMarkers } from "../lib/text.ts";
+import { type Marker, type Turn, trackOf, turnsOf } from "../lib/thread.ts";
+import type { PipCard, PipFile, PipItem, PipSummary, ProjectState, RefType } from "../lib/types.ts";
 import { BriefCard, BriefFieldsCard, briefLines, settledFields } from "./BriefCards.tsx";
 import { ConductContext, CrewFace } from "./CrewStrip.tsx";
 import { McpForm, McpResult } from "./McpForm.tsx";
 import { ContextDialog } from "./PipContext.tsx";
 import { PipFace } from "./PipFace.tsx";
+import { openProvider } from "./ProblemButton.tsx";
 import "./Pip.css";
 
 type Project = string | null | undefined;
@@ -63,14 +67,6 @@ function timeWords(sec: [number, number]): string {
   return hi >= 60 ? `About ${duration(sec[1])}` : lo === hi ? `About ${lo} min` : `${lo}–${hi} min`;
 }
 const and = (xs: string[]) => (xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
-function membersOf(who: RoleT[]): Member[] {
-  const out: Member[] = [];
-  for (const r of who) {
-    const m = memberOf(r);
-    if (!out.includes(m)) out.push(m);
-  }
-  return out;
-}
 /** "freesound.search_sounds" → "Freesound search sounds" */
 const toolLabel = (t: string) => {
   const [server, ...rest] = t.split(".");
@@ -85,6 +81,7 @@ function spoken(item: PipItem | undefined): string {
   const cards = item.cards.map((c) => {
     if (c.type === "files") return `${c.files.length} ${c.files.length === 1 ? "file" : "files"} to download.`;
     if (c.type === "cant") return `${c.text}${c.nearest ? ` ${c.nearest}` : ""}`;
+    if (c.type === "fix") return `${c.text ? `${c.text} ` : ""}${PROBLEM_BUTTON[fixOfCard(c)?.action ?? "fix_key"]}.`;
     if (c.type === "form" && c.form === "brief_fields")
       return c.status === "done" ? settledFields(c) : `${c.title}: ${c.fields.map((f) => f.label).join(" ")}`;
     if (c.type === "form") return c.status === "done" || c.status === "failed" ? `${c.title}: ${c.status}.` : c.title;
@@ -116,15 +113,19 @@ export function PipThread({
   conv,
   onHandoff,
   markers,
+  asks,
 }: {
   project: Project;
   conv: Conv;
   onHandoff?: () => void;
   /** milestones from the project's event log, shown as quiet one-line markers among the messages, by time */
   markers?: Marker[];
+  /** what needs the person now, at the newest end of the thread (the crew drawer asks there) */
+  asks?: ReactNode;
 }) {
   const items = conv.items.filter((i) => i.kind !== "thinking");
-  const marks = [...(markers ?? [])].filter((m) => Number.isFinite(Date.parse(m.at)));
+  // one row per milestone while it repeats, each cut on a word
+  const marks = dedupeMarkers(markers ?? []).map((m) => ({ ...m, text: cutWords(m.text) }));
   const before = (at: string) => {
     const t = Date.parse(at);
     const out: Marker[] = [];
@@ -161,15 +162,7 @@ export function PipThread({
             </li>
           ) : it.kind === "pip" ? (
             <li key={it.id} className="pip-says" data-old={old ? "" : undefined}>
-              {it.text && (
-                <p className="pip-text" dir="auto">
-                  {it.text}
-                </p>
-              )}
-              {it.why && <WhyTrace why={it.why} />}
-              {it.cards.map((c) => (
-                <PipCardView key={c.id} project={project} card={c} onHandoff={onHandoff} />
-              ))}
+              <PipSaid it={it} project={project} onHandoff={onHandoff} />
             </li>
           ) : null;
         const lead = before(it.at).map((m) => <MarkerRow key={m.id} m={m} />);
@@ -184,6 +177,7 @@ export function PipThread({
       {marks.splice(0).map((m) => (
         <MarkerRow key={m.id} m={m} />
       ))}
+      {asks}
       {conv.thinking && (
         <li className="pip-says pip-thinking" aria-hidden="true">
           <p className="pip-text">
@@ -219,6 +213,25 @@ function ItemRow({ it, project, onHandoff }: { it: PipItem; project: Project; on
   if (it.kind !== "pip") return null;
   return (
     <div className="pip-says pip-bubble">
+      <PipSaid it={it} project={project} onHandoff={onHandoff} />
+    </div>
+  );
+}
+
+/** what Pip said: its words, a /why trace, its cards, and the fix the person can run when Pip couldn't answer */
+function PipSaid({
+  it,
+  project,
+  onHandoff,
+}: {
+  it: Extract<PipItem, { kind: "pip" }>;
+  project: Project;
+  onHandoff?: () => void;
+}) {
+  const own = fixOfItem(it);
+  const shown = it.cards.some((c) => fixOfCard(c));
+  return (
+    <>
       {it.text && (
         <p className="pip-text" dir="auto">
           {it.text}
@@ -228,7 +241,8 @@ function ItemRow({ it, project, onHandoff }: { it: PipItem; project: Project; on
       {it.cards.map((c) => (
         <PipCardView key={c.id} project={project} card={c} onHandoff={onHandoff} />
       ))}
-    </div>
+      {own && !shown && <FixCard fix={own} project={project} />}
+    </>
   );
 }
 
@@ -261,8 +275,9 @@ const Thinking = () => (
   </div>
 );
 
-/** the simple view's thread: turns newest first, each read top-down; what the summary folded comes last, under its
- * divider */
+/** the simple view's thread: turns newest first, each its own framed block read top-down (your message, then Pip's
+ * reply and its card); what the summary folded comes last, under its divider. The milestones are a track of their own
+ * beside it (under it on a narrow screen), newest first, so a turn never reads as part of the timeline */
 function NewestThread({
   project,
   conv,
@@ -281,40 +296,73 @@ function NewestThread({
   skip?: (it: PipItem) => boolean;
 }) {
   const items = conv.items.filter((i) => i.kind !== "thinking" && !skip?.(i));
-  const marks = (markers ?? []).filter((m) => Number.isFinite(Date.parse(m.at)));
+  const track = trackOf(markers ?? []);
   const upTo = conv.summary && items.some((i) => i.id === conv.summary?.upTo) ? conv.summary.upTo : null;
-  const turns = turnsOf(items, marks, upTo, conv.thinking).reverse();
+  const turns = turnsOf(items, upTo, conv.thinking).reverse();
   const recent = turns.filter((t) => !t.old);
   const folded = turns.filter((t) => t.old);
-  // each turn is one list item, read top-down (your message, then Pip's reply); the turns run newest first
-  const row = (t: Turn) =>
-    t.marker ? (
-      <MarkerRow key={t.key} m={t.marker} />
-    ) : (
-      <li key={t.key} className="pip-turn" data-by={t.by} data-old={t.old ? "" : undefined}>
-        {t.at > 0 && t.key !== "thinking" && (
-          <p className="pip-turn-time">
-            <time dateTime={new Date(t.at).toISOString()}>
-              <bdi>{clock(new Date(t.at))}</bdi>
-            </time>
-          </p>
-        )}
-        {t.items.map((it) => (
-          <ItemRow key={it.id} it={it} project={project} onHandoff={onHandoff} />
-        ))}
-        {t.thinking && <Thinking />}
-      </li>
-    );
-  return (
-    <ol className="pip-thread" data-order="newest" aria-label="Conversation, newest first">
-      {conv.unavailable && !items.length && <li className="pip-note small muted">{conv.unavailable}</li>}
-      {emptyNote && conv.loaded && !conv.unavailable && !items.length && !marks.length && !conv.thinking && (
-        <li className="pip-note small muted">{emptyNote}</li>
+  const row = (t: Turn) => (
+    <li key={t.key} className="pip-turn" data-by={t.by} data-old={t.old ? "" : undefined}>
+      {t.at > 0 && t.key !== "thinking" && (
+        <p className="pip-turn-time">
+          <span className="visually-hidden">{t.by === "person" ? "You asked at " : "Pip, at "}</span>
+          <time dateTime={new Date(t.at).toISOString()}>
+            <bdi>{clock(new Date(t.at))}</bdi>
+          </time>
+        </p>
       )}
-      {recent.map(row)}
-      {conv.summary && <SummaryDivider project={project} summary={conv.summary} />}
-      {folded.map(row)}
-    </ol>
+      {t.items.map((it) => (
+        <ItemRow key={it.id} it={it} project={project} onHandoff={onHandoff} />
+      ))}
+      {t.thinking && <Thinking />}
+    </li>
+  );
+  const quiet = !items.length && !conv.thinking;
+  return (
+    <div className="pip-convo" data-track={track.length ? "" : undefined}>
+      <ol className="pip-thread" data-order="newest" aria-label="Conversation, newest first">
+        {conv.unavailable && !items.length && <li className="pip-note small muted">{conv.unavailable}</li>}
+        {emptyNote && conv.loaded && !conv.unavailable && quiet && (
+          <li className="pip-note small muted">{emptyNote}</li>
+        )}
+        {recent.map(row)}
+        {conv.summary && <SummaryDivider project={project} summary={conv.summary} />}
+        {folded.map(row)}
+      </ol>
+      {track.length > 0 && <MilestoneTrack marks={track} />}
+    </div>
+  );
+}
+
+/** how many milestones the track shows before "Show all" */
+const TRACK_SHOWN = 6;
+
+/** the milestones, newest first, on a quiet rail: the run's own timeline, apart from the conversation */
+function MilestoneTrack({ marks }: { marks: Marker[] }) {
+  const [all, setAll] = useState(false);
+  const id = useId();
+  const shown = all ? marks : marks.slice(0, TRACK_SHOWN);
+  return (
+    <section className="pip-track" aria-labelledby={`${id}-h`}>
+      <h3 id={`${id}-h`} className="pip-track-head label">
+        Milestones <span className="pip-track-hint">· newest first</span>
+      </h3>
+      <ol className="pip-track-list">
+        {shown.map((m, i) => (
+          <li key={m.id} className="pip-track-row" data-newest={i === 0 ? "" : undefined}>
+            <time dateTime={m.at}>
+              <bdi>{clock(new Date(m.at))}</bdi>
+            </time>
+            <bdi className="pip-track-text">{m.text}</bdi>
+          </li>
+        ))}
+      </ol>
+      {marks.length > TRACK_SHOWN && (
+        <button type="button" className="linkish small pip-track-more" onClick={() => setAll((x) => !x)}>
+          {all ? "Show fewer" : `Show all ${marks.length}`}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -520,6 +568,10 @@ function WhyTrace({ why }: { why: NonNullable<Extract<PipItem, { kind: "pip" }>[
 // ---- cards ----
 export function PipCardView({ project, card, onHandoff }: { project: Project; card: PipCard; onHandoff?: () => void }) {
   if (card.type === "files") return <FilesCard files={card.files} />;
+  // "Fix the key" and its kin: the person's own fix, as one button (a card of any type may carry it)
+  const fix = fixOfCard(card);
+  if (fix && (card.type === "fix" || card.type === "cant" || card.type === "plan"))
+    return <FixCard fix={fix} project={project} words={card.type === "cant" ? card.text : undefined} />;
   if (card.type === "cant")
     return (
       <div className="pip-card" data-type="cant">
@@ -535,7 +587,45 @@ export function PipCardView({ project, card, onHandoff }: { project: Project; ca
     return <BriefFieldsCard project={project} card={card} onHandoff={onHandoff} />;
   if (card.type === "form") return <FormCard project={project} card={card} />;
   if (card.type === "brief") return <BriefCard project={project} card={card} onHandoff={onHandoff} />;
+  if (card.type === "fix")
+    return <FixCard fix={fixOfCard(card) ?? { action: "fix_key", provider: card.provider }} project={project} />;
   return <PlanCard project={project} card={card} onHandoff={onHandoff} />;
+}
+
+/** a fix only the person can make, said under Pip's reply: one button and what it does ("Fix the key": Settings ›
+ * Providers, opened on that provider) */
+function FixCard({ fix, project, words }: { fix: PipFix; project: Project; words?: string }) {
+  const label = PROBLEM_BUTTON[fix.action];
+  const provider = fix.provider ? providerName(fix.provider) : null;
+  const what =
+    fix.action === "fix_key"
+      ? `Opens Settings › Providers${provider ? ` at ${provider}` : ""}. Save a new key or test it, then ask me again.`
+      : fix.action === "change_model"
+        ? "Opens Settings › Roles, where you pick another model for me."
+        : fix.action === "add_budget"
+          ? "Opens the project, where you raise its cap."
+          : "Asks me the same thing again.";
+  const run = () => {
+    if (fix.action === "fix_key") return openProvider(fix.provider);
+    if (fix.action === "change_model") return navigate("/settings/roles");
+    if (fix.action === "add_budget" && project) return navigate(`/p/${encodeURIComponent(project)}`);
+    const conv = peekPip(project);
+    const last = [...conv.items].reverse().find((i) => i.kind === "user");
+    if (last?.kind === "user") askPip(project, last.text);
+  };
+  return (
+    <div className="pip-card pip-fix" data-type="fix">
+      {words && <p dir="auto">{words}</p>}
+      <div className="pip-actions">
+        <Button size="sm" variant="primary" onClick={run} aria-describedby={undefined}>
+          {fix.action === "fix_key" && <Icon name="key" size="sm" />} {label}
+        </Button>
+        <span className="small muted pip-fix-what" dir="auto">
+          {what}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function FilesCard({ files }: { files: PipFile[] }) {
@@ -575,12 +665,12 @@ function PlanCard({
 }) {
   const [edit, setEdit] = useState(card.editable?.value ?? "");
   const [err, setErr] = useState<string | null>(null);
-  const crew = membersOf(card.who);
   const working = card.status === "running";
   // a plan change shows its price as a diff, so the range of the delta isn't repeated under it
   const diff = planDiff(card);
-  // the crew by instance ("Animator · scene 2"), the planner first on a revision (the Director when it re-plans)
-  const named = card.revision || card.whoInstances?.length ? planCrew(card) : null;
+  // the crew by role, never by department (which folds the Director into the Writer): by instance where the card
+  // names them ("Animator · scene 2"), the planner first on a revision (the Director when it re-plans)
+  const named = card.who.length || card.revision || card.whoInstances?.length ? planCrew(card) : null;
   const meta = [card.sec ? timeWords(card.sec) : null, planUsd(card)].filter(Boolean);
   const confirm = async () => {
     if (working) return;
@@ -588,7 +678,7 @@ function PlanCard({
     setErr(null);
     try {
       await decidePip(project, card, "confirm", card.editable ? edit : undefined);
-      if (crew.length) onHandoff?.();
+      if (card.who.length) onHandoff?.();
     } catch (e) {
       setErr(`${(e as Error).message}. Try again.`);
     }
@@ -605,9 +695,9 @@ function PlanCard({
     <article className="pip-card" data-type="plan" data-status={card.status} aria-label={card.title}>
       <header className="pip-plan-head">
         <h3 className="pip-plan-title" dir="auto">
-          {titleWords(card)}
+          {cutWords(titleWords(card), 80)}
         </h3>
-        {named ? (
+        {named && named.roles.length > 0 && (
           <span className="pip-who">
             <span className="pip-who-faces" aria-hidden="true">
               {named.roles.slice(0, 5).map((r) => (
@@ -626,21 +716,6 @@ function PlanCard({
               {named.names.length > 5 ? ` and ${named.names.length - 5} more` : null}
             </span>
           </span>
-        ) : (
-          crew.length > 0 && (
-            <span className="pip-who">
-              <span className="pip-who-faces" aria-hidden="true">
-                {crew.map((m) => (
-                  <CrewFace
-                    key={m.id}
-                    member={m}
-                    mood={working ? "working" : card.status === "done" ? "done" : "idle"}
-                  />
-                ))}
-              </span>
-              <span className="small muted">{and(crew.map((m) => m.label))}</span>
-            </span>
-          )
         )}
       </header>
       {diff && (

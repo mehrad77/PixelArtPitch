@@ -196,23 +196,22 @@ test("the live canvas reads only whole rows, in any key order", () => {
   assert.ok(live?.draft && liveFrame(live.draft)?.rows.length, "a few rows in");
 });
 
-test("Pip's thread: your message and the reply are one turn; Pip's own message and a milestone stand alone", () => {
+test("Pip's thread: your message and the reply are one turn; Pip's own message stands alone; milestones are no turn", () => {
   const at = (s: number) => new Date(Date.UTC(2026, 10, 8, 20, 0, s)).toISOString();
   const items: PipItem[] = [
     { id: "u1", at: at(1), kind: "user", text: "About the moth: make it bigger" },
     { id: "p1", at: at(2), kind: "pip", text: "On it.", cards: [] },
     { id: "p2", at: at(10), kind: "pip", text: "The rough cut is ready.", cards: [] },
   ];
-  const turns = turnsOf(items, [{ id: "m1", at: at(5), text: "Plan changed: scene 2" }], null, false);
+  const turns = turnsOf(items, null, false);
   assert.deepEqual(
-    turns.map((t) => [t.by, t.items.map((i) => i.id).join("+") || t.marker?.id]),
+    turns.map((t) => [t.by, t.items.map((i) => i.id).join("+")]),
     [
       ["person", "u1+p1"],
-      ["marker", "m1"],
       ["pip", "p2"],
     ],
   );
-  const thinking = turnsOf(items.slice(0, 1), [], null, true);
+  const thinking = turnsOf(items.slice(0, 1), null, true);
   assert.equal(thinking.length, 1);
   assert.ok(thinking[0].thinking, "Pip's dots go under your message, in the same turn");
 });

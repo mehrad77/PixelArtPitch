@@ -85,13 +85,41 @@ export type FrameSpec = {
   to?: number;
   /** the end card's achievement toast shows the logo (the draft had one, and the rights pick said use it) */
   logo?: boolean;
+  /** the scene is stale (its board changed): only the sky, as the server draws it */
+  empty?: boolean;
 };
 
 /** one 320×180 frame as a PNG data URL */
 export function drawFrame(spec: FrameSpec): string {
-  const key = `${Math.round(spec.t * 10)}|${spec.sceneIndex}|${spec.version}|${spec.variant ?? 0}|${spec.look ?? ""}|${spec.logo ? 1 : 0}`;
+  const key = `${Math.round(spec.t * 10)}|${spec.sceneIndex}|${spec.version}|${spec.variant ?? 0}|${spec.look ?? ""}|${spec.logo ? 1 : 0}|${spec.empty ? 1 : 0}`;
   const hit = frameCache.get(key);
   if (hit) return hit;
+  paintFrame(spec);
+  return cache(key);
+}
+
+/**
+ * The rough cut's contact sheet as the server lays it out (packages/render contactSheet): one still per second, taken
+ * at i + 0.5 s, in `cols` columns of 320×180 at 1×, the last row partial. A PNG data URL.
+ */
+export function drawContactSheet(specs: FrameSpec[], cols = 6): string {
+  const rows = Math.max(1, Math.ceil(specs.length / cols));
+  const sheet = document.createElement("canvas");
+  sheet.width = 320 * cols;
+  sheet.height = 180 * rows;
+  const c = sheet.getContext("2d") as CanvasRenderingContext2D;
+  c.imageSmoothingEnabled = false;
+  c.fillStyle = ink().sky;
+  c.fillRect(0, 0, sheet.width, sheet.height);
+  specs.forEach((spec, i) => {
+    paintFrame(spec);
+    c.drawImage(canvas as HTMLCanvasElement, (i % cols) * 320, Math.floor(i / cols) * 180);
+  });
+  return sheet.toDataURL("image/png");
+}
+
+/** paint one frame into the shared canvas */
+function paintFrame(spec: FrameSpec) {
   const W = 320;
   const H = 180;
   const c = ctx2d(W, H);
@@ -101,6 +129,12 @@ export function drawFrame(spec: FrameSpec): string {
     c.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   };
   const font = getComputedStyle(document.documentElement).getPropertyValue("--font-mono") || "monospace";
+  // a scene whose board changed and isn't redrawn yet: the server draws its empty sky
+  if (spec.empty) {
+    px(0, 0, W, H, k.sky);
+    for (let y = 90; y < H; y += 2) px(0, y, W, 1, k.sky2);
+    return;
+  }
 
   if (spec.version === "slate") {
     px(0, 0, W, H, k.sky2);
@@ -115,7 +149,7 @@ export function drawFrame(spec: FrameSpec): string {
     c.fillStyle = k.muted;
     c.font = `8px ${font}`;
     c.fillText("not drawn yet", 16, 110);
-    return cache(key);
+    return;
   }
 
   if (spec.look === "questday") {
@@ -129,7 +163,7 @@ export function drawFrame(spec: FrameSpec): string {
       px(0, 0, W, H, k.sky);
       c.globalCompositeOperation = "source-over";
     }
-    return cache(key);
+    return;
   }
 
   // sky in three dithered bands
@@ -181,7 +215,7 @@ export function drawFrame(spec: FrameSpec): string {
     px(bx + 2, 126, 6, 2, k.leaf);
     px(bx + 6, 129, 4, 3, k.leafShade);
   }
-  return cache(key);
+  return;
 }
 function cache(key: string) {
   const url = (canvas as HTMLCanvasElement).toDataURL("image/png");

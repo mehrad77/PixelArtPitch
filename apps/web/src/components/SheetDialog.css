@@ -1,0 +1,99 @@
+/* the picture beside what needs you, as a button: the picture itself, with a quiet "View" on hover and focus */
+.preview-btn {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: zoom-in;
+}
+.preview-btn > img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  border-radius: var(--radius);
+}
+.preview-btn-hint {
+  position: absolute;
+  inset-block-end: var(--space-1);
+  inset-inline-end: var(--space-1);
+  padding-block: 0;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--stroke-control);
+  color: var(--text);
+  font-family: var(--font-mono);
+  opacity: 0;
+}
+:is(:lang(fa), :lang(ar)) .preview-btn-hint {
+  font-family: var(--font-arabic);
+}
+.preview-btn:hover .preview-btn-hint,
+.preview-btn:focus-visible .preview-btn-hint {
+  opacity: 1;
+}
+.preview-btn:hover > img {
+  outline: 1px solid var(--stroke-strong);
+}
+.preview-btn:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .preview-btn-hint {
+    transition: opacity var(--dur-fast) var(--ease-enter);
+  }
+}
+
+/* the dialog: as wide as the window allows, so a frame gets a big whole-number scale */
+.dialog.sheet-dialog[open] {
+  inline-size: min(100% - 2 * var(--gutter), 84rem);
+  max-block-size: calc(100% - 2 * var(--gutter));
+}
+.sheet {
+  display: grid;
+  gap: var(--space-3);
+}
+.sheet-stage {
+  display: grid;
+  place-items: center;
+  min-block-size: 10rem;
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  overflow: auto;
+}
+.sheet-frame,
+.sheet-whole {
+  display: block;
+  max-inline-size: 100%;
+  block-size: auto;
+}
+.sheet-frame {
+  aspect-ratio: 16 / 9;
+}
+.sheet-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.sheet-steps {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.sheet-count {
+  min-inline-size: 15ch;
+  margin: 0;
+  text-align: center;
+}
+.sheet-hint {
+  margin: 0;
+}
+:is(:lang(fa), :lang(ar)) .sheet-count {
+  font-family: var(--font-arabic);
+}

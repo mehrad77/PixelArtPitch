@@ -4,6 +4,9 @@ import type {
   ActivityEntry,
   AnswerInput,
   ApiErrorBody,
+  BuildInfo,
+  ChangesPreview,
+  ChangesPreviewInput,
   ChannelMsg,
   Client,
   Connection,
@@ -272,6 +275,24 @@ export class HttpClient implements Client {
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) return null;
       throw e;
+    }
+  }
+  async changesPreview(id: string, body: ChangesPreviewInput) {
+    try {
+      const res = await this.post<ChangesPreview>(`/api/p/${enc(id)}/changes/preview`, body);
+      return res && typeof res === "object" && Array.isArray(res.usd) ? res : null;
+    } catch (e) {
+      // an older server: the route isn't there (404, or the studio page); the card keeps its own words
+      if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null;
+      throw e;
+    }
+  }
+  async build() {
+    try {
+      const res = await this.get<BuildInfo>("/api/build");
+      return res && typeof res.webStale === "boolean" ? res : null;
+    } catch {
+      return null;
     }
   }
   async planRevisions(id: string) {

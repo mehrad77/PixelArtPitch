@@ -7,11 +7,12 @@ import { client } from "../lib/client.ts";
 import { GATE_LABEL, GATE_STAGE, isStage, ROLE_LABEL, STAGE_LABEL } from "../lib/derive.ts";
 import { clock, signedDuration, signedUsd } from "../lib/format.ts";
 import { effectOf } from "../lib/human.ts";
+import { changeEffect, useChangePreview } from "../lib/preview.ts";
 import type { Gate, ProjectState, QuestionT, Role } from "../lib/types.ts";
 import { EffectButton } from "./EffectAction.tsx";
 import "./DecisionCard.css";
 
-const fromLabel = (from: string) => ROLE_LABEL[from as Role] ?? from;
+const fromLabel = (from: string) => (from === "pip" ? "Pip" : (ROLE_LABEL[from as Role] ?? from));
 const blockWord = (b: string) => (isStage(b) ? STAGE_LABEL[b] : b.replace(/^t_/, "").replace(/_/g, " "));
 
 /** `where` keeps ids unique when the same question shows in two places (the stage panel and the Inbox) */
@@ -31,7 +32,7 @@ export function DecisionCard({ projectId, q, where = "inbox" }: { projectId: str
     try {
       await client.answer(projectId, q.id, a);
     } catch (e) {
-      setErr(`${(e as Error).message}. Try again, or let the Producer decide.`);
+      setErr(`${(e as Error).message}. Try again, or let the crew decide.`);
     } finally {
       setBusy(false);
     }
@@ -42,7 +43,7 @@ export function DecisionCard({ projectId, q, where = "inbox" }: { projectId: str
     else if (q.kind === "number") {
       const v = Number(num);
       if (!num || !Number.isFinite(v)) {
-        setErr("Enter a number, or let the Producer decide.");
+        setErr("Enter a number, or let the crew decide.");
         document.getElementById(`${base}-num`)?.focus();
         return;
       }
@@ -75,7 +76,7 @@ export function DecisionCard({ projectId, q, where = "inbox" }: { projectId: str
               ? "Withdrawn by the crew."
               : "Answered: "}
           {q.status !== "withdrawn" && (q.options.find((o) => o.id === q.answer?.optionId)?.label ?? "a value")}
-          {q.answer?.by === "producer" && " (the Producer decided)"}
+          {q.answer?.by === "producer" && " (the crew decided)"}
         </p>
       </article>
     );
@@ -152,7 +153,7 @@ export function DecisionCard({ projectId, q, where = "inbox" }: { projectId: str
           variant="ghost"
           onClick={() => send({ optionId: q.recommendedId, note: "Let Producer decide" })}
         >
-          Let Producer decide
+          Let the crew decide
         </Button>
       </div>
     </form>
@@ -176,6 +177,8 @@ export function GateCard({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const base = `${where}-gate-${gate.id}`;
+  // the change, routed and priced by the server as it's typed (the Director for cast and staging)
+  const preview = useChangePreview(projectId, gate.id, reasons, checked, !!state && gate.status === "open");
   const hasReasons = () => {
     if (reasons.trim()) return true;
     setErr("Say what to change, so the crew knows where to start.");
@@ -267,7 +270,11 @@ export function GateCard({
           <EffectButton
             label="Ask for changes"
             variant="danger"
-            effect={effectOf({ kind: "gate_changes", stage: GATE_STAGE[gate.id], items: checked }, state)}
+            effect={changeEffect(
+              preview,
+              (p) => effectOf({ kind: "gate_changes", stage: GATE_STAGE[gate.id], items: checked, preview: p }, state),
+              !!reasons.trim(),
+            )}
             check={hasReasons}
             onRun={() => send("changes")}
           />

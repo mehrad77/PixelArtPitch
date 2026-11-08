@@ -8,6 +8,27 @@ import { navigate } from "../lib/router.tsx";
 import type { ProjectState } from "../lib/types.ts";
 import { EffectButton } from "./EffectAction.tsx";
 
+/**
+ * Settings › Providers, opened on one provider: its section scrolls into view once the page has drawn it, and its key
+ * field takes the focus (the person pressed "Fix the key", so the focus moving is theirs)
+ */
+export function openProvider(provider?: string) {
+  navigate("/settings/providers");
+  if (!provider) return;
+  const until = Date.now() + 4000;
+  const look = () => {
+    const head = document.getElementById(`prov-${provider}-t`);
+    if (!head) {
+      if (Date.now() < until) setTimeout(look, 100);
+      return;
+    }
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    head.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    document.getElementById(`prov-${provider}-key`)?.focus({ preventScroll: true });
+  };
+  requestAnimationFrame(look);
+}
+
 export function ProblemButton({
   projectId,
   state,
@@ -26,12 +47,7 @@ export function ProblemButton({
         className={className}
         label={PROBLEM_BUTTON.fix_key}
         effect={effectOf({ kind: "fix_key", provider: problem.provider }, state)}
-        onRun={() => {
-          navigate("/settings/providers");
-          // the provider's own section, once the page is drawn
-          if (problem.provider)
-            setTimeout(() => document.getElementById(`prov-${problem.provider}-t`)?.scrollIntoView(), 200);
-        }}
+        onRun={() => openProvider(problem.provider)}
       />
     );
   if (problem.action === "change_model")

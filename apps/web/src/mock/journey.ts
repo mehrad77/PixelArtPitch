@@ -34,13 +34,47 @@ import { ROLE_MODELS } from "./fixtures.ts";
  * within" and "Raise the cap" pair), `publish` (the Librarian asks to add the founder to the library), `keyfail` (the
  * founder's draw gets a rejected key: the run holds until a key is saved or tested, and the founder's face is stuck)
  */
-export const SCENARIOS = ["revision", "overrun", "publish", "keyfail"] as const;
+export const SCENARIOS = [
+  "revision",
+  "overrun",
+  "publish",
+  "keyfail",
+  // v0.3 (the P5 run's fixes)
+  "hold",
+  "holdcard",
+  "g3director",
+  "drawer",
+  "sheet",
+  "pipkey",
+] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 /** the waits a scenario adds: `auto=1` never answers them (the run stops there for you, and for a screenshot) */
-const SCENARIO_WAITS = new Set(["card:c_rev", "card:c_finish", "answer:q_publish", "key:anthropic"]);
+const SCENARIO_WAITS = new Set([
+  "card:c_rev",
+  "card:c_finish",
+  "answer:q_publish",
+  "key:anthropic",
+  "answer:q_hold",
+  "card:c_hold",
+]);
+/** a scenario that stops at one of the journey's own moments, so it can be looked at: the G1 pick (asks in the crew
+ * drawer), the rough cut (the contact sheet, a change routed to the Director, Pip's rejected key) */
+const STOPS_AT: Partial<Record<Scenario, string>> = {
+  drawer: "answer:q_angle",
+  sheet: "gate:g3_rough",
+  g3director: "gate:g3_rough",
+  pipkey: "gate:g3_rough",
+};
 /** the cap the `overrun` scenario sets, so the 80% line falls inside the run */
 export const OVERRUN_CAP = 1.5;
-export type JourneyFlags = { speed: number; slots: number; auto: boolean; scenario?: Scenario | null };
+export type JourneyFlags = {
+  speed: number;
+  slots: number;
+  auto: boolean;
+  scenario?: Scenario | null;
+  /** the review writes a playable rough cut (out/proxy.mp4, with sound); `proxy=0` plays an older server without */
+  proxy?: boolean;
+};
 export function journeyFlags(search: string): JourneyFlags {
   const q = new URLSearchParams(search);
   const num = (k: string, d: number, lo: number, hi: number) => {
@@ -53,6 +87,58 @@ export function journeyFlags(search: string): JourneyFlags {
     slots: Math.round(num("slots", 3, 1, 8)),
     auto: q.get("auto") === "1",
     scenario: (SCENARIOS as readonly string[]).includes(sc ?? "") ? (sc as Scenario) : null,
+    proxy: q.get("proxy") !== "0",
+  };
+}
+
+// ---- one door for changes (the server's routeChange, dry): who a note goes to and what it costs ----
+/** what a change costs in the mock: the Director's re-board, each scene's re-tune, and the review after */
+export const CHANGE_USD = { reboard: 0.06, tune: 0.05, review: 0.03 } as const;
+const DIRECTOR_WORDS =
+  /\b(cast|character|who|owl|moth|cat|founder|hero|sprite|staging|stage|position|place|sit|sits|stand|fly|flies|walk|backdrop|background|sky|roof|rooftop|lantern|glow|text card|title card|end card|logo|recipe|scene order|order of the scenes)\b/i;
+export type RoutedNote = {
+  role: Role;
+  roles: Role[];
+  scenes: string[];
+  usd: [number, number];
+  sec: [number, number];
+  summary: string;
+};
+/**
+ * The route a note takes (the server's routeChange): cast, staging, recipes, the backdrop, text cards and the end card
+ * go to the Director, who re-boards and hands the scenes on; timing and motion inside a scene go to the Animator. The
+ * scenes are the ticked ones, else the ones the note names ("scene 3", "the end card"), else every scene.
+ */
+export function routeNote(text: string, items: string[] = [], sceneIds: readonly string[] = SCENES): RoutedNote {
+  const all = [...sceneIds];
+  const named = new Set<string>();
+  for (const it of items) {
+    const m = it.match(/(\d+)/);
+    if (m && all[Number(m[1]) - 1]) named.add(all[Number(m[1]) - 1]);
+    if (all.includes(it)) named.add(it);
+  }
+  for (const m of text.matchAll(/\bscenes?\s+(\d+)/gi)) if (all[Number(m[1]) - 1]) named.add(all[Number(m[1]) - 1]);
+  if (/\bend card\b/i.test(text) && all.length) named.add(all[all.length - 1]);
+  const scenes = named.size ? all.filter((x) => named.has(x)) : all;
+  const director = DIRECTOR_WORDS.test(text);
+  const role: Role = director ? "director" : "animator";
+  const usd = +((director ? CHANGE_USD.reboard : 0) + scenes.length * CHANGE_USD.tune + CHANGE_USD.review).toFixed(2);
+  const where =
+    scenes.length === all.length
+      ? "every scene"
+      : scenes.length === 1
+        ? `scene ${all.indexOf(scenes[0]) + 1}`
+        : `scenes ${scenes.map((x) => all.indexOf(x) + 1).join(" and ")}`;
+  const summary = director
+    ? `The Director re-boards ${where}, then the Animator redoes ${scenes.length === 1 ? "it" : "them"} and the Reviewer checks`
+    : `The Animator redoes the motion in ${where}, then the Reviewer checks`;
+  return {
+    role,
+    roles: director ? ["director", "animator", "reviewer"] : ["animator", "reviewer"],
+    scenes,
+    usd: [usd, +(usd * 1.3).toFixed(2)],
+    sec: [60 + scenes.length * 30, 120 + scenes.length * 45],
+    summary,
   };
 }
 
@@ -160,7 +246,8 @@ export type JourneyAction =
   | { type: "answer"; qid: string; optionId?: string }
   /** a provider's key was saved, or its test passed: a run held on it goes on (§1.8) */
   | { type: "key"; provider: string }
-  | { type: "gate"; gate: PlanGate; verdict: "approve" | "changes" }
+  /** `changes` at G3 carries the person's note and the ticked scenes */
+  | { type: "gate"; gate: PlanGate; verdict: "approve" | "changes"; text?: string; items?: string[] }
   | { type: "card"; cardId: string; decision: "confirm" | "decline" }
   | { type: "ask"; text: string; about?: { instance: string } };
 /** what the run waits on: `card:<id>`, `answer:<qid>`, `gate:<id>`, `ask:<text>`, `key:<provider>` (§6) */
@@ -179,6 +266,8 @@ export type JourneyOpts = JourneyFlags & {
   logo?: boolean;
   /** the project's cap (the `overrun` scenario's is OVERRUN_CAP) */
   capUsd?: number;
+  /** the rough cut with sound, as the review writes it (a blob URL in the browser; nothing in node) */
+  proxyUrl?: () => string;
 };
 /** what the server's `status` says while a scenario holds the run or waits on a card (the mock sends it as is) */
 export type JourneyStatus = {
@@ -220,6 +309,10 @@ export class Journey {
   hold: { provider: string } | null = null;
   /** the budget question is open: nothing new starts until it is answered */
   budgetWait = false;
+  /** Pip holds the run on a partial cast (the `hold` scenarios): nothing new starts until q_hold or c_hold answers */
+  pipHold = false;
+  private holdAt = -1;
+  private holdAnswered = false;
   private overrunAsked = false;
   /** "Finish within" was chosen: the second review round is left out */
   private trimmed = false;
@@ -533,6 +626,12 @@ export class Journey {
     const ad = this.metas.get("art-director");
     if (ad) ad.lastReport = { status: "partial", did: "Cast 6 sprites from the library", couldnt: "No founder sprite" };
     this.channel("art-director", "pip", "report", "No founder sprite in the library.", "t_cast");
+    // a partial holds the run, and the hold always asks (v0.3): Pip's question with three answers
+    if (this.opts.scenario === "hold" || this.opts.scenario === "holdcard") return this.holdForCast();
+    this.expandFounder();
+  }
+  /** rev 1: code expands the new-art placeholder into one drawing (the library had no founder sprite) */
+  private expandFounder(by: PlanView["by"] = "code") {
     const reason = "Added a Pixel artist for the founder: the library had no founder sprite.";
     const draw = this.add(
       {
@@ -568,7 +667,7 @@ export class Journey {
       { op: "expand", task: draw.id, label: labelOf(draw.instance), reason: "The library had no founder sprite." },
     ];
     if (this.opts.scenario !== "revision") {
-      this.revision("code", "expand", reason, ops, 0);
+      this.revision(by, "expand", reason, ops, 0);
       return;
     }
     // past 20% over what was approved: the drawing waits for the person's OK (orch planRevise → Pip.revisionCard)
@@ -598,6 +697,148 @@ export class Journey {
   }
 
   // ---- the scenarios (P4's situations, with the server's shapes) ----
+  /** hold, holdcard: the cast is partly done; Pip holds the run and asks (holdFor), so Needs you is never 0 */
+  private holdForCast() {
+    this.pipHold = true;
+    this.holdAt = this.tick;
+    this.held = "The cast is partly done: no founder sprite in the library";
+    this.statusNow = { line: "Waiting for you: Pip's question about the founder" };
+    this.channel("pip", "crew", "brief", pausedLine("no founder sprite in the library"), "t_cast");
+    this.question(Q_HOLD(this.at()));
+    this.pip(
+      "The cast is partly done: the library has no founder sprite. I paused the crew until you choose how to go on.",
+      [],
+      false,
+    );
+  }
+  /** the hold's answer: the crew goes on with it ("Redo with the Director" draws the founder, "Accept the look" goes
+   * on with a stand-in; "Tell Pip what to change" keeps the hold for your note) */
+  private answerHold(optionId: string) {
+    this.holdAnswered = true;
+    if (optionId === "tell") {
+      this.pip("Say what to change in the field above. The crew waits until you do.", [], false);
+      this.waits.set("ask:hold", this.tick);
+      return;
+    }
+    this.liftPipHold();
+    if (optionId === "redo") this.expandFounder("pip");
+    else this.channel("pip", "art-director", "answer", "Go on with the stand-in for the founder.", "t_cast");
+  }
+  private liftPipHold() {
+    this.pipHold = false;
+    this.held = null;
+    this.statusNow = null;
+    this.waits.delete("ask:hold");
+    this.channel("pip", "crew", "brief", "Back to work: the hold is lifted.");
+  }
+  /** holdcard: a Pip card confirmed during a hold applies now: it closes the hold's question and the run goes on */
+  private decideHoldCard(c: Extract<PipCard, { type: "plan" }>, decision: "confirm" | "decline") {
+    if (decision === "decline") {
+      this.setCard({ ...c, status: "declined" });
+      return;
+    }
+    if (!this.holdAnswered) {
+      this.holdAnswered = true;
+      this.emit({ event: "question", data: { ...Q_HOLD(this.at()), status: "withdrawn" } });
+    }
+    this.waits.delete("answer:q_hold");
+    this.liftPipHold();
+    this.setCard({
+      ...c,
+      status: "done",
+      result: { text: "Started now: the Director re-plans the cast with your note." },
+    });
+    this.expandFounder("pip");
+  }
+  /** the review writes a playable rough cut with sound (out/proxy.mp4), and says so (render {kind: "proxy"}) */
+  private proxyOut() {
+    if (this.opts.proxy === false) return;
+    const url = this.opts.proxyUrl?.();
+    if (url) this.emit({ event: "render", data: { kind: "proxy", url } });
+  }
+  /** "Change something" at G3, routed as the server routes it (one door): the Director for cast and staging, the
+   * Animator for motion; the estimate the card showed is the revision's delta */
+  private gateChange(text: string, items: string[]) {
+    const g3 = this.node("g3");
+    g3.status = "pending";
+    this.emit({ event: "gate", data: { id: "g3_rough", status: "locked", items: GATE_ITEMS.g3_rough } });
+    this.waits.delete("gate:g3_rough");
+    const r = routeNote(text, items);
+    const k = ++this.changes;
+    // the scenes the change reopens go stale until they are redrawn (the server's frame there is empty sky)
+    const ids = this.opts.sceneIds ?? [];
+    for (const sc of r.scenes) {
+      const id = ids[SCENES.indexOf(sc as (typeof SCENES)[number])];
+      const cur = id ? this.sceneStatus[id] : undefined;
+      if (id && cur) this.sceneStatus = { ...this.sceneStatus, [id]: { ...cur, stale: true } };
+    }
+    if (ids.length) this.emit({ event: "x-state", data: { sceneStatus: this.sceneStatus } });
+    const ops: PlanRevisionSummary["ops"] = [];
+    let after: string[] = [];
+    if (r.role === "director") {
+      const board = this.add({
+        id: `t_reboard_${k}`,
+        kind: "director.reboard",
+        role: "director",
+        instance: "director",
+        stage: "storyboard",
+        deps: [],
+        ticks: 3,
+        usd: CHANGE_USD.reboard,
+        est: [CHANGE_USD.reboard, CHANGE_USD.reboard * 1.3],
+        title: "Re-boarding with your note",
+      });
+      ops.push({ op: "add", task: board.id, label: labelOf("director"), reason: cap(text) });
+      after = [board.id];
+      this.reviveReason.set("director", "Pip brought the Director back to re-board with your note");
+    }
+    const tunes = r.scenes.map((sc) => {
+      const i = SCENES.indexOf(sc as (typeof SCENES)[number]);
+      const t = this.add({
+        id: `t_tune_${sc}_c${k}`,
+        kind: "scene.tune",
+        role: "animator",
+        instance: `animator:${sc}`,
+        scene: sc,
+        round: 2 + k,
+        stage: "animate",
+        deps: after,
+        ticks: 2,
+        usd: CHANGE_USD.tune,
+        est: [CHANGE_USD.tune, CHANGE_USD.tune * 1.3],
+        title: `Animating scene ${i + 1} of 4, your change`,
+        done: (s) => s.scene(sc, "render"),
+      });
+      this.reviveReason.set(t.instance, `Pip brought the Animator back for your change in scene ${i + 1}`);
+      ops.push({ op: "add", task: t.id, label: labelOf(t.instance), reason: cap(text) });
+      return t.id;
+    });
+    const review = this.add({
+      id: `t_review_c${k}`,
+      kind: "review.final",
+      role: "reviewer",
+      instance: "reviewer",
+      round: 3 + k,
+      stage: "review",
+      deps: tunes,
+      ticks: 2,
+      usd: CHANGE_USD.review,
+      est: [CHANGE_USD.review, CHANGE_USD.review * 1.3],
+      title: "Checking your change",
+      done: (s) => s.pip("The rough cut is ready again, with your change.", [], false),
+    });
+    ops.push({ op: "add", task: review.id, label: labelOf("reviewer"), reason: "Check the change." });
+    this.reviveReason.set("reviewer", "Pip brought the Reviewer back to check your change");
+    g3.deps = [review.id];
+    this.est = [+(this.est[0] + r.usd[0]).toFixed(2), +(this.est[1] + r.usd[1]).toFixed(2)];
+    const who = r.role === "director" ? "the Director, who re-boards" : "the Animator";
+    this.revision("person", "change", `Your rough-cut note goes to ${who}`, ops, r.usd[0]);
+    // the revision's own delta is the estimate the card showed
+    const rev = this.revisions.at(-1);
+    if (rev) rev.deltaUsd = [...r.usd];
+  }
+  changes = 0;
+  // ---- P4's scenarios ----
   /** keyfail: the provider turns the key down mid-draw; the run holds, Pip says so once, nothing new starts */
   keyRejected(n: Node) {
     const row = { ...this.taskRow(n, "cancelled"), endedAt: this.at() };
@@ -998,7 +1239,7 @@ export class Journey {
     let free = slots;
     for (const n of this.nodes) {
       // a hold (a rejected key) or the open budget question: nothing new starts (§1.8, §1.6)
-      if (free <= 0 || this.hold || this.budgetWait) break;
+      if (free <= 0 || this.hold || this.budgetWait || this.pipHold) break;
       if (n.status !== "ready" || this.pending?.tasks.includes(n.id)) continue;
       if (this.opts.scenario === "overrun" && !this.overrunAsked && this.spent >= 0.8 * this.cap) {
         this.askBudget(n);
@@ -1090,6 +1331,7 @@ export class Journey {
     for (const b of closing(row)) this.emit({ event: "activity", data: { task: row.id, at: this.at(), ...b } });
     if (n.role !== "person") this.spend(n.usd, n.role, ROLE_MODELS[n.role]);
     n.done?.(this, n);
+    if (n.kind === "review.final") this.proxyOut();
     const m = this.metas.get(n.instance);
     if (m && n.asks) {
       // its work is done and the plan moves on, but its row waits on the person, so the member stays (needs you)
@@ -1257,7 +1499,9 @@ export class Journey {
             ? Q_RIGHTS(this.at())
             : a.qid === "q_publish"
               ? Q_PUBLISH(this.at())
-              : null;
+              : a.qid === "q_hold"
+                ? Q_HOLD(this.at())
+                : null;
       if (!q) return [];
       const optionId = a.optionId ?? q.recommendedId;
       if (a.qid === "q_publish") {
@@ -1279,10 +1523,21 @@ export class Journey {
         this.node("g1").status = "done";
         this.emit({ event: "gate", data: { id: "g1_script", status: "passed", items: GATE_ITEMS.g1_script } });
       } else if (a.qid === "q_rights") this.node("rights").status = "done";
+      else if (a.qid === "q_hold") {
+        // the card a typed note made is settled by the answer, and the other way round
+        const c = this.cards.get("c_hold");
+        if (c && c.status === "proposed")
+          this.setCard({ ...c, status: "declined", result: { text: "You answered the question instead." } });
+        this.waits.delete("card:c_hold");
+        this.answerHold(optionId);
+      }
       this.settle();
     } else if (a.type === "gate") {
       this.waits.delete(`gate:${a.gate}`);
-      if (a.verdict === "approve") {
+      if (a.verdict === "changes" && a.gate === "g3_rough" && this.node("g3").status === "waiting_person") {
+        this.gateChange(a.text ?? "", a.items ?? []);
+        this.settle();
+      } else if (a.verdict === "approve") {
         const id = a.gate === "g3_rough" ? "g3" : a.gate === "g4_final" ? "g4" : null;
         if (!id) return [];
         this.node(id).status = "done";
@@ -1298,6 +1553,7 @@ export class Journey {
       const c = this.cards.get(a.cardId);
       if (!c || (c.status !== "proposed" && c.status !== "running")) return [];
       if (a.cardId === "c_rev") this.decideRevision(c, a.decision);
+      else if (a.cardId === "c_hold") this.decideHoldCard(c, a.decision);
       else if (a.cardId === "c_finish" || a.cardId === "c_raise") this.decideBudget(c, a.decision);
       else if (a.decision === "decline") this.setCard({ ...c, status: "declined" });
       else {
@@ -1321,10 +1577,54 @@ export class Journey {
     const t = text.toLowerCase();
     return /hero\b.*\bbigger|bigger\b.*\bhero/.test(t) || /why\b.*pixel artist/.test(t);
   }
+  /** the messages this run answers itself: the journey's two, any note while Pip holds the run, and every message
+   * in the `pipkey` scenario (whose answer is the rejected key) */
+  handlesAsk(text: string): boolean {
+    return this.opts.scenario === "pipkey" || this.pipHold || Journey.handles(text);
+  }
   private replies() {
     const due = this.asks.filter((a) => a.at <= this.tick);
     this.asks = this.asks.filter((a) => a.at > this.tick);
     for (const a of due) {
+      // pipkey: Pip's own model turns its key down; the reply is the fix, with no model's words
+      if (this.opts.scenario === "pipkey") {
+        this.pip(
+          "Your Anthropic key was rejected, so I couldn't answer that. Fix it in Settings → Providers, then ask me again.",
+          [{ id: `c_fix_${++this.n.pip}`, type: "fix", action: "fix_key", provider: "anthropic" }],
+          false,
+        );
+        continue;
+      }
+      // a note while Pip holds the run: a card that starts now (it closes the hold's question)
+      if (this.pipHold) {
+        const card: Extract<PipCard, { type: "plan" }> = {
+          id: "c_hold",
+          type: "plan",
+          title: "Redo the cast with your note",
+          detail: `The Director re-plans the cast with your note: “${a.text.trim()}”. The crew starts as soon as you say so.`,
+          who: ["director", "pixel-artist"],
+          whoInstances: [
+            { instance: "director", label: "Director" },
+            { instance: "pixel-artist:founder", label: "Pixel artist · founder" },
+          ],
+          usd: [0.31, 0.45],
+          sec: [120, 240],
+          effects: ["Closes Pip's question about the founder.", "The crew starts at once; nothing else changes."],
+          confirmLabel: "Start now",
+          revision: {
+            rev: this.rev + 1,
+            ops: [],
+            fromUsd: this.approved,
+            toUsd: this.approved + 0.31,
+            planner: "director",
+          },
+          status: "proposed",
+        };
+        this.cards.set(card.id, card);
+        this.pip("Here's the change. It starts now, and the crew goes on from the cast.", [card]);
+        this.waits.set(`card:${card.id}`, this.tick);
+        continue;
+      }
       if (/why\b.*pixel artist/i.test(a.text)) {
         this.pip("The library had no founder sprite, so I added one drawing. It was $0.31 of your $3.");
         this.ended = true;
@@ -1358,7 +1658,8 @@ export class Journey {
     if (!this.opts.auto) return;
     for (const [w, since] of [...this.waits]) {
       // a scenario's own moment is the person's: auto drives the run to it and leaves it open
-      if (this.tick - since < 3 || SCENARIO_WAITS.has(w)) continue;
+      const stop = this.opts.scenario ? STOPS_AT[this.opts.scenario] : undefined;
+      if (this.tick - since < 3 || SCENARIO_WAITS.has(w) || w === stop) continue;
       const [kind, id] = [w.slice(0, w.indexOf(":")), w.slice(w.indexOf(":") + 1)];
       if (kind === "answer") this.also({ type: "answer", qid: id });
       else if (kind === "card") this.also({ type: "card", cardId: id, decision: "confirm" });
@@ -1368,6 +1669,11 @@ export class Journey {
       } else if (kind === "gate" && id === "g3_rough" && this.cards.has("c_ch") && this.g3Opens === 1) {
         // the change card is out: G3 waits until the change comes back
       } else if (kind === "gate") this.also({ type: "gate", gate: id as PlanGate, verdict: "approve" });
+    }
+    // holdcard: three ticks into the hold, the person types a note instead of answering
+    if (this.opts.scenario === "holdcard" && this.pipHold && this.tick - this.holdAt >= 3 && !this.asked.has("hold")) {
+      this.asked.add("hold");
+      this.also({ type: "ask", text: HOLD_NOTE });
     }
     const g4 = this.nodes.find((n) => n.id === "g4");
     if (g4?.status === "done" && !this.asked.has("why") && this.tick >= this.g4At + 3) {
@@ -1390,7 +1696,8 @@ const GATE_ITEMS: Record<Exclude<PlanGate, "rights">, { label: string; ref?: str
   g0_brief: [{ label: "The brief card" }],
   g1_script: [{ label: "Pick a script angle" }],
   g2_animatic: [{ label: "Scene order and timing" }],
-  g3_rough: [{ label: "Motion in every scene" }],
+  // the server's: the rough cut's contact sheet is the picture (orch rough())
+  g3_rough: [{ label: "Rough cut", ref: "out/contact.png" }],
   g4_final: [{ label: "The exported video" }],
 };
 
@@ -1448,3 +1755,38 @@ export const Q_PUBLISH = (at: string): QuestionT => ({
   askedAt: at,
   status: "open",
 });
+
+/** Pip's hold on a partial cast (holdFor): from Pip, three real answers, the cheapest that fits recommended */
+export const Q_HOLD = (at: string): QuestionT => ({
+  id: "q_hold",
+  kind: "single",
+  question: "The library has no founder sprite. How should the crew go on?",
+  why: "The cast came back partly done, so I paused the crew until you choose.",
+  options: [
+    {
+      id: "redo",
+      label: "Redo with the Director",
+      detail: "The Director re-plans the cast and a Pixel artist draws the founder. About $0.31.",
+      costUsd: 0.31,
+    },
+    { id: "accept", label: "Accept the look", detail: "The crew goes on with a stand-in for the founder. Free." },
+    {
+      id: "tell",
+      label: "Tell Pip what to change",
+      detail: "Say it in the field above; the crew waits for your note.",
+    },
+  ],
+  recommendedId: "redo",
+  blocks: ["art"],
+  timeoutSec: null,
+  from: "pip",
+  askedAt: at,
+  status: "open",
+  hold: true,
+});
+/** what `holdcard`'s person types during the hold */
+export const HOLD_NOTE = "use the owl from the library as the founder's pet and draw only the founder";
+const cap = (t: string) => {
+  const x = t.trim();
+  return x ? `${x.charAt(0).toUpperCase()}${x.slice(1)}${/[.?!]$/.test(x) ? "" : "."}` : "Your change.";
+};

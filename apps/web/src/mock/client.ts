@@ -50,7 +50,8 @@ import type {
   WorkspaceLine,
 } from "../lib/types.ts";
 import { type Beat, closing, failure, middle, opening, wholeRun } from "./activity.ts";
-import { drawFrame, drawLogo, drawSheet } from "./art.ts";
+import { drawContactSheet, drawFrame, drawLogo, drawSheet } from "./art.ts";
+import { roughCutAudio } from "./audio.ts";
 import { MockDrafts } from "./drafts.ts";
 import { fixtureChanges, fixtureInstances } from "./fixture-crew.ts";
 import {
@@ -65,23 +66,27 @@ import {
   SETTINGS,
   scenesFor,
 } from "./fixtures.ts";
-import { JOURNEY, Journey, type JourneyFlags, journeyFlags, OVERRUN_CAP } from "./journey.ts";
+import { JOURNEY, Journey, type JourneyFlags, journeyFlags, OVERRUN_CAP, routeNote } from "./journey.ts";
 import { blobUrl, MockPip, srtOf } from "./pip.ts";
 import { mockProgress } from "./progress.ts";
 
-/** the journey flags (PIP-JOURNEY §6), read once at boot and kept for the tab: journey=todo, speed, slots, auto, scenario */
-function bootFlags(): JourneyFlags & { journey: string | null } {
+/** the journey flags (PIP-JOURNEY §6), read once at boot and kept for the tab: journey=todo, speed, slots, auto,
+ * scenario, proxy=0 (no playable rough cut, as an older server) and stale=1 (the "old build" banner) */
+function bootFlags(): JourneyFlags & { journey: string | null; stale: boolean } {
   let search = location.search;
   try {
     const q = new URLSearchParams(search);
-    if (["journey", "speed", "slots", "auto", "scenario"].some((k) => q.has(k)))
+    if (["journey", "speed", "slots", "auto", "scenario", "proxy", "stale"].some((k) => q.has(k)))
       sessionStorage.setItem("pap-journey", search);
     else search = sessionStorage.getItem("pap-journey") ?? search;
   } catch {}
-  return { ...journeyFlags(search), journey: new URLSearchParams(search).get("journey") };
+  const q = new URLSearchParams(search);
+  return { ...journeyFlags(search), journey: q.get("journey"), stale: q.get("stale") === "1" };
 }
 export const FLAGS =
-  typeof location !== "undefined" ? bootFlags() : { speed: 1, slots: 3, auto: false, scenario: null, journey: null };
+  typeof location !== "undefined"
+    ? bootFlags()
+    : { speed: 1, slots: 3, auto: false, scenario: null, journey: null, proxy: true, stale: false };
 
 const TICK_MS = 1000;
 const iso = (offsetSec = 0) => new Date(Date.now() + offsetSec * 1000).toISOString();
@@ -111,6 +116,8 @@ type MockProject = {
   journey?: Journey;
   /** the last crew sync saw the journey held (the crew reads paused while held, as the server's does) */
   wasHeld?: boolean;
+  /** the rough cut with sound, once the review wrote it */
+  proxy?: string;
 };
 
 /** the orchestrator's task kinds, by mock task id */
@@ -681,6 +688,12 @@ class MockBackend {
       logo: d.refs.some((r) => r.type === "logo"),
       logoIcon: d.refs.some((r) => r.type === "logo") ? drawLogo() : undefined,
       capUsd: p.state.budget.capUsd,
+      proxyUrl: () => {
+        // the review re-encodes the rough cut each round; the same sound serves every round
+        const tl = p.state.timeline;
+        p.proxy ??= roughCutAudio((tl.hold ?? 0) + tl.duration + (tl.endHold ?? 0));
+        return p.proxy;
+      },
       files: () => {
         const rows = mockFiles("questday-pitch.mp4", cues, 2_400_000);
         return { rows, pip: rows.map((r) => ({ name: r.name, kind: r.kind, sizeBytes: r.bytes, url: r.url })) };
@@ -1694,6 +1707,10 @@ export class MockClient implements Client {
   frameUrl(id: string, t: number, _scale = 2, rev?: number) {
     const p = be().projects.get(id);
     if (!p) return "";
+    return drawFrame(this.frameSpec(p, t, rev));
+  }
+  /** what the frame at `t` shows: the journey's QuestDay cut, or the older fixtures' night market */
+  frameSpec(p: MockProject, t: number, rev?: number): Parameters<typeof drawFrame>[0] {
     const tl = p.state.timeline;
     let i = tl.scenes.findIndex((s) => t >= s.from && t < s.to);
     if (i < 0) i = t <= 0 ? 0 : tl.scenes.length - 1;
@@ -1705,20 +1722,34 @@ export class MockClient implements Client {
       j?.nodes.find((n) => n.id === "t_tune_s02_r2")?.status === "done" && (rev == null || rev >= p.state.rev);
     const logo =
       !!j && j.opts.logo !== false && p.state.questions.find((q) => q.id === "q_rights")?.answer?.optionId !== "leave";
-    return drawFrame({
+    return {
       t,
       sceneIndex: i,
       sceneTitle: (sc && SCENE_TITLES[sc.id]) || sc?.id || "",
       version: st?.version ?? "slate",
       variant: j ? (i === 1 && bigger ? 2 : 0) : rev != null && rev < p.state.rev ? 1 : 0,
+      // a stale scene (its board changed, not redrawn yet): the server draws empty sky there
+      ...(st?.stale && st.version === "render" && rev == null ? { empty: true } : {}),
       ...(j ? { look: "questday" as const, from: sc?.from, to: sc?.to, logo } : {}),
-    });
+    };
   }
-  proxyUrl() {
-    return "";
+  proxyUrl(id: string) {
+    return be().projects.get(id)?.proxy ?? "";
   }
   fileUrl(id: string, name: string) {
-    return be().projects.get(id)?.takes.get(name) ?? "";
+    const p = be().projects.get(id);
+    // the rough cut's contact sheet, drawn as the server lays it out: one still a second, six columns
+    if (p?.journey && name === "contact.png") {
+      const tl = p.state.timeline;
+      const n = Math.ceil(tl.duration);
+      const key = `contact|${p.state.rev}|${JSON.stringify(p.state.sceneStatus ?? {})}`;
+      if (p.takes.get("contact.key") !== key) {
+        const specs = Array.from({ length: n }, (_, i) => this.frameSpec(p, i + 0.5));
+        p.takes.set("contact.png", drawContactSheet(specs));
+        p.takes.set("contact.key", key);
+      }
+    }
+    return p?.takes.get(name) ?? "";
   }
   async answer(id: string, qid: string, a: AnswerInput) {
     await wait();
@@ -1780,8 +1811,13 @@ export class MockClient implements Client {
     const b = be();
     const p = b.get(id);
     if (p.journey) {
-      // "Change something" goes through Pip's field in the journey: the gate stays open
-      if (v.verdict !== "changes") b.play(p, p.journey.act({ type: "gate", gate, verdict: "approve" }));
+      // "Change something" at the rough cut goes through the one door (routeNote), as the server's gate path does
+      if (v.verdict === "changes")
+        b.play(
+          p,
+          p.journey.act({ type: "gate", gate, verdict: "changes", text: (v.reasons ?? []).join(" "), items: v.items }),
+        );
+      else b.play(p, p.journey.act({ type: "gate", gate, verdict: "approve" }));
       return clone(p.state.gates.find((g) => g.id === gate) as Gate);
     }
     if (v.verdict === "changes") {
@@ -1951,7 +1987,7 @@ export class MockClient implements Client {
     }
     const p = project ? b.get(project) : null;
     // the journey answers its own two messages (steps 10 and 12); anything else is Pip's usual menu
-    if (p?.journey && Journey.handles(text)) {
+    if (p?.journey?.handlesAsk(text)) {
       const key = p.state.doc.id;
       b.pip.push(key, { id: `pu_${Date.now().toString(36)}`, at: new Date().toISOString(), kind: "user", text });
       b.pip.send(key, { type: "thinking" });
@@ -1959,6 +1995,18 @@ export class MockClient implements Client {
       return { turnId: `turn_${Date.now().toString(36)}` };
     }
     return b.pip.ask(project, text);
+  }
+  async changesPreview(id: string, body: { gate?: GateId; text: string; items?: string[] }) {
+    await wait(160);
+    const p = be().projects.get(id);
+    const ids = p?.state.timeline.scenes.map((x) => x.id) ?? [];
+    const r = routeNote(body.text, body.items ?? [], p?.journey ? ["s01", "s02", "s03", "s04"] : ids);
+    return clone(r);
+  }
+  async build() {
+    await wait(40);
+    const at = new Date(Date.now() - 3 * 3600_000).toISOString();
+    return { webStale: FLAGS.stale, builtAt: at, srcAt: FLAGS.stale ? new Date().toISOString() : at };
   }
   async pipCard(cardId: string, d: PipDecision) {
     await wait(80);

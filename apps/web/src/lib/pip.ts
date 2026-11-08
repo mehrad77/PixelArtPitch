@@ -140,9 +140,20 @@ function quiet(key: string, on: boolean) {
 const replaceCard = (items: PipItem[], card: PipCard): PipItem[] =>
   items.map((i) =>
     i.kind === "pip" && i.cards.some((c) => c.id === card.id)
-      ? { ...i, cards: i.cards.map((c) => (c.id === card.id ? card : c)) }
+      ? { ...i, cards: i.cards.map((c) => (c.id === card.id ? keepCrew(c, card) : c)) }
       : i,
   );
+/** a card's update keeps who it named: a "done" that carries only its result still shows the Director it re-planned
+ * with (its `whoInstances` and `revision` stay when the update leaves them out) */
+function keepCrew(prev: PipCard, next: PipCard): PipCard {
+  if (prev.type !== "plan" || next.type !== "plan") return next;
+  return {
+    ...next,
+    ...(next.whoInstances || !prev.whoInstances ? {} : { whoInstances: prev.whoInstances }),
+    ...(next.revision || !prev.revision ? {} : { revision: prev.revision }),
+    ...(next.who.length || !prev.who.length ? {} : { who: prev.who }),
+  };
+}
 
 /** fold one `pip` event into its conversation */
 export function pipEvent(key: string, e: PipEvent) {
@@ -203,6 +214,9 @@ function holdWorkspace() {
     }
   };
 }
+
+/** a conversation as it stands, outside React (a press that resends the last message) */
+export const peekPip = (project?: string | null): Conv => get(keyOf(project));
 
 /** a conversation, loaded on first use; the workspace one also holds its event stream while mounted */
 export function usePip(project?: string | null): Conv {

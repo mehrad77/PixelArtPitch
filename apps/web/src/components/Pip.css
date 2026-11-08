@@ -200,6 +200,8 @@
 }
 .pip-sheet {
   position: relative;
+  /* the milestones sit beside the conversation when the sheet is wide enough (@container below) */
+  container-type: inline-size;
 }
 .pip-sheet-head {
   display: flex;
@@ -577,6 +579,13 @@ a.pip-file:hover {
   max-inline-size: 38rem;
   margin-inline: 0;
 }
+/* with milestones, the sheet widens so they sit beside the turns; the field and the chips keep their width */
+.pip-line .pip-ask:has(.pip-track) {
+  max-inline-size: 58rem;
+}
+.pip-line .pip-ask:has(.pip-track) > :not(.pip-sheet) {
+  max-inline-size: 38rem;
+}
 .pip-line .pip-under,
 .pip-line .pip-chips {
   justify-content: flex-start;
@@ -735,7 +744,7 @@ a.pip-file:hover {
 .pip-ask[data-order="newest"] .pip-sheet {
   padding-block: var(--space-3);
 }
-.pip-ask[data-order="newest"] .pip-sheet:has(.pip-thread:empty) {
+.pip-ask[data-order="newest"] .pip-sheet:has(.pip-thread:empty):not(:has(.pip-track)) {
   display: none;
 }
 .pip-cmds[data-below] {
@@ -819,17 +828,141 @@ a.pip-file:hover {
    Pip's reply at the inline start under it); clear space between turns, each with its time; milestones stay quiet
    hairlines between them ---- */
 .pip-thread[data-order="newest"] {
-  gap: var(--space-5);
+  gap: var(--space-3);
 }
+/* each turn is its own block: framed, read top-down, apart from the turns around it */
 .pip-turn {
   display: grid;
   gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--stroke);
+  border-radius: calc(var(--radius) * 3);
+  background: var(--surface);
 }
 .pip-turn-time {
-  justify-self: center;
+  justify-self: start;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--step--2);
+}
+
+/* the conversation and the milestones side by side when there is room; the milestones under it when not */
+.pip-convo {
+  display: grid;
+  gap: var(--space-5);
+  align-items: start;
+}
+@container (min-width: 48rem) {
+  .pip-convo[data-track] {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 15rem);
+  }
+  .pip-convo[data-track] .pip-track {
+    position: sticky;
+    inset-block-start: calc(var(--topbar-h, 2.75rem) + var(--space-3));
+  }
+}
+/* the milestone track: the run's own timeline, newest first, on a quiet rail; never a turn */
+.pip-track {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+.pip-track-head {
+  margin: 0;
+  color: var(--text-muted);
+}
+.pip-track-hint {
+  text-transform: none;
+  letter-spacing: normal;
+}
+.pip-track-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-inline-start: 1px solid var(--stroke);
+}
+.pip-track-row {
+  position: relative;
+  display: grid;
+  gap: 0;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3) 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+}
+/* a dot on the rail for each milestone; the newest one is lit */
+.pip-track-row::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(-0.25rem - 0.5px);
+  inset-block-start: calc(var(--space-1) + 0.4em);
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--stroke-control);
+}
+.pip-track-row[data-newest] {
+  color: var(--text);
+}
+.pip-track-row[data-newest]::before {
+  background: var(--fill-accent);
+  box-shadow: none;
+}
+.pip-track-text {
+  font-family: var(--font-serif);
+  font-size: var(--step--1);
+  overflow-wrap: anywhere;
+}
+.pip-track-more {
+  justify-self: start;
+}
+:is(:lang(fa), :lang(ar)) :is(.pip-track-row, .pip-track-text) {
+  font-family: var(--font-arabic);
+}
+
+/* what needs you, asked at the newest end of the drawer's thread: the same parts as under Pip's line */
+.pip-asks {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--stroke-control);
+  border-inline-start: 3px solid var(--text-signal);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.pip-asks-head {
+  margin: 0;
+  color: var(--text);
+}
+.pip-asks-list {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pip-ask-item + .pip-ask-item {
+  padding-block-start: var(--space-4);
+  border-block-start: 1px dashed var(--stroke);
+}
+/* the drawer is narrow: the picture goes over the answers */
+.pip-asks .needs-body[data-image] {
+  grid-template-columns: 1fr;
+}
+.pip-asks .needs-preview {
+  max-inline-size: 16rem;
+}
+
+/* a fix only the person can make, under Pip's reply ("Fix the key") */
+.pip-fix .pip-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.pip-fix-what {
+  flex: 1 1 14rem;
 }
 .pip-turn .pip-bubble {
   max-inline-size: min(85%, var(--measure));
@@ -864,4 +997,7 @@ a.pip-file:hover {
 :is(:lang(fa), :lang(ar)) .pip-user-about,
 :is(:lang(fa), :lang(ar)) .pip-turn-time {
   font-family: var(--font-arabic);
+}
+.pip-turn[data-by="person"] .pip-turn-time {
+  justify-self: end;
 }

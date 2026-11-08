@@ -125,11 +125,87 @@
   box-shadow: inset 0 0 0 1px var(--stroke-strong);
 }
 .viewer-min {
-  flex-wrap: nowrap;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
 }
 .viewer-scrub {
-  flex: 1;
+  flex: 1 1 8rem;
   min-inline-size: 0;
   accent-color: var(--fill-accent);
+}
+
+/* the first press answers at once: a small spinner on the frame until it lands */
+.viewer-loading {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  z-index: var(--z-raised);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--stroke-control);
+  color: var(--text);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+.viewer-spinner {
+  inline-size: 0.9em;
+  block-size: 0.9em;
+  border: 2px solid var(--stroke-control);
+  border-block-start-color: var(--text-accent);
+  border-radius: 50%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .viewer-spinner {
+    animation: viewer-spin calc(var(--dur-slow) * 2) steps(8, end) infinite;
+  }
+}
+@keyframes viewer-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+/* a quiet note on the frame: the scene is being redrawn, or this frame isn't drawn yet (the last good one stays) */
+.viewer-note {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-start: var(--space-2);
+  z-index: var(--z-raised);
+  max-inline-size: calc(100% - 2 * var(--space-2));
+  margin: 0;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--stroke);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+/* under the picture: what Play gives you, with sound or the silent frame-by-frame preview */
+.viewer-how {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.viewer-how[data-sound] {
+  color: var(--text);
+}
+.viewer-min .viewer-how {
+  flex-basis: 100%;
+}
+:is(:lang(fa), :lang(ar)) :is(.viewer-loading, .viewer-note, .viewer-how) {
+  font-family: var(--font-arabic);
+}
+
+/* the rough cut's media element only plays; the canvas shows it (a base style must not give it a box) */
+.viewer-media[hidden] {
+  display: none;
 }

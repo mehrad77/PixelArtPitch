@@ -13,11 +13,11 @@ import { ago, duration } from "../lib/format.ts";
 import { useLoad } from "../lib/hooks.ts";
 import { type Member, memberOf, PHASES, setView, usdPlain } from "../lib/human.ts";
 import { MAKE_ANOTHER, makeAnother } from "../lib/pip.ts";
+import { type Kind, kindOf } from "../lib/projects.ts";
 import { Link, LinkButton, navigate } from "../lib/router.tsx";
 import type { ProjectSummary, WorkspaceLine } from "../lib/types.ts";
 import "./Projects.css";
 
-type Kind = "needs" | "working" | "problem" | "stopped" | "finished" | "fresh" | "draft";
 const GROUPS: { id: string; title: string; kinds: Kind[] }[] = [
   { id: "needs", title: "Needs you", kinds: ["needs"] },
   { id: "working", title: "Working", kinds: ["working"] },
@@ -27,18 +27,6 @@ const GROUPS: { id: string; title: string; kinds: Kind[] }[] = [
   // an unstarted /new: only its conversation is saved (PIP-JOURNEY §3.6)
   { id: "drafts", title: "Drafts", kinds: ["draft"] },
 ];
-
-function kindOf(p: ProjectSummary): Kind {
-  if (p.draft) return "draft";
-  if (p.needsYou > 0) return "needs";
-  // a held run ("Waiting for you: Your key was rejected") waits on you; only a run that broke off is stuck
-  if (p.status?.problem) return /^Waiting for you/.test(p.status.line) ? "needs" : "problem";
-  if (p.finished) return "finished";
-  if (p.running) return "working";
-  // an older server sends none of the overview fields: anything past the brief has started
-  const started = (p.milestones ?? 0) > 0 || (p.phase ?? 0) > 0 || p.stage !== "brief" || p.spentUsd > 0;
-  return started || p.paused ? "stopped" : "fresh";
-}
 
 export function ProjectsPage() {
   const { data, error, loading, reload } = useLoad(() => client.projects(), []);

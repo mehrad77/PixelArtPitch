@@ -1,5 +1,5 @@
-import { Badge, EmptyState, SkipLink } from "@shabboo/kit/react";
-import { useEffect } from "react";
+import { Badge, EmptyState, Icon, SkipLink } from "@shabboo/kit/react";
+import { useEffect, useState } from "react";
 import { CrewButton, ModeSwitch } from "./components/AppHeader.tsx";
 import { ProjectStage } from "./components/ProjectStage.tsx";
 import { SimpleProjectPage } from "./components/SimpleProject.tsx";
@@ -116,7 +116,43 @@ export function App() {
           <CrewButton routeId={proj?.id ?? null} />
         </div>
       </header>
+      <StaleBuild />
       <Route path={path} view={view} adopted={adopted} />
     </div>
+  );
+}
+
+/**
+ * The served UI is older than its sources (GET /api/build): one quiet line under the header, with how to rebuild.
+ * Asked once per page load; a server without the route says nothing, and so does this.
+ */
+function StaleBuild() {
+  const [stale, setStale] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    let live = true;
+    client.build().then(
+      (b) => live && setStale(!!b?.webStale),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (!stale || hidden) return null;
+  return (
+    <p className="build-stale small" role="status">
+      <Icon name="warning" size="sm" label="Note" />
+      <span>
+        This studio is running an old build. Rebuild with{" "}
+        <code className="ltr" translate="no">
+          pnpm --filter @pap/web build
+        </code>
+        .
+      </span>
+      <button type="button" className="linkish small build-stale-hide" onClick={() => setHidden(true)}>
+        Hide
+      </button>
+    </p>
   );
 }

@@ -113,7 +113,13 @@ export function useProject(id: string | null): ProjectView {
       if (e.event === "render") {
         if (e.data.kind === "still") setLastStill(e.data.url);
         // a rebuilt proxy often keeps its URL; a fresh query makes the <video> load it again
-        if (e.data.kind === "proxy") setProxy(`${e.data.url}${e.data.url.includes("?") ? "&" : "?"}v=${Date.now()}`);
+        // (a blob: or data: URL is new each time, and a query would break it)
+        if (e.data.kind === "proxy")
+          setProxy(
+            /^(blob|data):/.test(e.data.url)
+              ? e.data.url
+              : `${e.data.url}${e.data.url.includes("?") ? "&" : "?"}v=${Date.now()}`,
+          );
       }
       setState((s) => (s ? applyEvent(s, e) : s));
     };

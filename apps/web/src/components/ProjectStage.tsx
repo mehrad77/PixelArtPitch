@@ -6,12 +6,14 @@
 import { Button, Callout, Popover, Skeleton, Steps } from "@shabboo/kit/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../lib/api.ts";
+import { glideTo, isTyping, newKeys, scrollToNeed, whereIs } from "../lib/attention.ts";
 import { guessType } from "../lib/brief.ts";
 import { channelSummary, useChannel } from "../lib/channel.ts";
 import { client } from "../lib/client.ts";
 import { usePublishProject } from "../lib/current.ts";
 import { isControlTarget, type ProjectView, useProject, useThrottled } from "../lib/hooks.ts";
 import { crewStateOf, currentView, effectOf, humanStatus, PHASES, phaseOf, plainUsd } from "../lib/human.ts";
+import { needsItems } from "../lib/needs.ts";
 import { adoptConv, askPip, NEW_TALK, seedConv, usePip, usePipOpenRequest } from "../lib/pip.ts";
 import { usePlayback } from "../lib/playback.ts";
 import { Link, navigate } from "../lib/router.tsx";
@@ -274,11 +276,12 @@ function Stage({
   usePublishProject(projectId ?? "", state);
   const [steer, setSteer] = useState<{ t: number; x: number; y: number } | null>(null);
   // "Ask Pip about this" from a face or the steer popover: the draft lands in the field, which is always on screen
-  usePipOpenRequest(talk, () => document.getElementById("pip-ask-input")?.scrollIntoView({ block: "nearest" }));
+  usePipOpenRequest(talk, () => glideTo(document.getElementById("pip-ask-input"), "nearest"));
+  // Q and "Show me": the same glide as a new ask, and the ask's first button takes the focus (the person asked)
   const focusNeeds = useCallback(() => {
-    const card = document.getElementById("needs-you");
-    (card?.querySelector<HTMLElement>(".needs-primary") ?? card)?.focus();
+    scrollToNeed({ focus: true });
   }, []);
+  const attention = useAttention(state, view.conn);
 
   // Space plays and pauses; Q jumps to what needs you. Nothing else: the shortcuts live in Studio.
   useEffect(() => {
@@ -374,11 +377,25 @@ function Stage({
         talk={talk}
         state={state}
         onNeeds={focusNeeds}
+        want={attention.want}
         draftError={draftError}
         attach={attach}
         send={send}
         allOptions={allOptions}
       />
+      {attention.pill && (
+        <button
+          type="button"
+          className="needs-pill"
+          data-where={attention.pill}
+          onClick={() => {
+            attention.clear();
+            scrollToNeed({ focus: true });
+          }}
+        >
+          Needs you <span aria-hidden="true">{attention.pill === "above" ? "↑" : "↓"}</span>
+        </button>
+      )}
       {steer && projectId && (
         <SteerPopover
           projectId={projectId}
@@ -391,6 +408,57 @@ function Stage({
       )}
     </main>
   );
+}
+
+/**
+ * Scroll to attention: when what needs the person gains a key (a new pick, a gate, Pip's hold), the page glides to it,
+ * unless the person is typing (the field, a note): then a small "Needs you" pill points at it instead. The keys seen on
+ * the first load, and after a reconnect, are the baseline, so loading never scrolls. The card shows the new ask.
+ */
+function useAttention(state: ProjectState | null, conn: string) {
+  const seen = useRef<Set<string> | null>(null);
+  const n = useRef(0);
+  const [want, setWant] = useState<{ key: string; n: number } | null>(null);
+  const [pill, setPill] = useState<"above" | "below" | null>(null);
+  const keys = state ? needsItems(state).map((i) => i.key) : null;
+  const sig = keys?.join("|") ?? null;
+  // a reconnect re-baselines: what the server says on the way back in isn't news
+  const was = useRef(conn);
+  useEffect(() => {
+    if (was.current !== "open" && conn === "open" && was.current !== "connecting") seen.current = null;
+    was.current = conn;
+  }, [conn]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sig stands for the keys
+  useEffect(() => {
+    if (!keys) return;
+    const fresh = newKeys(seen.current, keys);
+    seen.current = new Set(keys);
+    if (!keys.length) setPill(null);
+    if (!fresh.length) return;
+    setWant({ key: fresh[0], n: ++n.current });
+    // after the card has rendered the new ask
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (document.querySelector("dialog[open]")) return;
+        if (isTyping(document.activeElement)) {
+          const w = whereIs(document.getElementById("needs-you"));
+          setPill(w && w !== "in" ? w : null);
+        } else scrollToNeed();
+      }),
+    );
+  }, [sig]);
+  // the pill goes once the ask is in view
+  useEffect(() => {
+    if (!pill) return;
+    const on = () => {
+      const w = whereIs(document.getElementById("needs-you"));
+      if (!w || w === "in") setPill(null);
+      else if (w !== pill) setPill(w);
+    };
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, [pill]);
+  return { want, pill, clear: () => setPill(null) };
 }
 
 /** the empty stage's film: a dark 16:9 box at the film's size; while files are dragged over the window (the drop
@@ -410,6 +478,7 @@ function StageTalk({
   talk,
   state,
   onNeeds,
+  want,
   draftError,
   attach,
   send,
@@ -419,6 +488,7 @@ function StageTalk({
   talk: string;
   state: ProjectState | null;
   onNeeds: () => void;
+  want: { key: string; n: number } | null;
   draftError: string | null;
   attach?: Attach;
   send?: (text: string, about?: { instance: string }) => Promise<boolean>;
@@ -452,7 +522,7 @@ function StageTalk({
           </div>
         </div>
         {/* what needs you is Pip's question, said here, above the field */}
-        {state && projectId ? <NeedsYouCard projectId={projectId} state={state} variant="pip" /> : null}
+        {state && projectId ? <NeedsYouCard projectId={projectId} state={state} variant="pip" want={want} /> : null}
         <PipAsk
           project={talk}
           state={state}

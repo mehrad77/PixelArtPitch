@@ -50,10 +50,12 @@ function plainSummary(s: string | undefined): string | undefined {
 }
 
 import { hasInstances } from "../lib/instances.ts";
+import { needsItems } from "../lib/needs.ts";
 import { BehindTheScenes } from "./Channel.tsx";
 import { CrewDrawer } from "./CrewDrawer.tsx";
 import { CrewFace, crewRows, MOOD_WORD, useStep } from "./CrewStrip.tsx";
 import { DirectControls } from "./DirectControls.tsx";
+import { NeedsItemView } from "./NeedsYouCard.tsx";
 import { PipComposer, PipThread } from "./Pip.tsx";
 import { PipFace } from "./PipFace.tsx";
 import "./AgentActivity.css";
@@ -262,7 +264,7 @@ function DepartmentActivity({
               <span className="activity-who-text">
                 <span className="activity-who-name">Pip</span>
                 <span className="activity-who-role">Leads the crew</span>
-                <span className="activity-who-line">{pipLine(pip)}</span>
+                <span className="activity-who-line">{pipLine(pip, pipKey ? state : null)}</span>
               </span>
             </button>
             <p className="label activity-crew-label" aria-hidden="true">
@@ -410,8 +412,10 @@ function DepartmentActivity({
 }
 
 /** Pip's one line in the list, like the crew's */
-export function pipLine(c: Conv): string {
+export function pipLine(c: Conv, state?: ProjectState | null): string {
   if (c.thinking) return "Thinking…";
+  // what needs you is asked in Pip's pane too
+  if (state && needsItems(state).length) return "Waiting for your answer";
   const last = [...c.items].reverse().find((i) => i.kind === "pip");
   if (
     last?.kind === "pip" &&
@@ -435,7 +439,9 @@ export function PipPane({
   panelId: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const n = `${conv.items.length}|${conv.thinking}|${JSON.stringify(conv.items.at(-1) ?? "").length}`;
+  // what needs the person, asked here too, at the thread's newest end (the same parts as under Pip's line)
+  const needs = projectId && state ? needsItems(state) : [];
+  const n = `${conv.items.length}|${conv.thinking}|${JSON.stringify(conv.items.at(-1) ?? "").length}|${needs.map((x) => x.key).join()}|${state?.milestones?.length ?? 0}`;
   // biome-ignore lint/correctness/useExhaustiveDependencies: follows the newest item
   useLayoutEffect(() => {
     const el = ref.current;
@@ -469,7 +475,27 @@ export function PipPane({
       )}
       <div className="activity-thread-wrap">
         <div className="activity-thread" ref={ref}>
-          <PipThread project={projectId} conv={conv} />
+          <PipThread
+            project={projectId}
+            conv={conv}
+            markers={projectId ? state?.milestones : undefined}
+            asks={
+              projectId && state && needs.length ? (
+                <li className="pip-asks">
+                  <p className="label pip-asks-head">
+                    Waiting for you{needs.length > 1 ? <bdi>{` · ${needs.length}`}</bdi> : null}
+                  </p>
+                  <ul className="pip-asks-list">
+                    {needs.map((item, i) => (
+                      <li key={item.key} className="pip-ask-item" aria-labelledby={`drawer-${i}-needs-title`}>
+                        <NeedsItemView projectId={projectId} state={state} item={item} where={`drawer-${i}`} />
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ) : null
+            }
+          />
         </div>
       </div>
       <div className="activity-compose activity-pip-compose">

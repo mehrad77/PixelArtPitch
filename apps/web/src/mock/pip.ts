@@ -881,6 +881,7 @@ function toolOf(c: PipCard): string {
   if (c.type === "files") return "files_list";
   if (c.type === "form") return "connection_add";
   if (c.type === "cant") return "feature_request";
+  if (c.type === "fix") return "crew_status";
   if (/subtitles/i.test(c.title)) return "subtitles_translate";
   if (/crew/i.test(c.title)) return "crew_request_change";
   return "project_fork";

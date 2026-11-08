@@ -4,6 +4,7 @@
 import { clock, duration } from "./format.ts";
 import { numberLocale } from "./locale.ts";
 import type {
+  ChangesPreview,
   ClipState,
   CrewState,
   GateId,
@@ -79,9 +80,10 @@ export const CREW: Member[] = [
   { id: "reviewer", label: "Reviewer", roles: ["reviewer"], hue: 7 },
 ];
 export const memberOf = (role: Role) => CREW.find((m) => m.roles.includes(role)) ?? CREW[0];
-/** who asks or speaks, in a sentence: "the writer", "the artist"; the Librarian is named as itself, not its department */
-export const theMember = (role: Role) =>
-  role === "librarian" ? "the Librarian" : `the ${memberOf(role).label.toLowerCase()}`;
+/** who asks or speaks, in a sentence: "the writer", "the artist"; the Librarian is named as itself, not its
+ * department, and Pip is Pip (never "the producer", the department an unknown sender falls back to) */
+export const theMember = (role: Role | "pip" | (string & {})) =>
+  role === "pip" ? "Pip" : role === "librarian" ? "the Librarian" : `the ${memberOf(role as Role).label.toLowerCase()}`;
 const upFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** a sentence ends once: "…$2.00?" stays, "…was rejected" gets its full stop */
 export const sentence = (s: string) => (/[.?!…]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
@@ -534,6 +536,8 @@ export function waitReason(s: ProjectState): WaitReason {
   if (working.length) {
     const done = tasks.filter((t) => t.status === "done").length;
     const m = Math.max(tasks.length, done);
+    // a stage with no steps of its own (the work runs under another stage's roles): say nothing, not "0 of 0"
+    if (!m) return { kind: "working", text: "" };
     return { kind: "working", text: `${done} of ${m} ${m === 1 ? "step" : "steps"} done in this stage` };
   }
   return { kind: "between", text: "Getting the next step ready." };
@@ -551,7 +555,8 @@ export type EffectAction =
   | { kind: "fix_key"; provider?: string }
   | { kind: "add_budget"; amount: number }
   | { kind: "resume" }
-  | { kind: "gate_changes"; stage: Stage; items: string[] };
+  /** `preview`: the server's dry run of the change (POST …/changes/preview): who it goes to and what it costs */
+  | { kind: "gate_changes"; stage: Stage; items: string[]; preview?: ChangesPreview | null };
 export type Effect = {
   /** one line, or "" when the action does only what its label says */
   text: string;
@@ -578,6 +583,14 @@ function costLine(tasks: Task[], fallbackSec?: number | null): { text: string; u
     usd,
   };
 }
+/** "$0.02", "$0.10–$0.14" */
+const usdRange = (lo: number, hi: number) => {
+  const r = (v: number) => usdPlain(Math.round(v * 100) / 100);
+  return Math.round(lo * 100) === Math.round(hi * 100) ? r(hi) : `${r(lo)}–${r(hi)}`;
+};
+/** "about 2 minutes", "under a minute" */
+const durationRange = (sec: [number, number]) =>
+  sec[1] < 60 ? "under a minute" : `about ${duration(Math.round((sec[0] + sec[1]) / 2))}`;
 const etaMid = (s: ProjectState) => (s.time.etaSec ? (s.time.etaSec[0] + s.time.etaSec[1]) / 2 : null);
 
 /** the one effect line for an action, shared by the simple view, Studio and the crew drawer */
@@ -644,14 +657,22 @@ export function effectOf(a: EffectAction, s: ProjectState): Effect {
       return { text: lead ? `Continues from “${plainTitle(lead, s)}”.` : "", confirm: false };
     }
     case "gate_changes": {
+      // the server routed it (the Director for cast, staging or the end card; the Animator for motion): its words
+      if (a.preview) {
+        const [lo, hi] = a.preview.usd;
+        const money = hi <= 0 ? "free" : `about ${usdRange(lo, hi)}`;
+        const time = a.preview.sec[1] > 0 ? `, ${durationRange(a.preview.sec)}` : "";
+        return {
+          text: `${sentence(a.preview.summary).replace(/\.$/, "")}: ${money}${time}.`,
+          confirm: hi > CONFIRM_USD,
+        };
+      }
       const redo = stageTasks(s, a.stage).filter((t) => t.status === "done");
       const c = costLine(redo.map((t) => ({ ...t, status: "upcoming" as const, usd: 0, estUsd: t.estUsd ?? t.usd })));
       const role = memberOf(STAGE_ROLES[a.stage][0]).label.toLowerCase();
       const what = a.items.length ? a.items.join(", ").toLowerCase() : `all of ${STAGE_WORD[a.stage]}`;
-      return {
-        text: `${cap1(`the ${role}`)} redoes ${what}: ${c.text}.`,
-        confirm: (c.usd ?? 0) > CONFIRM_USD || !a.items.length || a.stage === "art",
-      };
+      // a costly change asks again; a cheap one (or one whose cost is unknown) doesn't add a second press
+      return { text: `${cap1(`the ${role}`)} redoes ${what}: ${c.text}.`, confirm: (c.usd ?? 0) > CONFIRM_USD };
     }
   }
 }
@@ -665,6 +686,8 @@ const PROVIDER_WORD: Record<string, string> = {
 };
 const LOCAL = new Set(["lmstudio", "ollama", "llamacpp"]);
 const LOCAL_WORD: Record<string, string> = { lmstudio: "LM Studio", ollama: "Ollama", llamacpp: "llama.cpp" };
+/** a provider id in words: "anthropic" → "Anthropic", "lmstudio" → "LM Studio" */
+export const providerName = (p: string) => PROVIDER_WORD[p] ?? LOCAL_WORD[p] ?? p;
 /** a local model's own name: its last path segment, a hyphen before a number read as a space
     ("openai/gpt-oss-20b" → "gpt-oss 20b", "google/gemma-4-26b-a4b-qat" → "gemma 4 26b-a4b-qat") */
 const localName = (name: string) =>

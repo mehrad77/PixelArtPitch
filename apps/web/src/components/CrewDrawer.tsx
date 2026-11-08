@@ -130,7 +130,7 @@ export function CrewDrawer({
               <span className="activity-who-text">
                 <span className="activity-who-name">Pip</span>
                 <span className="activity-who-role">Leads the crew</span>
-                <span className="activity-who-line">{pipLine(pip)}</span>
+                <span className="activity-who-line">{pipLine(pip, pipKey ? state : null)}</span>
               </span>
             </button>
             {kinds.map((k) =>

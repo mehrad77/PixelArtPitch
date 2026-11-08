@@ -18,3 +18,39 @@
 .stage-options {
   white-space: nowrap;
 }
+
+/* "Needs you ↓": a new ask arrived while the person was typing; the page stays put and this points at it */
+.needs-pill {
+  position: fixed;
+  inset-inline-start: 50%;
+  inset-block-end: var(--space-5);
+  z-index: var(--z-sticky);
+  translate: -50% 0;
+  min-block-size: var(--target-min);
+  padding-block: 0;
+  padding-inline: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--fill-accent);
+  box-shadow:
+    0 0 0 1px var(--fill-accent-strong),
+    0 8px 24px -8px var(--surface);
+  color: var(--text-on-fill);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+.needs-pill[data-where="above"] {
+  inset-block-start: calc(var(--topbar-h, 2.75rem) + var(--space-3));
+  inset-block-end: auto;
+}
+[dir="rtl"] .needs-pill {
+  translate: 50% 0;
+}
+.needs-pill:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+:is(:lang(fa), :lang(ar)) .needs-pill {
+  font-family: var(--font-arabic);
+}
