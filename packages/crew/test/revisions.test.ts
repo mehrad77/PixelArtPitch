@@ -51,8 +51,10 @@ const ctx = (rev = 0) => ({ env, rev }) as any;
 const mk = (id: string, kind: string, deps: string[] = [], extra: Record<string, unknown> = {}) =>
   rules.mkTask({ id, kind, dependsOn: deps, ...extra } as any, ctx());
 const done = (t: PlanTaskT) => ({ ...t, status: "done" as const });
-const wait = async (ok: () => boolean, ms = 15000) => {
-  for (let i = 0; i < ms / 10 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
+// a deadline, not a count: CI runs these renders about 4x slower than a laptop
+const wait = async (ok: () => boolean, ms = 60_000) => {
+  const end = Date.now() + ms;
+  while (!ok() && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
   assert.ok(ok(), "timed out waiting");
 };
 const exampleDoc = () => Project.parse(JSON.parse(readFileSync(join(EXAMPLE, "pitch.json"), "utf8")));

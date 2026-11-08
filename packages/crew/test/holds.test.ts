@@ -32,8 +32,10 @@ after(() => {
   for (const w of open) w.closeAll();
   rmSync(home, { recursive: true, force: true });
 });
-const wait = async (ok: () => boolean, ms = 10000) => {
-  for (let i = 0; i < ms / 10 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
+// a deadline, not a count: CI runs these renders about 4x slower than a laptop
+const wait = async (ok: () => boolean, ms = 60_000) => {
+  const end = Date.now() + ms;
+  while (!ok() && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
   assert.ok(ok(), "timed out waiting");
 };
 
