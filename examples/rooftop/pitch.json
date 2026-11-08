@@ -103,7 +103,8 @@
             "asset": "moth",
             "x": 136,
             "y": 112,
-            "anchor": "bottom"
+            "anchor": "bottom",
+            "flip": true
           },
           "behaviors": [
             {

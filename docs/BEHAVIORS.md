@@ -278,7 +278,7 @@ Flies from where the layer is through the `path` points at `speed`, with a bob, 
 ```json
 { "kind": "fly", "at": "S(c01)", "until": "S(c01)+4.2", "params": { "path": [[100, 50], [200, 70]], "speed": 56 } }
 ```
-A moth circling a lantern at (136, 120): `{ "kind": "fly", "at": "S(c01)", "params": { "path": [[158, 104], [136, 92], [114, 104]], "loop": true, "speed": 22, "bob": 1 } }` on a sprite placed at (136, 112).
+A moth circling a lantern at (136, 120): `{ "kind": "fly", "at": "S(c01)", "params": { "path": [[158, 104], [136, 92], [114, 104]], "loop": true, "speed": 22, "bob": 1 } }` on a sprite placed at (136, 112) with `flip: true` (the library's moth, like every library character, faces left).
 **Mistakes:**
 - A path that ends inside the caption zone (y > 146) or off the frame for a long time.
 - A one-way flight longer than its window: the distance over `speed` (plus 0.2 s) must fit before `until`, or it never reaches the last point.
