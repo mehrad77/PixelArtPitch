@@ -50,6 +50,11 @@ export const QuestionInput = z.object({
   from: z.string().default("producer"),
   /** the plan's `rights` node for a likeness or logo (PIP-JOURNEY N15): only the person answers it, never a timeout */
   rights: z.object({ asset: z.string(), private: z.literal(true) }).optional(),
+  /**
+   * the crew is held on this question (PIP-ORCHESTRATION §1.8): answering it lifts the hold and acts on the choice.
+   * An option that can't act yet (`fix_key`, `tell` without words in `note`) leaves it open.
+   */
+  hold: z.boolean().optional(),
 });
 export type QuestionInput = z.input<typeof QuestionInput>;
 export const Question = QuestionInput.extend({

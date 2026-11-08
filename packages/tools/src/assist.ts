@@ -274,7 +274,12 @@ export type ChangeHandler = (
   note: Note,
   /** open review notes the person chose to include (listed on the card) */
   extra: Note[],
-) => { queued: boolean; stage: Stage; started: boolean } | Promise<{ queued: boolean; stage: Stage; started: boolean }>;
+) => ChangeOutcome | Promise<ChangeOutcome>;
+/**
+ * what a change did right away: `started` (a run took it on now), `resumed` (that run was held and goes on with it),
+ * `queued` (the crew is working; the note waits for the next review), `waiting` (the crew still waits on this question)
+ */
+export type ChangeOutcome = { queued: boolean; stage: Stage; started: boolean; resumed?: boolean; waiting?: string };
 
 /** what a production change is about; it picks the owner */
 export const CHANGE_CATEGORIES = ["story", "scene", "art", "timing", "text", "sound", "other"] as const;
@@ -324,7 +329,7 @@ export function crewRequestChangeTool(onChange: ChangeHandler) {
     name: "crew_request_change",
     title: "Ask the crew for a change",
     description:
-      "Turn a person's change request into a note for the role that owns it: new characters, beats or scenes (category story) to the Director, who re-plans just those scenes; how a scene looks or moves (art, scene, timing) to the Animator; script words (text) to the Writer; sound to the Sound Designer. If the crew is idle it reopens that stage and runs from there, keeping finished work outside the change; if the crew is working, the note waits for the next review. Put only the person's request in text; to include open review notes, pass their ids in alsoNotes.",
+      "Turn a person's change request into a note for the role that owns it: new characters, beats or scenes (category story) to the Director, who re-plans just those scenes; how a scene looks or moves (art, scene, timing) to the Animator; script words (text) to the Writer; sound to the Sound Designer. If the crew is idle it reopens that stage and runs from there, keeping finished work outside the change; if the crew is held, the change answers the hold and the crew goes on with it; if the crew is working, the note waits for the next review. Put only the person's request in text; to include open review notes, pass their ids in alsoNotes.",
     input: z.object({
       text: z.string().min(3).max(1000),
       /** a scene id, or its number ("2" is the second scene) */
@@ -342,6 +347,10 @@ export function crewRequestChangeTool(onChange: ChangeHandler) {
       stage: z.string(),
       queued: z.boolean(),
       started: z.boolean(),
+      /** the crew was held and goes on now with this change */
+      resumed: z.boolean(),
+      /** the crew still waits for the person on this question (a held provider) */
+      waiting: z.string().optional(),
     }),
     roles: [],
     tier: "basic",
@@ -390,7 +399,15 @@ export function crewRequestChangeTool(onChange: ChangeHandler) {
       }
       const note = p.addNote({ target, category: i.category, text: i.text, assignee: owner, by: "user" });
       const r = await onChange(p, note, extra);
-      return ok({ noteId: note.id, owner, stage: r.stage, queued: r.queued, started: r.started });
+      return ok({
+        noteId: note.id,
+        owner,
+        stage: r.stage,
+        queued: r.queued,
+        started: r.started,
+        resumed: !!r.resumed,
+        ...(r.waiting ? { waiting: r.waiting } : {}),
+      });
     },
   });
 }

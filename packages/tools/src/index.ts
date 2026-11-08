@@ -8,6 +8,7 @@ export * from "./defs.ts";
 export * from "./drafts.ts";
 export * from "./registry.ts";
 export * from "./store.ts";
+export * from "./words.ts";
 
 /** the registry with every built-in tool; the crew and the server add their own */
 export function buildRegistry() {

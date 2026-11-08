@@ -14,10 +14,13 @@ import { contactSheet, libraryAssetDir, libraryFile, libraryIndex, publishAsset,
 import type { RoleT } from "@pap/schema";
 import {
   type ChannelMsg,
+  changeOwner,
+  cutWords,
   type GateId,
   type Note,
   type OpenProject,
   OWNER_STAGE,
+  type QuestionT,
   type Registry,
   STAGES,
   type Stage,
@@ -47,7 +50,7 @@ import {
   templateFor,
 } from "./outputs.ts";
 import { CATALOGUE, stageOf, taskLabel } from "./plan/catalogue.ts";
-import { envOf, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
+import { envOf, estimatePlanTask, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
 import { Executor, type Outcome } from "./plan/executor.ts";
 import { logoIcon } from "./plan/import.ts";
 import { aboutText, type Instance, InstanceTracker } from "./plan/instances.ts";
@@ -132,6 +135,61 @@ export function pausedLine(why: string): string {
   const low = /^(Your|The|A|An|This|It|Every|No)\b/.test(w) ? w.charAt(0).toLowerCase() + w.slice(1) : w;
   return `Paused the crew: ${/[.?!]$/.test(low) ? low : `${low}.`}`;
 }
+/** the hold's question: "The crew is waiting: your fake key was rejected. What should it do?" (5-200 characters) */
+export function holdQuestion(why: string): string {
+  const w = pausedLine(why).replace(/^Paused the crew: /, "");
+  return `The crew is waiting: ${cutWords(w, 160)} What should it do?`;
+}
+export type HoldOption = { id: string; label: string; detail: string };
+/**
+ * A hold's options (§1.8). A provider hold: Fix the key · Try again. A hold about scenes: Redo with the Director ·
+ * Accept the look · Tell Pip what to change. Any other: Carry on · Tell Pip what to change. `scenes` are the person's
+ * words for them ("scene 2").
+ */
+export function holdOptions(o: { scenes?: string[]; action?: ProblemAction }): {
+  options: HoldOption[];
+  recommendedId: string;
+} {
+  const tell: HoldOption = {
+    id: "tell",
+    label: "Tell Pip what to change",
+    detail: "Write what to change in the note. The crew goes on with your change.",
+  };
+  if (o.action) {
+    const fix: HoldOption = {
+      id: "fix_key",
+      label: "Fix the key",
+      detail: "Open Settings › Providers and save a working key. The crew goes on by itself.",
+    };
+    const retry: HoldOption = { id: "retry", label: "Try again", detail: "The crew tries the step again now." };
+    return o.action === "fix_key"
+      ? { options: [fix, retry], recommendedId: "fix_key" }
+      : { options: [retry, fix], recommendedId: "retry" };
+  }
+  const w = o.scenes?.length ? `${o.scenes.length === 1 ? "" : "these "}${o.scenes.join(" and ")}` : "";
+  if (w)
+    return {
+      options: [
+        {
+          id: "redo_director",
+          label: "Redo with the Director",
+          detail: `The Director re-plans ${w}, then the Animator tunes ${o.scenes!.length === 1 ? "it" : "them"}.`,
+        },
+        { id: "accept", label: "Accept the look", detail: "The crew carries on with it as it is." },
+        tell,
+      ],
+      recommendedId: "redo_director",
+    };
+  return {
+    options: [{ id: "accept", label: "Carry on", detail: "The crew goes on with the plan as it is." }, tell],
+    recommendedId: "accept",
+  };
+}
+/** "scene 2" for a scene id, by its place in the video */
+const sceneWord = (p: OpenProject, id: string) => {
+  const k = p.doc().scenes.findIndex((s) => s.id === id);
+  return k >= 0 ? `scene ${k + 1}` : id;
+};
 /** "$1.50", "$2": as Pip's cards say it */
 const usd = (n: number) => `$${n < 1 ? n.toFixed(2) : n.toFixed(2).replace(/\.00$/, "")}`;
 export const providerWord = (id?: string) => (id ? (PROVIDER_WORD[id] ?? id) : "the model provider");
@@ -295,8 +353,10 @@ type Run = {
   triggers: Trigger[];
   /** redo rounds per scene in this run (the request) */
   redos: Map<string, number>;
-  /** Pip put the crew on hold (or a provider failure did: `hold`) */
+  /** Pip put the crew on hold (or a provider failure did: `hold`); set only by holdFor, so a hold always asks */
   held?: string;
+  /** the hold's question (`hold: true`): answering it lifts the hold; any other lift withdraws it */
+  holdQ?: string;
   /** a provider failure holds the run until the key is fixed (§1.8): the first one's kind, provider and words */
   hold?: { kind: string; provider?: string; text: string; action: ProblemAction };
   /** Pip decision rounds in this run */
@@ -362,6 +422,22 @@ export type CrewSnapshot = {
   /** a review is still to come in this run (a note made now is read by it) */
   reviewPending: boolean;
   exportedAt?: string;
+  /** what the crew works on right now (plan task labels) */
+  working: string[];
+  /** the question the held crew waits on (its hold question) */
+  holdQuestion?: string;
+};
+/** what a person's change did right away (crew_request_change's result): Pip's words come from it */
+export type ChangeResult = {
+  /** the crew is working: the note waits for the next review */
+  queued: boolean;
+  stage: Stage;
+  /** a run took the change on now */
+  started: boolean;
+  /** it was a held run, which goes on with the change */
+  resumed: boolean;
+  /** the crew still waits for the person on this question (a provider hold) */
+  waiting?: string;
 };
 /** what a run did, reported when it ends or stops at a gate for the person */
 export type RunReport = {
@@ -376,6 +452,61 @@ export type RunReport = {
   openBlockers: { scene: string; text: string }[];
   exported: boolean;
 };
+/**
+ * What an escalation's option asks for, from its words: new art ("Draw a new owl"), a re-plan, a redo, or nothing
+ * that costs ("Use the library owl", "Keep it", "No").
+ */
+export function optionKind(label: string): "draw" | "reboard" | "redo" | "free" {
+  const w = label.toLowerCase();
+  if (/\b(draw|drawing|drawn|new art|redraw|paint|sprite|illustrat\w*|commission)\b/.test(w)) return "draw";
+  if (/\b(re-?plan|re-?board|storyboard|director|restage|re-?stage)\b/.test(w)) return "reboard";
+  if (/\b(redo|re-?animate|animate|tune|retime|again|fix)\b/.test(w)) return "redo";
+  return "free";
+}
+/**
+ * The option to recommend: the cheapest that fits what's left of the cap (`leftUsd`), the first on a tie; when none
+ * fits, the cheapest. Returns its index.
+ */
+export function cheapestOption(options: string[], usdOf: (label: string) => number, leftUsd: number): number {
+  const costs = options.map((o) => usdOf(o));
+  const fits = costs.map((c, i) => [c, i] as const).filter(([c]) => c <= leftUsd + 1e-9);
+  const pool = fits.length ? fits : costs.map((c, i) => [c, i] as const);
+  return pool.reduce((a, b) => (b[0] < a[0] - 1e-12 ? b : a))[1];
+}
+/** the Reviewer's verdict in one sentence: what the status and the channel say */
+export function reviewVerdict(
+  rev: { verdict: string; blockers: { scene: string }[] },
+  word: (scene: string) => string = (s) => s,
+): string {
+  const n = rev.blockers.length;
+  if (rev.verdict === "ship" || !n) return "The cut is ready to ship.";
+  const scenes = [...new Set(rev.blockers.map((b) => b.scene))].map(word).map((w) => w.replace(/^scene /, ""));
+  const where = scenes.length
+    ? ` in ${scenes.length === 1 ? "scene" : "scenes"} ${scenes.length === 1 ? scenes[0] : `${scenes.slice(0, -1).join(", ")} and ${scenes.at(-1)}`}`
+    : "";
+  return `Found ${n} problem${n === 1 ? "" : "s"}${where}.`;
+}
+/** the scenes a trigger is about: a report's scene, a blocker's scenes (only the project's own) */
+function scenesOf(t: Trigger | undefined, p: OpenProject): string[] {
+  if (!t) return [];
+  const ids = new Set(p.doc().scenes.map((s) => s.id));
+  if (t.kind === "blocker") return [...new Set(t.scenes)].filter((s) => ids.has(s));
+  if (t.kind === "report" && t.ref && ids.has(t.ref)) return [t.ref];
+  return [];
+}
+/** two change plans as one: the notes and scenes of both (no scope on either means every scene) */
+export function mergeChange(a: ChangePlan | undefined, b: ChangePlan): ChangePlan {
+  if (!a) return b;
+  const u = (x?: string[], y?: string[]) => [...new Set([...(x ?? []), ...(y ?? [])])];
+  const reboard = u(a.reboard, b.reboard);
+  const assets = u(a.assets, b.assets);
+  return {
+    notes: u(a.notes, b.notes),
+    ...(a.scope && b.scope ? { scope: u(a.scope, b.scope) } : {}),
+    ...(reboard.length ? { reboard } : {}),
+    ...(assets.length ? { assets } : {}),
+  };
+}
 const isEndCard = (sc: { kind: string; recipes?: { id: string }[] }) =>
   sc.kind === "decl" && !!sc.recipes?.some((r) => r.id === "end_card_loop");
 /**
@@ -528,7 +659,7 @@ export type Decision =
   | { kind: "redo"; scenes: string[]; why: string }
   | { kind: "reboard"; scenes: string[]; direction: string }
   | { kind: "next"; why?: string }
-  | { kind: "hold"; why: string }
+  | { kind: "hold"; why: string; scenes?: string[] }
   | { kind: "escalate"; question: string; options?: string[] }
   | { kind: "replan"; diff: PlanDiffOutT };
 export interface Conductor {
@@ -650,12 +781,21 @@ export class Crew {
       // crew_replan only while this run has Pip proposals left (§1.6: at most 6)
       const run = this.planNow(p)?.runs.find((x) => x.id === r.id);
       const replan = !!run && run.pipProposals < MAX_PIP_PROPOSALS;
-      // one plan change per trigger, checked before it is accepted, so a rejection goes back to Pip as a tool error
+      // one plan change per trigger, checked before it is accepted, so a rejection goes back to Pip as a tool error;
+      // a refusal stays inside the crew: Pip asks the person (crew_escalate) only after one corrected retry
       let accepted = false;
+      let refused: string | null = null;
+      let retried = false;
       const check = (d: Decision) => {
+        if (d.kind === "escalate")
+          return refused && !retried
+            ? `correct the refused change once before asking the person (it was refused: ${refused.slice(0, 200)})`
+            : null;
         if (!planChanging(d)) return null;
         if (accepted) return "one plan change per trigger: this one was not applied (the first one stands)";
+        if (refused) retried = true;
         const why = this.checkChange(p, r, d);
+        if (why) refused = why;
         if (why && d.kind === "replan") {
           // a refused proposal counts toward the run's six (§1.6), so failures can't loop
           const live = this.planNow(p)?.runs.find((x) => x.id === r.id);
@@ -743,7 +883,7 @@ export class Crew {
     p: OpenProject,
     r: Run,
     ds: Decision[],
-    o: { after?: string[] } = {},
+    o: { after?: string[]; trigger?: Trigger } = {},
   ): Promise<{ redid: boolean; added: string[] }> {
     let redid = false;
     const added: string[] = [];
@@ -772,7 +912,11 @@ export class Crew {
       } else if (d.kind === "redo" || d.kind === "reboard") {
         const { ok, over } = redoable(d.scenes);
         if (over.length)
-          ds.push({ kind: "hold", why: `${over.join(", ")} already had ${MAX_REDO} redo rounds for this request` });
+          ds.push({
+            kind: "hold",
+            why: `${over.join(", ")} already had ${MAX_REDO} redo rounds for this request`,
+            scenes: over,
+          });
         if (!ok.length) continue;
         for (const id of ok) if (p.state.sceneStatus[id]) p.setSceneStatus(id, { version: "animatic", state: "stale" });
         if (d.kind === "reboard") {
@@ -814,21 +958,25 @@ export class Crew {
         if (r.escalated) continue;
         r.escalated = true;
         const opts = (d.options?.length ? d.options : ["Yes", "No"]).slice(0, 6);
+        // the recommended answer is the cheapest one that fits what's left of the cap (never new art when a
+        // library asset or a behaviour covers it: that option is cheaper)
+        const { spentUsd } = this.deps.gateway.spent(p.id);
+        const rec = cheapestOption(opts, (o) => this.optionUsd(p, o), p.doc().budget.capUsd - spentUsd);
         p.ask(
           {
             kind: "single",
-            question: d.question.slice(0, 200),
+            question: cutWords(d.question, 200),
             why: "The crew asked Pip, and only you can answer this.",
-            options: opts.map((o, i) => ({ id: `o${i + 1}`, label: o.slice(0, 80), detail: "" })),
-            recommendedId: "o1",
+            options: opts.map((o, i) => ({ id: `o${i + 1}`, label: cutWords(o, 80), detail: "" })),
+            recommendedId: `o${rec + 1}`,
             from: "pip",
           },
           "pip",
         );
         p.say({ from: "pip", to: "crew", kind: "brief", text: `Asked the person: ${d.question}` });
       } else if (d.kind === "hold" && !r.held) {
-        r.held = d.why;
-        p.say({ from: "pip", to: "crew", kind: "brief", text: pausedLine(d.why) });
+        // a hold always asks the person (holdFor): the scenes it is about come from the decision or its trigger
+        this.holdFor(p, r, d.why, { scenes: d.scenes ?? scenesOf(o.trigger, p) });
       }
     }
     if (sig) {
@@ -838,17 +986,20 @@ export class Crew {
         tasks: (this.planNow(p)?.tasks ?? []).filter((t) => !had.has(t.id)).map((t) => t.id),
       };
     }
-    if (r.held && !r.paused) {
-      // stop and tell the person; the cards that handed work to this run settle now
-      p.setStatus({ line: `Waiting for you: ${r.held}` });
-      try {
-        this.onRunEnd?.(p, this.report(p, r, "waiting"));
-      } catch {}
-      r.paused = true;
-      p.state.paused = true;
-      p.saveState();
-    }
     return { redid, added };
+  }
+
+  /** what an escalation's option would cost at p50, read from its words and priced by the plan's estimates */
+  private optionUsd(p: OpenProject, label: string): number {
+    const env = this.planEnv(p);
+    const est = (kind: keyof typeof CATALOGUE, count = 1) =>
+      estimatePlanTask({ kind, role: CATALOGUE[kind].role, tier: "role" } as any, env).usd[0] * count;
+    const kind = optionKind(label);
+    if (kind === "free") return 0;
+    if (kind === "draw")
+      return est("asset.spec") + est("asset.draw", this.variants(p)) + est("asset.judge") + est("scene.tune");
+    if (kind === "reboard") return est("director.storyboard") + est("art.cast") + est("scene.tune");
+    return est("scene.tune");
   }
 
   /** the end of a stage: Pip's triggers, and one "on track?" check only when something needs judgment */
@@ -862,7 +1013,10 @@ export class Crew {
       (n) => n.by === "user" && n.status === "open" && OWNER_STAGE[n.assignee] === stage && n.createdAt >= r.startedAt,
     );
     if (!r.triggers.length && open.length) r.triggers.push({ kind: "stage", stage, notes: open.map((n) => n.text) });
-    while (r.triggers.length && !r.held) await this.apply(p, r, await this.think(p, r, r.triggers.shift()!));
+    while (r.triggers.length && !r.held) {
+      const tr = r.triggers.shift()!;
+      await this.apply(p, r, await this.think(p, r, tr), { trigger: tr });
+    }
     r.triggers = [];
   }
   private gateWaiters = new Map<
@@ -873,6 +1027,8 @@ export class Crew {
   private plans = new Map<string, ProductionPlanT>();
   constructor(deps: CrewDeps) {
     this.deps = deps;
+    // a hold's question is answered over HTTP or MCP alike: both go through the store, which asks the crew first
+    deps.workspace.onAnswer = (p, q, a) => this.holdAnswer(p, q, a);
   }
 
   // ---------------------------------------------------------------- the production plan
@@ -1031,12 +1187,8 @@ export class Crew {
     if (!out || (!out.ops.length && JSON.stringify(out.tasks) === JSON.stringify(plan.tasks))) return null;
     if (r) {
       r.revisions++;
-      if (r.revisions > MAX_REVISIONS_PER_RUN && !r.held) {
-        r.held = `the plan changed more than ${MAX_REVISIONS_PER_RUN} times in one run`;
-        p.say({ from: "pip", to: "crew", kind: "brief", text: pausedLine(r.held) });
-        p.setStatus({ line: `Waiting for you: ${r.held}` });
-        r.paused = true;
-      }
+      if (r.revisions > MAX_REVISIONS_PER_RUN && !r.held)
+        this.holdFor(p, r, `the plan changed more than ${MAX_REVISIONS_PER_RUN} times in one run`);
     }
     const next = revise(
       p,
@@ -1281,25 +1433,26 @@ export class Crew {
       });
     }
     touch(p, plan, env, this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
+    // the channel gets one plain sentence; the ops, task ids and errors go to the event log only
     if (!res.tasks) {
-      p.say({
-        from: "pip",
-        to: "crew",
-        kind: "brief",
-        text: `Kept the default plan: ${res.kept ?? "no usable answer"}`.slice(0, 400),
-      });
+      p.emit("log", { level: "info", text: `Kept the default plan: ${res.kept ?? "no usable answer"}`.slice(0, 600) });
+      p.say({ from: "pip", to: "crew", kind: "brief", text: "I kept the default plan." });
       return res;
     }
     if (!res.ops.length) return res;
     if (mode === "shadow") {
+      p.emit("log", {
+        level: "info",
+        text: `Shadow plan (not applied): ${res.summary} ${res.ops.map((o) => `${o.op} ${"task" in o ? o.task : o.placeholder}: ${o.reason}`).join("; ")}`.slice(
+          0,
+          1200,
+        ),
+      });
       p.say({
         from: "pip",
         to: "crew",
         kind: "brief",
-        text: `Shadow plan (not applied): ${res.summary} ${res.ops.map((o) => `${o.op} ${"task" in o ? o.task : o.placeholder}: ${o.reason}`).join("; ")}`.slice(
-          0,
-          600,
-        ),
+        text: `I looked for a better plan and kept the default one (${res.ops.length} change${res.ops.length === 1 ? "" : "s"} considered).`,
       });
       return res;
     }
@@ -1400,6 +1553,11 @@ export class Crew {
       reviewPending:
         !!run && tasks.some((t) => t.kind === "review.final" && (t.status === "pending" || t.status === "ready")),
       ...(exp?.endedAt ? { exportedAt: exp.endedAt } : {}),
+      working: run ? tasks.filter((t) => t.status === "running").map(label) : [],
+      ...(() => {
+        const q = p.state.questions.find((x) => x.hold && x.status === "open");
+        return q ? { holdQuestion: q.question } : {};
+      })(),
     };
   }
   pause(p: OpenProject, mode: "after_step" | "now") {
@@ -1417,6 +1575,8 @@ export class Crew {
     p.state.paused = false;
     p.saveState();
     const r = this.runs.get(p.id);
+    // a hold left by an ended run (a restart) no longer stands
+    if (!r) for (const q of p.state.questions.filter((x) => x.hold && x.status === "open")) p.withdraw(q.id);
     if (r) {
       // resume lifts a hold too: the tasks try again (and hold again if the key is still wrong)
       if (r.hold || r.held) this.liftHold(p, r);
@@ -1442,14 +1602,12 @@ export class Crew {
         p.upsertTask({ ...row, status: "cancelled", endedAt: row.endedAt ?? new Date().toISOString() });
     if (r.hold) return true;
     const h = humanize(e, t?.role);
+    // a Pip hold already standing gives way: the provider is what really stops the crew now
+    if (r.held) this.liftHold(p, r, { quiet: true });
     r.hold = { kind: errorKind(e), text: h.text, action: h.action, ...(h.provider ? { provider: h.provider } : {}) };
-    r.held = h.text.replace(/\.$/, "");
-    r.paused = true;
-    p.state.paused = true;
-    p.saveState();
+    this.holdFor(p, r, h.text, { action: h.action, ...(t ? { ref: t.id } : {}) });
     const row = t ? p.state.tasks.filter((x) => x.planTask === t.id).at(-1) : undefined;
     p.setStatus({
-      line: `Waiting for you: ${r.held}`,
       problem: {
         text: h.text,
         action: h.action,
@@ -1460,7 +1618,6 @@ export class Crew {
       waiting: undefined,
     });
     p.emit("log", { level: "error", text: `crew held: ${String((e as any)?.message ?? e).slice(0, 200)}` });
-    p.say({ from: "pip", to: "crew", kind: "brief", text: pausedLine(h.text), ...(t ? { ref: t.id } : {}) });
     const tasks = this.planNow(p)?.tasks ?? [];
     try {
       this.onHold?.(p, {
@@ -1471,9 +1628,7 @@ export class Crew {
         waiting: tasks.filter(isLive).length,
       });
     } catch {}
-    try {
-      this.onRunEnd?.(p, this.report(p, r, "waiting"));
-    } catch {}
+    // the cards that handed work to this run keep waiting: a hold isn't the end of their change
     return true;
   }
   /** Pip tells the person once that the run is held on a provider, what was kept and what waits */
@@ -1481,13 +1636,124 @@ export class Crew {
     p: OpenProject,
     h: { text: string; action: ProblemAction; provider?: string; kept: number; waiting: number },
   ) => void;
-  /** lift a hold: the run goes on from where it stopped */
-  private liftHold(p: OpenProject, r: Run) {
+  /**
+   * Hold the run for the person (§1.8). The one place `r.held` is set: it always opens a question (`from: "pip"`,
+   * `hold: true`) with real options, so Needs you counts it. Answering it lifts the hold and acts on the choice
+   * (holdAnswer); any other lift withdraws it.
+   */
+  private holdFor(
+    p: OpenProject,
+    r: Run,
+    why: string,
+    o: { scenes?: string[]; action?: ProblemAction; ref?: string } = {},
+  ): boolean {
+    if (r.held) return false;
+    r.held = why
+      .trim()
+      .replace(/^Waiting for you: /, "")
+      .replace(/\.$/, "");
+    r.paused = true;
+    p.state.paused = true;
+    p.saveState();
+    p.setStatus({ line: `Waiting for you: ${r.held}` });
+    p.say({ from: "pip", to: "crew", kind: "brief", text: pausedLine(r.held), ...(o.ref ? { ref: o.ref } : {}) });
+    const scenes = (o.scenes ?? []).filter((s) => p.doc().scenes.some((x) => x.id === s));
+    const { options, recommendedId } = holdOptions({
+      scenes: scenes.map((s) => sceneWord(p, s)),
+      ...(o.action ? { action: o.action } : {}),
+    });
+    const q = p.ask(
+      {
+        kind: "single",
+        question: holdQuestion(r.held),
+        why: "The crew stopped and waits for your pick.",
+        options,
+        recommendedId,
+        blocks: scenes,
+        timeoutSec: null,
+        from: "pip",
+        hold: true,
+      },
+      "pip",
+    );
+    r.holdQ = q.id;
+    return true;
+  }
+  /**
+   * The person answered a hold's question (Workspace.onAnswer, before the store records it): an option that can't
+   * act yet keeps it open ("keep"): Fix the key (saving a key lifts the hold), and Tell Pip with no words in the note.
+   * Anything else is recorded, then acted on: the hold lifts, the Director re-plans, or the note becomes a change.
+   */
+  holdAnswer(p: OpenProject, q: QuestionT, a: { optionId?: string; note?: string }): "keep" | undefined {
+    const id = a.optionId ?? q.recommendedId;
+    if (id === "fix_key") return "keep";
+    if (id === "tell" && !a.note?.trim()) return "keep";
+    setTimeout(() => {
+      try {
+        this.actOnHold(p, q, id, a.note?.trim());
+      } catch (e: any) {
+        p.emit("log", { level: "error", text: `the hold's answer failed: ${String(e?.message ?? e).slice(0, 200)}` });
+      }
+    }, 0);
+    return undefined;
+  }
+  private actOnHold(p: OpenProject, q: QuestionT, id: string, note?: string) {
+    const r = this.runs.get(p.id);
+    // an older hold's question: the run it held has moved on
+    if (r && r.holdQ !== q.id) return;
+    const scenes = q.blocks.filter((s) => p.doc().scenes.some((x) => x.id === s));
+    if (id === "tell" && note) {
+      const target = scenes.length === 1 ? { scene: scenes[0] } : {};
+      const n = p.addNote({
+        target,
+        category: "other",
+        text: note.slice(0, 1000),
+        assignee: changeOwner(target, "other", note),
+        by: "user",
+      });
+      if (!r) {
+        p.state.paused = false;
+        p.saveState();
+      }
+      this.requestChange(p, n);
+      return;
+    }
+    if (id === "redo_director" && scenes.length) {
+      for (const s of scenes) if (p.state.sceneStatus[s]) p.setSceneStatus(s, { version: "animatic", state: "stale" });
+      const why = `You asked the Director to re-plan ${scenes.map((s) => sceneWord(p, s)).join(" and ")}.`;
+      p.say({
+        from: "pip",
+        to: "director",
+        kind: "brief",
+        text: `Re-plan ${scenes.join(", ")}: ${why}`,
+        ref: scenes[0],
+      });
+      this.planRevise(p, r ?? null, { by: "person", trigger: "change", reason: why }, (ts, ctx) =>
+        addReboard(ts, scenes, ctx, { reason: why.slice(0, 200) }),
+      );
+    }
+    if (r) this.liftHold(p, r);
+    else this.resumeHeld(p);
+  }
+  /** a held project whose run ended (a restart): its plan goes on */
+  private resumeHeld(p: OpenProject) {
+    p.state.paused = false;
+    p.saveState();
+    p.setStatus({ line: "Picking up where the crew left off", problem: undefined, waiting: undefined });
+    if (this.runs.has(p.id)) return;
+    const { startedAt: _s, ...change } = p.state.change ?? ({} as any);
+    this.run(p, { resume: true, ...(p.state.change ? { change } : {}) }).catch(() => {});
+  }
+  /** lift a hold: the run goes on from where it stopped (`quiet`: only the flags, a new hold follows at once) */
+  private liftHold(p: OpenProject, r: Run, o: { quiet?: boolean } = {}) {
+    if (r.holdQ) p.withdraw(r.holdQ);
+    r.holdQ = undefined;
     r.hold = undefined;
     r.held = undefined;
     r.paused = false;
     p.state.paused = false;
     p.saveState();
+    if (o.quiet) return;
     p.setStatus({ line: STAGE_LINE[p.state.stage] ?? "The crew is working", problem: undefined, waiting: undefined });
     p.say({ from: "pip", to: "crew", kind: "brief", text: "Back to work: the hold is lifted." });
     r.resume?.();
@@ -1516,6 +1782,7 @@ export class Crew {
           continue;
         p.state.paused = false;
         p.saveState();
+        for (const q of p.state.questions.filter((x) => x.hold && x.status === "open")) p.withdraw(q.id);
         p.setStatus({ line: "Picking up where the crew left off", problem: undefined, waiting: undefined });
         // as after a restart: the held run's running and waiting tasks start again
         const { startedAt: _s, ...change } = p.state.change ?? ({} as any);
@@ -1587,11 +1854,12 @@ export class Crew {
    * When idle, the owner's stage is reopened (its scene marked stale, later gates reopened, the old export marked
    * superseded), the plan gets a change revision, and the crew runs it, unless the person paused it.
    */
-  requestChange(p: OpenProject, note: Note, extra: Note[] = []): { queued: boolean; stage: Stage; started: boolean } {
+  requestChange(p: OpenProject, note: Note, extra: Note[] = []): ChangeResult {
     const stage = OWNER_STAGE[note.assignee] ?? "review";
-    if (this.runs.has(p.id)) {
+    const live = this.runs.get(p.id);
+    if (live && !live.held) {
       p.emit("log", { level: "info", text: `${note.id} waits for the next review: the crew is working` });
-      return { queued: true, stage, started: false };
+      return { queued: true, stage, started: false, resumed: false };
     }
     const notes = [note, ...extra];
     // the change goes to its owner as a brief from Pip (the note itself reaches the owner's prompt)
@@ -1610,10 +1878,26 @@ export class Crew {
         text: `Also fix: ${n.text.slice(0, 240)}`,
         ref: n.target.scene ?? n.id,
       });
+    const was = p.state.change;
     const { from, change } = this.startChange(p, notes);
-    if (p.state.paused) return { queued: false, stage: from, started: false };
+    if (live) {
+      // a held run: the change is the person's answer to the hold. The run takes it on (its notes, its scenes) and
+      // goes on now; a provider hold still waits for the key, with the change in its plan
+      live.change = mergeChange(live.change, change);
+      live.scope = live.change.scope ? new Set(live.change.scope) : undefined;
+      p.state.change = { ...live.change, startedAt: was?.startedAt ?? live.startedAt };
+      p.saveState();
+      if (live.hold) {
+        live.exec?.wake();
+        const q = p.state.questions.find((x) => x.id === live.holdQ && x.status === "open");
+        return { queued: false, stage: from, started: false, resumed: false, ...(q ? { waiting: q.question } : {}) };
+      }
+      this.liftHold(p, live);
+      return { queued: false, stage: from, started: true, resumed: true };
+    }
+    if (p.state.paused) return { queued: false, stage: from, started: false, resumed: false };
     this.run(p, { stage: from, change }).catch(() => {});
-    return { queued: false, stage: from, started: true };
+    return { queued: false, stage: from, started: true, resumed: false };
   }
   /**
    * reopen the stage a change needs and write its plan revision (§1.7 "Change requests become revisions"). Only what
@@ -1891,7 +2175,9 @@ export class Crew {
       const mine = p.state.notes.filter((n) => n.status === "open" && n.by === "user" && n.createdAt >= r.startedAt);
       for (const n of mine.filter((x) => !OWNER_STAGE[x.assignee] || x.text.trim().startsWith("/")))
         p.updateNote(n.id, { status: "declined", reason: "no crew stage owns this note" });
-      const left = p.state.notes.filter((n) => mine.includes(n) && n.status === "open");
+      // a note this run's change took on is its own, never a reason for another run
+      const claimed = new Set(r.change?.notes ?? []);
+      const left = p.state.notes.filter((n) => mine.includes(n) && n.status === "open" && !claimed.has(n.id));
       if ((finished || r.changesAt) && left.length && !p.state.paused) {
         const { from, change } = this.startChange(p, left);
         setTimeout(() => this.run(p, { stage: from, change }).catch(() => {}), 0);
@@ -2257,7 +2543,8 @@ export class Crew {
         from: t.role,
         to: "pip",
         kind: "report",
-        text: `${rep.status}: ${did.slice(0, 240)}${rep.couldnt ? ` Couldn't: ${rep.couldnt}` : ""}${rep.needs ? ` Needs: ${rep.needs}` : ""}`,
+        // what it did, as a sentence ("Found 6 problems in scenes 2 and 4."), never "done: …"
+        text: `${rep.status === "partial" ? "Partly done: " : rep.status === "blocked" ? "Stuck: " : ""}${cutWords(did, 240)}${rep.couldnt ? ` Couldn't: ${rep.couldnt}` : ""}${rep.needs ? ` Needs: ${rep.needs}` : ""}`,
         ref,
       });
       // routine "done" reports are not triggers
@@ -4059,6 +4346,8 @@ export class Crew {
           model: this.modelOf(p, pt),
         })
       ).data;
+      // the report says the verdict: "Found 6 problems in scenes 2 and 4.", or "The cut is ready to ship."
+      this.reports.set(t.id, { status: "done", did: reviewVerdict(rev, (id) => sceneWord(p, id)) });
       this.done(p, t, { summary: `${rev.verdict}: ${rev.summary}` });
     } catch (e: any) {
       // no usable review from this model: the lints already passed, so the cut goes on to the gate as it is
@@ -4095,7 +4384,10 @@ export class Crew {
         text: redo.map((b) => `${b.scene}: ${b.issue}`),
         round: round - 1,
       });
-      const { redid, added } = await this.apply(p, r, ds, { after: [pt.id] });
+      const { redid, added } = await this.apply(p, r, ds, {
+        after: [pt.id],
+        trigger: { kind: "blocker", scenes, text: [], round: round - 1 },
+      });
       if (!redid || r.held) return { status: "done" };
       tunes = added;
     } else {

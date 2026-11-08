@@ -303,6 +303,7 @@ test("Pip's crew line says what is true now: idle after the export, held and why
     fallbacks: [],
     reviewPending: false,
     exportedAt: "2026-11-08T10:00:00.000Z",
+    working: [] as string[],
   };
   const idle = crewNow(base);
   assert.match(idle, /idle \(not working\)/);

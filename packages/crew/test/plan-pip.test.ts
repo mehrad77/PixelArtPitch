@@ -92,6 +92,15 @@ const add = {
   reason: "added a Pixel artist for the keeper",
 };
 
+/** the project's log lines from now on (they are never on the channel) */
+function logsOf(p: any): string[] {
+  const out: string[] = [];
+  p.events.on("event", (e: any) => {
+    if (e.event === "log") out.push(String(e.data?.text ?? ""));
+  });
+  return out;
+}
+
 test("Pip's revision, applied: one call; code expands the asset into its chain; a `pip` revision and a milestone", async () => {
   const w = await setup({ pipPlan: "on" });
   const r = w.run();
@@ -126,6 +135,7 @@ test("Pip's revision, applied: one call; code expands the asset into its chain; 
 
 test("a bad answer gets one repair turn, then the rules plan stands at no further cost", async () => {
   const w = await setup({ pipPlan: "on" });
+  const logs = logsOf(w.p);
   const r = w.run();
   const before = JSON.stringify(w.crew.planNow(w.p).tasks);
   let calls = 0;
@@ -141,7 +151,12 @@ test("a bad answer gets one repair turn, then the rules plan stands at no furthe
   assert.equal(calls, 2, "one call, one repair");
   assert.equal(res.valid, "no");
   assert.equal(JSON.stringify(w.crew.planNow(w.p).tasks), before, "the rules plan stands");
-  assert.ok(w.p.channel().some((m: any) => m.from === "pip" && /^Kept the default plan: t_g3 is a gate/.test(m.text)));
+  assert.ok(
+    logs.some((t) => /^Kept the default plan: t_g3 is a gate/.test(t)),
+    "the error goes to the log",
+  );
+  assert.ok(w.p.channel().some((m: any) => m.from === "pip" && m.text === "I kept the default plan."));
+  assert.ok(!w.p.channel().some((m: any) => /t_g3/.test(m.text)), "no task id on the channel");
   // a failed call counts too: the cap is 6 proposals per run, then no more calls
   answer = () => ({ error: new Error("down") });
   for (let i = 0; i < 6; i++) await w.crew.pipRevise(w.p, r, "g0");
@@ -152,15 +167,21 @@ test("a bad answer gets one repair turn, then the rules plan stands at no furthe
   assert.equal(w.crew.pipView(w.p).proposals, 6);
 });
 
-test("shadow: the call runs and is posted on the channel, not applied; off and local make no call", async () => {
+test("shadow: the call runs and is logged, not applied, with one plain sentence on the channel; off makes no call", async () => {
   const w = await setup({ pipPlan: "shadow" });
+  const logs = logsOf(w.p);
   const r = w.run();
   answer = (req) =>
     isPlan(req) ? { json: { ops: [add], summary: "Added a drawing of the keeper." } } : { error: new Error("x") };
   const before = w.crew.planNow(w.p).rev;
   await w.crew.pipRevise(w.p, r, "g0");
   assert.equal(w.crew.planNow(w.p).rev, before, "no revision");
-  assert.ok(w.p.channel().some((m: any) => /^Shadow plan \(not applied\): Added a drawing/.test(m.text)));
+  assert.ok(logs.some((t) => /^Shadow plan \(not applied\): Added a drawing/.test(t)));
+  assert.ok(w.p.channel().some((m: any) => /^I looked for a better plan and kept the default one/.test(m.text)));
+  assert.ok(
+    !w.p.channel().some((m: any) => /Shadow plan|asset\.spec|t_/.test(m.text)),
+    "the channel isn't a debug log",
+  );
   const off = await setup({ pipPlan: "off" });
   const k0 = fake.calls.length;
   assert.equal(await off.crew.pipRevise(off.p, off.run(), "g0"), null);
@@ -239,11 +260,12 @@ test("the 20% rule covers expansions (C5): new art from the board waits for the 
 
 test("crew_replan: the conductor's ops are validated like Pip's; a gate can't be touched", async () => {
   const w = await setup({ pipPlan: "off" });
+  const logs = logsOf(w.p);
   const r = w.run();
   await w.crew.apply(w.p, r, [
     { kind: "replan", diff: { ops: [{ op: "drop", task: "t_g4", reason: "no final" }], summary: "x" } },
   ]);
-  assert.ok(w.p.channel().some((m: any) => /^Kept the default plan: t_g4 is a gate/.test(m.text)));
+  assert.ok(logs.some((t) => /^Kept the default plan: t_g4 is a gate/.test(t)));
   await w.crew.apply(w.p, r, [
     {
       kind: "replan",

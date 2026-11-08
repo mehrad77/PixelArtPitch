@@ -858,7 +858,7 @@ test("channel: a member's ask is answered by Pip without the person", async () =
   const ask = ch.find((m) => m.kind === "ask" && m.from === "producer")!;
   assert.ok(ask);
   assert.ok(ch.some((m) => m.kind === "answer" && m.from === "pip" && m.replyTo === ask.id && /calm/i.test(m.text)));
-  assert.ok(ch.some((m) => m.kind === "report" && m.from === "producer" && /^done: planned/.test(m.text)));
+  assert.ok(ch.some((m) => m.kind === "report" && m.from === "producer" && /^planned/i.test(m.text)));
   w.crewImpl.pause(w.p, "now");
 });
 
@@ -895,7 +895,11 @@ test("channel: a blocked report gets at most 2 redo rounds, then Pip holds and t
   assert.equal(ch.filter((m) => m.from === "pip" && /^Redo grind/.test(m.text)).length, 2);
   assert.ok(ch.some((m) => m.from === "pip" && /^Paused the crew: /.test(m.text)));
   assert.ok(!ch.some((m) => /^Hold:/.test(m.text)), "no 'Hold:' prefix");
-  assert.ok(ch.some((m) => m.from === "animator" && /^blocked: .*Couldn't: no recipe makes him fly/.test(m.text)));
+  assert.ok(ch.some((m) => m.from === "animator" && /^Stuck: .*Couldn't: no recipe makes him fly/.test(m.text)));
+  // the hold asks: a question with the scene's options, counted in Needs you
+  const q = w.p.state.questions.find((x) => x.hold && x.status === "open");
+  assert.ok(q, "the hold asks the person");
+  assert.equal(q.recommendedId, "redo_director");
   w.crewImpl.pause(w.p, "now");
   w.crewImpl.resume(w.p);
 });
@@ -927,7 +931,7 @@ test("channel: routine done reports cost no Pip call", async () => {
   assert.ok(
     ch.some((m) => m.from === "pip" && m.kind === "brief" && /The person asked: make the hero bigger/.test(m.text)),
   );
-  assert.ok(ch.some((m) => m.from === "animator" && m.kind === "report" && /^done: tuned/.test(m.text)));
+  assert.ok(ch.some((m) => m.from === "animator" && m.kind === "report" && /^tuned/.test(m.text)));
   w.crewImpl.pause(w.p, "now");
 });
 

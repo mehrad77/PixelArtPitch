@@ -302,6 +302,11 @@ export class OpenProject {
   private seqHist: number;
   private evSeq: number;
   private waiters = new Map<string, (q: QuestionT) => void>();
+  /**
+   * the crew's word on an answer to a hold question (`hold: true`), asked before it is recorded: "keep" leaves the
+   * question open (an option that can't act yet). Set by the Workspace from `Workspace.onAnswer`.
+   */
+  answerHook?: (q: QuestionT, a: { optionId?: string; value?: unknown; note?: string }, by: string) => "keep" | void;
   readonly events = new EventEmitter();
   state: RuntimeState;
 
@@ -553,6 +558,17 @@ export class OpenProject {
       });
     });
   }
+  /** the question no longer applies (a hold lifted another way): it leaves Needs you, and its waiter gets it */
+  withdraw(id: string): QuestionT | undefined {
+    const q = this.state.questions.find((x) => x.id === id);
+    if (!q || q.status !== "open") return q;
+    q.status = "withdrawn";
+    this.saveState();
+    this.emit("question", q);
+    this.waiters.get(id)?.(q);
+    this.waiters.delete(id);
+    return q;
+  }
   async answer(id: string, a: { optionId?: string; value?: unknown; note?: string }, by: string) {
     const q = this.state.questions.find((x) => x.id === id);
     if (!q) throw new StoreError("not_found", `no question ${id}`);
@@ -571,6 +587,8 @@ export class OpenProject {
         `unknown option ${a.optionId}`,
         `options: ${q.options.map((o) => o.id).join(", ")}`,
       );
+    // a hold's question: the crew acts on the choice, or keeps it open when that option can't act yet
+    if (q.hold && this.answerHook?.(q, a, by) === "keep") return q;
     q.status = by === "timeout" ? "defaulted" : "answered";
     q.answer = { ...a, by };
     this.saveState();
@@ -790,6 +808,13 @@ export class Workspace {
   private open = new Map<string, OpenProject>();
   private known = new Map<string, string>(); // id -> dir
   private roots: () => string[];
+  /** the crew's hook on an answer to a hold question (OpenProject.answerHook), for every project this opens */
+  onAnswer?: (
+    p: OpenProject,
+    q: QuestionT,
+    a: { optionId?: string; value?: unknown; note?: string },
+    by: string,
+  ) => "keep" | void;
   constructor(roots: () => string[]) {
     this.roots = roots;
     const recent = join(PAP_HOME, "projects.json");
@@ -840,6 +865,7 @@ export class Workspace {
     if (!dir) throw new StoreError("not_found", `no project ${id}`, `known: ${[...this.known.keys()].join(", ")}`, 404);
     lock(dir);
     const p = new OpenProject(dir, id);
+    p.answerHook = (q, a, by) => this.onAnswer?.(p, q, a, by);
     this.open.set(id, p);
     return p;
   }

@@ -80,7 +80,7 @@ The person approved both specs (this one and its sibling) with these answers to 
 
 14. **`pipPlan` ships as `shadow`.** The Anthropic eval (§5) was not run: it spends money and needs the person's go-ahead. It would cost about $0.23 (p50, one Sonnet call per item) to $1.05 (every item repaired) for the 15 items, from the declared `assistant.plan` prior (n = 0, so rough). The local run (LM Studio, `google/gemma-4-26b-a4b-qat`, $0, about 9 s a call) is valid on 15 of 15 items but proposes no ops anywhere, so missing + extra equals the rules plan's (0.13 + 0) and Pip doesn't beat it. Switch to `on` after a Sonnet run that wins.
 15. **V6 for Pip** is an error only when Pip's revision makes an over-cap plan dearer. An empty diff on an over-cap rules plan (a $1.50 brief) is valid; the rules plan then stands, and the overrun card covers the spend.
-16. **`crew_replan`** is validated like Pip's revision but gets no repair turn; a refused one is posted as "Kept the default plan: <first error>" and still counts toward the 6.
+16. **`crew_replan`** is validated like Pip's revision but gets no repair turn; a refused one is logged as "Kept the default plan: <first error>" (the channel says "I kept the default plan.", §1.11) and still counts toward the 6.
 17. **The 20% card** is posted only where Pip is wired (`Crew.onPlanCard`); a bare `Crew` (scripts, the parity test) never holds tasks for it. A revision `by: "person"` (a change, a decline) skips it. Code expansions count (C5): the new art chains an expansion brings in wait for the card; the expanded tunes don't, since their placeholder already priced them. `approvedUsd` is the plan's p50 when G0 passes (by the person or by `auto`), or at Start on `/new`.
 18. **The overrun card** is Pip's existing "Raise the cap to $X" card with X = max(spent + the plan's remaining p90 rounded up to $0.50, cap + $0.50), once per cap value.
 19. **The conductor's prompt** (`assistant/conduct.md` v2) lists the live plan task ids while `crew_replan` is allowed.
@@ -376,7 +376,7 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
 
 - **Warnings** (not errors): the p90 total is over `cap − reserve`, the ETA is past the deadline, and `rough` estimates. They go onto the brief card or the revision card.
 - **Repair.** One repair turn: the same conversation plus the error list (`assistant.plan`, the same task id).
-- **Fallback.** If the repaired answer is still invalid, the revision is dropped. The channel gets `pip → crew brief: "Kept the default plan: <first error>"` and the rules plan runs.
+- **Fallback.** If the repaired answer is still invalid, the revision is dropped. The event log gets "Kept the default plan: <first error>", the channel `pip → crew brief: "I kept the default plan."`, and the rules plan runs.
 
 ### 1.6 Bounds
 
@@ -475,7 +475,7 @@ The P4 run's key went 401 mid-run and every step fell back to a stand-in without
   - sets `r.held`, `paused` (so the web shows the problem, not "running"), the status line "Waiting for you: <cause>" and `status.problem` `{ text, action, taskId, provider }`;
   - posts one Pip message in the thread (`Crew.onHold` → `Pip.holdNotice`): what happened, how many finished steps are kept, how many wait, where to fix it;
   - says it in the crew channel as a plain sentence from Pip (`pausedLine`): "Paused the crew: your Anthropic key was rejected." Every hold (a provider, Pip's `crew_hold`, too many plan changes, the budget question) reads this way, never "Hold: …";
-  - settles the cards that handed work to the run (`onRunEnd` with `waiting`).
+  - asks the person (§1.11): a question with Fix the key · Try again. The cards that handed work to the run keep waiting (v0.3: a hold no longer calls `onRunEnd`).
 
   Tasks already running finish, or hold the same way (only the first one speaks). Nothing new starts. The run stays alive.
 - **The hold lifts** when that provider's key is saved (`PUT /api/settings/providers/:id/key`), its test passes (`POST …/test`; not for a `credit` hold, since listing models needs no credit), the person presses Try again (`/crew/retry`) or Resume. `Crew.providerFixed(id)` lifts every run held on it, and resumes a project held on it whose run ended (a restart: `run({ resume: true })`, as `resumeInterrupted` does). The problem and the "Waiting for you" line clear, and the run goes on from where it stopped. Pip's own key failing inside a run holds it the same way; outside a run (`ask_pip` from a tool) it doesn't.
@@ -492,7 +492,7 @@ The P4 run's key went 401 mid-run and every step fell back to a stand-in without
   - The web's `problemOf` ignores a problem while the crew is running, except a held run's own (its line is "Waiting for you: …", live on the `status` event), and drops failed rows that ended before the current run started (`crew.runStartedAt`).
   - A held run's problem reads as a wait on you, not a stop (`isHeld`): `humanStatus` gives it the `needs` tone, so the simple view drops the red "Stopped ·" prefix and keeps the problem's button ("Fix the key"), and the Projects page files it under Needs you. Only a run that broke off reads Stopped.
 - **Needs you counts cards.** `openNeeds(p, { cards, plan })` adds the crew's open Pip cards (a revision card while `plan.pending.cardId` is it, the budget card while a run waits on it) and plan tasks in `waiting_person` that no open gate or question already stands for. `GET /api/projects`' `needsYou`, `state.needs` and the Projects line use it. The web counts live: open questions and gates, `plan.pending` (the revision card), `status.waiting === "budget"`, plus `state.needs.waiting` from the last fetch. Confirming a held card after its run ended starts the crew again.
-- **Pip reads live state.** Each turn's summary carries a "Crew now:" line from `Crew.snapshot` (running, idle or held and why, open and passed gates, open questions, a plan-change card, failed and fallback tasks, whether a review is still to come, the last export). A change card says "your note waits for the next review" only while a review is still to come.
+- **Pip reads live state.** Each turn's summary carries a "Crew now:" line from `Crew.snapshot` (running and what it works on, idle or held and why with the hold's question, open and passed gates, open questions, a plan-change card, failed and fallback tasks, whether a review is still to come, the last export). A change card's words come from the same snapshot (§1.11).
 
 
 ### 1.9 Revisions, gates and publish (v0.2, after the P4 run)
@@ -551,6 +551,34 @@ The P4 run's Pixel Artist spent 84% of its tokens thinking at `effort: high` (fo
   - The Director's storyboard asks for one with `"kind": "creature", "size": "16x16" | "16x24", "motion": "walk" | "fly" | "sit"`. The size and motion ride on the chain (`assetSize`, `motion`) into the spec, so `art-director/spec.md` rule 1 keeps them.
   - `templateFor(kind, {size, motion})` gives the template: idle0-1 always; move0-3 for walk or fly; perch0-1 for sit or fly (the engine's `motionFrames` names; a walking creature's `walk` uses `move0-3` when it has no `run` frames). The spec, the draws, the draw checker, the judge's write and the size-scaled estimate all read it.
 - **The critique sees only what the artist can fix.** `artistIssues` drops the standard checker's findings on system-owned fields (provenance, licence and the file's records); the P4 critique was given only "provenance is empty".
+
+### 1.11 One picture: Pip acts only through the run (v0.3, after the P5 run)
+
+The P5 run showed Pip and the crew out of step: Pip held the crew with no question ("Waiting for you…" with Needs you at 0), and a card confirmed during a hold left the crew parked until the person typed "go ahead". The run is now the single source of truth.
+
+- **A hold always asks.** `Crew.holdFor(p, r, why, { scenes?, action?, ref? })` is the one place `r.held` is set (a test reads the source to keep it so). Every hold goes through it: Pip's `crew_hold`, the 2-redo hold, the 40-revision stop, Pip's own failure to decide, and a provider failure (`holdRun`). It:
+  - sets `r.held`, `paused`, the line "Waiting for you: <why>" and Pip's channel sentence (`pausedLine`);
+  - opens a question `{ from: "pip", kind: "single", hold: true, timeoutSec: null }`, so it counts in `openNeeds` and shows in Needs you. `blocks` holds the scene ids it is about.
+
+  | The hold | Options (id: label) | Recommended |
+  |---|---|---|
+  | a provider (`fix_key`) | `fix_key`: Fix the key · `retry`: Try again | `fix_key` |
+  | a provider (`retry`: can't reach it) | `retry`: Try again · `fix_key`: Fix the key | `retry` |
+  | about scenes (a partial or blocked report, a blocker, the 2-redo hold) | `redo_director`: Redo with the Director · `accept`: Accept the look · `tell`: Tell Pip what to change | `redo_director` |
+  | anything else (too many plan changes, Pip couldn't decide) | `accept`: Carry on · `tell`: Tell Pip what to change | `accept` |
+
+- **Answering it acts.** The store asks the crew before it records a hold question's answer (`Workspace.onAnswer` → `Crew.holdAnswer`), over HTTP and MCP alike:
+  - `fix_key`, and `tell` with no words in `note`, can't act yet: the question stays open with the same id (the answer route returns it `open`). Saving a working key lifts the hold and withdraws it.
+  - `retry`, `accept`: the hold lifts and the run goes on.
+  - `redo_director`: a `by: "person"`, trigger `change` revision re-boards the scenes in `blocks` (`addReboard`), then the hold lifts.
+  - `tell` with a `note`: the note becomes the person's change (owner by `changeOwner`), which answers the hold (below).
+  - With no run in memory (a restart), the answer resumes the plan (`run({ resume: true })`).
+  - Any other lift (Resume, Try again, `providerFixed`, a change) withdraws the question (`OpenProject.withdraw`: status `withdrawn`).
+- **A change answers a hold.** `requestChange` on a held run writes the change revision now, merges it into the live run (`r.change`, `r.scope`, `state.change`), withdraws the hold's question, lifts the hold and returns `{ started: true, resumed: true }`. A provider hold keeps waiting for the key, with the change in its plan: `{ started: false, waiting: <the question> }`. `queued` stays only for a run that is really working. The run's end never starts another run for a note its own change took on.
+- **Pip's words come from the run.** `resultFor` and the change card read a fresh `Crew.snapshot` (`working`: the running tasks' labels, `holdQuestion`) and say exactly one of: the crew goes on now, queued behind <task>, or waiting for your answer to "<question>". A handoff card waits for the real revision: a hold doesn't settle it.
+- **Refusals stay inside the crew.** In the conductor's loop, `crew_escalate` is refused (as the tool's error) after a refused plan change until Pip has sent one corrected change. The escalation's recommended option is the cheapest that fits what's left of the cap: `optionKind` reads each option's words (new art · a re-plan · a redo · free: library art, keep, no), `Crew.optionUsd` prices it with `estimatePlanTask`, and `cheapestOption` picks it (the first on a tie; the cheapest when none fits). New art is never recommended over an option that covers it for less.
+- **The channel isn't a debug log.** Pip's shadow plan and a refused revision go to the event log (`log`, with the ops and errors); the channel gets one plain sentence: "I looked for a better plan and kept the default one (2 changes considered)." or "I kept the default plan."
+- **Reports read as sentences.** A member's report on the channel is what it did ("Found 6 problems in scenes 2 and 4."), with "Partly done: " or "Stuck: " in front only when it is partial or blocked; never "done: …". The Reviewer's report is its verdict (`reviewVerdict`).
 
 ---
 
