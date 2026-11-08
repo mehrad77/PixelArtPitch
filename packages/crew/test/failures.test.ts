@@ -441,7 +441,8 @@ test("retry over the crew: a fallback from an earlier run is redone, the revisio
   );
   const r = crew.retry(p, { taskId: row.id });
   assert.deepEqual(r, { started: true, resumed: false });
-  await wait(() => !crew.status(p).crew.running && reviews >= 2);
+  // the retry reruns the review and re-renders the export: about 4 s here, four times that on a CI runner
+  await wait(() => !crew.status(p).crew.running && reviews >= 2, 60_000);
   const plan = crew.planNow(p)!;
   assert.equal(plan.by, "person");
   assert.equal(plan.trigger, "retry");
