@@ -27,6 +27,14 @@ Read first: [RECIPES.md](../RECIPES.md) (or `recipe_list`), [BEHAVIORS.md](../BE
 8. Look at the 3 stills it returns (`stills`: start, middle, end) with `render_still`. Fix overlaps, clipped text and anything in the caption zone.
 9. Resolve the note (if any) with `note_resolve`, saying what changed.
 
+## Layers for what a recipe can't say (`scene_set_layers`, rare)
+Each is in [BEHAVIORS.md](../BEHAVIORS.md); add one only when the script asks for it.
+- **A creature that flies, then lands**: a `fly` behaviour (`path`, `speed`, `until`), then a `sit` from that time
+  (`x`, `y`, or `on` a layer). A sprite flies as if its art faces right: library art faces left, so give it `flip: true`.
+- **A lamp, lantern or window that glows**: a `glow` fx under the lamp and the characters (a lower `z`).
+- **A place's name** ("READING ROOM"): a `label` widget, a painted sign on posts. It is the scene's one text element.
+- **A roof**: the Director's `backdrop_rooftop` recipe draws it; perch a creature on a chimney with `sit`.
+
 ## Stop conditions
 - `scene_set_recipes` succeeds, the 3 stills show no blocker from REVIEW-RUBRICS §3, and the lints for the scene are clean.
 
