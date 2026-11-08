@@ -2,6 +2,44 @@
 
 Each release's section is also its GitHub release notes: the release job in `.github/workflows/ci.yml` publishes the section whose heading matches the tag.
 
+## v0.2.0 (unreleased)
+
+Fixes for everything the first long paid run showed: failures now stop and tell you, changes cost what they touch, and you decide how much the crew may spend and think.
+
+### When something goes wrong
+- **A rejected key, no credit or a model server that's down pauses the crew.** It no longer carries on with stand-ins. Pip tells you once what happened and what was kept, the status line names the cause, and "Fix the key" opens Settings at that provider. Saving the key, or a passing test, picks the run up where it stopped.
+- **"Redo what failed"** reruns only the failed steps and the ones that fell back to a stand-in, with the work after them.
+- **A wait is not a crash.** A plan change or the budget waiting on you shows as "Waiting for you", never as "stuck", and these cards count in Needs you.
+- **Pip reads the live state** each turn, so it no longer says the crew is still working after the export.
+
+### Changes, gates and the library
+- **A change redoes only what it touches.** Art you already have and questions you already answered stay as they are, so estimates stay honest.
+- **A rerun asks again at the gates it reopened.** An old approval no longer passes a new rough cut, and "Change something" is never taken as a pass.
+- **Publishing goes to your own library**, and you're asked once per asset. The repo's library is a read-only seed; `pap library promote <id>` moves an asset into it on purpose, after the standard and rights checks.
+- **Slash commands are never changes**, and Pip's plan changes are checked before they're accepted.
+
+### Cost and speed
+- **Highest thinking effort** (Settings → Defaults, default medium) caps how hard any model thinks.
+- **Drawings per new asset** (1–3, default 2, or per project). With one there's no judging step.
+- **Finish within the budget.** At 80% of the cap the first choice is "Finish within $X", which lists exactly what the crew leaves out. "Raise the cap" comes second.
+- **Creatures** (a moth, an owl) are drawn at their own size, walking, flying or perching, not as a walking hero.
+
+### The studio
+- **The script angles show in full** at the first pick, each with "Use this one".
+- **The simple view never sends you to Studio.** "Change something" opens a field on the card.
+- **The crew drawer is readable and live.** Each step is named ("Drew variant 2"), a working step shows "Thinking… about 4,200 tokens · 48 s", and Settings › Experimental can paint a drawing row by row as it streams.
+- **A plan change shows the old price struck through, the new total and the difference**, and names who re-planned.
+- **Pip's thread is chat bubbles**, newest first. "Ask Pip about this" is a clearable chip.
+- **Run report** in a project's ⋯ menu, and `pap report` on the command line: one page with who worked when, what it cost, what failed and what was drawn. No model calls.
+
+### Engine and library
+- **A rooftop backdrop, fly and sit behaviours, a glow for lamps and lanterns, and a sign-style label.** The new `rooftop` example uses them all.
+- **A common library pack of 35 assets**, authored in code with no model calls: ground, floors, walls, roof, water, sky, clouds, stars, plants, props, lights and fire, icons, a spinning coin and fx. Later runs cast them instead of paying to draw.
+- **The moth and the owl** from the paid run joined the library, and like every library character they face left.
+
+### For contributors
+- **The mock plays the paid run's situations** without any model calls: `?mock=1&journey=todo&scenario=revision|overrun|publish|keyfail`.
+
 ## v0.1.0 (2026-11-07)
 
 The first release: a local studio where a crew of AI agents makes short pixel-art pitch videos while you watch, steer and pick.
