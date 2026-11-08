@@ -13,8 +13,8 @@ import { checkAsset } from "@pap/engine/standard";
 import { contactSheet, libraryAssetDir, libraryFile, libraryIndex, publishAsset, renderSheet } from "@pap/render";
 import type { RoleT } from "@pap/schema";
 import {
+  type ChangeCategory,
   type ChannelMsg,
-  changeOwner,
   cutWords,
   type GateId,
   type Note,
@@ -49,12 +49,13 @@ import {
   TuneOut,
   templateFor,
 } from "./outputs.ts";
-import { CATALOGUE, stageOf, taskLabel } from "./plan/catalogue.ts";
+import { CATALOGUE, ROLE_LABEL, stageOf, taskLabel } from "./plan/catalogue.ts";
 import { envOf, estimatePlanTask, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
 import { Executor, type Outcome } from "./plan/executor.ts";
 import { logoIcon } from "./plan/import.ts";
 import { aboutText, type Instance, InstanceTracker } from "./plan/instances.ts";
 import { applyDiff, type PipRevisionResult, pipRevision, planPromptVars } from "./plan/pip.ts";
+import { routeChange } from "./plan/route.ts";
 import {
   addReboard,
   addRedo,
@@ -426,7 +427,44 @@ export type CrewSnapshot = {
   working: string[];
   /** the question the held crew waits on (its hold question) */
   holdQuestion?: string;
+  /** who a retry brings back: the roles of the failed and fallback tasks */
+  retryRoles: RoleT[];
 };
+/** what a change would do, before it runs (`Crew.previewChange`) */
+export type ChangePreview = {
+  /** the member it is routed to */
+  role: RoleT;
+  /** every member its revision brings in, the owner first among equals */
+  roles: RoleT[];
+  /** the scene ids it redoes */
+  scenes: string[];
+  usd: [number, number];
+  sec: [number, number];
+  /** one plain sentence: "The Director re-plans scenes 2 and 4, then the Animator tunes them." */
+  summary: string;
+};
+/** the preview's sentence for who does what; `nums` are the scenes' numbers */
+export function changeSummary(role: RoleT, nums: string[], assets: string[] = []): string {
+  const w = nums.length
+    ? `${nums.length === 1 ? "scene" : "scenes"} ${nums.length === 1 ? nums[0] : `${nums.slice(0, -1).join(", ")} and ${nums.at(-1)}`}`
+    : "the video";
+  const it = nums.length === 1 ? "it" : "them";
+  switch (role) {
+    case "director":
+      return `The Director re-plans ${w}, then the Animator tunes ${it}.`;
+    case "animator":
+      return `The Animator redoes ${w}.`;
+    case "writer":
+      return "The Writer rewrites the script, then the Director and the Animator redo the scenes.";
+    case "pixel-artist":
+      return `The Pixel artist redraws ${assets.length ? assets.join(" and ") : "the art"}, then the Animator tunes ${w}.`;
+    case "sound-designer":
+    case "mixer":
+      return "The Sound designer redoes the sound.";
+    default:
+      return `The ${ROLE_LABEL[role] ?? role} makes the change.`;
+  }
+}
 /** what a person's change did right away (crew_request_change's result): Pip's words come from it */
 export type ChangeResult = {
   /** the crew is working: the note waits for the next review */
@@ -485,6 +523,48 @@ export function reviewVerdict(
     ? ` in ${scenes.length === 1 ? "scene" : "scenes"} ${scenes.length === 1 ? scenes[0] : `${scenes.slice(0, -1).join(", ")} and ${scenes.at(-1)}`}`
     : "";
   return `Found ${n} problem${n === 1 ? "" : "s"}${where}.`;
+}
+/** a scene a gate item or a person's words name, by its id or its title */
+function sceneNamed(p: OpenProject, text: string): string | undefined {
+  const low = text.toLowerCase();
+  const scenes = p.doc().scenes;
+  return (
+    scenes.find((s) => new RegExp(`\\b${s.id.replace(/[^a-z0-9_]/gi, "")}\\b`, "i").test(text))?.id ??
+    scenes.find((s) => s.title && s.title.length > 2 && low.includes(s.title.toLowerCase()))?.id
+  );
+}
+/**
+ * The person's notes from a gate's "Change something": routed by their words (routeChange, the gate's owner as the
+ * fallback). Ticked items that name scenes give one note per scene (`target.scene`); the reasons go with each.
+ */
+export function gateNotes(
+  p: OpenProject,
+  gate: GateId,
+  v: { reasons?: string[]; items?: string[] },
+): { target: { scene?: string }; text: string; assignee: RoleT }[] {
+  const reasons = (v.reasons ?? []).map((x) => x.trim()).filter(Boolean);
+  const items = (v.items ?? []).map((x) => x.trim()).filter(Boolean);
+  const fallback = GATE_OWNER[gate] ?? "editor";
+  const byScene = new Map<string, string[]>();
+  const loose: string[] = [];
+  for (const it of items) {
+    const sc = sceneNamed(p, it);
+    if (sc) byScene.set(sc, [...(byScene.get(sc) ?? []), it]);
+    else loose.push(it);
+  }
+  const out: { target: { scene?: string }; text: string; assignee: RoleT }[] = [];
+  for (const [scene, its] of byScene) {
+    const text = [...reasons, ...its].join("; ").slice(0, 2000);
+    out.push({ target: { scene }, text, assignee: routeChange({ text, target: { scene } }, fallback) });
+  }
+  if (loose.length || (!byScene.size && reasons.length)) {
+    const text = [...reasons, ...loose].join("; ").slice(0, 2000);
+    // words that name a scene ("a bit slower in A grind") are about that scene
+    const scene = byScene.size ? undefined : sceneNamed(p, text);
+    const target = scene ? { scene } : {};
+    out.push({ target, text, assignee: routeChange({ text, target }, fallback) });
+  }
+  return out;
 }
 /** the scenes a trigger is about: a report's scene, a blocker's scenes (only the project's own) */
 function scenesOf(t: Trigger | undefined, p: OpenProject): string[] {
@@ -894,6 +974,11 @@ export class Crew {
     };
     let changed = false;
     let sig: { sig: string; had: Set<string> } | null = null;
+    // a re-plan that covers the person's open notes on its scenes claims them: they close with it
+    const notesOn = (scenes: string[]) =>
+      p.state.notes
+        .filter((n) => n.by === "user" && n.status === "open" && n.target.scene && scenes.includes(n.target.scene))
+        .map((n) => n.id);
     for (const d of ds) {
       if (planChanging(d)) {
         const why = changed ? "one plan change per trigger" : this.checkChange(p, r, d, { replan: false, by: "code" });
@@ -929,8 +1014,11 @@ export class Crew {
           });
           this.briefs.set(`${p.id}:director`, [...(this.briefs.get(`${p.id}:director`) ?? []), m]);
           const why = `Pip sent ${ok.join(", ")} back to the Director: ${d.direction}`;
-          const res = this.planRevise(p, r, { by: "pip", trigger: "conductor", reason: why }, (ts, ctx) =>
-            addReboard(ts, ok, ctx, { after: o.after, reason: why.slice(0, 200) }),
+          const res = this.planRevise(
+            p,
+            r,
+            { by: "pip", trigger: "conductor", reason: why, notes: notesOn(ok) },
+            (ts, ctx) => addReboard(ts, ok, ctx, { after: o.after, reason: why.slice(0, 200) }),
           );
           added.push(...(res?.added.filter((id) => res.tasks.find((t) => t.id === id)?.kind === "scene.tune") ?? []));
         } else {
@@ -943,8 +1031,11 @@ export class Crew {
           });
           this.briefs.set(`${p.id}:animator`, [...(this.briefs.get(`${p.id}:animator`) ?? []), m]);
           const why = `Pip brought the Animator back for ${ok.join(", ")}: ${d.why}`;
-          const res = this.planRevise(p, r, { by: "pip", trigger: "conductor", reason: why }, (ts, ctx) =>
-            addRedo(ts, ok, ctx, { after: o.after, reason: why.slice(0, 200) }),
+          const res = this.planRevise(
+            p,
+            r,
+            { by: "pip", trigger: "conductor", reason: why, notes: notesOn(ok) },
+            (ts, ctx) => addRedo(ts, ok, ctx, { after: o.after, reason: why.slice(0, 200) }),
           );
           added.push(...(res?.added ?? []));
         }
@@ -1178,7 +1269,13 @@ export class Crew {
   private planRevise(
     p: OpenProject,
     r: Run | null,
-    rv: { by: PlanRevisionT["by"]; trigger: PlanRevisionT["trigger"]; reason: string },
+    rv: {
+      by: PlanRevisionT["by"];
+      trigger: PlanRevisionT["trigger"];
+      reason: string;
+      /** the person's notes this revision applies: they close when the tasks it adds finish (§1.12) */
+      notes?: string[];
+    },
     f: (tasks: PlanTaskT[], ctx: RulesCtx) => { tasks: PlanTaskT[]; ops: PlanOpT[]; reason?: string } | null,
   ): { added: string[]; tasks: PlanTaskT[] } | null {
     const plan = this.ensurePlan(p, r);
@@ -1190,16 +1287,27 @@ export class Crew {
       if (r.revisions > MAX_REVISIONS_PER_RUN && !r.held)
         this.holdFor(p, r, `the plan changed more than ${MAX_REVISIONS_PER_RUN} times in one run`);
     }
+    const added = out.ops.flatMap((o) => (o.op === "add" ? [o.task] : []));
+    // only notes no live revision has claimed yet: one note, one revision that closes it
+    const taken = new Set((plan.claims ?? []).flatMap((c) => c.notes));
+    const notes = (rv.notes ?? []).filter((id) => !taken.has(id));
+    const { notes: _n, ...rec } = rv;
     const next = revise(
       p,
       plan,
-      { ...rv, reason: out.reason ?? rv.reason, ops: out.ops, tasks: out.tasks, run: r?.id ?? plan.run },
+      {
+        ...rec,
+        reason: out.reason ?? rv.reason,
+        ops: out.ops,
+        tasks: out.tasks,
+        run: r?.id ?? plan.run,
+        ...(notes.length ? { claim: { notes, tasks: added.filter((id) => out.tasks.some((t) => t.id === id)) } } : {}),
+      },
       ctx.env,
       this.deps.gateway.spent(p.id).spentUsd,
       this.pipView(p),
     );
     this.plans.set(p.id, next);
-    const added = out.ops.flatMap((o) => (o.op === "add" ? [o.task] : []));
     this.overTwenty(p, next, plan, rv, added);
     // a person's change or retry is consent to its cost, up to the top of the range its card showed: later code and
     // Pip revisions compare against that (§1.6)
@@ -1207,8 +1315,49 @@ export class Crew {
       next.approvedUsd = next.estimate.usd[1];
       touch(p, next, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
     }
+    this.closeClaims(p);
     r?.exec?.wake();
     return { added, tasks: next.tasks };
+  }
+  /**
+   * The one place a person's note is closed for good (§1.12): when every task the revision that claimed it added has
+   * finished (done or skipped), the note is done. A failed task keeps it open for the retry.
+   */
+  private closeClaims(p: OpenProject) {
+    const plan = this.planNow(p);
+    if (!plan?.claims?.length) return;
+    const byId = new Map(plan.tasks.map((t) => [t.id, t]));
+    const finished = (id: string) => {
+      const st = byId.get(id)?.status;
+      return !st || st === "done" || st === "skipped" || st === "dropped";
+    };
+    const left = plan.claims.filter((c) => !c.tasks.every(finished));
+    if (left.length === plan.claims.length) return;
+    for (const c of plan.claims.filter((x) => !left.includes(x)))
+      for (const id of c.notes) {
+        const n = p.state.notes.find((x) => x.id === id);
+        if (n && (n.status === "open" || n.status === "picked_up"))
+          p.updateNote(id, { status: "done", reason: n.reason ?? `done in plan revision ${c.rev}` });
+      }
+    if (left.length) plan.claims = left;
+    else delete plan.claims;
+    touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
+  }
+  /** the notes a live revision has claimed (they close with it, never start another run) */
+  private claimed(p: OpenProject): Set<string> {
+    return new Set((this.planNow(p)?.claims ?? []).flatMap((c) => c.notes));
+  }
+  /**
+   * A handler applied these notes: the crew's own (a Reviewer's) are done; a person's that a revision claimed is
+   * picked up (the revision closes it, closeClaims); a person's no revision claimed is done here.
+   */
+  private handled(p: OpenProject, notes: Note[], reason: string) {
+    const claimed = this.claimed(p);
+    for (const n of notes)
+      p.updateNote(n.id, {
+        status: n.by === "user" && claimed.has(n.id) ? "picked_up" : "done",
+        reason: reason.slice(0, 300),
+      });
   }
   /**
    * The 20% rule (§1.6): a revision whose p50 total is past 1.2 × what the person approved becomes a revision card;
@@ -1478,6 +1627,8 @@ export class Crew {
     else if (status !== "done") delete t.outcome;
     t.taskIds = [...new Set([...t.taskIds, ...p.state.tasks.filter((x) => x.planTask === id).map((x) => x.id)])];
     touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
+    // the revision-complete hook: a revision whose tasks all finished closes the notes it applied
+    if (status === "done" || status === "skipped") this.closeClaims(p);
   }
   /** the plan task the next rows of a handler belong to */
   private ptOf(pt: PlanTaskT | null | undefined) {
@@ -1554,6 +1705,13 @@ export class Crew {
         !!run && tasks.some((t) => t.kind === "review.final" && (t.status === "pending" || t.status === "ready")),
       ...(exp?.endedAt ? { exportedAt: exp.endedAt } : {}),
       working: run ? tasks.filter((t) => t.status === "running").map(label) : [],
+      retryRoles: [
+        ...new Set(
+          this.retryTargets(p)
+            .map((t) => t.role)
+            .filter((x) => x !== "person"),
+        ),
+      ] as RoleT[],
       ...(() => {
         const q = p.state.questions.find((x) => x.hold && x.status === "open");
         return q ? { holdQuestion: q.question } : {};
@@ -1708,7 +1866,7 @@ export class Crew {
         target,
         category: "other",
         text: note.slice(0, 1000),
-        assignee: changeOwner(target, "other", note),
+        assignee: routeChange({ text: note, target }),
         by: "user",
       });
       if (!r) {
@@ -1911,8 +2069,11 @@ export class Crew {
     p.state.change = { ...change, startedAt: new Date().toISOString() };
     p.saveState();
     const what = notes[0]?.text.slice(0, 160) ?? "a change";
-    this.planRevise(p, null, { by: "person", trigger: "change", reason: `Your change: ${what}` }, (ts, ctx) =>
-      changeRevision(ts, change, from, ctx, p.state.sceneStatus, this.keepOf(p, change.assets)),
+    this.planRevise(
+      p,
+      null,
+      { by: "person", trigger: "change", reason: `Your change: ${what}`, notes: notes.map((n) => n.id) },
+      (ts, ctx) => changeRevision(ts, change, from, ctx, p.state.sceneStatus, this.keepOf(p, change.assets)),
     );
     return { from, change };
   }
@@ -1951,6 +2112,86 @@ export class Crew {
     const now = planEstimate(out.tasks, spent, env).usd;
     const r = (x: number) => Math.max(0, Math.round(x * 10000) / 10000);
     return { usd: [r(now[0] - was[0]), r(now[1] - was[1])], toUsd: now };
+  }
+  /**
+   * `POST /api/p/:id/changes/preview` (§1.12): who a change would go to and what it would cost, before it runs. The
+   * same router as the real change (gateNotes / routeChange), its revision on a copy of the plan; nothing is written.
+   */
+  previewChange(
+    p: OpenProject,
+    b: { gate?: GateId; text: string; items?: string[]; scene?: string; category?: ChangeCategory },
+  ): ChangePreview {
+    const text = b.text.trim();
+    const named = b.scene ?? sceneNamed(p, text);
+    const routed = b.gate
+      ? gateNotes(p, b.gate, { reasons: text ? [text] : [], items: b.items })
+      : text
+        ? [
+            {
+              target: named ? { scene: named } : {},
+              text,
+              assignee: routeChange({
+                text,
+                ...(named ? { target: { scene: named } } : {}),
+                ...(b.category ? { category: b.category } : {}),
+              }),
+            },
+          ]
+        : [];
+    const notes = (
+      routed.length
+        ? routed
+        : [{ target: {}, text, assignee: (b.gate ? GATE_OWNER[b.gate] : undefined) ?? ("animator" as RoleT) }]
+    ).map((n, i) => ({ ...n, id: `preview${i}` }) as unknown as Note);
+    const ctx = this.rulesCtx(p, (this.planNow(p)?.rev ?? 0) + 1);
+    const before = this.planNow(p)?.tasks ?? startPlan(p.doc(), p.state, ctx);
+    let from = notes
+      .map((n) => OWNER_STAGE[n.assignee] ?? "review")
+      .reduce((a, x) => (STAGES.indexOf(x) < STAGES.indexOf(a) ? x : a));
+    if (STAGES.indexOf(p.state.stage) < STAGES.indexOf(from)) from = p.state.stage;
+    const ss = structuredClone(p.state.sceneStatus);
+    for (const n of notes)
+      for (const id of n.target.scene ? [n.target.scene] : n.assignee === "animator" ? Object.keys(ss) : [])
+        if (ss[id]) ss[id] = { version: "animatic", state: "stale" };
+    const change = planChange(p, notes, (s) => this.sceneAssets(p, s));
+    const out = changeRevision(
+      before.map((t) => ({ ...t })),
+      change,
+      from,
+      ctx,
+      ss,
+      this.keepOf(p, change.assets),
+    );
+    const env = this.planEnv(p);
+    const spent = this.deps.gateway.spent(p.id).spentUsd;
+    const was = planEstimate(before, spent, env);
+    const now = planEstimate(out.tasks, spent, env);
+    const d0 = (a: number, b2: number) => Math.max(0, Math.round((a - b2) * 10000) / 10000);
+    const liveBefore = new Set(before.filter(isLive).map((t) => t.id));
+    const order = ["writer", "director", "art-director", "pixel-artist", "animator", "sound-designer", "mixer"];
+    const roles = [
+      ...new Set(
+        out.tasks
+          .filter((t) => isLive(t) && !liveBefore.has(t.id) && t.role !== "person" && t.kind !== "gate")
+          .map((t) => t.role as RoleT),
+      ),
+    ].sort((a, b2) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b2) + 1 || 99));
+    const role = notes[0].assignee as RoleT;
+    if (!roles.includes(role)) roles.unshift(role);
+    const decl = p.doc().scenes.filter((s) => s.kind === "decl" && !isEndCard(s as any));
+    const scenes = change.reboard ?? change.scope ?? (role === "animator" ? decl.map((s) => s.id) : []);
+    return {
+      role,
+      roles,
+      scenes,
+      usd: [d0(now.usd[0], was.usd[0]), d0(now.usd[1], was.usd[1])],
+      sec: [Math.round(d0(now.sec[0], was.sec[0])), Math.round(d0(now.sec[1], was.sec[1]))],
+      summary: changeSummary(
+        role,
+        scenes.map((id) => sceneWord(p, id).replace(/^scene /, "")),
+        change.assets,
+      ),
+    };
   }
   /**
    * What a rerun keeps as it is (§1.9): the chain and rights OK of art the project already has as itself (a stand-in
@@ -2175,8 +2416,8 @@ export class Crew {
       const mine = p.state.notes.filter((n) => n.status === "open" && n.by === "user" && n.createdAt >= r.startedAt);
       for (const n of mine.filter((x) => !OWNER_STAGE[x.assignee] || x.text.trim().startsWith("/")))
         p.updateNote(n.id, { status: "declined", reason: "no crew stage owns this note" });
-      // a note this run's change took on is its own, never a reason for another run
-      const claimed = new Set(r.change?.notes ?? []);
+      // a note this run's change or any live revision took on is claimed: never a reason for another run (§1.12)
+      const claimed = new Set([...(r.change?.notes ?? []), ...this.claimed(p)]);
       const left = p.state.notes.filter((n) => mine.includes(n) && n.status === "open" && !claimed.has(n.id));
       if ((finished || r.changesAt) && left.length && !p.state.paused) {
         const { from, change } = this.startChange(p, left);
@@ -2789,8 +3030,10 @@ export class Crew {
       .filter(Boolean)
       .join("; ")
       .slice(0, 2000);
-    const owner = GATE_OWNER[gate] ?? "editor";
-    if (text && !text.startsWith("/")) p.addNote({ target: {}, category: "other", text, assignee: owner, by: "user" });
+    // one router (§1.12): the words pick the owner, the gate's owner only when they don't; each ticked item that
+    // names a scene ("Still wrong in the moth…") gives its note that scene
+    if (text && !text.startsWith("/"))
+      for (const n of gateNotes(p, gate, v)) p.addNote({ ...n, category: "other", by: "user" });
     r.changesAt = gate;
     p.setStatus({
       line: text ? "The crew is making your change" : `Waiting for you: what to change in ${GATE_WORDS[gate] ?? gate}`,
@@ -2961,8 +3204,11 @@ export class Crew {
           model: this.modelOf(p, pt),
         });
       }
-      for (const n of p.state.notes.filter((x) => x.assignee === "writer" && x.status === "open"))
-        p.updateNote(n.id, { status: "done", reason: "the Writer rewrote the script with it" });
+      this.handled(
+        p,
+        p.state.notes.filter((x) => x.assignee === "writer" && x.status === "open"),
+        "the Writer rewrote the script with it",
+      );
       const { angles } = out.data;
       const recommended = Math.min(out.data.recommended, angles.length - 1);
       this.done(p, t, {
@@ -3163,8 +3409,11 @@ export class Crew {
           },
         );
       }
-      for (const n of p.state.notes.filter((x) => x.assignee === "director" && x.status === "open"))
-        p.updateNote(n.id, { status: "done", reason: "the Director re-planned the scenes with it" });
+      this.handled(
+        p,
+        p.state.notes.filter((x) => x.assignee === "director" && x.status === "open"),
+        "the Director re-planned the scenes with it",
+      );
       await this.applyBoard(p, t, board);
       this.done(p, t, {
         summary: board.scenes.map((s) => `${s.title} (${s.recipes.map((x) => x.id).join(", ")})`).join(" → "),
@@ -3460,9 +3709,11 @@ export class Crew {
           `The Director's plan for ${ids.filter((x) => !good.some((g) => g.id === x)).join(", ")} didn't fit the menu, so those scenes stayed as they were.`,
         );
       // a note with no scene is done here; a scene's note goes on to that scene's Animator
-      for (const n of notes)
-        if (!n.target.scene)
-          p.updateNote(n.id, { status: "done", reason: approx || `re-planned ${good.map((x) => x.id).join(", ")}` });
+      this.handled(
+        p,
+        notes.filter((n) => !n.target.scene),
+        approx || `re-planned ${good.map((x) => x.id).join(", ")}`,
+      );
       p.setGate("g2_animatic", {
         status: "passed",
         verdict: { by: "producer", verdict: "approve", note: "a person's change", at: new Date().toISOString() } as any,
@@ -4174,11 +4425,7 @@ export class Crew {
             text: `${s.id}: kept the scene as it was (${res.error.message})`,
           });
       }
-      for (const n of notes)
-        p.updateNote(n.id, {
-          status: "done",
-          reason: data.changes.map((c) => c.why).join("; ") || "checked; no change needed",
-        });
+      this.handled(p, notes, data.changes.map((c) => c.why).join("; ") || "checked; no change needed");
       this.done(p, t, {
         summary: data.changes.length ? data.changes.map((c) => c.why).join("; ") : "no changes needed",
       });
@@ -4297,10 +4544,18 @@ export class Crew {
     if (asked.length) {
       for (const s of asked) if (p.state.sceneStatus[s]) p.setSceneStatus(s, { version: "animatic", state: "stale" });
       const why = `your change came in while the crew worked: ${asked.join(", ")} first`;
+      const askedNotes = p.state.notes
+        .filter((n) => n.assignee === "animator" && n.status === "open" && n.by === "user" && n.target.scene)
+        .map((n) => n.id);
       this.planRevise(
         p,
         r,
-        { by: "person", trigger: "change", reason: `Redoing ${asked.join(", ")} for your change before the review.` },
+        {
+          by: "person",
+          trigger: "change",
+          reason: `Redoing ${asked.join(", ")} for your change before the review.`,
+          notes: askedNotes,
+        },
         (ts, ctx) => {
           const red = addRedo(ts, asked, ctx, { reason: why.slice(0, 200) });
           const again = rerun(red.tasks, [pt.id], ctx.rev, { reason: why.slice(0, 200) });
@@ -4415,6 +4670,18 @@ export class Crew {
   /** G3: the rough cut; in a person's change run, blockers left on its scenes stop the crew here for the person */
   private async rough(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const left = r.change ? this.report(p, r, "waiting").openBlockers : [];
+    // "Let the crew run" (auto): leftover blockers are logged and the cut goes on to the export, no G3 (§1.12)
+    if (left.length && p.doc().brief.involvement === "auto") {
+      p.emit("log", {
+        level: "info",
+        text: `the Reviewer still sees ${left.length} problem${left.length === 1 ? "" : "s"} in the changed scenes; exporting without asking (auto): ${left
+          .map((b) => `${b.scene}: ${b.text}`)
+          .join(" | ")
+          .slice(0, 600)}`,
+      });
+      await this.atGate(p, r, pt, "g3_rough", [{ label: "Rough cut", ref: "out/contact.png" }]);
+      return { status: "done" };
+    }
     if (left.length) {
       const g = "g3_rough";
       p.setGate(g, {

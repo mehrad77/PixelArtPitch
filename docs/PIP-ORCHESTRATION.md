@@ -524,7 +524,7 @@ The P4 run re-added whole chains on every change (the estimate grew to $12.50), 
 - **Gates on a rerun.**
   - Every rerun path locks the gates at and after the stage it reopens (`relockFrom`): a change (from `reopen()`), a retry (from the earliest redone task's stage) and a run from a stage. A resume never relocks. A copied gate then asks again: at `key`, a rerun's G3 always asks the person, and only its "Looks good" passes G4 with it (D2).
   - `crew.gate()` takes a verdict only for a gate that is open or that a run waits on; anything else is `409 gate_not_open` (on a gate left at `changes`, its fix says to tell Pip what to change, or run the crew again to be asked).
-  - `changes` is never a pass (`atGate`, `rough()`): its reasons and items become one note of the person's to the gate's owner (G0 producer, G1 writer, G2 director, G3 animator, G4 editor), the run ends at the gate (its task back to `pending`), and the run's end starts that change, which asks at the gate again. With no reasons, the line says "Waiting for you: what to change in the rough cut" until the person says it (Pip's field).
+  - `changes` is never a pass (`atGate`, `rough()`): its reasons and items become the person's notes, routed by their words (`gateNotes`, §1.12; the gate's owner, G0 producer, G1 writer, G2 director, G3 animator, G4 editor, only as the fallback), the run ends at the gate (its task back to `pending`), and the run's end starts that change, which asks at the gate again. With no reasons, the line says "Waiting for you: what to change in the rough cut" until the person says it (Pip's field).
 - **Publish is safe and asked once.**
   - The library has two layers (`@pap/render` `library.ts`): the repo's `library/` is a read-only seed; the person's own library is `settings.paths.library` (default `<appData>/library`; the server sets it with `setUserLibrary`). `library_search`, `library_get`, `cast_asset`, rendering, Pip's plan prompt, the Director's library list and `GET /api/library` read both; the person's wins on an id both have.
   - `lib.publish` writes only to the person's library (`publishAsset`), never over an id either library has, never into the seed.
@@ -578,7 +578,25 @@ The P5 run showed Pip and the crew out of step: Pip held the crew with no questi
 - **Pip's words come from the run.** `resultFor` and the change card read a fresh `Crew.snapshot` (`working`: the running tasks' labels, `holdQuestion`) and say exactly one of: the crew goes on now, queued behind <task>, or waiting for your answer to "<question>". A handoff card waits for the real revision: a hold doesn't settle it.
 - **Refusals stay inside the crew.** In the conductor's loop, `crew_escalate` is refused (as the tool's error) after a refused plan change until Pip has sent one corrected change. The escalation's recommended option is the cheapest that fits what's left of the cap: `optionKind` reads each option's words (new art · a re-plan · a redo · free: library art, keep, no), `Crew.optionUsd` prices it with `estimatePlanTask`, and `cheapestOption` picks it (the first on a tie; the cheapest when none fits). New art is never recommended over an option that covers it for less.
 - **The channel isn't a debug log.** Pip's shadow plan and a refused revision go to the event log (`log`, with the ops and errors); the channel gets one plain sentence: "I looked for a better plan and kept the default one (2 changes considered)." or "I kept the default plan."
-- **Reports read as sentences.** A member's report on the channel is what it did ("Found 6 problems in scenes 2 and 4."), with "Partly done: " or "Stuck: " in front only when it is partial or blocked; never "done: …". The Reviewer's report is its verdict (`reviewVerdict`).
+- **Status shows the verdict.** A member's report on the channel is what it did ("Found 6 problems in scenes 2 and 4."), with "Partly done: " or "Stuck: " in front only when it is partial or blocked; never "done: …". The Reviewer's report is its verdict (`reviewVerdict`).
+
+### 1.12 One door for changes; notes close when applied (v0.3, after the P5 run)
+
+In P5, G3's "Change something" always went to the Animator while Pip sent the same words to the Director, and a note the Director had already applied ran again after the export and made a third cut.
+
+- **One router.** `routeChange(note, fallback?)` (`plan/route.ts`) is used by Pip's `crew_request_change` (the tool gets it from `wireCrew`, Pip's card too), a gate's "Change something" (`gateNotes`) and the hold's "Tell Pip" answer. In order:
+  - a drawn asset (`target.asset`) → Pixel artist; `category: "sound"` → Sound designer; `story` → Director; `text` → Writer (a cue, or no scene);
+  - words about cast, staging, recipes, backdrop, text cards or the end card ("cast", "joins", "sits", "fly", "glow", "lantern", "end card", "add a friend") → Director, who re-boards;
+  - words about timing or motion inside a scene ("slower", "bigger", "earlier") → Animator;
+  - otherwise the fallback (a gate's `GATE_OWNER`), else `changeOwner`.
+- **A gate's notes.** `gateNotes(p, gate, { reasons, items })`: each ticked item that names a scene (by id or title, "Still wrong in quest: …") gives one note with `target.scene`, the reasons included; the rest is one note, scoped to a scene its words name.
+- **Preview before it runs.** `Crew.previewChange(p, { gate?, text, items? })` builds the same notes, runs `planChange` + `changeRevision` on a copy of the plan and returns `{ role, roles, scenes, usd, sec, summary }` (the cost and time the change adds, the members its revision brings in, one sentence: "The Director re-plans scenes 2 and 4, then the Animator tunes them."). Nothing is written. It backs `POST /api/p/:id/changes/preview` (the gate's estimate) and the faces on Pip's change card. The retry card's faces are the roles of what it redoes (`snapshot.retryRoles`).
+- **Notes close with the revision that applies them.**
+  - `planRevise(…, { notes })` claims notes: the revision records `noteIds`, and `plan.claims` keeps `{ rev, notes, tasks }` (the tasks it added). A note one live revision claimed isn't claimed again.
+  - Who claims: a person's change (`startChange`), the review's redo of changes made mid-run, and a conductor re-plan (`crew_redo`, `crew_reboard`) over the person's open notes on its scenes.
+  - `closeClaims` runs when a task ends done or skipped (the executor's status hook) and after each revision: when every task of a claim is done, skipped or dropped, its notes become `done`. A failed task keeps them open for the retry. This is the one place a person's note closes for good; the handlers only mark a claimed note `picked_up` (`handled`), and close the crew's own notes and unclaimed ones as before.
+  - The run-end re-trigger starts a change only for open notes of the person's made during the run that no revision claimed (and not the run's own change).
+- **Auto skips the leftover G3.** At `involvement: "auto"`, `rough()` logs the Reviewer's leftover blockers on the changed scenes and passes G3 (and the export follows). At `key` and `every` it asks, as before.
 
 ---
 

@@ -645,6 +645,11 @@ test("a story change: the Director re-boards only that scene, casts from the lib
 
 test("blockers left on the changed scene stop the crew at the rough cut, and the card says what's still wrong", async () => {
   const w = await changeProject();
+  // v0.3: at "auto" leftover blockers export without asking (holds.test.ts); "key" still asks at the rough cut
+  await w.p.patch([{ op: "replace", path: "/brief/involvement", value: "key" }], {
+    reason: "test: the rough cut asks",
+    author: { kind: "user" },
+  });
   let reviews = 0;
   answer = (req) => {
     const sys = req.system ?? "";
@@ -883,7 +888,8 @@ test("channel: a blocked report gets at most 2 redo rounds, then Pip holds and t
   const ctx = { author: { kind: "user" as const, via: "pip" }, project: w.p, workspace: w.workspace, emit: () => {} };
   const res = await w.registry.call(
     "crew_request_change",
-    { text: "make the hero fly", scene: "1", category: "art" },
+    // v0.3: "fly" is staging now (a recipe param, the Director's); a motion note stays the Animator's
+    { text: "make the hero jump higher", scene: "1", category: "art" },
     ctx,
   );
   assert.ok(res.ok);

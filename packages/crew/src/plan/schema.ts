@@ -124,6 +124,8 @@ export const PlanRevision = z.object({
   estimate: PlanEstimate,
   /** the crew run it belongs to */
   run: z.string(),
+  /** the person's notes this revision applies: they close when its tasks finish (§1.12) */
+  noteIds: z.array(z.string()).optional(),
 });
 export type PlanRevisionT = z.infer<typeof PlanRevision>;
 
@@ -133,6 +135,8 @@ export const ProductionPlan = PlanRevision.extend({
   approvedUsd: z.number().nullable(),
   runs: z.array(z.object({ id: z.string(), startedAt: z.string(), pipProposals: z.number().int() })),
   pending: z.object({ rev: z.number(), cardId: z.string(), tasks: z.array(z.string()) }).optional(),
+  /** notes a revision took on and the tasks it added: when they all finish, the notes are done (§1.12) */
+  claims: z.array(z.object({ rev: z.number(), notes: z.array(z.string()), tasks: z.array(z.string()) })).optional(),
 });
 export type ProductionPlanT = z.infer<typeof ProductionPlan>;
 

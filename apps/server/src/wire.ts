@@ -17,6 +17,7 @@ import {
   withProbe,
 } from "@pap/crew/llm/index";
 import { Crew } from "@pap/crew/orchestrator";
+import { routeChange } from "@pap/crew/plan/route";
 import { setUserLibrary } from "@pap/render";
 import {
   crewRequestChangeTool,
@@ -190,7 +191,10 @@ export async function wireCrew(deps: {
   // Pip's tools come after the crew tools: one needs the Writer's model, the other the orchestrator
   deps.registry.add(
     subtitlesTranslateTool(translator(gateway)),
-    crewRequestChangeTool((p, note, extra) => crew.requestChange(p, note, extra)),
+    crewRequestChangeTool(
+      (p, note, extra) => crew.requestChange(p, note, extra),
+      (n) => routeChange(n),
+    ),
   );
   const pip = new Pip({
     workspace: deps.workspace,
@@ -209,6 +213,8 @@ export async function wireCrew(deps: {
     },
     crewSnapshot: (p) => crew.snapshot(p),
     changeCost: (p, c) => crew.changeCost(p, c),
+    // a project the plan never ran keeps the card's own faces
+    changePreview: (p, b) => (crew.planNow(p) ? crew.previewChange(p, b) : null),
   });
   // a held run (a rejected key, no credit, no connection): Pip says so once in the thread
   crew.onHold = (p, h) => {

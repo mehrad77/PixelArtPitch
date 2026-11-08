@@ -10,7 +10,6 @@ import { dirname, join } from "node:path";
 import { Role, type RoleT } from "@pap/schema";
 import {
   type ChangeCategory,
-  changeOwner,
   languageName,
   noteOwner,
   type OpenProject,
@@ -32,6 +31,7 @@ import { estimateInputTokens } from "./llm/budget.ts";
 import { costUsd, priceFor } from "./llm/prices.ts";
 import { BudgetError, type ChatMessage, type ContentPart, type ToolSpec } from "./llm/types.ts";
 import { type CrewSnapshot, type RunReport, STAGE_LINE } from "./orchestrator.ts";
+import { routeChange } from "./plan/route.ts";
 import { fill, card as promptCard } from "./prompts.ts";
 
 // ---------------------------------------------------------------- the contract with the UI
@@ -268,6 +268,11 @@ export type PipDeps = {
     p: OpenProject,
     c: { assignee: string; scene?: string; asset?: string },
   ) => { usd: [number, number]; toUsd: [number, number] } | null;
+  /** the change's route and the members its revision brings in (Crew.previewChange): the card's faces */
+  changePreview?: (
+    p: OpenProject,
+    b: { text: string; scene?: string; category?: ChangeCategory },
+  ) => { role: RoleT; roles: RoleT[]; summary: string } | null;
 };
 
 /** the scope words the web once prefilled ("About the moth: "), stripped before slash commands are matched */
@@ -1526,11 +1531,12 @@ export class Pip {
           scene = hit.id;
           input.scene = hit.id;
         }
-        const owner = changeOwner(
-          { scene, cue: input.cue as string | undefined },
-          (input.category as ChangeCategory | undefined) ?? "other",
-          String(input.text ?? ""),
-        );
+        // the one router: the same words reach the same member as at a gate (routeChange)
+        const owner = routeChange({
+          text: String(input.text ?? ""),
+          target: { ...(scene ? { scene } : {}), ...(input.cue ? { cue: String(input.cue) } : {}) },
+          category: (input.category as ChangeCategory | undefined) ?? "other",
+        });
         const stage = OWNER_STAGE[owner] ?? "review";
         const k = scene ? d.scenes.findIndex((s) => s.id === scene) : -1;
         // which scenes the change redoes: one, or (a whole-video story change) every scene but the end card
@@ -1581,8 +1587,15 @@ export class Pip {
               ...(also as string[]),
               "The crew checks the cut and exports a new video; the current one is replaced.",
             ];
-        const who: RoleT[] =
-          owner === "director"
+        // the card's faces are the members the change's revision really brings in (a re-plan lists the Director)
+        const preview = this.deps.changePreview?.(p, {
+          text: String(input.text ?? ""),
+          ...(scene ? { scene } : {}),
+          category: (input.category as ChangeCategory | undefined) ?? "other",
+        });
+        const who: RoleT[] = preview?.roles.length
+          ? preview.roles
+          : owner === "director"
             ? ["director", "animator", "reviewer", "editor"]
             : owner === "writer"
               ? ["writer", "director", "animator", "reviewer", "editor"]
@@ -1682,7 +1695,8 @@ export class Pip {
             : what.length
               ? `The crew redoes ${list(what.slice(0, 4))}${what.length > 4 ? ` and ${what.length - 4} more` : ""}, then checks and exports again.`
               : "Nothing failed: the crew runs the current stage again.",
-          who: ["producer"],
+          // the members the retry really brings back
+          who: snap?.retryRoles.length ? snap.retryRoles : ["producer"],
           usd: est ? [+est.usd[0].toFixed(2), +est.usd[1].toFixed(2)] : null,
           sec: est ? [Math.round(est.sec[0]), Math.round(est.sec[1])] : null,
           effects: ["Finished work and your answers at the gates are kept."],

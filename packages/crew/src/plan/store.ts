@@ -181,12 +181,18 @@ export function revise(
     ops: PlanOpT[];
     tasks: PlanTaskT[];
     run: string;
+    /** the person's notes it applies, and the tasks it added for them (they close when those finish) */
+    claim?: { notes: string[]; tasks: string[] };
   },
   env: PlanEnv,
   spentUsd: number,
   pip?: PlanView["pip"],
 ): ProductionPlanT {
   const rev = plan ? plan.rev + 1 : 0;
+  const claims = [
+    ...(plan?.claims ?? []),
+    ...(r.claim?.notes.length ? [{ rev, notes: r.claim.notes, tasks: r.claim.tasks }] : []),
+  ];
   const revision: PlanRevisionT = {
     rev,
     at: new Date().toISOString(),
@@ -197,12 +203,14 @@ export function revise(
     tasks: r.tasks,
     estimate: planEstimate(r.tasks, spentUsd, env),
     run: r.run,
+    ...(r.claim?.notes.length ? { noteIds: r.claim.notes } : {}),
   };
   const next: ProductionPlanT = {
     ...revision,
     approvedUsd: plan?.approvedUsd ?? null,
     runs: plan?.runs ?? [],
     ...(plan?.pending ? { pending: plan.pending } : {}),
+    ...(claims.length ? { claims } : {}),
   };
   appendFileSync(log(p), `${JSON.stringify(revision)}\n`);
   savePlan(p, next);

@@ -12,7 +12,7 @@ import { PHASE } from "@pap/crew/orchestrator";
 import { InstanceKey } from "@pap/crew/plan/instances";
 import { libraryAssetDir, libraryIndex, userLibraryDir } from "@pap/render";
 import { buildReport, type Report } from "@pap/report";
-import type { Registry, ToolContext } from "@pap/tools";
+import type { GateId, Registry, ToolContext } from "@pap/tools";
 import { type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
@@ -25,6 +25,12 @@ import { McpSession } from "./mcp.ts";
 export const VERSION = "0.1.0";
 const WEB_DIST = new URL("../../web/dist/", import.meta.url).pathname;
 
+/** POST /api/p/:id/changes/preview */
+const ChangesPreview = z.object({
+  gate: z.enum(["g0_brief", "g1_script", "g2_animatic", "g3_rough", "g4_final"]).optional(),
+  text: z.string().max(2000),
+  items: z.array(z.string().max(300)).max(12).optional(),
+});
 /** POST /api/pip's `about` ("Ask Pip about this", docs/PIP-ORCHESTRATION.md §2) */
 const PipAbout = z.object({ instance: InstanceKey }).strict().optional();
 
@@ -45,6 +51,18 @@ export interface CrewApi {
       queued: number;
       slots?: Record<string, { size: number; used: number }>;
     };
+  };
+  /** who a change would go to and what it would cost, nothing written (docs/PIP-ORCHESTRATION.md §1.12) */
+  previewChange?(
+    p: OpenProject,
+    b: { gate?: GateId; text: string; items?: string[] },
+  ): {
+    role: string;
+    roles: string[];
+    scenes: string[];
+    usd: [number, number];
+    sec: [number, number];
+    summary: string;
   };
   /** the production plan as the wire carries it (docs/PIP-ORCHESTRATION.md §4.2); null before the first run */
   planView?(p: OpenProject): unknown;
@@ -529,6 +547,26 @@ export function createApp(o: ServerOpts) {
     }
     o.crew.run(p, { retry: true }).catch((e) => p.emit("log", { level: "error", text: String(e?.message ?? e) }));
     return c.json({ ok: true, started: true, resumed: false });
+  });
+  // what a change would do before it runs: the gate's "Change something" and Pip's change card read the same router
+  app.post("/api/p/:id/changes/preview", async (c) => {
+    if (!o.crew?.previewChange)
+      return c.json({ ok: false, error: { code: "no_crew", message: "the crew is not configured" } }, 503);
+    const p = proj(c.req.param("id"));
+    const b = ChangesPreview.safeParse(await c.req.json().catch(() => null));
+    if (!b.success)
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: "bad_request",
+            message: b.error.issues[0]?.message ?? "bad body",
+            fix: 'send { "text": "what to change", "gate"?: "g3_rough", "items"?: ["…"] }',
+          },
+        },
+        400,
+      );
+    return c.json(o.crew.previewChange(p, b.data));
   });
   app.post("/api/p/:id/crew/pause", async (c) => {
     const b = await c.req.json().catch(() => ({}));

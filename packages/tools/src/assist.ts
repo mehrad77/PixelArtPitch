@@ -324,7 +324,13 @@ export const OWNER_STAGE: Record<string, Stage> = {
   librarian: "review",
 };
 
-export function crewRequestChangeTool(onChange: ChangeHandler) {
+/** who owns a change (the crew's one router, `routeChange`); without one, `changeOwner` */
+export type ChangeRouter = (note: {
+  text: string;
+  target: { scene?: string; cue?: string; asset?: string };
+  category: ChangeCategory;
+}) => RoleT;
+export function crewRequestChangeTool(onChange: ChangeHandler, route?: ChangeRouter) {
   return defineTool({
     name: "crew_request_change",
     title: "Ask the crew for a change",
@@ -390,7 +396,9 @@ export function crewRequestChangeTool(onChange: ChangeHandler) {
         ...(i.cue ? { cue: i.cue } : {}),
         ...(i.at !== undefined ? { range: [i.at, i.at] as [number, number] } : {}),
       };
-      const owner: RoleT = changeOwner(target, i.category, i.text);
+      const owner: RoleT = route
+        ? route({ text: i.text, target, category: i.category })
+        : changeOwner(target, i.category, i.text);
       const extra: Note[] = [];
       for (const id of i.alsoNotes) {
         const n = p.state.notes.find((x) => x.id === id);
