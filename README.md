@@ -1,3 +1,5 @@
+<a href="https://0rwx.com/"><img src=".github/ai-x.png" alt="AI:X: made by AI, curated by me" title="AI:X: made by AI, curated by me (0rwx.com)" width="44" align="right"></a>
+
 # PixelArtPitch
 
 ![PixelArtPitch: Pip and the crew in front of a pixel city at night](docs/banner.png)
