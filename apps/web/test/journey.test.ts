@@ -23,7 +23,7 @@ import {
 import { applyEvent } from "../src/lib/reducer.ts";
 import type { Draft, Instance, PipCard, PipItem, ProjectState, Role, ServerEvent, Task } from "../src/lib/types.ts";
 import { COPIED, copyLine, MockDrafts } from "../src/mock/drafts.ts";
-import { fixtureInstances, instanceChange } from "../src/mock/fixture-crew.ts";
+import { fixtureChanges, fixtureInstances, instanceChange } from "../src/mock/fixture-crew.ts";
 import { JOURNEY, Journey, journeyFlags, OVERRUN_CAP } from "../src/mock/journey.ts";
 
 const BASE = Date.UTC(2026, 10, 7, 21, 0, 0);
@@ -732,6 +732,14 @@ test("the scripted fixtures' crew row: done members finish, a waiting one is liv
     idle.map((i) => i.id),
     ["producer", "writer"],
   );
+  // the crew stops: the ghosts it showed go, nothing stays a ghost
+  let st: ProjectState = { ...s, instances: all, crew: { state: "idle" } };
+  for (const data of fixtureChanges(st)) st = applyEvent(st, { event: "instance", data });
+  assert.deepEqual(
+    (st.instances ?? []).filter((i) => i.ghost).map((i) => i.id),
+    [],
+  );
+  assert.deepEqual(fixtureChanges(st), [], "and then nothing more to send");
   assert.equal(instanceChange(undefined, by.writer), "spawn");
   assert.equal(instanceChange(by.writer, { ...by.writer, state: "finished" }), "end");
 });

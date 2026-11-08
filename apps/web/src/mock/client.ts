@@ -52,7 +52,7 @@ import type {
 import { type Beat, closing, failure, middle, opening, wholeRun } from "./activity.ts";
 import { drawFrame, drawLogo, drawSheet } from "./art.ts";
 import { MockDrafts } from "./drafts.ts";
-import { fixtureInstances, instanceChange } from "./fixture-crew.ts";
+import { fixtureChanges, fixtureInstances } from "./fixture-crew.ts";
 import {
   CUES_ANGLE,
   estimateCues,
@@ -109,6 +109,8 @@ type MockProject = {
   lastStatus: string;
   /** a project started from /new: the journey runs it instead of the script above */
   journey?: Journey;
+  /** the last crew sync saw the journey held (the crew reads paused while held, as the server's does) */
+  wasHeld?: boolean;
 };
 
 /** the orchestrator's task kinds, by mock task id */
@@ -801,11 +803,7 @@ class MockBackend {
   /** a scripted fixture's crew row, re-derived from its rows: the changed members go out as `instance` events */
   syncInstances(p: MockProject) {
     if (p.journey) return;
-    const prev = new Map((p.state.instances ?? []).map((i) => [i.id, i]));
-    for (const next of fixtureInstances(p.state, ROLE_MODELS)) {
-      const change = instanceChange(prev.get(next.id), next);
-      if (change) this.emit(p, { event: "instance", data: { instance: next, change } });
-    }
+    for (const data of fixtureChanges(p.state, ROLE_MODELS)) this.emit(p, { event: "instance", data });
   }
   /** what the server will send as `status`: the same plain sentence the client derives, plus the problem */
   pushStatus(p: MockProject) {
@@ -836,12 +834,17 @@ class MockBackend {
   }
   /** the server's crew fields (running, paused, stage, lastActiveAt, queued), derived from the simulated run */
   syncCrew(p: MockProject) {
-    const st = p.state.crew?.state ?? "running";
+    let st = p.state.crew?.state ?? "running";
+    // a held run is paused on the server (`state.paused`), and goes on when the hold lifts
+    if (p.journey?.hold) st = "paused";
+    else if (p.wasHeld && st === "paused") st = "running";
+    p.wasHeld = !!p.journey?.hold;
     const times = p.state.tasks.flatMap((t) => [t.startedAt, t.endedAt]).filter((x): x is string => !!x);
     const last = times.sort().at(-1) ?? null;
     const crew = {
       state: st,
-      running: st === "running" || st === "pausing",
+      // the server's run is alive while held (running, and paused)
+      running: st === "running" || st === "pausing" || !!p.journey?.hold,
       paused: st === "paused",
       stage: p.state.stage,
       lastActiveAt: last,
@@ -851,6 +854,7 @@ class MockBackend {
     const c = p.state.crew;
     if (
       c &&
+      c.state === crew.state &&
       c.running === crew.running &&
       c.paused === crew.paused &&
       c.stage === crew.stage &&
@@ -1827,6 +1831,9 @@ export class MockClient implements Client {
     const b = be();
     const p = b.get(id);
     p.pauseIn = null;
+    // Resume lifts a held run too, as the server's does (§1.8)
+    const held = p.journey?.hold;
+    if (held) b.play(p, p.journey?.act({ type: "key", provider: held.provider }) ?? []);
     b.x(p, { crew: { state: "running" } });
     b.digest(p, "The crew is back at work.");
   }

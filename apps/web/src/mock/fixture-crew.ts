@@ -98,3 +98,22 @@ export function instanceChange(prev: Instance | undefined, next: Instance): Inst
   if (next.state === "idle") return "idle";
   return moved ? "ghost" : null;
 }
+
+/** the `instance` events that bring a state's crew row up to date with its rows (a member the row no longer lists,
+ * because the crew stopped, stops being a ghost) */
+export function fixtureChanges(
+  s: ProjectState,
+  models: Partial<Record<Role, string>> = {},
+): { instance: Instance; change: InstanceChange }[] {
+  const prev = new Map((s.instances ?? []).map((i) => [i.id, i]));
+  const all = fixtureInstances(s, models);
+  const out: { instance: Instance; change: InstanceChange }[] = [];
+  for (const next of all) {
+    const change = instanceChange(prev.get(next.id), next);
+    if (change) out.push({ instance: next, change });
+  }
+  for (const old of prev.values())
+    if (old.ghost && !all.some((i) => i.id === old.id))
+      out.push({ instance: { ...old, ghost: false }, change: "ghost" });
+  return out;
+}
