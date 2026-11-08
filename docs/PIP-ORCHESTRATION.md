@@ -23,6 +23,9 @@ Places where this spec departs from the person's brief are marked **Changed from
 | `packages/crew/src/plan/estimate.ts` | Tiers and estimates (§1.1 "Estimates", §1.2 tiers) **(added in P1a)** |
 | `packages/crew/src/plan/store.ts` | `runs/plan.json`, `runs/plan.jsonl`, views, the `plan` events **(added in P1a)** |
 | `packages/crew/src/plan/import.ts` | The logo import: a small PNG reader, a box downscale, the quantize **(added in P1a)** |
+| `packages/crew/src/plan/route.ts` | The one change router, `routeChange` (§1.12) **(added in v0.3)** |
+| `packages/tools/src/words.ts` | `cutWords`, `plainText` (§1.14) **(added in v0.3)** |
+| `apps/server/src/build.ts` | The stale web build check (§1.15) **(added in v0.3)** |
 
 The stage methods in `orchestrator.ts` become per-kind handlers. Their bodies stay as they are wherever possible.
 
@@ -48,6 +51,7 @@ The person approved both specs (this one and its sibling) with these answers to 
 | P2 | **Built** (backend and UI) | `plan/instances.ts`: the fold over `events.jsonl` (`InstanceFold`, `foldInstances`), the ghost horizon, the live `InstanceTracker`; the stored `plan_status` event; `state.instances`; SSE `instance`; `GET /api/p/:id/instances/:iid/log`; `about` on `POST /api/pip`; transient SSE events without an `id`; tests `instances.test.ts` over the fixtures in `test/fixtures/instances/` and a whole fake run |
 | P3 | **Built** (backend) | the draft store (`packages/tools/src/drafts.ts`), the field registry and the rules parse (`brief/registry.ts`), the reading (`brief/read.ts`, `assistant.brief`, prompt `assistant/brief.md`), the draft conversation, cards and Start (`brief/drafts.ts`), the Projects line (`brief/line.ts`), the `/api/drafts` routes, `draft` on `/api/pip` and its cards, the composer's `draft`, `draft_create` ("Make another like this", N25), `QuestionT.rights` (N15), the Roles page's N20–N22, a JSON 404 for unknown `/api/*`; tests `drafts.test.ts` |
 | P4 | **Run** (2026-11-08) | the paid end-to-end run below; two fixes landed during it: a drawn variant's file now carries provenance (`assetDraw`, so the standard no longer rejects every drawing), and `GET /api/p/:id/variants/:name` serves the variant sheets the crew row shows as "latest image". Most of what it found is open (see the run's report) |
+| v0.3 | **Built** (backend; the paid P6 check is still to run) | after the P5 run: holds always ask and a change resumes a held run (§1.11), one change router, `POST /changes/preview` and notes that close with their revision (§1.12), sit, fly, glow and a sign through recipe params (§1.13), readable words and a playable rough cut (§1.14), the stale-build check and `scripts/e2e` (§1.15); tests `holds.test.ts`, `changes.test.ts`, `recipe-params.test.ts`, `words.test.ts`, `routes.test.ts` |
 
 **Paid checks (2026-11-07, the person's go-ahead):**
 

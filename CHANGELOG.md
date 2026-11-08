@@ -2,6 +2,37 @@
 
 Each release's section is also its GitHub release notes: the release job in `.github/workflows/ci.yml` publishes the section whose heading matches the tag.
 
+## v0.3.0 (unreleased)
+
+Fixes for what the P5 run showed: Pip and the crew now share one picture of the run, the same words reach the same crew member, a note closes once it's done, and the crew knows what the engine can draw.
+
+### Pip and the crew in step
+- **A hold always asks.** When the crew stops for you, there's a question with real choices (Redo with the Director, Accept the look, Tell Pip what to change; or Fix the key, Try again), and it counts in Needs you. Answering it starts the crew again.
+- **A change answers a held crew.** Asking for a change while the crew waits on you starts it at once, instead of "picked up at the next review".
+- **Pip says what is really happening:** started now, queued behind a named step, or waiting for your answer to a named question.
+- **Asking you is Pip's last resort.** A refused plan change is corrected once before Pip asks you, and the recommended answer is the cheapest one that fits the budget: library art before new drawings.
+
+### Changes and notes
+- **One door for changes.** Pip, a gate's "Change something" and a hold's "Tell Pip" send the same words to the same crew member: cast, staging, backdrops and cards to the Director, timing and motion to the Animator. Ticked items keep their scene.
+- **The estimate matches the route.** `POST /api/p/:id/changes/preview` says who a change goes to, the scenes it redoes, what it costs and how long it takes, before anything runs.
+- **A note closes when the work that applies it is done**, so an approved rough cut exports once, with no extra cut after it.
+- **"Let the crew run"** no longer stops at the rough cut over leftover problems: they're logged and the video exports.
+
+### The crew knows its tools
+- **Sit, fly, glow and a sign from the recipe menu:** `walk_in` `then: "sit"` and `prop` (a glowing lantern beside the hero), `spawn_join` `motion: "fly"` and `follow`, lanterns and candles with `glow: true` in the backdrops, and `nameTag: "sign"`. The Director's menu lists every on-screen param, and its cards no longer say "no recipe does that".
+- **`spawn_join` needs `who`**, and its banner is off unless you ask for one. A storyboard without `who` is sent back with the cast to use.
+
+### Readable and playable
+- **A playable rough cut:** each review writes `out/proxy.mp4` with its sound.
+- **No ids in what you read.** The crew channel, the chat's markers and Pip's cards name scenes and assets, not `lib:owl@1` or `t_draw_owl`, and long lines end on a whole word. The script pick shows whole cues.
+- **One marker per thing that happened**, and the status line leaves "Waiting for you" once you answer a gate.
+- **Pip's reply to a rejected key** says so, with a Fix the key button.
+- **Reports read as sentences**, and the Reviewer's says what it found ("Found 6 problems in scenes 2 and 4.").
+
+### For contributors
+- `pap serve` warns when the studio UI build is older than its source; `--build` rebuilds it, and `GET /api/build` tells the page.
+- `scripts/e2e/` holds the end-to-end driver: a throwaway home, the web app built first, a spend watchdog, no keys.
+
 ## v0.2.0 (unreleased)
 
 Fixes for everything the first long paid run showed: failures now stop and tell you, changes cost what they touch, and you decide how much the crew may spend and think.
