@@ -1,5 +1,5 @@
 ---
-version: 4
+version: 5
 maxOut: 12000
 effort: high
 ---
@@ -20,7 +20,9 @@ Hard rules:
    Its kind: "character" is a walking hero (16x24, runs, jumps, waves); "creature" is an animal or small being: give
    its "size" ("16x16" small, "16x24" tall) and "motion" ("walk", "fly" or "sit") as the script asks, e.g.
    {"name": "moth", "kind": "creature", "size": "16x16", "motion": "fly", "description": "a small pale moth..."}.
-   No recipe makes a creature fly or perch, a lamp glow or a sign: never plan a scene that needs one to read.
+   Sit, fly and glow are on the menu: walk_in then: "sit" sits a character down, spawn_join motion: "fly" flies a
+   creature in (follow: an actor keeps it beside them), a decor or prop { "frame": "lantern", "glow": true } lights a
+   lantern, and nameTag: "sign" paints a label as a sign. Cast the newcomer with spawn_join who (it is required).
 6. The last scene is an end card (end_card_loop) that holds while the music plays out.
 Return only the JSON object.
 

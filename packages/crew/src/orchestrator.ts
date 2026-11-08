@@ -524,6 +524,55 @@ export function reviewVerdict(
     : "";
   return `Found ${n} problem${n === 1 ? "" : "s"}${where}.`;
 }
+/**
+ * The Director's recipe menu: one line per recipe from the engine's catalogue, with its required params, every param
+ * that changes what is on screen (`onScreen`: who, banner, motion, then, prop, decor…, with their docs) and a few
+ * text and time params. New params show up here by themselves.
+ */
+export function recipeMenu(
+  catalog: {
+    id: string;
+    description: string;
+    minDurationSec: number;
+    params: { required: string[]; properties: Record<string, any> };
+  }[],
+): string {
+  const TEXT = ["text", "title", "url", "word", "items", "actor", "hero", "at"];
+  return catalog
+    .map((x) => {
+      const ps = Object.entries<any>(x.params.properties)
+        .filter(([k, v]) => x.params.required.includes(k) || v.onScreen || TEXT.includes(k))
+        .map(
+          ([k, v]) =>
+            `${k}${x.params.required.includes(k) ? "*" : ""}: ${v.enum ? v.enum.join("|") : v.type}${v.default !== undefined ? ` = ${JSON.stringify(v.default)}` : ""}${v.onScreen && v.description ? ` (${v.description})` : ""}`,
+        );
+      return `- ${x.id} (min ${x.minDurationSec}s): ${x.description}${ps.length ? ` Params: ${ps.join("; ")}` : ""}`;
+    })
+    .join("\n");
+}
+/** the Writer's angle as the pick's detail: whole cues that fit `max` characters, then "…" (never a cut word) */
+export function cueDetail(cues: string[], max: number): string {
+  const all = cues.join(" ");
+  if (all.length <= max) return all;
+  let out = "";
+  for (const c of cues) {
+    const next = out ? `${out} ${c}` : c;
+    if (next.length + 1 > max) break;
+    out = next;
+  }
+  return out ? `${out}…` : cutWords(all, max);
+}
+/** the asset names a brief's words mention ("a small moth follows the light" → moth), in the brief's order */
+export function castOf(idea: string, names: Iterable<string>): string[] {
+  const low = idea.toLowerCase();
+  return [...new Set(names)]
+    .filter((n) => n !== "font" && n.length > 2 && new RegExp(`\\b${n.replace(/[^a-z0-9]/g, ".")}s?\\b`).test(low))
+    .sort(
+      (a, b) =>
+        low.search(new RegExp(`\\b${a.replace(/[^a-z0-9]/g, ".")}`)) -
+        low.search(new RegExp(`\\b${b.replace(/[^a-z0-9]/g, ".")}`)),
+    );
+}
 /** a scene a gate item or a person's words name, by its id or its title */
 function sceneNamed(p: OpenProject, text: string): string | undefined {
   const low = text.toLowerCase();
@@ -3242,7 +3291,7 @@ export class Crew {
             options: angles.map((a, i) => ({
               id: `angle_${i}`,
               label: a.name,
-              detail: a.cues.join(" ").slice(0, 280),
+              detail: cueDetail(a.cues, 280),
             })),
             recommendedId: `angle_${recommended}`,
             // the pick is the script gate's own choice: it blocks the script (G1), so the person sees it there
@@ -3321,21 +3370,7 @@ export class Crew {
       const { recipeCatalog, checkRecipeParams } = await import("@pap/engine/recipes");
       const d = p.doc();
       // one compact line per recipe: small models drown in a full JSON catalogue
-      const catalog = recipeCatalog()
-        .map((x: any) => {
-          const ps = Object.entries<any>(x.params.properties)
-            .filter(
-              ([k]) =>
-                x.params.required.includes(k) ||
-                ["text", "title", "url", "word", "items", "actor", "hero", "at"].includes(k),
-            )
-            .map(
-              ([k, v]) =>
-                `${k}${x.params.required.includes(k) ? "*" : ""}: ${v.type}${v.default !== undefined ? ` = ${JSON.stringify(v.default)}` : ""}`,
-            );
-          return `- ${x.id} (min ${x.minDurationSec}s): ${x.description}${ps.length ? ` Params: ${ps.join("; ")}` : ""}`;
-        })
-        .join("\n");
+      const catalog = recipeMenu(recipeCatalog());
       const libNames = [...this.libraryList(), ...this.plannedArt(p)];
       const asks = noteLines(p, "director");
       const vars = {
@@ -3495,13 +3530,22 @@ export class Crew {
         for (const [key, v] of Object.entries(rc.params))
           if (
             typeof v === "string" &&
-            /^(asset|actor|hero|sprite|item|prop)/i.test(key) &&
+            /^(asset|actor|hero|sprite|item|prop|who|follow)/i.test(key) &&
             /^[a-z][a-z0-9_-]*$/.test(v) &&
             !known.has(v)
           )
             issues.push(
               `scenes[${k}].recipes[${n}].params.${key}: asset "${v}" is not in the asset list (fix: use a listed asset or add it to newAssets)`,
             );
+        // a newcomer is cast: spawn_join's who names who joins (the brief's cast first)
+        if (rc.id === "spawn_join" && typeof rc.params.who !== "string") {
+          // the brief's cast, less who is already in this scene (the hero who walked in)
+          const here = new Set(s.recipes.flatMap((x) => Object.values(x.params).filter((v) => typeof v === "string")));
+          const cast = castOf(d.brief.idea, [...b.newAssets.map((a) => a.name), ...known]).filter((c) => !here.has(c));
+          issues.push(
+            `scenes[${k}].recipes[${n}].params.who: spawn_join needs who, the character that joins (fix: ${cast.length ? `cast ${cast[0]} as who` : "set who to an asset name from the list"})`,
+          );
+        }
       });
     return issues;
   }

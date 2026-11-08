@@ -598,6 +598,16 @@ In P5, G3's "Change something" always went to the Animator while Pip sent the sa
   - The run-end re-trigger starts a change only for open notes of the person's made during the run that no revision claimed (and not the run's own change).
 - **Auto skips the leftover G3.** At `involvement: "auto"`, `rough()` logs the Reviewer's leftover blockers on the changed scenes and passes G3 (and the export follows). At `key` and `every` it asks, as before.
 
+### 1.13 The crew knows its tools (v0.3, after the P5 run)
+
+In P5 the engine could make an owl sit, a moth fly and a lantern glow, but no recipe exposed them and the Director's cards said "no recipe does that", so the crew decided it couldn't and Pip recommended paying for drawings.
+
+- **Recipe params** (`packages/engine/src/recipes.ts`, [RECIPES.md](RECIPES.md)): `walk_in` `then: "stand" | "sit"` and `prop: { frame, glow? }`; `spawn_join` `motion: "drop" | "walk" | "fly"`, `from` and `follow: <actor>` (its banner defaults to "" and `who` is required); a `lantern` (and the other `props-small` frames) in `backdrop_night` and `backdrop_rooftop` decor, with `glow: true`; `nameTag: "box" | "sign"` on both characters' `label`. The rooftop's decor doc no longer lists the street lamp. Every default draws what it drew before (spawn_join's banner aside).
+- **The menu is the catalogue.** A recipe param marked `screen` comes out of `recipeCatalog()` as `onScreen: true`. `recipeMenu()` lists a recipe's required params, every on-screen param with its doc and enum, and a few text and time params, so a new param reaches the Director's storyboard prompt by itself (the re-board prompt lists every param).
+- **The cards stop saying "can't".** `director/storyboard.md` (v5) and `reboard.md` (v4) say sit, fly and glow are on the menu and how; Pip's `conduct.md` (v3) puts library art and behaviours before new drawings.
+- **Board checks.** `checkBoard` checks `who` and `follow` against the asset list, and a `spawn_join` without `who` gets "fix: cast moth as who" with the first asset the brief names that isn't already in that scene (`castOf`).
+- **The Writer's angles aren't cut.** The script pick's option detail keeps whole cues: those that fit 280 characters, then "…" (`cueDetail`).
+
 ---
 
 ## 2. Instances (the members that come and go)

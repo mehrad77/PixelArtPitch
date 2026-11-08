@@ -76,7 +76,9 @@ A painted sign in the world: a board with a lit top-left edge, a dark bottom-rig
 - A board bottom below y=146 (the caption zone). With its 2 px shadow the board takes `8 × scale + 10` px, so at scale 1 keep `y` at 128 or less.
 - A sign over a character's body (`covers-actor`): stand it beside them.
 
-`nameTag` is the small name tag `walk_in` and `spawn_join` draw for their `label` param. It stays a plain box; use a `label` widget when the words belong to the place.
+`nameTag` is the small name tag `walk_in` and `spawn_join` draw for their `label` param. With their `nameTag: "sign"` they draw this `label` widget instead (`mount: "none"`, attached above the head). Use a `label` widget of your own when the words belong to the place.
+
+**From the recipe menu.** The Director reaches these pieces through recipe params, no hand-written layers: `walk_in` `then: "sit"` (the `sit` below), `spawn_join` `motion: "fly"` and `follow` (`fly`, then `sit` with `on`), a `decor` or `prop` entry with `"glow": true` (the `glow` fx round a lantern, candle or campfire), and `nameTag: "sign"` (this widget). See [RECIPES.md](RECIPES.md).
 
 ### glow
 Radial light for lamps, lanterns, windows and fires. It paints whole bands of palette colours from an outer tone to a bright core, with no blended colours. A band only lights cells darker than itself, so a brighter thing under the glow keeps its colour. Put it under the lamp and the characters (a lower `z`, for example −45 under the backdrop's lamp at −40).

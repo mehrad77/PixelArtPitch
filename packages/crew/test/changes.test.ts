@@ -222,3 +222,78 @@ test("auto: leftover blockers on the changed scene are logged and the cut export
   assert.notEqual(p.state.gates.find((g) => g.id === "g3_rough")?.status, "open", "no G3 at auto");
   assert.ok(logs.some((t) => /exporting without asking \(auto\)/.test(t)));
 });
+
+// ---------------------------------------------------------------- the crew knows its tools (§1.13)
+const { recipeMenu, castOf, cueDetail } = await import("../src/orchestrator.ts");
+const { recipeCatalog, checkRecipeParams } = await import("@pap/engine/recipes");
+
+test("the Director's menu lists every on-screen param from the catalogue: sit, fly, glow, the cast", () => {
+  const menu = recipeMenu(recipeCatalog());
+  const line = (id: string) => menu.split("\n").find((l) => l.startsWith(`- ${id} `))!;
+  assert.match(line("walk_in"), /then: stand\|sit/);
+  assert.match(line("walk_in"), /prop: obj.*glow/);
+  assert.match(line("spawn_join"), /who\*: string/);
+  assert.match(line("spawn_join"), /motion: drop\|walk\|fly/);
+  assert.match(line("spawn_join"), /follow: string/);
+  assert.match(line("spawn_join"), /banner: string = ""/);
+  assert.match(line("backdrop_rooftop"), /decor: array.*lantern.*glow/);
+  assert.doesNotMatch(line("backdrop_rooftop"), /lamp/);
+});
+
+test("the Director's cards no longer say no recipe can fly, sit or glow", async () => {
+  const { readFileSync } = await import("node:fs");
+  for (const f of ["storyboard", "reboard"]) {
+    const card = readFileSync(new URL(`../prompts/director/${f}.md`, import.meta.url), "utf8");
+    assert.doesNotMatch(card, /No recipe makes/i, f);
+    assert.match(card, /Sit, fly and glow are on the menu/, f);
+  }
+});
+
+test("checkBoard: spawn_join needs who, cast from the brief; who and follow must be listed assets", async () => {
+  const { crew, p } = await crewOn(tuneAndShip);
+  await p.patch(
+    [{ op: "replace", path: "/brief/idea", value: "A sleepy owl reads on a roof; a small moth follows the light." }],
+    {
+      reason: "t",
+      author: { kind: "user" },
+    },
+  );
+  const cues = p.doc().script.cues.map((c) => c.id);
+  const board = (params: Record<string, unknown>) => ({
+    scenes: [
+      {
+        id: "a",
+        title: "A",
+        cues: cues.slice(0, -1),
+        recipes: [
+          { id: "backdrop_rooftop", params: {} },
+          { id: "walk_in", params: { hero: "owl" } },
+          { id: "spawn_join", params },
+        ],
+      },
+      { id: "end", title: "End", cues: cues.slice(-1), recipes: [{ id: "end_card_loop", params: { title: "LUMEN" } }] },
+    ],
+    newAssets: [],
+  });
+  const issues = (crew as any).checkBoard(p, board({}), checkRecipeParams) as string[];
+  assert.ok(
+    issues.some((i) => /params\.who: spawn_join needs who, .*fix: cast moth as who/.test(i)),
+    issues.join("\n"),
+  );
+  const bad = (crew as any).checkBoard(p, board({ who: "moth", follow: "dragon" }), checkRecipeParams) as string[];
+  assert.ok(
+    bad.some((i) => /params\.follow: asset "dragon" is not in the asset list/.test(i)),
+    bad.join("\n"),
+  );
+  const ok = (crew as any).checkBoard(p, board({ who: "moth", motion: "fly", follow: "owl" }), checkRecipeParams);
+  assert.deepEqual(ok, []);
+  assert.deepEqual(castOf("a small moth follows the owl", ["owl", "moth", "font"]), ["moth", "owl"]);
+});
+
+test("the script pick keeps whole cues: a word-safe cut after the last cue that fits", () => {
+  const cues = ["Night falls on the city.", "A sleepy owl opens a book.", "The title card earns its place here."];
+  assert.equal(cueDetail(cues, 280), cues.join(" "));
+  assert.equal(cueDetail(cues, 60), "Night falls on the city. A sleepy owl opens a book.…");
+  assert.ok(!/ear$/.test(cueDetail(cues, 70).replace(/…$/, "")));
+  assert.match(cueDetail(["one very long cue that never fits in a short space at all"], 20), /…$/);
+});

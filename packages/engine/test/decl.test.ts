@@ -103,6 +103,7 @@ test("every recipe expands with only its required params, draws and stays JSON-s
     toast: { title: "NEW QUEST" },
     banner: { text: "LEVEL UP" },
     end_card_loop: { title: "QUESTDAY" },
+    spawn_join: { who: "friend" },
   };
   for (const r of RECIPES) {
     for (const [k, s] of Object.entries(r.params))

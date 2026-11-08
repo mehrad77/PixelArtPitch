@@ -47,6 +47,8 @@ export type RParam = PSpec & {
   defDoc?: string;
   /** an asset slot: the default asset id and the library asset it usually points at */
   lib?: string;
+  /** it changes what is on screen (who, what they do, what stands beside them): the Director's menu lists it */
+  screen?: boolean;
 };
 export type Recipe = {
   id: string;
@@ -121,6 +123,98 @@ const second: RParam = {
 };
 
 const asset = (d: string, lib: string, doc: string): RParam => ({ t: "str", d, lib, doc });
+const onScreen = (p: RParam): RParam => ({ ...p, screen: true });
+
+/** the small props a recipe may stand beside a character or on the ground (library `props-small`, 16 x 16) */
+export const SMALL_PROPS = ["lantern", "candle", "campfire", "book", "book-open", "rock", "tree-stump"] as const;
+const SMALL_FRAME: Record<string, string> = {
+  lantern: "lantern-lit",
+  candle: "candle",
+  campfire: "campfire0",
+  book: "book-closed",
+  "book-open": "book-open",
+  rock: "rock",
+  "tree-stump": "tree-stump",
+};
+/** a warm glow round a small prop's flame (the `glow` fx, breathing by 1 px) */
+const glowAt = (id: string, x: number, y: number): LayerT =>
+  L(id, "fx", { fx: "glow", x, y, size: 16, pulse: 1, period: 1.8 }, { z: -30 });
+/**
+ * A decor entry: a street prop from `props` (lamp, bush, signpost) or a small prop from `props-small` (a lantern, a
+ * candle, a campfire…); `glow: true` lights a small prop with the `glow` fx.
+ */
+function decorLayers(p: Record<string, any>, h: H, fix: string): LayerT[] {
+  const out: LayerT[] = [];
+  (p.decor as any[]).forEach((d, i) => {
+    if (!d || typeof d.frame !== "string" || typeof d.x !== "number") {
+      h.issues.push({ path: `${h.path}.params.decor[${i}]`, message: "decor needs frame and x", fix });
+      return;
+    }
+    const small = SMALL_FRAME[d.frame];
+    if (d.glow && !small) {
+      h.issues.push({
+        path: `${h.path}.params.decor[${i}].glow`,
+        message: `a ${d.frame} doesn't glow`,
+        fix: `glow a small prop: ${SMALL_PROPS.join(", ")} (e.g. { "frame": "lantern", "x": ${d.x}, "glow": true })`,
+      });
+      return;
+    }
+    out.push(
+      L(
+        h.id(`decor${i}`),
+        "sprite",
+        { asset: small ? "props-small" : "props", frame: small ?? d.frame, x: d.x, y: G, anchor: "bottom" },
+        { z: -40 },
+      ),
+    );
+    if (d.glow) out.push(glowAt(h.id(`decor${i}_glow`), d.x, G - 9));
+  });
+  return out;
+}
+/** a small prop standing beside a character (`prop: { frame, glow? }`), or an issue */
+function propBeside(p: Record<string, any>, h: H, x: number, side: number): LayerT[] {
+  const pr = p.prop;
+  if (!pr) return [];
+  const small = typeof pr.frame === "string" ? SMALL_FRAME[pr.frame] : undefined;
+  if (!small) {
+    h.issues.push({
+      path: `${h.path}.params.prop.frame`,
+      message: `no small prop ${JSON.stringify(pr.frame)}`,
+      fix: `use one of: ${SMALL_PROPS.join(", ")}`,
+    });
+    return [];
+  }
+  const px = Math.round(x + side * 14);
+  return [
+    L(h.id("prop"), "sprite", { asset: "props-small", frame: small, x: px, y: G, anchor: "bottom" }, { z: 9 }),
+    ...(pr.glow ? [glowAt(h.id("prop_glow"), px, G - 9)] : []),
+  ];
+}
+/** a character's name tag: the plain box (`nameTag: "box"`), or a painted sign board above the head ("sign") */
+function tagFor(p: Record<string, any>, h: H, to: string, dy: number, more: NonNullable<LayerT["behaviors"]> = []) {
+  if (!p.label) return [];
+  const attach = B("attach", undefined, { to, dx: 0, dy });
+  return [
+    p.nameTag === "sign"
+      ? L(
+          h.id("tag"),
+          "widget",
+          { widget: "label", text: p.label, mount: "none" },
+          { z: 30, behaviors: [{ ...attach, params: { to, dx: 0, dy: dy - 4 } }, ...more] },
+        )
+      : L(h.id("tag"), "widget", { widget: "nameTag", label: p.label }, { z: 30, behaviors: [attach, ...more] }),
+  ];
+}
+const nameTag: RParam = onScreen({
+  t: "enum",
+  of: ["box", "sign"],
+  d: "box",
+  doc: 'how the label is drawn: "box" a small name tag, "sign" a painted sign board (the label widget)',
+});
+/** an actor an earlier recipe in this scene drew, by its asset id ("owl", "hero") or its layer id */
+function actorFor(h: H, who: string): LayerT | null {
+  return h.same(who) ?? h.actor(who) ?? null;
+}
 const time = (defDoc: string, def: RParam["def"], doc: string): RParam => ({ t: "time", def, defDoc, doc });
 
 // ---------------------------------------------------------------- the menu
@@ -143,7 +237,8 @@ export const RECIPES: Recipe[] = [
           { frame: "lamp", x: 24 },
           { frame: "bush", x: 290 },
         ],
-        doc: "props on the ground: [{ frame: lamp|bush|signpost, x }]",
+        doc: "props on the ground: [{ frame: lamp|bush|signpost|lantern|candle|campfire, x, glow? }]; glow: true lights a lantern, candle or campfire",
+        screen: true,
       },
       gaps: { t: "list", d: [], doc: "[[fromX, toX]] holes in the ground" },
     },
@@ -152,24 +247,7 @@ export const RECIPES: Recipe[] = [
         L(h.id("sky"), "backdrop", { stars: p.stars, moon: p.moon, skyline: p.skyline }, { z: -100, space: "screen" }),
       ];
       if (p.ground) layers.push(L(h.id("ground"), "tiled", { gaps: p.gaps }, { z: -50 }));
-      (p.decor as any[]).forEach((d, i) => {
-        if (!d || typeof d.frame !== "string" || typeof d.x !== "number") {
-          h.issues.push({
-            path: `${h.path}.params.decor[${i}]`,
-            message: "decor needs frame and x",
-            fix: '{ "frame": "lamp", "x": 24 }',
-          });
-          return;
-        }
-        layers.push(
-          L(
-            h.id(`decor${i}`),
-            "sprite",
-            { asset: "props", frame: d.frame, x: d.x, y: G, anchor: "bottom" },
-            { z: -40 },
-          ),
-        );
-      });
+      layers.push(...decorLayers(p, h, '{ "frame": "lamp", "x": 24 }'));
       return { layers };
     },
   },
@@ -189,8 +267,14 @@ export const RECIPES: Recipe[] = [
         t: "list",
         d: [252],
         doc: "world x of each chimney's left edge (14 px wide, 22 px tall); [] for none",
+        screen: true,
       },
-      decor: { t: "list", d: [], doc: "props on the roof: [{ frame: lamp|bush|signpost, x }]" },
+      decor: {
+        t: "list",
+        d: [],
+        doc: 'props on the roof: [{ frame: lantern|candle|signpost, x, glow? }]; a lit lantern is { "frame": "lantern", "x": 136, "glow": true }',
+        screen: true,
+      },
     },
     expand(p, h) {
       const layers: LayerT[] = [
@@ -201,24 +285,7 @@ export const RECIPES: Recipe[] = [
           { z: -100, space: "screen" },
         ),
       ];
-      (p.decor as any[]).forEach((d, i) => {
-        if (!d || typeof d.frame !== "string" || typeof d.x !== "number") {
-          h.issues.push({
-            path: `${h.path}.params.decor[${i}]`,
-            message: "decor needs frame and x",
-            fix: '{ "frame": "lamp", "x": 24 }',
-          });
-          return;
-        }
-        layers.push(
-          L(
-            h.id(`decor${i}`),
-            "sprite",
-            { asset: "props", frame: d.frame, x: d.x, y: G, anchor: "bottom" },
-            { z: -40 },
-          ),
-        );
-      });
+      layers.push(...decorLayers(p, h, '{ "frame": "lantern", "x": 136, "glow": true }'));
       return { layers };
     },
   },
@@ -282,12 +349,13 @@ export const RECIPES: Recipe[] = [
   {
     id: "walk_in",
     title: "Walk in",
-    description: "The hero walks in from the edge and stops at x (whole pixels, run cycle, footstep dust), then waves.",
+    description:
+      "The hero walks in from the edge and stops at x (whole pixels, run cycle, footstep dust), then waves; then: sit sits down there, and prop stands a small prop (a glowing lantern) beside them.",
     minDurationSec: 2,
     anchors: ["scene start", "arrive"],
     sfx: [],
     params: {
-      hero: asset("hero", "lib:mentor-ai@1", "character asset id"),
+      hero: onScreen(asset("hero", "lib:mentor-ai@1", "character asset id")),
       faces: {
         t: "enum",
         of: ["right", "left"],
@@ -304,12 +372,33 @@ export const RECIPES: Recipe[] = [
         "when the hero stops",
       ),
       wave: { t: "bool", d: true, doc: "wave after stopping" },
-      label: { t: "str", d: "", doc: "optional name tag above the head (1-2 words)" },
-      scale: { t: "int", d: 1, min: 1, max: 3, doc: "how big the hero is drawn: 2 is twice the size (whole pixels)" },
+      // biome-ignore lint/suspicious/noThenProperty: a recipe param in the project's JSON, never awaited
+      then: onScreen({
+        t: "enum",
+        of: ["stand", "sit"],
+        d: "stand",
+        doc: "after stopping: stand, or sit down there (the sit behaviour, perch frames)",
+      }),
+      prop: onScreen({
+        t: "obj",
+        doc: 'a small prop beside them, on the side they face: { "frame": lantern|candle|campfire|book|book-open|rock|tree-stump, "glow"?: true }',
+      }),
+      label: onScreen({ t: "str", d: "", doc: "optional name tag above the head (1-2 words)" }),
+      nameTag,
+      scale: onScreen({
+        t: "int",
+        d: 1,
+        min: 1,
+        max: 3,
+        doc: "how big the hero is drawn: 2 is twice the size (whole pixels)",
+      }),
       second,
     },
     expand(p, h) {
       const again = p.second ? null : h.same(p.hero);
+      // after stopping: sit down where they stand (after the wave, when they wave)
+      const sitAt = p.arrive + (p.wave ? 1.2 : 0.1);
+      const sit = p.then === "sit" ? [B("sit", sitAt, { land: 0 })] : [];
       if (again) {
         if (p.scale > 1) again.props = { ...again.props, scale: p.scale };
         // the scene already has this hero: walk it on to x instead of drawing a twin
@@ -325,7 +414,9 @@ export const RECIPES: Recipe[] = [
             { t: p.arrive + 0.3, v: "wave" },
             { t: p.arrive + 1.2, v: "auto" },
           ]);
-        return { layers: [] };
+        again.behaviors.push(...sit);
+        const side = p.x >= standX(again) ? 1 : -1;
+        return { layers: propBeside(p, h, p.x, side) };
       }
       const dir = p.from === "left" ? 1 : -1;
       const dur = Math.max(0.3, p.arrive - p.at);
@@ -355,19 +446,11 @@ export const RECIPES: Recipe[] = [
           {
             z: 10,
             keys,
-            behaviors: [B("walk", p.at, { to: p.x, speed: dist / Math.max(0.01, dur - decel / 2), decel })],
+            behaviors: [B("walk", p.at, { to: p.x, speed: dist / Math.max(0.01, dur - decel / 2), decel }), ...sit],
           },
         ),
       ];
-      if (p.label)
-        layers.push(
-          L(
-            h.id("tag"),
-            "widget",
-            { widget: "nameTag", label: p.label },
-            { z: 30, behaviors: [B("attach", undefined, { to: id, dx: 0, dy: -16 - 24 * p.scale })] },
-          ),
-        );
+      layers.push(...tagFor(p, h, id, -16 - 24 * p.scale), ...propBeside(p, h, p.x, dir));
       return { layers };
     },
   },
@@ -630,47 +713,146 @@ export const RECIPES: Recipe[] = [
     id: "spawn_join",
     title: "Player joins",
     description:
-      "A second character drops in from the sky, lands with a squash, dust and a small shake, and a banner announces them.",
+      "A second character joins: drops in from the sky (a squash, dust and a small shake), walks in, or flies in (motion), and can then follow another actor; an optional banner announces them.",
     minDurationSec: 1.5,
     anchors: ["scene start"],
     sfx: ["fall", "land", "join"],
     params: {
-      who: asset("friend", "lib:mentor-gtm@1", "character asset id"),
+      who: {
+        t: "str",
+        req: true,
+        lib: "lib:mentor-gtm@1",
+        doc: "character asset id: cast the newcomer (e.g. moth)",
+        screen: true,
+      },
       faces: { t: "enum", of: ["right", "left"], d: "left", doc: "which way the art looks" },
       facing: { t: "enum", of: ["right", "left"], d: "left", doc: "which way they look after landing" },
       x: { t: "num", d: 200, min: 16, max: 304, doc: "landing spot (centre x)" },
       at: time("t0 + 0.1 s", (h) => h.t0 + 0.1, "when they start falling"),
-      banner: { t: "str", d: "PLAYER 2", doc: '1-3 words ("" for none)' },
-      label: { t: "str", d: "", doc: "optional name tag above the head" },
+      motion: onScreen({
+        t: "enum",
+        of: ["drop", "walk", "fly"],
+        d: "drop",
+        doc: "how they arrive: drop from the sky, walk in from the edge, or fly in (the fly behaviour) and hover",
+      }),
+      from: { t: "enum", of: ["left", "right"], d: "right", doc: "walk or fly: which edge they come from" },
+      follow: onScreen({
+        t: "str",
+        d: "",
+        doc: 'after arriving, stay beside this actor (an asset id an earlier recipe drew, e.g. "hero" or "owl"), riding along as it moves',
+      }),
+      banner: onScreen({ t: "str", d: "", doc: '1-3 words announcing them ("" for none)' }),
+      label: onScreen({ t: "str", d: "", doc: "optional name tag above the head" }),
+      nameTag,
     },
     expand(p, h) {
-      const land = p.at + 0.45;
       const id = h.id("who");
-      const layers: LayerT[] = [
-        L(
-          id,
-          "actor",
-          { asset: p.who, x: p.x, artFaces: p.faces, facing: p.facing },
-          {
-            z: 11,
-            keys: {
-              y: [
-                { t: p.at, v: -8 },
-                { t: land, v: G, ease: "in" },
-              ],
-              state: [
-                { t: p.at, v: "jump" },
-                { t: land, v: "auto" },
-              ],
-            },
-            behaviors: [
-              B("appear", p.at, { style: "none" }),
-              B("squash", land, { dur: 0.12 }),
-              B("dust", land, { n: 3 }),
-            ],
-          },
-        ),
-      ];
+      const dir = p.from === "left" ? 1 : -1;
+      const x0 = dir > 0 ? -20 : 340;
+      // fly: in along a gentle arc to hover over x; walk: in from the edge; drop: down from the sky (the old landing)
+      const flyY = 100;
+      const flySpeed = 60;
+      const arrive =
+        p.motion === "fly"
+          ? p.at + Math.abs(p.x - x0) / flySpeed + 0.4
+          : p.motion === "walk"
+            ? p.at + Math.max(0.6, Math.abs(p.x - x0) / 40)
+            : p.at + 0.45;
+      const land = arrive;
+      const target = p.follow ? actorFor(h, p.follow) : null;
+      if (p.follow && !target) {
+        h.issues.push({
+          path: `${h.path}.params.follow`,
+          message: `no actor ${JSON.stringify(p.follow)} to follow in this scene`,
+          fix: `follow an actor an earlier recipe draws (${
+            h.layers
+              .filter((l) => l.kind === "actor")
+              .map((l) => String(l.props.asset))
+              .join(", ") || "none yet: put walk_in first"
+          }), or leave follow ""`,
+        });
+        return { layers: [] };
+      }
+      const follow = target
+        ? [
+            B("sit", arrive + 0.3, {
+              on: target.id,
+              dx: -dir * 24,
+              dy: p.motion === "fly" ? -28 : 0,
+              land: 0.5,
+              lift: p.motion === "fly" ? 4 : 0,
+              squash: false,
+            }),
+          ]
+        : [];
+      const actor =
+        p.motion === "drop"
+          ? L(
+              id,
+              "actor",
+              { asset: p.who, x: p.x, artFaces: p.faces, facing: p.facing },
+              {
+                z: 11,
+                keys: {
+                  y: [
+                    { t: p.at, v: -8 },
+                    { t: land, v: G, ease: "in" },
+                  ],
+                  state: [
+                    { t: p.at, v: "jump" },
+                    { t: land, v: "auto" },
+                  ],
+                },
+                behaviors: [
+                  B("appear", p.at, { style: "none" }),
+                  B("squash", land, { dur: 0.12 }),
+                  B("dust", land, { n: 3 }),
+                  ...follow,
+                ],
+              },
+            )
+          : p.motion === "walk"
+            ? L(
+                id,
+                "actor",
+                { asset: p.who, x: x0, artFaces: p.faces, facing: dir > 0 ? "right" : "left" },
+                {
+                  z: 11,
+                  behaviors: [
+                    B("walk", p.at, {
+                      to: p.x,
+                      speed: Math.abs(p.x - x0) / Math.max(0.3, arrive - p.at - 0.15),
+                      decel: 0.3,
+                    }),
+                    ...follow,
+                  ],
+                },
+              )
+            : L(
+                id,
+                "actor",
+                { asset: p.who, x: x0, y: flyY - 20, artFaces: p.faces, facing: dir > 0 ? "right" : "left" },
+                {
+                  z: 11,
+                  behaviors: [
+                    B(
+                      "fly",
+                      p.at,
+                      {
+                        path: [
+                          [Math.round((x0 + p.x) / 2), flyY - 12],
+                          [p.x, flyY],
+                        ],
+                        speed: flySpeed,
+                        bob: 2,
+                      },
+                      follow.length ? arrive + 0.3 : undefined,
+                    ),
+                    ...follow,
+                  ],
+                },
+              );
+      const layers: LayerT[] = [actor];
       if (p.banner)
         layers.push(
           L(
@@ -680,21 +862,8 @@ export const RECIPES: Recipe[] = [
             { z: 70, space: "screen" },
           ),
         );
-      if (p.label)
-        layers.push(
-          L(
-            h.id("tag"),
-            "widget",
-            { widget: "nameTag", label: p.label },
-            {
-              z: 30,
-              behaviors: [
-                B("attach", undefined, { to: id, dx: 0, dy: -40 }),
-                B("appear", land + 0.2, { style: "pop" }),
-              ],
-            },
-          ),
-        );
+      layers.push(...tagFor(p, h, id, -40, [B("appear", land + 0.2, { style: "pop" })]));
+      if (p.motion !== "drop") return { layers, sfx: [{ t: land, type: "join" }] };
       return {
         layers,
         camera: { shakes: [{ at: land, amp: 1, dur: 0.2 }] },
@@ -1121,6 +1290,7 @@ export function recipeCatalog() {
             ...(s.min !== undefined ? { minimum: s.min, maximum: s.max } : {}),
             ...(s.of ? { enum: s.of } : {}),
             ...(s.lib ? { asset: s.lib } : {}),
+            ...(s.screen ? { onScreen: true } : {}),
           },
         ]),
       ),

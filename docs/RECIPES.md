@@ -39,13 +39,14 @@ Night sky with twinkling stars, a moon, a two-row parallax skyline, ground tiles
 | moon | bool | true | | draw the moon |
 | skyline | bool | true | | draw the skyline |
 | ground | bool | true | | draw the ground tiles |
-| decor | list | lamp at 24, bush at 290 | | `[{ "frame": "lamp" \| "bush" \| "signpost", "x": 24 }]` |
+| decor | list | lamp at 24, bush at 290 | | `[{ "frame", "x", "glow"? }]`: a street prop (`lamp`, `bush`, `signpost`) or a small prop (`lantern`, `candle`, `campfire`, `book`, `book-open`, `rock`, `tree-stump`, from `props-small`); `"glow": true` lights a small prop with the [`glow`](BEHAVIORS.md#glow) fx |
 | gaps | list | [] | | `[[fromX, toX]]` holes in the ground |
 
 ```json
 { "id": "backdrop_night", "params": { "decor": [{ "frame": "signpost", "x": 260 }] } }
 ```
-**Mistakes:** putting decor where a character stops (it hides them); `gaps` wider than a jump.
+A lit lantern on the street: `{ "frame": "lantern", "x": 60, "glow": true }`.
+**Mistakes:** putting decor where a character stops (it hides them); `gaps` wider than a jump; `glow` on a lamp, bush or signpost (only a small prop glows: an error names them).
 
 ## backdrop_rooftop
 The city from up high: the night sky with stars and the moon, the skyline lower than from the street, and a slate roof whose ridge is the ground line (y=148), with brick chimneys. Characters stand on the ridge with no other changes. Light comes from the upper left: the ridge caps, the slates and the chimney bricks are lit on their top and left edges and dark on their right and bottom edges. Use it instead of `backdrop_night` (not with it): a scene with this backdrop gets no street tiles, lamp or bush.
@@ -57,13 +58,13 @@ The city from up high: the night sky with stars and the moon, the skyline lower 
 | moon | bool | true | | draw the moon |
 | skyline | bool | true | | draw the skyline beyond the roof |
 | chimneys | list | [252] | | world x of each chimney's left edge; each is 14 px wide and 22 px tall, its top at y=126. `[]` for none |
-| decor | list | [] | | props on the roof: `[{ "frame": "lamp" \| "bush" \| "signpost", "x": 24 }]` |
+| decor | list | [] | | props on the roof: `[{ "frame": "lantern" \| "candle" \| "signpost", "x": 136, "glow"?: true }]`; a lit lantern is `{ "frame": "lantern", "x": 136, "glow": true }` (the lantern from `props-small`, with the [`glow`](BEHAVIORS.md#glow) fx round its flame) |
 
 ```json
 { "id": "backdrop_rooftop", "params": { "chimneys": [236] } }
 ```
 A bird that lands on that chimney sits at its top centre: `{ "kind": "sit", "params": { "x": 243, "y": 125 } }` (x = chimney x + 7, y = 125). See `examples/rooftop/pitch.json` for a whole scene.
-**Mistakes:** using it together with `backdrop_night` (two skies); a chimney where a character stands (it hides their legs); a lamp or bush as rooftop decor (they are street props; light a lantern with a [`glow`](BEHAVIORS.md#glow) instead).
+**Mistakes:** using it together with `backdrop_night` (two skies); a chimney where a character stands (it hides their legs); a lamp or bush as rooftop decor (they are street props; use a `lantern` with `"glow": true` instead).
 
 ## title_card
 A big title drops in, slams down with a shake and a ring, and bobs. An optional subtitle fades in under it.
@@ -96,13 +97,17 @@ The hero walks in from an edge at whole pixels, kicks up footstep dust, slows to
 | at | time | scene start | | walk starts |
 | arrive | time | at + 60% of the scene, max 3 s | | they stop |
 | wave | bool | true | | wave 0.3 s after stopping |
+| then | stand/sit | stand | | after stopping: stand, or sit down there (the [`sit`](BEHAVIORS.md#sit) behaviour with its perch frames, 1.2 s after the wave) |
+| prop | object | none | | a small prop beside them, 14 px to the side they face: `{ "frame": "lantern" \| "candle" \| "campfire" \| "book" \| "book-open" \| "rock" \| "tree-stump", "glow"?: true }`; `glow` lights it |
 | label | text | "" | | name tag above the head |
+| nameTag | box/sign | box | | how `label` is drawn: `box` the small name tag, `sign` a painted sign board (the [`label`](BEHAVIORS.md#label) widget, no mount) |
 | scale | int | 1 | 1–3 | how big the hero is drawn (2 = twice the size, feet stay on the ground) |
 | second | bool | false | | draw a second copy even if the scene already has this hero |
 
 ```json
 { "id": "walk_in", "params": { "faces": "left", "x": 140, "arrive": "E(c01)-0.8" } }
 ```
+A sleepy owl walks to a lit lantern and sits down to read: `{ "id": "walk_in", "params": { "hero": "owl", "x": 120, "then": "sit", "prop": { "frame": "lantern", "glow": true } } }`.
 **Mistakes:** `arrive` before `at`; the wrong `faces` for the art (the hero moonwalks).
 
 ## block_bump
@@ -151,23 +156,28 @@ Items pop up above the hero one by one and fly on arcs into HUD slots at the top
 **Mistakes:** more than 8 items; a window under 2 s (items pile up); a second hero in the same scene (item_collect brings its own).
 
 ## spawn_join
-A second character drops in from the sky, lands with a squash, dust and a small shake, and a banner announces them.
-**Slots:** `who` (lib:mentor-gtm@1). **Anchors:** `at` (t0 + 0.1 s), landing = at + 0.45 s. **SFX:** fall, land, join.
+A second character joins: it drops in from the sky (a squash, dust and a small shake), walks in from an edge, or flies in (the [`fly`](BEHAVIORS.md#fly) behaviour) and hovers. With `follow` it then stays beside another actor and rides along as that actor moves (the [`sit`](BEHAVIORS.md#sit) behaviour with `on`). An optional banner announces them.
+**Slots:** `who` (required; lib:mentor-gtm@1 is the usual friend). **Anchors:** `at` (t0 + 0.1 s); arrival = at + 0.45 s (drop), at + the distance at 40 px/s (walk, at least 0.6 s), at + the distance at 60 px/s + 0.4 s (fly). **SFX:** fall, land, join (drop); join (walk, fly).
 
 | param | type | default | range | what |
 |---|---|---|---|---|
-| who | asset | "friend" | | character asset id |
+| who | asset | **required** | | the character that joins: cast it ("moth", "cast-developer") |
 | faces | right/left | left | | art direction |
-| facing | right/left | left | | which way they look after landing |
-| x | num | 200 | 16–304 | landing spot |
-| at | time | t0 + 0.1 s | | starts falling |
-| banner | text | "PLAYER 2" | | "" for none |
+| facing | right/left | left | | which way they look after landing (drop) |
+| x | num | 200 | 16–304 | where they arrive (centre) |
+| at | time | t0 + 0.1 s | | when they start |
+| motion | drop/walk/fly | drop | | how they arrive; `fly` comes in from `from` along a gentle arc and hovers with its feet at y=100 |
+| from | left/right | right | | walk and fly: the edge they come from |
+| follow | text | "" | | an actor an earlier recipe in the scene drew, by its asset id (`"owl"`, `"hero"`): after arriving they stay 24 px behind it (28 px up when flying) and move with it |
+| banner | text | "" | | 1–3 words announcing them; "" for none |
 | label | text | "" | | name tag |
+| nameTag | box/sign | box | | how `label` is drawn (see `walk_in`) |
 
 ```json
 { "id": "spawn_join", "params": { "who": "friend", "x": 180, "banner": "PARTY UP" } }
 ```
-**Mistakes:** landing on top of the hero (keep 24 px apart); a banner sentence (use 1–3 words).
+A moth follows the owl to the light: `{ "id": "spawn_join", "params": { "who": "moth", "motion": "fly", "follow": "owl", "x": 160 } }` after a `walk_in` with `hero: "owl"`.
+**Mistakes:** no `who` (an error; the Director's check names the brief's cast: "cast moth as who"); landing on top of the hero (keep 24 px apart); a banner sentence (use 1–3 words); `follow` naming an actor the scene doesn't draw yet (put its `walk_in` first).
 
 ## toast
 A small achievement panel slides in from the right with an icon, a title and an optional second line, then slides out.
