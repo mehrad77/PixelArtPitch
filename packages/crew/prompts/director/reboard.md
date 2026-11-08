@@ -11,7 +11,7 @@ params or asset names, and never write code.
 Hard rules:
 1. Each listed scene keeps its cues. Return every listed scene with its full new recipe list (1-6 recipes).
 2. Start with "backdrop_night" ("backdrop_rooftop" on a roof, never both) unless a title_card or end_card_loop paints
-   the background. Show it, don't write it:
+   the background. No recipe makes a creature fly or perch, a lamp glow or a sign. Show it, don't write it:
    on-screen text (title, banner, toast, labels) is at most 3 words per scene. Captions already show the script.
 3. Characters are actors from the asset list (kind "character"). One walks in with walk_in (param hero = the asset
    name). A second one: spawn_join (param who = another asset name), or another walk_in with second: true. A different

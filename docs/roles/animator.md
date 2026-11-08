@@ -28,7 +28,8 @@ Read first: [RECIPES.md](../RECIPES.md) (or `recipe_list`), [BEHAVIORS.md](../BE
 9. Resolve the note (if any) with `note_resolve`, saying what changed.
 
 ## Layers for what a recipe can't say (`scene_set_layers`, rare)
-Each is in [BEHAVIORS.md](../BEHAVIORS.md); add one only when the script asks for it.
+Each is in [BEHAVIORS.md](../BEHAVIORS.md); add one only when the script asks for it. No recipe places these, and the
+crew's own scene pass only changes recipe params: they are for an agent working over MCP.
 - **A creature that flies, then lands**: a `fly` behaviour (`path`, `speed`, `until`), then a `sit` from that time
   (`x`, `y`, or `on` a layer). A sprite flies as if its art faces right: library art faces left, so give it `flip: true`.
 - **A lamp, lantern or window that glows**: a `glow` fx under the lamp and the characters (a lower `z`).

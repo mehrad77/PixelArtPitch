@@ -20,7 +20,7 @@ Hard rules:
    Its kind: "character" is a walking hero (16x24, runs, jumps, waves); "creature" is an animal or small being: give
    its "size" ("16x16" small, "16x24" tall) and "motion" ("walk", "fly" or "sit") as the script asks, e.g.
    {"name": "moth", "kind": "creature", "size": "16x16", "motion": "fly", "description": "a small pale moth..."}.
-   Its flight and perch, a lamp's glow and a painted sign are the Animator's: the board only names them.
+   No recipe makes a creature fly or perch, a lamp glow or a sign: never plan a scene that needs one to read.
 6. The last scene is an end card (end_card_loop) that holds while the music plays out.
 Return only the JSON object.
 
