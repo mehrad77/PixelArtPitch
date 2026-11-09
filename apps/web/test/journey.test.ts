@@ -35,7 +35,7 @@ import type {
 } from "../src/lib/types.ts";
 import { COPIED, copyLine, MockDrafts } from "../src/mock/drafts.ts";
 import { fixtureChanges, fixtureInstances, instanceChange } from "../src/mock/fixture-crew.ts";
-import { JOURNEY, Journey, journeyFlags, OVERRUN_CAP } from "../src/mock/journey.ts";
+import { DAYTIME, JOURNEY, Journey, journeyFlags, OVERRUN_CAP } from "../src/mock/journey.ts";
 
 const BASE = Date.UTC(2026, 10, 7, 21, 0, 0);
 
@@ -508,7 +508,7 @@ type Scn = {
   /** step until `until` holds (or the run ends) */
   run: (until?: (s: ProjectState, sim: Journey) => boolean, max?: number) => void;
 };
-function scenario(name: "revision" | "overrun" | "publish" | "keyfail", auto = true, capUsd?: number): Scn {
+function scenario(name: "revision" | "overrun" | "publish" | "keyfail" | "edits", auto = true, capUsd?: number): Scn {
   const sim = new Journey({ speed: 1, slots: 3, auto, base: BASE, scenario: name, ...(capUsd ? { capUsd } : {}) });
   const o: Scn = {
     sim,
@@ -770,4 +770,25 @@ test("the scripted fixtures' crew row: done members finish, a waiting one is liv
   assert.deepEqual(fixtureChanges(st), [], "and then nothing more to send");
   assert.equal(instanceChange(undefined, by.writer), "spawn");
   assert.equal(instanceChange(by.writer, { ...by.writer, state: "finished" }), "end");
+});
+
+test("scenario edits: Pip makes the step 10 change itself, free, with an Undo; daytime is a free card", () => {
+  const sc = scenario("edits", true);
+  // auto drives the run to the rough cut and leaves it open there (the scenario's stop)
+  sc.run((_s, sim) => sim.waits.has("gate:g3_rough"));
+  sc.act({ type: "ask", text: JOURNEY.change });
+  sc.run((_s, sim) => sim.cards.has("c_undo"), 10);
+  const sim = sc.sim;
+  assert.equal(sim.edited, true, "scene 2's hero is 2× at once");
+  assert.ok(!sim.cards.has("c_ch"), "no crew card");
+  assert.ok(!sim.nodes.some((n) => n.id === "t_tune_s02_r2"), "no Animator redo");
+  assert.deepEqual(sim.cards.get("c_undo")?.type === "plan" && sim.cards.get("c_undo")?.usd, [0, 0]);
+  sc.act({ type: "card", cardId: "c_undo", decision: "confirm" });
+  assert.equal(sim.edited, false);
+  sc.act({ type: "ask", text: DAYTIME });
+  sc.run((_s, j) => j.cards.has("c_free"), 10);
+  const free = sim.cards.get("c_free");
+  assert.ok(free?.type === "plan" && free.title === "I can do this now: free");
+  sc.act({ type: "card", cardId: "c_free", decision: "confirm" });
+  assert.equal(sim.time, "day");
 });

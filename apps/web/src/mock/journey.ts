@@ -46,6 +46,8 @@ export const SCENARIOS = [
   "drawer",
   "sheet",
   "pipkey",
+  // v0.5.2 (the change router)
+  "edits",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 /** the waits a scenario adds: `auto=1` never answers them (the run stops there for you, and for a screenshot) */
@@ -64,7 +66,10 @@ const STOPS_AT: Partial<Record<Scenario, string>> = {
   sheet: "gate:g3_rough",
   g3director: "gate:g3_rough",
   pipkey: "gate:g3_rough",
+  edits: "gate:g3_rough",
 };
+/** the `edits` scenario's second message: the time of day, a rule edit Pip offers on a free card */
+export const DAYTIME = "make it in daytime";
 /** the cap the `overrun` scenario sets, so the 80% line falls inside the run */
 export const OVERRUN_CAP = 1.5;
 export type JourneyFlags = {
@@ -1560,7 +1565,17 @@ export class Journey {
       if (a.cardId === "c_rev") this.decideRevision(c, a.decision);
       else if (a.cardId === "c_hold") this.decideHoldCard(c, a.decision);
       else if (a.cardId === "c_finish" || a.cardId === "c_raise") this.decideBudget(c, a.decision);
-      else if (a.decision === "decline") this.setCard({ ...c, status: "declined" });
+      else if (a.cardId === "c_undo" || a.cardId === "c_free") {
+        // Pip's free edits: no crew, no revision; the picture follows at once
+        if (a.decision === "decline") this.setCard({ ...c, status: "declined" });
+        else if (a.cardId === "c_undo") {
+          this.edited = false;
+          this.setCard({ ...c, status: "done", result: { text: "Undone: scene 2's hero is back to its size." } });
+        } else {
+          this.time = "day";
+          this.setCard({ ...c, status: "done", result: { text: "The video is now set at day." } });
+        }
+      } else if (a.decision === "decline") this.setCard({ ...c, status: "declined" });
       else {
         this.setCard({ ...c, status: "running" });
         this.change();
@@ -1580,8 +1595,11 @@ export class Journey {
   /** Pip's replies to the journey's two messages land 2 ticks after they are sent; anything else is not the journey's */
   static handles(text: string): boolean {
     const t = text.toLowerCase();
-    return /hero\b.*\bbigger|bigger\b.*\bhero/.test(t) || /why\b.*pixel artist/.test(t);
+    return /hero\b.*\bbigger|bigger\b.*\bhero/.test(t) || /why\b.*pixel artist/.test(t) || /\bday-?time\b/.test(t);
   }
+  /** the `edits` scenario: Pip made the step 10 edit itself (scene 2's hero is 2×), and the time it set */
+  edited = false;
+  time: "night" | "day" = "night";
   /** the messages this run answers itself: the journey's two, any note while Pip holds the run, and every message
    * in the `pipkey` scenario (whose answer is the rejected key) */
   handlesAsk(text: string): boolean {
@@ -1633,6 +1651,48 @@ export class Journey {
       if (/why\b.*pixel artist/i.test(a.text)) {
         this.pip("The library had no founder sprite, so I added one drawing. It was $0.31 of your $3.");
         this.ended = true;
+        continue;
+      }
+      // edits (v0.5.2, PIP-ORCHESTRATION §1.12): a size change on a recipe scene is Pip's own edit, free, done in the
+      // turn with an Undo card; the time of day is a rule edit on a free card
+      if (this.opts.scenario === "edits" && /\bday-?time\b/i.test(a.text)) {
+        const card: Extract<PipCard, { type: "plan" }> = {
+          id: "c_free",
+          type: "plan",
+          title: "I can do this now: free",
+          detail: "The video is set at day: every scene draws its sky from the time of day, so nothing is re-made.",
+          who: [],
+          usd: [0, 0],
+          sec: null,
+          effects: ["No crew run and no model call.", "You can undo it."],
+          confirmLabel: "Do it",
+          status: "proposed",
+        };
+        this.cards.set(card.id, card);
+        this.pip("That one's free: every scene follows the time of day.", [card]);
+        continue;
+      }
+      if (this.opts.scenario === "edits") {
+        this.edited = true;
+        const undo: Extract<PipCard, { type: "plan" }> = {
+          id: "c_undo",
+          type: "plan",
+          title: "Undo: make the hero bigger in scene 2",
+          detail: "Change #41 by user (via Pip) goes back: /scenes/1/recipes.",
+          who: [],
+          usd: [0, 0],
+          sec: null,
+          effects: [
+            "Adds the inverse change to the history; nothing is deleted.",
+            "Later work on the same paths may need redoing.",
+          ],
+          confirmLabel: "Undo it",
+          status: "proposed",
+        };
+        this.cards.set(undo.id, undo);
+        this.pip("Done: the hero in scene 2 is twice the size. It cost nothing; undo it if you liked it before.", [
+          undo,
+        ]);
         continue;
       }
       const card: Extract<PipCard, { type: "plan" }> = {

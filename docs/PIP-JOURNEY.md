@@ -507,6 +507,7 @@ The faces at each moment are the §2 checkpoint table.
   - The card settles: "✓ Scene 2 redone; the hero is 2× now."
   - G3 comes back under Pip's line, and Pip says: "The rough cut is ready again, with your change."
 - **Changed from the brief**: C12.
+- **Since v0.5.2 (the change router, PIP-ORCHESTRATION §1.12)**: a note is sorted into a tier before any card. "Make the hero bigger in scene 2" on a recipe scene is an `edit`: Pip sets the recipe's params itself in the same turn, shows a still before and after, says "Done: …" and adds an Undo card, for $0, with no crew. A rule edit (the time of day, the pace) is the card "I can do this now: free". Only a `tune`, a `code_patch` or a `replan` makes the "Ask the crew" card above; its title names the scene by number ("Ask the crew: scene 2, too fast"). The mock still plays this step on the crew path; `scenario=edits` plays it as Pip's own edit.
 - **SR**: `PipLive` announces the card. The crew region: "Pip brought the Animator back for a bigger hero in scene 2." "Animator · scene 2 finished." "Reviewer finished."
 - **Focus**: "Ask the crew" unmounts, so focus goes to the Pip field.
 - **RM**: as above.
@@ -628,6 +629,7 @@ The faces at each moment are the §2 checkpoint table.
   | `drawer` | v0.3: stops at the script pick, for the asks in the crew drawer's Pip pane | `answer:q_angle` |
   | `sheet` | v0.3: stops at the rough cut, whose picture is the contact sheet (`out/contact.png`, drawn as the server lays it out): press it for the full-screen dialog | `gate:g3_rough` |
   | `pipkey` | v0.3: stops at the rough cut; every message to Pip is answered "Your Anthropic key was rejected, so I couldn't answer that. …" with a `fix` card, "Fix the key" | `gate:g3_rough` |
+  | `edits` | v0.5.2 (the change router, PIP-ORCHESTRATION §1.12): stops at the rough cut. The step 10 message is Pip's own free edit: "Done: the hero in scene 2 is twice the size…" with an Undo card (`c_undo`, $0); no crew card, no Animator redo, and scene 2's hero is 2× at once (`Journey.edited`). "make it in daytime" answers with the free card "I can do this now: free" (`c_free`, "Do it") | `gate:g3_rough` |
   | `keyfail` | The founder's draw gets a rejected key: its row ends `cancelled`, the run holds (nothing new starts), the status is "Waiting for you: Your Anthropic key was rejected" with `problem { text, action: "fix_key", provider: "anthropic" }` and `crew.held`; Pip posts the hold notice; the founder's face is stuck with "Fix the key". The status reads as needs you (no red "Stopped ·"), and the crew channel says "Paused the crew: your Anthropic key was rejected." | `key:anthropic`. Saving the Anthropic key in Settings › Providers, or a passing test, lifts the hold: "Back to work: the hold is lifted.", and the drawing runs again as attempt 2 |
 
 - **Determinism.**

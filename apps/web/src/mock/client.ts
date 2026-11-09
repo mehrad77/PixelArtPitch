@@ -1789,7 +1789,8 @@ export class MockClient implements Client {
     const j = p.journey;
     // the journey's film is QuestDay's own cut: its four scenes, its logo toast, the step 10 change on scene 2
     const bigger =
-      j?.nodes.find((n) => n.id === "t_tune_s02_r2")?.status === "done" && (rev == null || rev >= p.state.rev);
+      (!!j?.edited || j?.nodes.find((n) => n.id === "t_tune_s02_r2")?.status === "done") &&
+      (rev == null || rev >= p.state.rev);
     const logo =
       !!j && j.opts.logo !== false && p.state.questions.find((q) => q.id === "q_rights")?.answer?.optionId !== "leave";
     return {
