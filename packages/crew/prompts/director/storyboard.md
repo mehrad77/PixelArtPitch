@@ -1,5 +1,5 @@
 ---
-version: 6
+version: 7
 maxOut: 12000
 effort: high
 ---
@@ -36,7 +36,12 @@ Hard rules:
    Sit, fly and glow are on the menu: walk_in then: "sit" sits a character down, spawn_join motion: "fly" flies a
    creature in (follow: an actor keeps it beside them), a decor or prop { "frame": "lantern", "glow": true } lights a
    lantern, and nameTag: "sign" paints a label as a sign. Cast the newcomer with spawn_join who (it is required).
-6. The last scene is an end card that holds while the music plays out: end_card_loop, or a code scene with
+6. The players stay on stage. The characters the brief names (the team, "the three of us as players") appear in
+   every scene after they load in, unless the beat is a close-up of a logo. A code scene lists every player in its
+   `assets` and its beat says where each one stands when the beat is about something else: "Ana and Bo watch
+   from the left corner, Cy points at the map". A recipe scene casts them: walk_in hero, then spawn_join who with
+   motion "walk". Players join by walking in; motion "drop" is for creatures or a beat that is a jump-in.
+7. The last scene is an end card that holds while the music plays out: end_card_loop, or a code scene with
    "endCard": true when the device needs its own (a game's final screen with both logos and PRESS START).
 Return only the JSON object.
 
@@ -53,5 +58,5 @@ Assets available (name: kind, size, frames):
 {{assets}}
 
 Check before answering: each cue in exactly one scene, in order; recipe scenes use only menu recipe ids and listed
-params, times anchored to cues; code scenes have a beat and list their assets, with empty recipes; at most one short
-on-screen text per scene; newAssets only for things the list lacks.
+params, times anchored to cues; code scenes have a beat and list their assets, with empty recipes; every player is in
+every scene after the first; at most one short on-screen text per scene; newAssets only for things the list lacks.

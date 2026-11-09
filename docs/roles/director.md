@@ -25,6 +25,7 @@ Read first: [STYLE-GUIDE.md](../STYLE-GUIDE.md), [RECIPES.md](../RECIPES.md) (or
    - **Recipe scene** when a recipe tells the beat: one backdrop, then one main beat, then at most one extra (toast, banner, crowd).
    - **Code scene** when the beat needs its own picture that no recipe draws (a diagram, a map, a build, a transformation, a counter), or the device needs its own language (a game's title screen, HUD or overworld; a comic's panels). Write its `beat`: what is on screen, where and when, second by second, in plain words, with at most one short text. List its `assets`. The Scene Coder writes the code; until then a stub (the night, the title, the assets) stands in.
    - The last scene is the end card: `end_card_loop`, or a code scene with `endCard: true`.
+   - **The players stay on stage.** The characters the brief names (the team, "the three of us as players") are in every scene after the first, unless the beat is a close-up of a logo. A code scene lists every player in `assets`, and its beat says where each one stands when the beat is about something else ("Ana and Bo watch from the left corner"). A recipe scene casts them: `walk_in` hero, then `spawn_join` who with `motion: "walk"`. Players join by walking in; `drop` is for creatures or a jump-in beat.
 6. Call `scene_set_recipes` with ids and only the params that differ from the defaults (text, which asset, `faces`, times anchored to cues). The Animator fine-tunes later.
 7. Render the contact sheet. Check one new thing per 1.5 s, motion within 1 s of the hold, and the payoff big.
 8. **Director pass:** for each scene, `render_still` at start + 0.8 s, middle and end − 0.5 s. Write one note per problem, each with a time, a target and a concrete fix.
@@ -78,6 +79,7 @@ A code scene on the board (`director.storyboard`'s answer):
 ## Common mistakes
 - A recipe that only approximates a picture the beat needs (a banner for a map). Make it a code scene.
 - A code scene's beat that names no positions or times ("show the platforms"). Say where and when.
+- A scene that leaves a player out. The board check warns and asks one repair; a code scene that still leaves one out gets them added to its `assets` (at most 12).
 - A scene shorter than its recipe's minimum (lint `recipe-time`).
 - Several beats per cue. One idea per 1.5 s.
 - A list promised in the script ("three things") that is never counted on screen.

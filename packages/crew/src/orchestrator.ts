@@ -3462,28 +3462,36 @@ export class Crew {
           schema: StoryboardOut,
           model: this.modelOf(p, pt),
         });
+        // soft warnings (a player missing from a scene, a counted list without its slots) ride on one repair only:
+        // they never cost a board that passes the hard checks
+        let soft = this.boardWarnings(p, out.data);
+        let fine = this.checkBoard(p, out.data, checkRecipeParams).length ? null : out.data;
         for (let attempt = 0; attempt < 2; attempt++) {
           const issues = this.checkBoard(p, out.data, checkRecipeParams);
-          if (!issues.length) {
+          const all = [...issues, ...soft];
+          if (!all.length) {
             board = out.data;
             break;
           }
-          why = issues.slice(0, 3).join("; ");
+          why = all.slice(0, 3).join("; ");
           p.emit("log", { level: "warn", role: "director", text: `storyboard needs fixes: ${why}` });
+          soft = [];
           out = await this.ask(p, r, t, {
             role: "director",
             kind: "director.repair",
             prompt: "director/storyboard",
             vars: {
               ...vars,
-              idea: `${d.brief.idea}\n\nYour last answer had these problems; fix them and return the whole storyboard:\n- ${issues.join("\n- ")}`,
+              idea: `${vars.idea}\n\nYour last answer had these problems; fix them and return the whole storyboard:\n- ${all.join("\n- ")}`,
             },
             schema: StoryboardOut,
             history: out.messages,
             model: this.modelOf(p, pt),
           });
-          if (!this.checkBoard(p, out.data, checkRecipeParams).length) board = out.data;
+          if (!this.checkBoard(p, out.data, checkRecipeParams).length) board = fine = out.data;
         }
+        board ??= fine;
+        if (board) board = this.keepCast(p, t, board);
       } catch (e: any) {
         if (r.abort.signal.aborted) throw e;
         why = String(e?.message ?? e).slice(0, 160);
@@ -3546,6 +3554,72 @@ export class Crew {
     this.planRevise(p, r, { by: "code", trigger: "expand", reason: "The storyboard is done." }, (ts, ctx) =>
       expandPlan(ts, p.doc(), fresh as NewAsset[], ctx),
     );
+  }
+
+  /**
+   * The players: the characters the brief names (P7's three teammates), from the asset list's character lines, the
+   * board's new characters and the project's own art with run frames. Never an icon or a crowd ("gamers").
+   */
+  private playersOf(p: OpenProject, b: Pick<z.infer<typeof StoryboardOut>, "newAssets">): string[] {
+    const lines = [...this.libraryList(), ...this.studioList(p), ...this.plannedArt(p)];
+    const chars = new Set(lines.filter((l) => /^[^:]+: character\b/.test(l)).map((l) => l.split(":")[0]));
+    for (const a of b.newAssets) if (a.kind === "character") chars.add(a.name);
+    // the project's own art: its kind (a library ref's, or the asset file's), else run frames
+    const lib = new Map(libraryIndex().assets.map((a) => [a.id, a.kind]));
+    try {
+      const lp = p.project() as ReturnType<OpenProject["project"]> & { about?: Record<string, { kind?: string }> };
+      for (const [id, frames] of lp.assets) {
+        const src = p.doc().assets.find((a) => a.id === id)?.src ?? "";
+        const kind = lp.about?.[id]?.kind || lib.get(/^lib:([^@]+)/.exec(src)?.[1] ?? "");
+        if (kind === "character" || (!kind && frames && "run0" in frames)) chars.add(id);
+      }
+    } catch {}
+    return castOf(p.doc().brief.idea, chars);
+  }
+  /** the players a board scene names: a code scene's assets, a recipe scene's params */
+  private static named(s: BoardSceneT): Set<string> {
+    return new Set(
+      s.kind === "code"
+        ? s.assets
+        : s.recipes.flatMap((r) => Object.values(r.params).filter((v): v is string => typeof v === "string")),
+    );
+  }
+  /**
+   * What a good board should also do, asked once in a repair but never a reason to drop the board (§1.16): every
+   * scene after the first keeps the brief's players on stage (a code scene lists them in its assets), unless its beat
+   * is a close-up.
+   */
+  private boardWarnings(p: OpenProject, b: z.infer<typeof StoryboardOut>): string[] {
+    const players = this.playersOf(p, b);
+    const out: string[] = [];
+    if (players.length)
+      b.scenes.forEach((s, k) => {
+        if (k === 0 || (s.kind === "code" && /close-?up/i.test(s.beat))) return;
+        const here = Crew.named(s);
+        const missing = players.filter((x) => !here.has(x));
+        if (!missing.length) return;
+        out.push(
+          s.kind === "code"
+            ? `scene ${s.id} leaves out ${missing.join(", ")}: the players stay on stage in every scene, so list them in its assets and say in the beat where each one stands (watching from a corner, reacting to the beat)`
+            : `scene ${s.id} leaves out ${missing.join(", ")}: the players stay on stage in every scene; cast them (walk_in hero, spawn_join who with motion "walk")`,
+        );
+      });
+    return out;
+  }
+  /** a code scene that still leaves a player out lists them anyway (the coder keeps listed players on stage) */
+  private keepCast(p: OpenProject, t: Task, b: z.infer<typeof StoryboardOut>): z.infer<typeof StoryboardOut> {
+    const players = this.playersOf(p, b);
+    if (!players.length) return b;
+    const scenes = b.scenes.map((s, k) => {
+      if (k === 0 || s.kind !== "code" || /close-?up/i.test(s.beat)) return s;
+      const missing = players.filter((x) => !s.assets.includes(x));
+      const room = Math.max(0, 12 - s.assets.length);
+      if (!missing.length || !room) return s;
+      const add = missing.slice(0, room);
+      p.log(t.id, { kind: "step", title: `${s.id} keeps the players on stage: added ${add.join(", ")} to its assets` });
+      return { ...s, assets: [...s.assets, ...add] };
+    });
+    return { ...b, scenes };
   }
 
   private checkBoard(

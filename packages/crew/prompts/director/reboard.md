@@ -1,5 +1,5 @@
 ---
-version: 5
+version: 6
 maxOut: 8000
 effort: medium
 ---
@@ -23,6 +23,8 @@ Hard rules:
    name). A second one: spawn_join (param who = another asset name, required), or another walk_in with second: true. A different
    asset for each character. For a new character pick a cast-* asset (cast-founder, cast-developer, cast-shopper...)
    before a mentor-* one. Talking is not on the menu: show it with a banner or toast of at most 3 words.
+   The brief's players stay on stage in every scene: a re-planned code scene keeps them in its assets, and its beat
+   says where they stand. Players join by walking in (motion "walk"); "drop" is for creatures.
    A toast, banner or panel never sits over a character. A toast fills the right half just above the ground
    (x 160-315), so while one shows keep every character left of x 140; a banner can go high instead (y 20-60).
 4. Times are cue-anchored expressions such as "S(c02)+0.4". Never raw seconds. Leave a param out to take its default.

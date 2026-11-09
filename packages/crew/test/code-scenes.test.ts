@@ -408,3 +408,71 @@ test("a G3 note on a code scene goes to the Scene Coder, and the change redoes o
     [["scene.code", "hub"]],
   );
 });
+
+const fakeRun = () =>
+  ({
+    abort: new AbortController(),
+    paused: false,
+    startedAt: new Date().toISOString(),
+    done: { redone: new Set(), reboarded: [], approximated: [], exported: false },
+    triggers: [],
+    redos: new Map(),
+    id: "run_test",
+    revisions: 0,
+  }) as any;
+const boardTask = {
+  id: "t_storyboard",
+  kind: "director.storyboard",
+  role: "director",
+  tier: "role",
+  instance: "director",
+  dependsOn: [],
+  estUsd: [0, 0],
+  estSec: [0, 0],
+  conditional: false,
+  status: "running",
+  taskIds: [],
+  addedIn: 0,
+} as any;
+/** QuestDay told by two players: its own hero and the library's gamer */
+async function twoPlayers(p: any) {
+  await p.patch(
+    [
+      {
+        op: "replace",
+        path: "/brief/idea",
+        value: `${p.doc().brief.idea} Told by the hero and the gamer, side by side.`,
+      },
+    ],
+    { reason: "t", author: { kind: "user" } },
+  );
+}
+
+test("the players stay on stage: a scene that leaves one out is a soft warning, asked once, and a code scene lists them", async () => {
+  const sys: string[] = [];
+  const { crew, p } = await crewOn((req) => {
+    sys.push(JSON.stringify(req.messages.at(-1)?.content ?? ""));
+    return { json: codeBoard() };
+  });
+  await twoPlayers(p);
+  const c = crew as any;
+  assert.deepEqual(c.playersOf(p, codeBoard()), ["hero", "gamer"], "the brief's characters, in its order");
+  // the warning names who is missing where; the hard checks still pass, so it never costs the board
+  const warn = c.boardWarnings(p, codeBoard()) as string[];
+  assert.equal(warn.length, 2, warn.join("\n"));
+  assert.match(warn[0], /scene hub leaves out gamer: the players stay on stage/);
+  assert.match(warn[1], /scene end leaves out gamer/);
+  assert.deepEqual(c.checkBoard(p, codeBoard(), checkRecipeParams), []);
+  // a close-up is left alone; the first scene is where they load in
+  const close = codeBoard();
+  close.scenes[1].beat = "A close-up of the quest board: three stars drop into a row, one per beat.";
+  assert.equal((c.boardWarnings(p, close) as string[]).length, 1);
+  // the run: the first answer leaves the gamer out, the one repair asks, the model ignores it, the board stands
+  await c.storyboard(p, fakeRun(), boardTask);
+  assert.equal(sys.length, 2, "one storyboard call and one repair, never a second for a warning");
+  assert.match(sys[1], /scene hub leaves out gamer/);
+  const hub = p.doc().scenes.find((s: any) => s.id === "hub") as any;
+  assert.equal(hub.kind, "code", "the Director's board, not the baseline");
+  assert.deepEqual(hub.assets, ["hero", "items", "gamer"]);
+  assert.deepEqual((p.doc().scenes.find((s: any) => s.id === "end") as any).assets, ["hero", "font", "gamer"]);
+});
