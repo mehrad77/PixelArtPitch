@@ -86,6 +86,10 @@ test("GET /api/projects: finished means a video and no crew working; the rough c
     assert.equal((await row()).finished, true);
     running = true;
     assert.equal((await row()).finished, false, "a live rerun isn't finished");
+    // P6: the page's Download took the proxy, listed as a video; it has its own route instead
+    const files = ((await (await get(`/api/p/${id}`)).json()) as any).files.map((f: any) => f.name);
+    assert.ok(files.includes("questday.mp4"));
+    assert.ok(!files.includes("proxy.mp4"), "the proxy isn't in the project's files");
   } finally {
     workspace.closeAll();
   }

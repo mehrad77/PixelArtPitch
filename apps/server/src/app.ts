@@ -280,7 +280,11 @@ export function createApp(o: ServerOpts) {
       notes: p.state.notes,
       budget: st?.budget ?? { capUsd: p.doc().budget.capUsd, spentUsd: 0, reservedUsd: 0, estTotalUsd: null },
       time: st?.time ?? { startedAt: p.state.startedAt, etaSec: null, deadline: p.doc().brief.deadline ?? null },
-      files: p.files().map((f) => ({ ...f, url: `/api/p/${p.id}/files/${encodeURIComponent(f.name)}` })),
+      // the rough-cut proxy has its own route (proxy.mp4) and is never "the video": listed, the page's Download took it
+      files: p
+        .files()
+        .filter((f) => f.kind !== "video" || isFinalVideo(f))
+        .map((f) => ({ ...f, url: `/api/p/${p.id}/files/${encodeURIComponent(f.name)}` })),
       digest: p.state.digest,
       paused: p.state.paused,
       status: p.state.status,

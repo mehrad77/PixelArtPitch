@@ -85,7 +85,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/p/:id/undo` | `{ seq, reason }` | `{ rev, seq }` |
 | `GET /api/p/:id/frame` | `?t=<scene seconds>&scale=1..6` | `image/png` (cached by input hash) |
 | `GET /api/p/:id/contact` | `?every=1` | `image/png` |
-| `GET /api/p/:id/proxy.mp4` | Range | the rough cut, playable with its sound: `out/proxy.mp4` at scale 2 with `out/audio.wav`, written by each `review.final` (PIP-ORCHESTRATION §1.14). `404` until built; the SSE `render { kind: "proxy", url: "/api/p/:id/proxy.mp4" }` announces it (an absolute URL, as for `final`). It never counts as a finished video |
+| `GET /api/p/:id/proxy.mp4` | Range | the rough cut, playable with its sound: `out/proxy.mp4` at scale 2 with `out/audio.wav`, written by each `review.final` (PIP-ORCHESTRATION §1.14). `404` until built; the SSE `render { kind: "proxy", url: "/api/p/:id/proxy.mp4" }` announces it (an absolute URL, as for `final`). It never counts as a finished video and is not in the project's `files` |
 | `POST /api/p/:id/tools/:name` | `{ input }` | `ToolResult` |
 | `POST /api/p/:id/questions/:qid/answer` | `{ optionId?, value?, note? }` | `QuestionT`. A hold's question (`hold: true`, from Pip, PIP-ORCHESTRATION §1.11) lifts the hold and acts on the choice: `retry`, `accept` go on; `redo_director` re-plans the scenes in `blocks`, then goes on; `tell` with words in `note` makes them the person's change, which resumes the run. `fix_key`, and `tell` without a `note`, can't act yet: the question comes back still `open` (same id). Any other lift (Resume, Try again, a saved key, a change) marks it `withdrawn` |
 | `POST /api/p/:id/notes` | `{ target, category, text?, assignee? }` | `Note` |
