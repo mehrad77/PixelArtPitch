@@ -1,6 +1,6 @@
 // One door for changes (docs/PIP-ORCHESTRATION.md §1.12): who owns a person's note, whether it comes through Pip's
 // crew_request_change, a gate's "Change something" or a retry card. The same words always reach the same member.
-import type { RoleT } from "@pap/schema";
+import type { ProjectT, RoleT } from "@pap/schema";
 import { type ChangeCategory, changeOwner } from "@pap/tools";
 
 /**
@@ -18,6 +18,8 @@ export type RouteNote = {
   text: string;
   target?: { scene?: string; cue?: string; asset?: string };
   category?: ChangeCategory;
+  /** the target scene is a code scene the Scene Coder writes (routeIn sets it from the document) */
+  codeScene?: boolean;
 };
 
 /**
@@ -26,6 +28,30 @@ export type RouteNote = {
  * timing and motion inside a scene the Animator's. `fallback` (a gate's owner) only decides what the words don't.
  */
 export function routeChange(note: RouteNote, fallback?: RoleT): RoleT {
+  const owner = routeWords(note, fallback);
+  // a code scene is drawn by its code: how it looks, moves or is staged is the Scene Coder's (a redo priced by
+  // scene.code); a story change still re-boards it (the Director writes a new beat)
+  if (
+    note.codeScene &&
+    note.target?.scene &&
+    (owner === "animator" || (owner === "director" && note.category !== "story"))
+  )
+    return "scene-coder";
+  return owner;
+}
+
+/** the scene is a code scene the crew codes (a beat from the board; an imported bundle stays the person's) */
+export const isCodeScene = (doc: Pick<ProjectT, "scenes">, scene?: string) => {
+  const s = scene ? doc.scenes.find((x) => x.id === scene) : undefined;
+  return s?.kind === "code" && !!s.beat;
+};
+
+/** routeChange with the document: a note on a code scene reaches the Scene Coder */
+export function routeIn(doc: Pick<ProjectT, "scenes">, note: RouteNote, fallback?: RoleT): RoleT {
+  return routeChange({ ...note, codeScene: isCodeScene(doc, note.target?.scene) }, fallback);
+}
+
+function routeWords(note: RouteNote, fallback?: RoleT): RoleT {
   const t = note.target ?? {};
   const text = note.text ?? "";
   const category = note.category ?? "other";

@@ -34,7 +34,7 @@ import { estimateInputTokens } from "./llm/budget.ts";
 import { costUsd, priceFor } from "./llm/prices.ts";
 import { BudgetError, type ChatMessage, type ContentPart, type ToolSpec } from "./llm/types.ts";
 import { type CrewSnapshot, humanize, type ProblemAction, type RunReport, STAGE_LINE } from "./orchestrator.ts";
-import { routeChange } from "./plan/route.ts";
+import { routeIn } from "./plan/route.ts";
 import { fill, card as promptCard } from "./prompts.ts";
 import { isEndCard, sceneMakeup } from "./scene-code.ts";
 
@@ -1584,7 +1584,7 @@ export class Pip {
           input.scene = hit.id;
         }
         // the one router: the same words reach the same member as at a gate (routeChange)
-        const owner = routeChange({
+        const owner = routeIn(d, {
           text: String(input.text ?? ""),
           target: { ...(scene ? { scene } : {}), ...(input.cue ? { cue: String(input.cue) } : {}) },
           category: (input.category as ChangeCategory | undefined) ?? "other",
@@ -1613,6 +1613,13 @@ export class Pip {
           ...(["animator", "director", "writer"].includes(owner)
             ? // the tune, plus the one fix round a review may ask for
               [{ kind: "scene.tune", role: "animator" as RoleT, count: 2 * (owner === "writer" ? d.scenes.length : n) }]
+            : []),
+          // a code scene's redo: the Scene Coder's write (or revision) and its repair or critique calls
+          ...(owner === "scene-coder"
+            ? [
+                { kind: "scene.code", role: "scene-coder" as RoleT, count: n },
+                { kind: "scene.patch", role: "scene-coder" as RoleT, count: 2 * n },
+              ]
             : []),
           { kind: "review.final", role: "reviewer" as RoleT, count: 2 },
         ]);

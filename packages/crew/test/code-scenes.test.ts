@@ -361,3 +361,50 @@ test("code scenes in every scene check: the end card, the parts, Pip's lines and
     "placeholder-box",
   ]);
 });
+
+test("a G3 note on a code scene goes to the Scene Coder, and the change redoes only that scene's code", async () => {
+  const { routeChange } = await import("../src/plan/route.ts");
+  const { gateNotes } = await import("../src/orchestrator.ts");
+  // the words alone go to the Animator; on a code scene they reach the coder; a story change still re-boards it
+  assert.equal(routeChange({ text: "make the stars bigger", target: { scene: "hub" } }), "animator");
+  assert.equal(
+    routeChange({ text: "make the stars bigger", target: { scene: "hub" }, codeScene: true }),
+    "scene-coder",
+  );
+  assert.equal(
+    routeChange({ text: "add a castle", target: { scene: "hub" }, category: "story", codeScene: true }),
+    "director",
+  );
+  const { crew, p } = await crewOn(() => ({ error: new Error("no model call expected") }));
+  const t = (crew as any).task(p, { kind: "director.storyboard", role: "director", title: "board" });
+  await (crew as any).applyBoard(p, t, codeBoard());
+  const notes = gateNotes(p, "g3_rough", { reasons: ["the stars fall too fast"], items: ["One quest board"] });
+  assert.deepEqual(
+    notes.map((x) => [x.target.scene, x.assignee]),
+    [["hub", "scene-coder"]],
+  );
+  // a note that came in as the Animator's (crew_request_change has no document) is the coder's once it arrives
+  const n = p.addNote({
+    target: { scene: "hub" },
+    category: "timing",
+    text: "slower stars",
+    assignee: "animator",
+    by: "user",
+  });
+  (crew as any).runs.set(p.id, { held: false } as any);
+  crew.requestChange(p, n);
+  (crew as any).runs.delete(p.id);
+  assert.equal(p.state.notes.find((x) => x.id === n.id)!.assignee, "scene-coder");
+  // the change's revision: every scene is done and rendered; only the hub's code runs again
+  const ctx = (crew as any).rulesCtx(p, 1);
+  const ts = rules.rulesPlan(p.doc(), ctx, { scenes: p.doc().scenes.map((s) => s.id), newAssets: [] });
+  for (const x of ts) x.status = "done";
+  const ss = Object.fromEntries(p.doc().scenes.map((s) => [s.id, { version: "render", state: "ready" }])) as any;
+  ss.hub = { version: "animatic", state: "stale" };
+  const out = rules.changeRevision(ts, { scope: ["hub"] }, "animate", { ...ctx, rev: 2 }, ss);
+  const live = out.tasks.filter((x) => x.status === "pending" && rules.isSceneWork(x));
+  assert.deepEqual(
+    live.map((x) => [x.kind, x.scene]),
+    [["scene.code", "hub"]],
+  );
+});

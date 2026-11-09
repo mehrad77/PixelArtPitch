@@ -59,7 +59,7 @@ import { Executor, type Outcome } from "./plan/executor.ts";
 import { logoIcon } from "./plan/import.ts";
 import { aboutText, type Instance, InstanceTracker } from "./plan/instances.ts";
 import { applyDiff, type PipRevisionResult, pipRevision, planPromptVars } from "./plan/pip.ts";
-import { routeChange } from "./plan/route.ts";
+import { isCodeScene, routeIn } from "./plan/route.ts";
 import {
   addReboard,
   addRedo,
@@ -629,14 +629,14 @@ export function gateNotes(
   const out: { target: { scene?: string }; text: string; assignee: RoleT }[] = [];
   for (const [scene, its] of byScene) {
     const text = [...reasons, ...its].join("; ").slice(0, 2000);
-    out.push({ target: { scene }, text, assignee: routeChange({ text, target: { scene } }, fallback) });
+    out.push({ target: { scene }, text, assignee: routeIn(p.doc(), { text, target: { scene } }, fallback) });
   }
   if (loose.length || (!byScene.size && reasons.length)) {
     const text = [...reasons, ...loose].join("; ").slice(0, 2000);
     // words that name a scene ("a bit slower in A grind") are about that scene
     const scene = byScene.size ? undefined : sceneNamed(p, text);
     const target = scene ? { scene } : {};
-    out.push({ target, text, assignee: routeChange({ text, target }, fallback) });
+    out.push({ target, text, assignee: routeIn(p.doc(), { text, target }, fallback) });
   }
   return out;
 }
@@ -1946,7 +1946,7 @@ export class Crew {
         target,
         category: "other",
         text: note.slice(0, 1000),
-        assignee: routeChange({ text: note, target }),
+        assignee: routeIn(p.doc(), { text: note, target }),
         by: "user",
       });
       if (!r) {
@@ -2095,6 +2095,13 @@ export class Crew {
    * superseded), the plan gets a change revision, and the crew runs it, unless the person paused it.
    */
   requestChange(p: OpenProject, note: Note, extra: Note[] = []): ChangeResult {
+    // a router without the document (crew_request_change over MCP) sent a code scene's note to the Animator or the
+    // Director: it is the Scene Coder's (§1.12)
+    if (
+      isCodeScene(p.doc(), note.target.scene) &&
+      (note.assignee === "animator" || (note.assignee === "director" && note.category !== "story"))
+    )
+      note = p.updateNote(note.id, { assignee: "scene-coder" });
     const stage = OWNER_STAGE[note.assignee] ?? "review";
     const live = this.runs.get(p.id);
     if (live && !live.held) {
@@ -2211,7 +2218,7 @@ export class Crew {
             {
               target: named ? { scene: named } : {},
               text,
-              assignee: routeChange({
+              assignee: routeIn(p.doc(), {
                 text,
                 ...(named ? { target: { scene: named } } : {}),
                 ...(b.category ? { category: b.category } : {}),
