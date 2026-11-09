@@ -30,6 +30,10 @@ export const TIME_PALETTES: Record<TimeOfDayT, string> = {
  * The palette a canvas renders with: a built-in pap-night/dusk/day palette follows `time` (so a "make it day" that
  * sets only the time still turns the sky), any other palette is kept as it is.
  */
+/** a scene's time of day: its own `time`, else the video's (canvas.time), else night */
+export function sceneTime(canvas: { time?: TimeOfDayT }, scene: { time?: TimeOfDayT }): TimeOfDayT {
+  return scene.time ?? canvas.time ?? "night";
+}
 export function paletteFor(canvas: { palette?: string; time?: TimeOfDayT }): string {
   const p = canvas.palette ?? "pap-night@1";
   if (!canvas.time) return p;
@@ -179,6 +183,8 @@ const SceneBase = z.object({
   /** cue ids this scene carries, for the storyboard and lints */
   cues: z.array(Id).default([]),
   notes: z.string().max(2000).default(""),
+  /** this scene's time of day when it differs from the video's (canvas.time): a day story that ends at dusk */
+  time: TimeOfDay.optional(),
 });
 export const DeclScene = SceneBase.extend({
   kind: z.literal("decl"),

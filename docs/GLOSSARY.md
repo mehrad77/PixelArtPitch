@@ -29,7 +29,7 @@ One line per term. Where a term has a source file, it is named in brackets.
 | **code bundle** | An ES module in `code/` that draws a whole scene itself. It runs in the render sandbox and may import only `pap:engine` and `pap:timeline`. |
 | **code scene** | A scene the Director boards with a `beat` (what it shows, second by second) and the `assets` it draws, because no recipe draws that picture. The Scene Coder writes its bundle (`code/<scene>.mjs`, task `scene.code`); until then a stub (the night, the title, the assets) stands in. |
 | **beat** | A code scene's choreography in plain words: what is on screen, where and when ("1-3 s: six icons pop in around the card, one every 0.3 s"). |
-| **time of day** | `canvas.time`: `night` (the default), `dusk` or `day`. The built-in palette follows it (`pap-night@1`, `pap-dusk@1`, `pap-day@1`), and so do the backdrops. Pip reads it from the idea; a change such as "make it day" sets it with `look.time`, a task with no model call. |
+| **time of day** | `canvas.time`: `night` (the default), `dusk` or `day`; a scene's own `time` overrides it for that scene (`sceneTime`). The built-in palette follows it (`pap-night@1`, `pap-dusk@1`, `pap-day@1`), and so do the backdrops. Pip reads it from the idea; a change such as "make it day" sets it with `look.time`, a task with no model call. |
 | **stub** | The placeholder bundle the storyboard writes for a code scene (`stub: true` in `/code`). It renders, but it isn't a finished picture. |
 | **hold** | The still first frame before anything moves (`composition.hold`, 3 s by default). Render, audio and subtitles are shifted by it. |
 | **end card** | The last scene: product name, call to action and URL, held as a loop for `composition.endHold` seconds. |

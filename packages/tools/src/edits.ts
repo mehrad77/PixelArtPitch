@@ -14,24 +14,50 @@ export type TimeOfDay = "night" | "dusk" | "day";
 const WORD: Record<TimeOfDay, string> = { night: "night", dusk: "dusk", day: "day" };
 
 /**
- * Set the video at a time of day: `canvas.time` only (a built-in palette follows it, `paletteFor`). Returns whether it
- * changed, and the line for a cue that still says the old time ("Cue 1 still says …"), for Pip to pass on once.
+ * Set the video, or some of its scenes, at a time of day. The whole video: `canvas.time` (a built-in palette follows
+ * it, `paletteFor`), and any scene's own `time` is dropped, so the whole video means every scene. Some scenes: each
+ * one's `time` (dropped where it equals the video's), so a day story can end at dusk. Returns whether it changed, and
+ * the line for a cue that still says the old time ("Cue 1 still says …"), for Pip to pass on once.
  */
 export async function setTimeOfDay(
   p: OpenProject,
   want: TimeOfDay,
   author: AuthorT,
+  scenes?: string[],
 ): Promise<{ changed: boolean; was: TimeOfDay; rev: number; cue?: { id: string; line: string } }> {
   const d = p.doc();
-  const was = ((d.canvas as { time?: string }).time ?? "night") as TimeOfDay;
-  if (was === want) return { changed: false, was, rev: d.rev };
-  const r = await p.patch([{ op: "add", path: "/canvas/time", value: want }], {
-    reason: `the person's change: the video is set at ${WORD[want]}`,
+  const base = ((d.canvas as { time?: string }).time ?? "night") as TimeOfDay;
+  const own = (s: (typeof d.scenes)[number]) => (s as { time?: TimeOfDay }).time;
+  const picked = scenes?.length ? d.scenes.filter((s) => scenes.includes(s.id)) : null;
+  if (scenes?.length && !picked?.length) throw new Error(`no such scene: ${scenes.join(", ")}`);
+  const was = picked ? (own(picked[0]) ?? base) : base;
+  const ops: { op: "add" | "remove"; path: string; value?: TimeOfDay }[] = [];
+  if (picked) {
+    for (const s of picked) {
+      const i = d.scenes.indexOf(s);
+      if (want === base) {
+        if (own(s)) ops.push({ op: "remove", path: `/scenes/${i}/time` });
+      } else if (own(s) !== want) ops.push({ op: "add", path: `/scenes/${i}/time`, value: want });
+    }
+  } else {
+    if (base !== want) ops.push({ op: "add", path: "/canvas/time", value: want });
+    d.scenes.forEach((s, i) => {
+      if (own(s)) ops.push({ op: "remove", path: `/scenes/${i}/time` });
+    });
+  }
+  if (!ops.length) return { changed: false, was, rev: d.rev };
+  const nums = picked?.map((s) => d.scenes.indexOf(s) + 1);
+  const r = await p.patch(ops as never, {
+    reason: nums
+      ? `the person's change: ${nums.length === 1 ? `scene ${nums[0]} is` : `scenes ${nums.join(", ")} are`} set at ${WORD[want]}`
+      : `the person's change: the video is set at ${WORD[want]}`,
     author,
   });
-  // the cue that says the old time ("Night falls.") is the person's words: say so, never rewrite it
+  // the cue that says the old time ("Night falls.") is the person's words: say so, never rewrite it (only the
+  // changed scenes' cues when some scenes change)
   const old = want === "night" ? /\b(sun|sunny|day|daylight|sunset|dusk)\b/i : /\bnight\b/i;
-  const c = d.script.cues.find((x) => old.test(x.text));
+  const inScope = picked ? new Set(picked.flatMap((s) => s.cues)) : null;
+  const c = d.script.cues.find((x) => (!inScope || inScope.has(x.id)) && old.test(x.text));
   return {
     changed: true,
     was,
@@ -51,16 +77,28 @@ export const lookSetTime = defineTool({
   name: "look_set_time",
   title: "Set the time of day",
   description:
-    "Set the whole video at night, dusk or day (canvas.time; the palette follows). Recipe scenes and every code scene that draws its sky from TIME follow by themselves: no model call. Says which cue still names the old time.",
-  input: z.object({ time: z.enum(["night", "dusk", "day"]) }),
+    "Set the whole video, or only the scenes you name, at night, dusk or day (canvas.time, or each scene's own time; the palette follows). The whole video drops any scene's own time. Recipe scenes and every code scene that draws its sky from TIME follow by themselves: no model call. Says which cue still names the old time.",
+  input: z.object({
+    time: z.enum(["night", "dusk", "day"]),
+    /** scene ids: only these scenes change (a day story whose last scene is at dusk); absent: the whole video */
+    scenes: z.array(z.string()).max(40).optional(),
+  }),
   output: z.object({ rev: z.number(), changed: z.boolean(), was: z.string(), cueNote: z.string().optional() }),
   roles: ["director", "producer"],
   tier: "basic",
   effects: "write",
   project: true,
-  examples: [{ input: { time: "day" }, note: "make it in daytime" }],
+  examples: [
+    { input: { time: "day" }, note: "make it in daytime" },
+    { input: { time: "dusk", scenes: ["finale"] }, note: "the last scene at sunset" },
+  ],
   handler: async (i, ctx) => {
-    const r = await setTimeOfDay(ctx.project!, i.time, ctx.author);
+    let r: Awaited<ReturnType<typeof setTimeOfDay>>;
+    try {
+      r = await setTimeOfDay(ctx.project!, i.time, ctx.author, i.scenes);
+    } catch (e: any) {
+      return fail("bad_input", String(e?.message ?? e));
+    }
     return ok({ rev: r.rev, changed: r.changed, was: r.was, ...(r.cue ? { cueNote: r.cue.line } : {}) });
   },
 });

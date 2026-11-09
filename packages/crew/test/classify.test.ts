@@ -114,6 +114,11 @@ test("an edit says how: the time's tool and input, the cue it rewrites, the cons
   const src = (id: string) => withTime[id] ?? null;
   const day = classifyChange({ text: "make it in daytime" }, DOC, { source: src });
   assert.deepEqual(day.edits, [{ tool: "look_set_time", input: { time: "day" } }]);
+  // one scene: that scene's own time, still free when it draws its sky from TIME
+  const one = classifyChange({ text: "make scene 2 sunset" }, DOC, { source: src });
+  assert.equal(one.tier, "edit", one.how);
+  assert.deepEqual(one.edits, [{ tool: "look_set_time", input: { time: "dusk", scenes: [DOC.scenes[1].id] } }]);
+  assert.match(one.how, /^Scene 2 is set at dusk/);
   assert.equal(day.time, "day");
   assert.deepEqual(classifyChange({ text: "fix the typo in cue 3" }, DOC).edits, [
     { tool: "script_set_cues", cues: ["c03"] },

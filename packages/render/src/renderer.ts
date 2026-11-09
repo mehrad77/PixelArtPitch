@@ -24,6 +24,9 @@ export function initMessage(p: LoadedProject): InitMsg {
     colours: p.palette.colours,
     sky: p.palette.sky,
     time: p.doc.canvas.time ?? "night",
+    ...(p.looks
+      ? { looks: Object.fromEntries(Object.entries(p.looks).map(([k, v]) => [k, { colours: v.colours, sky: v.sky }])) }
+      : {}),
     assets: p.assets,
     facing: p.facing ?? {},
     fontAssets: usesFont ? ["font"] : undefined,
@@ -39,9 +42,17 @@ export function initMessage(p: LoadedProject): InitMsg {
     },
     scenes: doc.scenes.map((s, i) => {
       const win = timeline.scenes[i];
+      const time = s.time && s.time !== (doc.canvas.time ?? "night") ? { time: s.time } : {};
       return s.kind === "code"
-        ? { id: s.id, from: win.from, to: win.to, kind: "code" as const, bundle: s.bundle }
-        : { id: s.id, from: win.from, to: win.to, kind: "decl" as const, compiled: compileDecl(s, timeline.at) };
+        ? { id: s.id, from: win.from, to: win.to, ...time, kind: "code" as const, bundle: s.bundle }
+        : {
+            id: s.id,
+            from: win.from,
+            to: win.to,
+            ...time,
+            kind: "decl" as const,
+            compiled: compileDecl(s, timeline.at),
+          };
     }),
     ...(p.probe ? { probe: true } : {}),
     bundles: p.bundles.map((b) => ({

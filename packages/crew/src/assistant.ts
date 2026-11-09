@@ -229,8 +229,9 @@ export const PIP_EDIT = [
   "project_patch",
 ] as const;
 const EDIT_SET = new Set<string>(PIP_EDIT);
-/** the paths Pip's own project_patch may touch: the pace and the time of day */
-export const EDIT_PATHS = /^\/(script\/timing\/(wps|pause|lead|minCue)|composition\/(hold|endHold)|canvas\/time)$/;
+/** the paths Pip's own project_patch may touch: the pace and the time of day (the video's, or a scene's own) */
+export const EDIT_PATHS =
+  /^\/(script\/timing\/(wps|pause|lead|minCue)|composition\/(hold|endHold)|canvas\/time|scenes\/\d+\/time)$/;
 /** the UI's anchor ("At 0:54 (scene ready): ") in front of a note: the scene it names, and the words after it */
 export function splitAnchor(text: string): { scene?: string; words: string } {
   const m = /^\s*At \d+:\d{2}(?:\.\d+)?\s*(?:\(([^)]{1,80})\))?:\s*/i.exec(text);

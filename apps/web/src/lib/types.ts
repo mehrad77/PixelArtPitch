@@ -716,6 +716,8 @@ export type ChangesPreview = {
   usd: [number, number];
   sec: [number, number];
   summary: string;
+  /** the change's tier (PIP-ORCHESTRATION §1.12): an `edit` is free, Pip's own; absent from a server before v0.5.2 */
+  tier?: "edit" | "tune" | "code_patch" | "replan";
 };
 export type BuildInfo = { webStale: boolean; builtAt: string | null; srcAt: string | null };
 

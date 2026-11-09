@@ -14,7 +14,7 @@ import { DIRECTOR, timeAsked } from "./route.ts";
 export type ChangeTier = "edit" | "tune" | "code_patch" | "replan";
 /** the write tool an edit uses, and its ready input when a rule decides it (the time, the pacing) */
 export type EditHow =
-  | { tool: "look_set_time"; input: { time: "night" | "dusk" | "day" } }
+  | { tool: "look_set_time"; input: { time: "night" | "dusk" | "day"; scenes?: string[] } }
   | { tool: "project_patch"; input: { ops: { op: "replace"; path: string; value: number }[]; reason: string } }
   | { tool: "script_set_cues"; cues: string[] }
   | { tool: "scene_set_recipes"; scene: string }
@@ -208,19 +208,26 @@ export function classifyChange(note: ClassifyNote, doc: ClassifyDoc, o: { source
         ? `The Pixel artist redraws ${target.asset}, then the scenes that use it are redone.`
         : `The Director re-plans ${sceneId ? `scene ${doc.scenes.findIndex((s) => s.id === sceneId) + 1}` : "the video"}, then the scenes are made again.`,
     };
-  // 2. the time of day: canvas.time; a code scene that draws its sky from TIME follows by itself
+  // 2. the time of day: canvas.time, or the named scene's own; a code scene that draws its sky from TIME follows by
+  // itself
   const time = category === "sound" ? null : timeAsked(text);
   if (time) {
-    const hard = doc.scenes.filter((s) => isCrewCode(s) && !readsTime(src(s.id) ?? "")).map((s) => s.id);
+    const hard = doc.scenes
+      .filter((s) => (!sceneId || s.id === sceneId) && isCrewCode(s) && !readsTime(src(s.id) ?? ""))
+      .map((s) => s.id);
     return {
       tier: hard.length ? "code_patch" : "edit",
       scenes: hard,
       time,
-      edits: [{ tool: "look_set_time", input: { time } }],
+      edits: [{ tool: "look_set_time", input: sceneId ? { time, scenes: [sceneId] } : { time } }],
       per: Object.fromEntries(hard.map((id) => [id, "code_patch" as ChangeTier])),
-      how: hard.length
-        ? `The video is set at ${time}; the Scene Coder patches ${hard.length === 1 ? "the one code scene" : `${hard.length} code scenes`} that draw${hard.length === 1 ? "s" : ""} a fixed sky.`
-        : `The video is set at ${time}: every scene draws its sky from the time of day, so nothing is re-made.`,
+      how: sceneId
+        ? hard.length
+          ? `Scene ${doc.scenes.findIndex((s) => s.id === sceneId) + 1} is set at ${time}; the Scene Coder patches its fixed sky.`
+          : `Scene ${doc.scenes.findIndex((s) => s.id === sceneId) + 1} is set at ${time}: it draws its sky from the time of day, so nothing is re-made.`
+        : hard.length
+          ? `The video is set at ${time}; the Scene Coder patches ${hard.length === 1 ? "the one code scene" : `${hard.length} code scenes`} that draw${hard.length === 1 ? "s" : ""} a fixed sky.`
+          : `The video is set at ${time}: every scene draws its sky from the time of day, so nothing is re-made.`,
     };
   }
   // 3. a caption or the script's words: Pip rewrites the cue, timing follows by rule

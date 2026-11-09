@@ -96,3 +96,23 @@ test("look_set_time: the canvas time only, once, with the cue that still says th
   const again = await registry.call("look_set_time", { time: "day" }, ctx);
   assert.ok(again.ok && !(again.data as { changed: boolean }).changed);
 });
+
+test("look_set_time on some scenes: their own time; the whole video then drops it", async () => {
+  const { p, registry, ctx } = await questdayWithCode();
+  const id = p.doc().scenes.at(-1)!.id;
+  const r = await registry.call("look_set_time", { time: "dusk", scenes: [id] }, ctx);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(p.doc().canvas.time, undefined, "the video stays as it was");
+  assert.equal((p.doc().scenes.at(-1) as { time?: string }).time, "dusk");
+  assert.match(p.readHistory().at(-1)!.reason, /scene \d+ is set at dusk/);
+  // the video's own time for that scene drops the override; an unknown scene is refused
+  const bad = await registry.call("look_set_time", { time: "day", scenes: ["nope"] }, ctx);
+  assert.ok(!bad.ok);
+  const all = await registry.call("look_set_time", { time: "day" }, ctx);
+  assert.ok(all.ok);
+  assert.equal(p.doc().canvas.time, "day");
+  assert.ok(
+    p.doc().scenes.every((s) => !(s as { time?: string }).time),
+    "the whole video means every scene",
+  );
+});

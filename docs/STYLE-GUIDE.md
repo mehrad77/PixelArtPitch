@@ -30,7 +30,7 @@ The source of truth is `library/palettes/pap-night.json`. `.` is transparent. Ne
 
 ### Dusk and day (`pap-dusk@1`, `pap-day@1`)
 
-A video is set at night unless `canvas.time` says `"dusk"` or `"day"`; the palette follows it. Both palettes keep **every** `pap-night` letter and hex, so all art works unchanged, and add seven letters of their own:
+A video is set at night unless `canvas.time` says `"dusk"` or `"day"`; the palette follows it. A scene can be set at another time with its own `time` (a day story that ends at dusk): it draws with that time's palette, sky and `TIME`. Both palettes keep **every** `pap-night` letter and hex, so all art works unchanged, and add seven letters of their own:
 
 | Letter | Day | Dusk | Use |
 |---|---|---|---|

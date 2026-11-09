@@ -48,7 +48,7 @@ The sky for the video's time of day (`canvas.time`), a two-row parallax skyline,
 
 | param | type | default | range | what |
 |---|---|---|---|---|
-| sky | auto/night/dusk/day | auto | | this scene's time of day; `auto` follows the video's `canvas.time` |
+| sky | auto/night/dusk/day | auto | | this backdrop's time of day; `auto` follows the scene's own `time`, else the video's `canvas.time` |
 | stars | int | 70 | 0–200 | how many stars (at dusk at most 14; none by day) |
 | moon | bool | true | | draw the moon (night only) |
 | skyline | bool | true | | draw the skyline |
@@ -68,7 +68,7 @@ The city from up high: the sky for the video's time of day (as `backdrop_night`'
 
 | param | type | default | range | what |
 |---|---|---|---|---|
-| sky | auto/night/dusk/day | auto | | this scene's time of day; `auto` follows the video's `canvas.time` |
+| sky | auto/night/dusk/day | auto | | this backdrop's time of day; `auto` follows the scene's own `time`, else the video's `canvas.time` |
 | stars | int | 70 | 0–200 | how many stars (at dusk at most 14; none by day) |
 | moon | bool | true | | draw the moon (night only) |
 | skyline | bool | true | | draw the skyline beyond the roof |

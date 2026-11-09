@@ -453,9 +453,18 @@ export type ChangePlan = {
   assets?: string[];
   /** the time of day the change sets (look.time, no model call); its code scenes are in `scope` */
   time?: "night" | "dusk" | "day";
+  /** the scenes that time is for (each scene's own time); absent: the whole video */
+  timeScenes?: string[];
 };
-/** the video's time of day (canvas.time; absent: night) */
-const timeOf = (d: { canvas: { time?: string } }) => d.canvas.time ?? "night";
+/**
+ * The video's time of day for a prompt (canvas.time; absent: night), with the scenes set at another time named:
+ * "day; scene 6 (finale) at dusk".
+ */
+const timeOf = (d: { canvas: { time?: string }; scenes: { id: string; time?: string }[] }) => {
+  const base = d.canvas.time ?? "night";
+  const own = d.scenes.map((s, i) => ({ s, i })).filter(({ s }) => s.time && s.time !== base);
+  return own.length ? `${base}; ${own.map(({ s, i }) => `scene ${i + 1} (${s.id}) at ${s.time}`).join(", ")}` : base;
+};
 /** the stage a person's note reopens: its owner's, or the animate stage for a time of day (look.time) */
 const noteStage = (n: { assignee: string; text?: string }): Stage =>
   timeAsked(n.text ?? "") ? "animate" : (OWNER_STAGE[n.assignee] ?? "review");
@@ -725,6 +734,8 @@ export function mergeChange(a: ChangePlan | undefined, b: ChangePlan): ChangePla
     ...(reboard.length ? { reboard } : {}),
     ...(assets.length ? { assets } : {}),
     ...((b.time ?? a.time) ? { time: b.time ?? a.time } : {}),
+    // a later time for the whole video replaces a scene's; a later scene's time keeps only its own scenes
+    ...(b.time ? (b.timeScenes ? { timeScenes: b.timeScenes } : {}) : a.timeScenes ? { timeScenes: a.timeScenes } : {}),
   };
 }
 /**
@@ -781,6 +792,7 @@ function planChange(p: OpenProject, notes: Note[], usesOf: (scene: string) => st
   const assets = new Set<string>();
   let everywhere = false;
   let time: ChangePlan["time"];
+  let timeScenes: string[] | undefined;
   for (const n of notes) {
     const asked = timeAsked(n.text);
     const c = tierOf(p, n);
@@ -788,6 +800,9 @@ function planChange(p: OpenProject, notes: Note[], usesOf: (scene: string) => st
       // the whole video's time of day: look.time sets it; recipe scenes and code scenes that read TIME follow, and
       // only a code scene with a fixed sky is patched (§1.12, check first)
       time = asked;
+      // a note on one scene ("make scene 5 sunset") sets that scene's own time; otherwise the whole video's
+      const own = c.edits?.find((e) => e.tool === "look_set_time")?.input as { scenes?: string[] } | undefined;
+      timeScenes = own?.scenes?.length ? own.scenes : n.target.scene ? [n.target.scene] : undefined;
       for (const id of c.scenes) scope.add(id);
     } else if (n.target.asset && !n.target.scene) {
       assets.add(n.target.asset);
@@ -813,6 +828,7 @@ function planChange(p: OpenProject, notes: Note[], usesOf: (scene: string) => st
     ...(reboard.size ? { reboard: all.filter((id) => reboard.has(id)) } : {}),
     ...(assets.size ? { assets: [...assets] } : {}),
     ...(time ? { time } : {}),
+    ...(time && timeScenes ? { timeScenes } : {}),
   };
 }
 
@@ -5270,10 +5286,12 @@ export class Crew {
     const t = this.task(p, {
       kind: "look.time",
       role: "director",
-      title: `Setting the video at ${words[want]}`,
+      title: r.change?.timeScenes?.length
+        ? `Setting ${r.change.timeScenes.length === 1 ? "a scene" : `${r.change.timeScenes.length} scenes`} at ${words[want]}`
+        : `Setting the video at ${words[want]}`,
       ...this.ptOf(pt),
     });
-    const set = await setTimeOfDay(p, want, { kind: "agent", role: "director", task: t.id });
+    const set = await setTimeOfDay(p, want, { kind: "agent", role: "director", task: t.id }, r.change?.timeScenes);
     if (!set.changed) {
       this.done(p, t, { summary: `it is already ${words[want]}` });
       p.log(t.id, { kind: "step", title: `The video is already set at ${words[want]}` });

@@ -17,13 +17,15 @@ export type InitMsg = {
   sky: string;
   /** the video's time of day (canvas.time): backdrops and TIME follow it */
   time?: "night" | "dusk" | "day";
+  /** the palette of each other time of day a scene is set in: those scenes draw with an engine of their own */
+  looks?: Partial<Record<"night" | "dusk" | "day", { colours: Record<string, string>; sky: string }>>;
   assets: [string, Frames][];
   /** asset id -> which way its art looks (only the assets that say) */
   facing?: Record<string, "left" | "right">;
   fontAssets?: string[];
   timeline: Record<string, unknown> & { TIMES: number[][] };
   compose: ComposeCtx & { captionsByHost: boolean };
-  scenes: ({ id: string; from: number; to: number } & (
+  scenes: ({ id: string; from: number; to: number; time?: "night" | "dusk" | "day" } & (
     | { kind: "code"; bundle: string }
     | { kind: "decl"; compiled: CompiledScene }
   ))[];
@@ -48,7 +50,10 @@ type Msg =
 
 type Bundle = { ctx: vm.Context; ns: any; draw: vm.Script; fullFrame: boolean; sfx: boolean };
 
+/** the video's engine (its time of day), and one per other time a scene is set in; all draw into one buffer */
 let engine: Engine;
+const engines = new Map<string, Engine>();
+const engineFor = (time?: string) => (time && engines.get(time)) || engine;
 let init: InitMsg;
 const bundles = new Map<string, Bundle>();
 const send = (m: unknown) => process.send!(m);
@@ -93,7 +98,9 @@ async function loadBundle(b: InitMsg["bundles"][number]): Promise<Bundle> {
     name: `pap:bundle/${b.id}`,
     codeGeneration: { strings: false, wasm: false },
   });
-  const api = withKit(init.probe ? probed(engine) : engine);
+  // a bundle draws with the engine of the time its scene is set in (TIME, the sky and the palette follow it)
+  const own = engineFor(init.scenes.find((s) => s.kind === "code" && s.bundle === b.id)?.time);
+  const api = withKit(init.probe ? probed(own) : own);
   const engineMod = new vm.SyntheticModule(
     [...ENGINE_EXPORTS],
     function (this: vm.SyntheticModule) {
@@ -138,7 +145,7 @@ function drawScene(sc: (typeof init.scenes)[number], t: number) {
     b.draw.runInContext(b.ctx, { timeout: init.frameTimeoutMs ?? 250 });
     return b.fullFrame;
   }
-  drawDecl(engine, sc.compiled, t);
+  drawDecl(engineFor(sc.time), sc.compiled, t);
   return false;
 }
 
@@ -172,15 +179,14 @@ process.on("message", async (m: Msg) => {
     if (m.cmd === "init") {
       init = m;
       lastFrames.clear();
-      engine = createEngine({
-        colours: m.colours,
-        sky: m.sky,
-        time: m.time,
-        assets: new Map(m.assets),
-        facing: m.facing,
-        fontAssets: m.fontAssets,
-        buffer: Buffer.alloc(320 * 180 * 3),
-      });
+      const assets = new Map(m.assets);
+      const buffer = Buffer.alloc(320 * 180 * 3);
+      const make = (time: InitMsg["time"], look: { colours: Record<string, string>; sky: string }) =>
+        createEngine({ ...look, time, assets, facing: m.facing, fontAssets: m.fontAssets, buffer });
+      engine = make(m.time, { colours: m.colours, sky: m.sky });
+      engines.clear();
+      for (const [time, look] of Object.entries(m.looks ?? {}))
+        if (look) engines.set(time, make(time as InitMsg["time"], look));
       for (const b of m.bundles) bundles.set(b.id, await loadBundle(b));
       send({ ok: true, cmd: "init" });
     } else if (m.cmd === "frames") {

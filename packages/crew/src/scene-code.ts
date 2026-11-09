@@ -74,7 +74,7 @@ export const ENGINE_DOC: Record<(typeof ENGINE_EXPORTS)[number], string> = {
   COLOURS: 'palette letter -> "#rrggbb"',
   RGB: "palette letter -> [r, g, b]; px() takes these triples (RGB.P), not letters",
   SKY: 'the palette\'s sky colour (night "#0f1411", dusk "#4a3a6a", day "#64a2da"); clear() paints it',
-  TIME: 'the video\'s time of day, "night" | "dusk" | "day" (canvas.time): draw the sky for it, never a hard-coded night',
+  TIME: 'this scene\'s time of day, "night" | "dusk" | "day" (its own time, else the video\'s canvas.time): draw the sky for it, never a hard-coded one',
   clear: "paint the whole frame one colour (default the sky); skyGradient() is the usual first call instead",
   px: "one pixel; c is an RGB triple such as RGB.P (a letter here writes black), a is 0..1",
   rect: 'a filled rectangle; c is a palette letter ("K") or "#rrggbb", a is 0..1',

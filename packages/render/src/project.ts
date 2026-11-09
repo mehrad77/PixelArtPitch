@@ -11,7 +11,9 @@ import {
   type ProjectT,
   paletteFor,
   resolveTimeline,
+  sceneTime,
   type Timeline,
+  type TimeOfDayT,
 } from "@pap/schema";
 import { libraryAssetDir, libraryFile } from "./library.ts";
 
@@ -81,6 +83,8 @@ export type LoadedProject = {
   doc: ProjectT;
   timeline: Timeline;
   palette: Palette;
+  /** the palette of each other time of day a scene is set in (scene.time): a day video that ends at dusk */
+  looks?: Partial<Record<TimeOfDayT, Palette>>;
   assets: [string, Frames][];
   /** asset id -> which way its art looks, for the assets that say (resolveAbout) */
   facing?: Record<string, FacingT>;
@@ -104,6 +108,12 @@ export function loadProject(dir: string): LoadedProject {
 export function openDoc(dir: string, doc: ProjectT): LoadedProject {
   const timeline = resolveTimeline(doc);
   const palette = loadPalette(paletteFor(doc.canvas));
+  const base = doc.canvas.time ?? "night";
+  const looks: Partial<Record<TimeOfDayT, Palette>> = {};
+  for (const s of doc.scenes) {
+    const time = sceneTime(doc.canvas, s);
+    if (time !== base && !looks[time]) looks[time] = loadPalette(paletteFor({ ...doc.canvas, time }));
+  }
   const assets = resolveAssets(dir, doc);
   const about = resolveAbout(dir, doc);
   const facing = facingMap(about);
@@ -115,7 +125,17 @@ export function openDoc(dir: string, doc: ProjectT): LoadedProject {
     sfx: b.sfx,
     initArg: b.initAsset ? JSON.parse(readFileSync(join(dir, b.initAsset), "utf8")) : undefined,
   }));
-  return { dir, doc, timeline, palette, assets, facing, about, bundles };
+  return {
+    dir,
+    doc,
+    timeline,
+    palette,
+    ...(Object.keys(looks).length ? { looks } : {}),
+    assets,
+    facing,
+    about,
+    bundles,
+  };
 }
 
 /** The values a code bundle sees in "pap:timeline" (the same names as the first video's timeline.mjs). */

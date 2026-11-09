@@ -82,3 +82,25 @@ test("the library's characters and props pass the sprite check on the day and du
     }
   }
 });
+
+test("a scene can be set at its own time: a day video whose second scene is at dusk", async () => {
+  const raw = base();
+  raw.canvas.time = "day";
+  for (const s of raw.scenes.slice(0, 2)) s.recipes = [{ id: "backdrop_night" }];
+  raw.scenes[1].time = "dusk";
+  const lp = openDoc(QUESTDAY, Project.parse(raw));
+  assert.deepEqual(Object.keys(lp.looks ?? {}), ["dusk"], "the dusk palette is loaded beside the day one");
+  const [a, b] = lp.timeline.scenes;
+  const r = await openRenderer(lp);
+  try {
+    const day = await r.frame((a.from + a.to) / 2);
+    const dusk = await r.frame((b.from + b.to) / 2);
+    assert.equal(px(day, 4, 2), "#3f86cf", "the first scene follows the video: day");
+    assert.equal(px(dusk, 4, 2), "#2a2a55", "the second scene is at dusk");
+  } finally {
+    r.close();
+  }
+  // a scene's time equal to the video's loads nothing more
+  raw.scenes[1].time = "day";
+  assert.equal(openDoc(QUESTDAY, Project.parse(raw)).looks, undefined);
+});
