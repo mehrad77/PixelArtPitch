@@ -598,6 +598,32 @@ export function castOf(idea: string, names: Iterable<string>): string[] {
         low.search(new RegExp(`\\b${b.replace(/[^a-z0-9]/g, ".")}`)),
     );
 }
+const COUNT_WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, "2": 2, "3": 3, "4": 4, "5": 5 };
+/**
+ * The script's counted lists: a cue that names a count of things ("Divan gives us three things:", "4 reasons"),
+ * the count, and the words. A list of 2-5 items.
+ */
+export function countedLists(cues: { id: string; text: string }[]): { cue: string; n: number; words: string }[] {
+  const out: { cue: string; n: number; words: string }[] = [];
+  for (const c of cues) {
+    const m =
+      /\b(two|three|four|five|[2-5])\s+(?:big\s+|small\s+|key\s+|simple\s+)?(things|ways|reasons|steps|gifts|parts|pieces|pillars|wins|tools|promises|benefits|features)\b/i.exec(
+        c.text,
+      );
+    if (m) out.push({ cue: c.id, n: COUNT_WORDS[m[1].toLowerCase()], words: m[0] });
+  }
+  return out;
+}
+/** a beat that names n numbered slots: "three numbered slots", "3 boxes", "slots 1-2-3", "slots(3" */
+export function beatHasSlots(beat: string, n: number): boolean {
+  const num = `(?:${n}|${Object.keys(COUNT_WORDS).find((k) => COUNT_WORDS[k] === n && /[a-z]/.test(k))})`;
+  const seq = Array.from({ length: n }, (_, i) => i + 1).join("\\s*[-,]\\s*");
+  return (
+    new RegExp(`\\b${num}\\b[^.]{0,30}\\b(slots?|boxes|frames|panels|cards)\\b`, "i").test(beat) ||
+    new RegExp(`\\bslots\\s*\\(\\s*${n}\\b`, "i").test(beat) ||
+    (/\b(slots?|boxes)\b/i.test(beat) && new RegExp(`\\b${seq}\\b`).test(beat))
+  );
+}
 /** a scene a gate item or a person's words name, by its id or its title */
 function sceneNamed(p: OpenProject, text: string): string | undefined {
   const low = text.toLowerCase();
@@ -3604,6 +3630,14 @@ export class Crew {
             : `scene ${s.id} leaves out ${missing.join(", ")}: the players stay on stage in every scene; cast them (walk_in hero, spawn_join who with motion "walk")`,
         );
       });
+    // a counted list ("Divan gives us three things:") is one code scene with that many numbered slots
+    for (const { cue, n, words } of countedLists(p.doc().script.cues)) {
+      const s = b.scenes.find((x) => x.cues.includes(cue));
+      if (s && s.kind === "code" && beatHasSlots(s.beat, n)) continue;
+      out.push(
+        `cue ${cue} counts "${words}": make the scene with ${cue} one code scene with ${n} numbered slots (1-${n}) that fill one per cue with the item's icon or characters (slots(${n}, …) in pap:engine), not a walk-in recipe; its beat names the ${n} slots`,
+      );
+    }
     return out;
   }
   /** a code scene that still leaves a player out lists them anyway (the coder keeps listed players on stage) */

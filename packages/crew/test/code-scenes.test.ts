@@ -476,3 +476,29 @@ test("the players stay on stage: a scene that leaves one out is a soft warning, 
   assert.deepEqual(hub.assets, ["hero", "items", "gamer"]);
   assert.deepEqual((p.doc().scenes.find((s: any) => s.id === "end") as any).assets, ["hero", "font", "gamer"]);
 });
+
+test("a counted list: a cue reading three things asks for one code scene whose beat names three slots", async () => {
+  const { crew, p } = await crewOn(() => ({ error: new Error("no model call expected") }));
+  const c = crew as any;
+  await p.patch([{ op: "replace", path: "/script/cues/1/text", value: "QuestDay gives you three things:" }], {
+    reason: "t",
+    author: { kind: "user" },
+  });
+  const { countedLists, beatHasSlots } = await import("../src/orchestrator.ts");
+  assert.deepEqual(countedLists(p.doc().script.cues), [{ cue: "c02", n: 3, words: "three things" }]);
+  // the hub boards c02 as a code scene, but its beat has no slots: the warning says what to do
+  const warn = (c.boardWarnings(p, codeBoard()) as string[]).filter((w) => /counts/.test(w));
+  assert.equal(warn.length, 1);
+  assert.match(warn[0], /cue c02 counts "three things": .* one code scene with 3 numbered slots/);
+  // a recipe scene for the list is the same warning; a beat with three numbered slots is not
+  assert.equal((c.boardWarnings(p, codeBoard("recipe")) as string[]).filter((w) => /counts/.test(w)).length, 1);
+  const good = codeBoard();
+  good.scenes[1].beat =
+    "Three numbered slots, 1-2-3, in a row at y 60. With c02 slot 1 fills with a star, then 2 and 3.";
+  assert.deepEqual(
+    (c.boardWarnings(p, good) as string[]).filter((w) => /counts/.test(w)),
+    [],
+  );
+  assert.ok(beatHasSlots("slots(3, { x: 40, y: 60 }) fill on c12, c13, c14", 3));
+  assert.ok(!beatHasSlots("the three mentors walk in one by one", 3));
+});

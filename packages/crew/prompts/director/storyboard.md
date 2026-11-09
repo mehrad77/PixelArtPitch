@@ -1,5 +1,5 @@
 ---
-version: 7
+version: 8
 maxOut: 12000
 effort: high
 ---
@@ -41,7 +41,12 @@ Hard rules:
    `assets` and its beat says where each one stands when the beat is about something else: "Ana and Bo watch
    from the left corner, Cy points at the map". A recipe scene casts them: walk_in hero, then spawn_join who with
    motion "walk". Players join by walking in; motion "drop" is for creatures or a beat that is a jump-in.
-7. The last scene is an end card that holds while the music plays out: end_card_loop, or a code scene with
+7. A counted list is one code scene with numbered slots. When a cue counts ("three things:", "4 reasons") and the
+   next cues name the items, board them as one code scene with that many numbered slots in a row (slots(3, ...) in
+   pap:engine). Slot 1 fills on the first item's cue with its icon or characters, slot 2 on the next, and so on; the
+   filled slots stay. Never a walk-in recipe for a list. Its beat names the slots: "Three numbered slots, 1-2-3, in
+   a row at y 60. With c12 slot 1 fills: the three mentor icons and a trophy..."
+8. The last scene is an end card that holds while the music plays out: end_card_loop, or a code scene with
    "endCard": true when the device needs its own (a game's final screen with both logos and PRESS START).
 Return only the JSON object.
 
@@ -59,4 +64,5 @@ Assets available (name: kind, size, frames):
 
 Check before answering: each cue in exactly one scene, in order; recipe scenes use only menu recipe ids and listed
 params, times anchored to cues; code scenes have a beat and list their assets, with empty recipes; every player is in
-every scene after the first; at most one short on-screen text per scene; newAssets only for things the list lacks.
+every scene after the first; a counted list is one code scene with its numbered slots; at most one short on-screen
+text per scene; newAssets only for things the list lacks.

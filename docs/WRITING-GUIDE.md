@@ -42,6 +42,7 @@ word budget = (duration − hold − endHold) × 2.3
 6. **Say names in the order they appear on screen.**
 7. **The last cue is the call to action**, and it can be read in under 2 s.
 8. Use what the brief must say (`mustSay`), and nothing it must avoid (`mustAvoid`).
+9. **Count a list out loud.** When the brief lists what a program or product gives ("mentors, weekly demo days and a deadline"), one cue names the count ("It gives us three things:") and each item gets its own cue, in order. The Director shows it as that many numbered slots filling one per cue. Never fold the list into one cue.
 
 Bad and good:
 
@@ -108,6 +109,7 @@ Each cue is drawable: an inbox icon with a counter, five repeated icons, a chara
 - [ ] Total words ≤ the budget (`script_estimate`), and every cue ≤ 12 words
 - [ ] The shape is complete: hook, what and call to action at least
 - [ ] Each cue is one idea that can be drawn as an icon
+- [ ] A list in the brief is counted ("three things:"), one cue per item
 - [ ] Names in on-screen order; nothing from `mustAvoid`; everything from `mustSay`
 - [ ] Read it aloud in the target time
 - [ ] 3 angles with different hooks (at G1)

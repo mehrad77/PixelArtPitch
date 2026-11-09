@@ -24,6 +24,7 @@ Read first: [WRITING-GUIDE.md](../WRITING-GUIDE.md).
 4. For each angle: a title (≤ 5 words), a one-sentence summary, and the full cue list.
 5. Run `script_estimate` on each cue list. Fix any line with `tooLong: true` (> 12 words) and any total over the budget.
 6. Check the shape: hook, who, what, why, ask, call to action. The last cue is the call to action.
+   A list in the brief (what a program gives) is counted out loud: one cue names the count ("It gives us three things:"), then one cue per item, in order (WRITING-GUIDE §3 rule 9).
 7. Hand the 3 angles to the Producer for G1. After the user picks one, call `script_set_cues` with it.
 8. On a note: change only the cues it targets, keep the other cue ids, and resolve the note with what you changed.
 
