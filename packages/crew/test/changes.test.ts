@@ -315,3 +315,49 @@ test("answering a gate takes the line off 'Waiting for you…' and onto the stag
   crew.gate(p, "g3_rough", { verdict: "approve", by: "user" });
   assert.equal(p.state.status.line, "Exporting your video");
 });
+
+test("a change that changes nothing says so: no re-plan claimed, the note stays open, the task falls back", async () => {
+  let same: any = null;
+  const { crew, p } = await crewOn((req) => {
+    const sys = req.system ?? "";
+    // the Director's re-plan returns the scene exactly as it is, and claims it did the change
+    if (/The person asked for a change/.test(sys))
+      return { json: { scenes: [same], approximated: "Replaced night sky with a purple rooftop backdrop" } };
+    return tuneAndShip(req);
+  });
+  await crew.run(p, {});
+  const grind = p.doc().scenes.find((s: any) => s.id === "grind") as any;
+  same = { id: "grind", kind: "recipe", recipes: grind.recipes };
+  const rev = p.doc().rev;
+  const reports: any[] = [];
+  crew.onRunEnd = (_p, r) => reports.push(r);
+  const note = p.addNote({
+    target: { scene: "grind" },
+    category: "art",
+    text: "make the sky purple",
+    assignee: "director",
+    by: "user",
+  });
+  crew.requestChange(p, note);
+  await wait(() => reports.length > 0 && !crew.status(p).crew.running);
+  const r = reports.at(-1);
+  assert.deepEqual(r.reboarded, [], "nothing was re-planned");
+  assert.deepEqual(r.approximated, [], "the model's claim is not passed on");
+  assert.deepEqual(r.unchanged, ["grind"]);
+  const board = crew.planNow(p)!.tasks.filter((t: any) => t.kind === "director.storyboard" && t.scenes?.length);
+  assert.equal(board.at(-1)?.outcome, "fallback");
+  assert.match(board.at(-1)?.note ?? "", /nothing was changed/);
+  assert.equal(p.state.notes.find((x) => x.id === note.id)?.status, "open", "the note stays open");
+  assert.deepEqual(
+    (p.doc().scenes.find((s: any) => s.id === "grind") as any).recipes,
+    grind.recipes,
+    "the scene is as it was",
+  );
+  assert.ok(p.doc().rev >= rev);
+  // Pip's card says so in plain words
+  const { settleCard } = await import("../src/assistant.ts");
+  const card: any = { status: "running" };
+  settleCard(card, r, p);
+  assert.match(card.result.text, /^Nothing was changed: the crew left scene 1 as it was\. Your note stays open/);
+  assert.doesNotMatch(card.result.text, /re-planned|Approximated/);
+});

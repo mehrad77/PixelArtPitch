@@ -374,7 +374,14 @@ type Run = {
   /** the person's change this run makes, if any */
   change?: ChangePlan;
   /** what this run did, for the card that started it */
-  done: { redone: Set<string>; reboarded: string[]; approximated: string[]; exported: boolean };
+  done: {
+    redone: Set<string>;
+    reboarded: string[];
+    approximated: string[];
+    /** scenes a change task left as they were (a re-plan that came back the same, a tune with no change) */
+    unchanged?: string[];
+    exported: boolean;
+  };
   /** triggers waiting for Pip (handled at the end of the stage) */
   triggers: Trigger[];
   /** redo rounds per scene in this run (the request) */
@@ -511,6 +518,8 @@ export type RunReport = {
   redone: string[];
   reboarded: string[];
   approximated: string[];
+  /** scenes a change task left as they were: "nothing was changed" */
+  unchanged?: string[];
   /** Reviewer blockers still open on the scenes the change touched */
   openBlockers: { scene: string; text: string }[];
   exported: boolean;
@@ -1449,6 +1458,17 @@ export class Crew {
     else delete plan.claims;
     touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
   }
+  /** a change that changed nothing: its notes leave their claims, so its revision finishing never closes them */
+  private releaseClaims(p: OpenProject, notes: string[]) {
+    const plan = this.planNow(p);
+    if (!plan?.claims?.length || !notes.length) return;
+    const left = plan.claims
+      .map((c) => ({ ...c, notes: c.notes.filter((n) => !notes.includes(n)) }))
+      .filter((c) => c.notes.length);
+    if (left.length) plan.claims = left;
+    else delete plan.claims;
+    touch(p, plan, this.planEnv(p), this.deps.gateway.spent(p.id).spentUsd, this.pipView(p));
+  }
   /** the notes a live revision has claimed (they close with it, never start another run) */
   private claimed(p: OpenProject): Set<string> {
     return new Set((this.planNow(p)?.claims ?? []).flatMap((c) => c.notes));
@@ -2360,6 +2380,9 @@ export class Crew {
       redone: [...r.done.redone],
       reboarded: r.done.reboarded,
       approximated: r.done.approximated,
+      unchanged: [...new Set(r.done.unchanged ?? [])].filter(
+        (x) => !r.done.reboarded.includes(x) && !r.done.redone.has(x),
+      ),
       openBlockers: p.state.notes
         .filter(
           (n) =>
@@ -4031,9 +4054,21 @@ export class Crew {
         });
         issues = check(out.data);
       }
-      // scenes still wrong keep their recipes; the rest are applied
+      // scenes still wrong keep their recipes; the rest are applied, unless they came back as they were (a code
+      // scene's stub reset would then re-code the old beat)
       const bad = new Set(issues.map((i) => i.split(/[.: ]/)[0]));
-      const good = out.data.scenes.filter((sc) => ids.includes(sc.id) && !bad.has(sc.id));
+      const same = (sc: z.infer<typeof ReboardOut>["scenes"][number]) => {
+        const was = d.scenes.find((x) => x.id === sc.id);
+        if (!was) return false;
+        return was.kind === "code"
+          ? sc.kind === "code" &&
+              sc.beat.trim() === (was.beat ?? "").trim() &&
+              JSON.stringify(sc.assets) === JSON.stringify(was.assets ?? [])
+          : sc.kind !== "code" &&
+              JSON.stringify(sc.recipes.map((x) => [x.id, x.params])) ===
+                JSON.stringify(was.recipes.map((x) => [x.id, x.params]));
+      };
+      const good = out.data.scenes.filter((sc) => ids.includes(sc.id) && !bad.has(sc.id) && !same(sc));
       for (const sc of good)
         await this.setSceneForm(
           p,
@@ -4041,13 +4076,25 @@ export class Crew {
           { ...sc, endCard: (p.doc().scenes.find((x) => x.id === sc.id) as { endCard?: boolean })?.endCard },
           `re-planned for the person's change: ${vars.change.slice(0, 200)}`,
         );
+      if (!good.length) {
+        // a change that changes nothing says so (P7: "Replaced night sky…" with no patch): no "re-planned", no
+        // approximation, the person's notes stay open, and the task is a fallback a retry redoes
+        (r.done.unchanged ??= []).push(...ids);
+        this.releaseClaims(
+          p,
+          notes.map((n) => n.id),
+        );
+        p.emit("log", { level: "warn", role: "director", text: `the re-plan left ${ids.join(", ")} as they were` });
+        this.done(p, t, { summary: `nothing was changed: the re-plan left ${ids.join(", ")} as they were` });
+        return { status: "done", note: "nothing was changed: the re-plan came back the same", outcome: "fallback" };
+      }
       for (const sc of good) p.setSceneStatus(sc.id, { version: "board", state: "ready" });
       r.done.reboarded.push(...good.map((x) => x.id));
       const approx = out.data.approximated.trim();
       if (approx) r.done.approximated.push(approx);
       if (good.length < ids.length)
         r.done.approximated.push(
-          `The Director's plan for ${ids.filter((x) => !good.some((g) => g.id === x)).join(", ")} didn't fit the menu, so those scenes stayed as they were.`,
+          `The Director's plan for ${ids.filter((x) => !good.some((g) => g.id === x)).join(", ")} didn't fit the menu or came back the same, so those scenes stayed as they were.`,
         );
       // a note with no scene is done here; a scene's note goes on to that scene's Animator
       this.handled(
@@ -4747,6 +4794,8 @@ export class Crew {
         images: await this.sceneStills(p, s.id),
         model: this.modelOf(p, pt),
       });
+      // the scene counts as redone only when the tune changed it ("No scene changed" otherwise)
+      let changed = false;
       if (data.changes.length) {
         const recipes = sc.recipes.map((x) => ({ ...x, params: { ...x.params } }));
         for (const c of data.changes)
@@ -4764,6 +4813,7 @@ export class Crew {
           },
           this.ctx(p, "animator", t.id),
         );
+        changed = res.ok;
         if (!res.ok)
           p.emit("log", {
             level: "warn",
@@ -4771,12 +4821,18 @@ export class Crew {
             text: `${s.id}: kept the scene as it was (${res.error.message})`,
           });
       }
-      this.handled(p, notes, data.changes.map((c) => c.why).join("; ") || "checked; no change needed");
+      // after a re-plan that changed nothing, a tune that changes nothing leaves the person's notes open too
+      const stays = !changed && !!r.done.unchanged?.includes(s.id);
+      this.handled(
+        p,
+        stays ? notes.filter((n) => n.by !== "user") : notes,
+        data.changes.map((c) => c.why).join("; ") || "checked; no change needed",
+      );
       this.done(p, t, {
         summary: data.changes.length ? data.changes.map((c) => c.why).join("; ") : "no changes needed",
       });
       p.setSceneStatus(s.id, { version: "render", state: "ready" });
-      r.done.redone.add(s.id);
+      if (changed) r.done.redone.add(s.id);
     } catch (e: any) {
       // a weak model failing here costs nothing: the scene keeps its recipes as they are (a provider failure holds)
       const fb = this.fallbackOr(p, r, t, e, `kept as built (${String(e?.message ?? e).slice(0, 140)})`);

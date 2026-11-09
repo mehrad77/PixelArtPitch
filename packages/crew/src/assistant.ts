@@ -2492,7 +2492,7 @@ export function resultFor(
 }
 
 /** a handoff card's final state, in plain words: what was redone, what was approximated, what is still wrong */
-function settleCard(c: StoredPlan, r: RunReport, p: OpenProject) {
+export function settleCard(c: StoredPlan, r: RunReport, p: OpenProject) {
   const num = (id: string) => {
     const k = p.doc().scenes.findIndex((s) => s.id === id);
     return k >= 0 ? String(k + 1) : id;
@@ -2507,7 +2507,12 @@ function settleCard(c: StoredPlan, r: RunReport, p: OpenProject) {
   const parts: string[] = [];
   if (r.reboarded.length) parts.push(`The Director re-planned ${scenes(r.reboarded)}.`);
   if (r.redone.length) parts.push(`The Animator redid ${scenes(r.redone)}.`);
-  if (!r.reboarded.length && !r.redone.length) parts.push("No scene changed.");
+  if (r.unchanged?.length && !r.reboarded.length && !r.redone.length)
+    parts.push(
+      `Nothing was changed: the crew left ${scenes(r.unchanged)} as ${r.unchanged.length === 1 ? "it was" : "they were"}. Your note stays open; say it another way, or retry.`,
+    );
+  else if (!r.reboarded.length && !r.redone.length) parts.push("No scene changed.");
+  else if (r.unchanged?.length) parts.push(`Nothing changed in ${scenes(r.unchanged)}.`);
   // what the Director did instead, in plain words; an empty one says nothing
   for (const a of r.approximated) {
     const words = plainText(a, p.plainCtx());
