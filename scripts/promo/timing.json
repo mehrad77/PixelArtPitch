@@ -1,0 +1,64 @@
+{
+  "bpm": 120,
+  "fps": 30,
+  "bars": 46,
+  "duration": 92,
+  "master": { "w": 3840, "h": 2160 },
+  "shots": [
+    { "id": "open", "from": 0, "to": 10, "bars": [0, 5], "lines": ["Every idea deserves a trailer."] },
+    {
+      "id": "break",
+      "from": 10,
+      "to": 18,
+      "bars": [5, 9],
+      "pullBack": [14, 18],
+      "lines": ["This video is being made.", "Right now."]
+    },
+    {
+      "id": "title",
+      "from": 18,
+      "to": 24,
+      "bars": [9, 12],
+      "hit": 18,
+      "lines": ["PixelArtPitch", "Pitch videos, made by a crew of AI agents."]
+    },
+    { "id": "brief", "from": 24, "to": 34, "bars": [12, 17], "lines": ["Tell Pip your idea."] },
+    {
+      "id": "crew",
+      "from": 34,
+      "to": 50,
+      "bars": [17, 25],
+      "lines": ["A crew of twelve.", "They plan.", "They write.", "They storyboard.", "They code.", "They review."]
+    },
+    { "id": "art", "from": 50, "to": 60, "bars": [25, 30], "lines": ["Art, drawn and kept.", "Night. Dusk. Day."] },
+    { "id": "sound", "from": 60, "to": 66, "bars": [30, 33], "lines": ["And it sounds right."] },
+    {
+      "id": "claims",
+      "from": 66,
+      "to": 76,
+      "bars": [33, 38],
+      "lines": ["Every pixel exact.", "Every edit undoable.", "Every dollar counted."]
+    },
+    { "id": "tools", "from": 76, "to": 84, "bars": [38, 42], "lines": ["Any model.", "Every tool."] },
+    {
+      "id": "finale",
+      "from": 84,
+      "to": 92,
+      "bars": [42, 46],
+      "pushIn": [84, 86],
+      "lines": ["Open source. Runs on your machine.", "github.com/mehrad77/PixelArtPitch"]
+    }
+  ],
+  "music": {
+    "sections": [
+      { "from": 0, "to": 10, "energy": "intro", "note": "pulse and arpeggio, no drums; the hero walks" },
+      { "from": 10, "to": 14, "energy": "build", "note": "hats come in" },
+      { "from": 14, "to": 18, "energy": "riser", "note": "riser under the pull-back; one beat of silence at 17.5" },
+      { "from": 18, "to": 24, "energy": "hit", "note": "big hit at 18, full kit from 20" },
+      { "from": 24, "to": 66, "energy": "drive", "note": "full groove; small fills on every 4th bar" },
+      { "from": 66, "to": 76, "energy": "stabs", "note": "stab on each claim, at 66, 69.5, 73" },
+      { "from": 76, "to": 84, "energy": "drive", "note": "groove" },
+      { "from": 84, "to": 92, "energy": "outro", "note": "fanfare as the flag goes up at 88, ring out to 92" }
+    ]
+  }
+}

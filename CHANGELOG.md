@@ -24,6 +24,12 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 - **One timeline for Pip's thread and the milestones.** The simple view's separate "Milestones" column is gone: milestones sit among the turns, newest first, on one spine with a dot per entry (a turn hangs its framed block off its dot, a milestone is one quiet line, the newest dot is lit). The three newest milestones always show; a longer run between two turns keeps its first and folds the rest into "N more milestones", which expands in place. The timeline sits on the page, with no panel behind it.
 - **A plan change's reason shows once, in whole sentences; Pip's timeline has no nested boxes.** The card's detail carries the reason whole (cut, if at all, at a sentence); Pip's line is "The plan grew past what you approved." and each effect names only who joins.
 
+### Library
+- **`agent`**: a 16×16 boxy robot with idle and four walk frames, drawn by the crew during the promo's teaser run.
+
+### Promo
+- **`scripts/promo/`**: the tools behind PixelArtPitch's own promo video: a recorder for real studio pages, the studio's mock captures, a chiptune score and mix on a 120 BPM bar grid, a frame-exact DOM compositor in headless Chrome (16:9 and 9:16, a thumbnail) and the shorter cuts. See its README.
+
 ## v0.5.1 (unreleased)
 
 ### Crew

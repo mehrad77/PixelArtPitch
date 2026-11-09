@@ -1,0 +1,709 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>PixelArtPitch promo compositor</title>
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #stage { position: relative; overflow: hidden; background: #000; transform-origin: 0 0; }
+  #stage * { box-sizing: border-box; }
+  .abs { position: absolute; }
+  .px { image-rendering: pixelated; }
+  .type {
+    font-family: "InterVar", system-ui, sans-serif;
+    font-optical-sizing: auto;
+    font-kerning: normal;
+    color: #f5f5f7;
+    white-space: nowrap;
+  }
+  .word { display: inline-block; }
+</style>
+<div id="stage"></div>
+<script type="module">
+// The promo, built one moment at a time. window.renderFrame(t) rebuilds the stage for t seconds and waits for its
+// images: every transform, blur and opacity is a function of t (no CSS animations), so a render is the same every
+// time. Design units are 3840×2160 (2160×3840 tall); the stage scales to the output size. compose.mjs steps it.
+// Everything it reads comes from the work folder (?work=file:///…/). Nothing private is in this file.
+const q = new URLSearchParams(location.search);
+const WORK = q.get("work").replace(/\/?$/, "/");
+const OUT_W = Number(q.get("w") ?? 1920);
+const OUT_H = Number(q.get("h") ?? 1080);
+const FORMAT = q.get("format") ?? "wide";
+const THUMB = q.get("thumb") === "1";
+const TALL = FORMAT === "tall";
+const DW = TALL ? 2160 : 3840;
+const DH = TALL ? 3840 : 2160;
+const HI = OUT_W >= 3000 || (TALL && OUT_H >= 3000);
+const stage = document.getElementById("stage");
+stage.style.width = `${DW}px`;
+stage.style.height = `${DH}px`;
+stage.style.transform = `scale(${OUT_W / DW})`;
+
+// ---- colour and type ----
+const C = { type: "#f5f5f7", dim: "#86868b", green: "#6cbf8e", teal: "#2fb7a6", deep: "#2c7a53" };
+const HUE = ["#cd677b", "#7c82d9", "#a08c0c", "#1498ce", "#56a057", "#b26fb8", "#c87436", "#07a19a"];
+const CREW = [
+  ["Producer", "o o", 1], ["Writer", "• •", 2], ["Director", "▪ ▪", 2], ["Art director", "* *", 3],
+  ["Pixel artist", "+ +", 8], ["Librarian", "□ □", 3], ["Animator", "o O", 4], ["Scene coder", "o o", 4],
+  ["Sound designer", "~ ~", 5], ["Mixer", "≈ ≈", 5], ["Editor", "= =", 6], ["Reviewer", "° °", 7],
+];
+
+// ---- maths ----
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, k) => a + (b - a) * k;
+const eOut = (x) => 1 - (1 - x) ** 3;
+const eOut5 = (x) => 1 - (1 - x) ** 5;
+const eIn = (x) => x ** 3;
+const eInOut = (x) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
+const eExpo = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x < 0.5 ? 2 ** (20 * x - 10) / 2 : (2 - 2 ** (-20 * x + 10)) / 2);
+/** a damped spring from 0 to 1, started at t0: overshoots a little and settles */
+const spring = (t, t0, f = 2.2, damp = 6.5) => {
+  const u = t - t0;
+  if (u <= 0) return 0;
+  return 1 - Math.exp(-damp * u) * Math.cos(2 * Math.PI * f * u);
+};
+const fmt = (n) => Number(n.toFixed(3));
+
+// ---- loading ----
+const json = (p) => fetch(WORK + p).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+const SHOTS = {};
+let PIP = null;
+let PAL = {};
+let ENV = null;
+let SPR = [];
+let FONT5 = {};
+const dataUrls = new Map();
+async function boot() {
+  const ff = new FontFace("InterVar", `url(${WORK}fonts/inter-var-latin.woff2)`, { weight: "100 900" });
+  await ff.load();
+  document.fonts.add(ff);
+  const idx = (await json("shots/index.json")) ?? { shots: [] };
+  for (const s of idx.shots ?? []) SHOTS[s.id] = s;
+  PIP = await json("brand/pip-logo.json");
+  PAL = (await json("brand/palette.json")) ?? {};
+  ENV = await json("audio/envelope.json");
+  SPR = (await json("brand/sprites.json"))?.sprites ?? [];
+  FONT5 = (await json("brand/font.json")) ?? {};
+}
+const ready = boot();
+
+/** letter rows as a PNG data URL, one cell per pixel (the page scales it with image-rendering: pixelated) */
+function rowsUrl(rows, key) {
+  if (dataUrls.has(key)) return dataUrls.get(key);
+  const h = rows.length;
+  const w = Math.max(...rows.map((r) => r.length));
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  const c = cv.getContext("2d");
+  rows.forEach((row, j) => {
+    for (let i = 0; i < row.length; i++) {
+      const ch = row[i];
+      if (ch === "." || !PAL[ch]) continue;
+      c.fillStyle = PAL[ch];
+      c.fillRect(i, j, 1, 1);
+    }
+  });
+  const u = { url: cv.toDataURL(), w, h };
+  dataUrls.set(key, u);
+  return u;
+}
+
+// ---- building blocks (each returns HTML) ----
+const box = (x, y, w, h, style = "", inner = "") =>
+  `<div class="abs" style="left:${fmt(x)}px;top:${fmt(y)}px;width:${fmt(w)}px;height:${fmt(h)}px;${style}">${inner}</div>`;
+const imgTag = (src, style = "", cls = "") => `<img class="${cls}" src="${WORK}${src}" style="display:block;width:100%;height:100%;${style}">`;
+const pixelSrc = (p) => {
+  const i = String(Math.max(0, Math.min(779, Math.round(p * 30)))).padStart(5, "0");
+  return HI ? `pixel/frames4k/${i}.png` : `pixel/frames2k/${i}.png`;
+};
+/** a sprite (letter rows) at x, y with a cell size, crisp */
+function sprite(rows, key, x, y, cell, style = "") {
+  const u = rowsUrl(rows, key);
+  return `<img class="abs px" src="${u.url}" style="left:${fmt(x)}px;top:${fmt(y)}px;width:${fmt(u.w * cell)}px;height:${fmt(u.h * cell)}px;${style}">`;
+}
+
+const measure = (() => {
+  const c = document.createElement("canvas").getContext("2d");
+  return (str, size, weight) => {
+    c.font = `${weight} ${size}px InterVar`;
+    return c.measureText(str).width;
+  };
+})();
+/**
+ * A line whose words rise and sharpen in one after another (Apple's reveal), and blur away on the way out.
+ * y is about the top of the capitals; it shrinks to fit the frame.
+ */
+function words(str, t, a, b, { y = DH / 2, size = 180, weight = 650, color = C.type, stagger = 0.09, dur = 0.7, rise = 70, blur = 28, track = -0.03, gradient = null, exit = 0.45, dx = 0 } = {}) {
+  if (t < a - 0.01 || t > b + 0.01) return "";
+  const fit = DW * 0.9;
+  const w0 = measure(str, size, weight) * (1 + track);
+  if (w0 > fit) size = Math.floor((size * fit) / w0);
+  const parts = str.split(" ");
+  const out = prog(t, b - exit, b);
+  const spans = parts
+    .map((wd, i) => {
+      const p = eOut5(prog(t, a + i * stagger, a + i * stagger + dur));
+      const o = p * (1 - eIn(out));
+      if (o <= 0.001) return `<span class="word" style="opacity:0">${wd}</span>`;
+      const ty = (1 - p) * rise - eIn(out) * rise * 0.6;
+      const bl = (1 - p) * blur + eIn(out) * blur;
+      const fill = gradient
+        ? `background:${gradient};-webkit-background-clip:text;background-clip:text;color:transparent;`
+        : "";
+      return `<span class="word" style="opacity:${fmt(o)};transform:translateY(${fmt(ty)}px);filter:blur(${fmt(bl)}px);${fill}">${wd}</span>`;
+    })
+    .join(" ");
+  return `<div class="abs type" style="left:${fmt(dx)}px;top:${fmt(y - size * 0.82)}px;width:${DW}px;text-align:center;font-size:${size}px;font-weight:${weight};letter-spacing:${track}em;line-height:1.1;color:${color}">${spans}</div>`;
+}
+/** a light band sweeping across a line of text (a second copy, masked) */
+function sweep(str, t, a, d, { y, size, weight = 650, track = -0.03 }) {
+  const p = prog(t, a, a + d);
+  if (p <= 0 || p >= 1) return "";
+  const pos = lerp(-30, 130, eInOut(p));
+  const mask = `linear-gradient(100deg, transparent ${pos - 12}%, #000 ${pos}%, transparent ${pos + 12}%)`;
+  return `<div class="abs type" style="left:0;top:${fmt(y - size * 0.82)}px;width:${DW}px;text-align:center;font-size:${size}px;font-weight:${weight};letter-spacing:${track}em;line-height:1.1;color:#fff;text-shadow:0 0 60px rgba(255,255,255,.8);-webkit-mask-image:${mask};mask-image:${mask}">${str}</div>`;
+}
+/** a soft radial glow */
+const glow = (x, y, r, color, a) =>
+  a > 0 ? box(x - r, y - r, 2 * r, 2 * r, `border-radius:50%;background:radial-gradient(circle, ${color} 0%, transparent 70%);opacity:${fmt(a)}`) : "";
+
+// ---- studio captures ----
+/** a still's file, or a clip's frame at local time u: a clip plays at `rate` × its own speed (fit: its whole length in `fit` s) */
+const CLIP = {};
+const shotSrc = (id, u = 0) => {
+  const s = SHOTS[id];
+  if (!s) return null;
+  if (typeof s.files === "string") {
+    const n = s.frames ?? 1;
+    const fit = CLIP[id];
+    const i = fit ? Math.floor((u / fit) * n) : Math.floor(u * (s.fps ?? 30));
+    const dir = s.files.split("/")[0];
+    return `shots/${dir}/${String(Math.max(0, Math.min(n - 1, i))).padStart(4, "0")}.png`;
+  }
+  const f = s.files ?? (s.file ? [s.file] : []);
+  if (f.length > 1) {
+    const fit = CLIP[id];
+    const i = fit ? Math.floor((u / fit) * f.length) : Math.floor(u * (s.fps ?? 30));
+    return `shots/${f[Math.max(0, Math.min(f.length - 1, i))]}`;
+  }
+  return f.length ? `shots/${f[0]}` : null;
+};
+const rectOf = (id, ...names) => {
+  for (const n of names) {
+    let r = SHOTS[id]?.rects?.[n];
+    if (Array.isArray(r) && Array.isArray(r[0])) r = r[0];
+    if (r) return Array.isArray(r) ? r : [r.x, r.y, r.w, r.h];
+  }
+  return null;
+};
+/**
+ * A capture as a floating window: rounded, lit at its edge, deep shadow, in 3D (rx, ry in degrees; tz toward the
+ * camera), centred on cx, cy with width w. A missing capture shows a quiet placeholder so the cut still times out.
+ */
+/** where each capture's story is: [cx, cy, zoom] in the capture's 0..1 coordinates */
+const CROP = {
+  "r-brief": [0.42, 0.62, 1.35],
+  "r-plan": [0.5, 0.42, 1.08],
+  "r-script": [0.85, 0.47, 2.6],
+  "r-board": [0.42, 0.82, 1.9],
+  "r-code": [0.85, 0.45, 2.6],
+  "r-agent": [0.255, 0.55, 2.7],
+  "r-animate": [0.33, 0.43, 2.0],
+  "r-review": [0.62, 0.46, 1.32],
+  "r-library": [0.42, 0.45, 1.25],
+  "r-p8": [0.5, 0.45, 1.06],
+  "r-undo": [0.85, 0.45, 2.6],
+  "r-budget": [0.735, 0.1, 3.1],
+  "r-settings": [0.6, 0.62, 1.5],
+  brief: [0.5, 0.42, 1.75],
+  "crew-plan": [0.66, 0.38, 1.55],
+  "crew-script": [0.51, 0.55, 2.0],
+  "studio-storyboard": [0.62, 0.36, 1.55],
+  "art-variants": [0.82, 0.38, 2.2],
+  "studio-animate": [0.8, 0.43, 2.1],
+  "crew-review-journey": [0.84, 0.3, 2.4],
+  history: [0.86, 0.4, 2.0],
+};
+function cropped(src, w, h, c) {
+  if (!c) return imgTag(src);
+  const [fx, fy, z] = c;
+  const W = w * z;
+  const H = h * z;
+  const x = Math.min(0, Math.max(w - W, w / 2 - fx * W));
+  const y = Math.min(0, Math.max(h - H, h / 2 - fy * H));
+  return `<img src="${WORK}${src}" style="position:absolute;left:${fmt(x)}px;top:${fmt(y)}px;width:${fmt(W)}px;height:${fmt(H)}px;max-width:none">`;
+}
+function win(id, u, { cx = DW / 2, cy = DH / 2, w = DW * 0.8, rx = 0, ry = 0, rz = 0, tz = 0, s = 1, o = 1, blur = 0, persp = 6000, focus = null, crop = undefined } = {}) {
+  if (o <= 0.001) return "";
+  const h = (w * 9) / 16;
+  const src = shotSrc(id, u);
+  let inner = src
+    ? cropped(src, w, h, crop === undefined ? CROP[id] : crop)
+    : `<div class="type" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:64px;color:#55595e;background:#0d110f">${id}</div>`;
+  // depth of field: the window blurs and one region of it comes forward, sharp and lifted
+  if (src && focus && focus.k > 0) {
+    const r = rectOf(id, ...focus.names);
+    if (r) {
+      const [fx, fy, fw, fh] = r.map((v) => (v * w) / 3840);
+      const k = focus.k;
+      const lift = 1 + 0.14 * k;
+      inner = `<div style="position:absolute;inset:0;filter:blur(${fmt(14 * k)}px) brightness(${fmt(1 - 0.5 * k)})">${imgTag(src)}</div>
+        <div style="position:absolute;left:${fmt(fx)}px;top:${fmt(fy)}px;width:${fmt(fw)}px;height:${fmt(fh)}px;overflow:hidden;border-radius:${fmt(18 * k)}px;transform:scale(${fmt(lift)});box-shadow:0 ${fmt(60 * k)}px ${fmt(140 * k)}px rgba(0,0,0,${fmt(0.7 * k)});z-index:2">
+          <img src="${WORK}${src}" style="position:absolute;left:${fmt(-fx)}px;top:${fmt(-fy)}px;width:${fmt(w)}px;height:${fmt(h)}px;max-width:none"></div>`;
+    }
+  }
+  return `<div class="abs" style="left:0;top:0;width:${DW}px;height:${DH}px;perspective:${persp}px;perspective-origin:50% 50%">
+    <div class="abs" style="left:${fmt(cx - w / 2)}px;top:${fmt(cy - h / 2)}px;width:${fmt(w)}px;height:${fmt(h)}px;transform:translateZ(${fmt(tz)}px) rotateX(${fmt(rx)}deg) rotateY(${fmt(ry)}deg) rotateZ(${fmt(rz)}deg) scale(${fmt(s)});opacity:${fmt(o)};filter:blur(${fmt(blur)}px);border-radius:${fmt(w * 0.012)}px;overflow:hidden;background:#0b0e0c;box-shadow:0 ${fmt(w * 0.03)}px ${fmt(w * 0.07)}px rgba(0,0,0,.7), inset 0 0 0 2px rgba(255,255,255,.08)">${inner}
+      <div style="position:absolute;inset:0;background:linear-gradient(160deg, rgba(255,255,255,.07), transparent 35%);pointer-events:none"></div></div></div>`;
+}
+/** a window that rises from below tilted back, settles, pushes in slowly, and falls away at the end */
+function reveal(id, t, a, b, o = {}) {
+  if (t < a - 0.02 || t > b + 0.02) return "";
+  const k = spring(t, a, 1.1, 5.2);
+  const p = eInOut(prog(t, a, b));
+  const out = eIn(prog(t, b - 0.45, b));
+  const w = (o.w ?? (TALL ? DW * 0.94 : DW * 0.78)) * lerp(1, o.push ?? 1.08, p);
+  return win(id, t - a, {
+    cx: (o.cx ?? DW / 2) + (o.drift ?? 0) * p,
+    cy: (o.cy ?? DH * 0.54) + (1 - k) * DH * 0.5 - out * DH * 0.08,
+    w,
+    rx: (1 - k) * 38 + out * -12,
+    ry: (o.ry ?? 0) * (1 - p),
+    o: clamp(k * 1.4) * (1 - out),
+    blur: out * 20,
+    focus: o.focus ? { names: o.focus, k: eInOut(prog(t, o.focusAt ?? a + 1.5, (o.focusAt ?? a + 1.5) + 0.8)) * (1 - out) } : null,
+  });
+}
+
+// ---- the studio around the player (shots 2 and 10) ----
+/**
+ * The pull: the studio capture on a plane, scaled so its player rect fills the screen at z = 0 and sits at its own
+ * place at z = 1, the pixel frame playing inside. The plane tilts in 3D on the way, like a camera arcing back.
+ */
+function studio(t, z, p) {
+  const id = SHOTS.break ? "break" : SHOTS["pip-edit"] ? "pip-edit" : null;
+  const R = id ? rectOf(id, "player", ".viewer-frame", "viewer") : null;
+  const pix = imgTag(pixelSrc(p));
+  if (!R) {
+    const w = lerp(TALL ? DW * 2.1 : DW, DW * (TALL ? 0.9 : 0.56), z);
+    const x = TALL ? lerp(DW / 2 - 0.47 * w, (DW - w) / 2, z) : (DW - w) / 2;
+    return box(x, (DH - (w * 9) / 16) / 2, w, (w * 9) / 16, `transform:perspective(5000px) rotateY(${fmt(-14 * Math.sin(Math.PI * z))}deg)`, pix);
+  }
+  const [rx, ry, rw, rh] = R;
+  const s1 = TALL ? DW / 3840 : 1;
+  const y1 = (DH - 2160 * s1) / 2;
+  // tall: the frame fills most of the height, cropped around the hero (45% across)
+  const F = TALL ? 2.1 : 1;
+  const fx = TALL ? 0.47 : 0.5;
+  const s0 = (DW * F) / rw;
+  const s = lerp(s0, s1, z);
+  const tx = lerp(DW / 2 - (rx + fx * rw) * s0, 0, z);
+  const ty = lerp(-ry * s0 + (DH - ((rw * 9) / 16) * s0) / 2 - ((rh - (rw * 9) / 16) / 2) * s0, y1, z);
+  const tilt = Math.sin(Math.PI * z);
+  const ph = (rw * 9) / 16;
+  return `<div class="abs" style="left:0;top:0;width:${DW}px;height:${DH}px;perspective:4200px;perspective-origin:50% 50%">
+    <div class="abs" style="left:0;top:0;width:${DW}px;height:${DH}px;transform:rotateY(${fmt(-11 * tilt)}deg) rotateX(${fmt(5 * tilt)}deg) scale(${fmt(1 - 0.06 * tilt)})">
+      <div class="abs" style="left:0;top:0;width:3840px;height:2160px;transform-origin:0 0;transform:translate(${fmt(tx)}px,${fmt(ty)}px) scale(${fmt(s)})">
+        ${imgTag(shotSrc(id, 0), "position:absolute;left:0;top:0;width:3840px;height:2160px")}
+        ${box(rx, ry + (rh - ph) / 2, rw, ph, "overflow:hidden;background:#000", pix)}
+      </div></div>${TALL ? letterbox(tx + rx * s, ty + (ry + (rh - ph) / 2) * s, rw * s, ph * s, 1 - clamp(z * 2.5)) : ""}</div>`;
+}
+
+/** tall: black around the pixel frame until the camera pulls back, so no studio chrome shows before the reveal */
+function letterbox(x, y, w, h, a) {
+  if (a <= 0) return "";
+  const st = `background:#000;opacity:${fmt(a)}`;
+  return box(0, 0, DW, Math.max(0, y), st) + box(0, y + h, DW, Math.max(0, DH - y - h), st) + box(0, y, Math.max(0, x), h, st) + box(x + w, y, Math.max(0, DW - x - w), h, st);
+}
+
+// ---- Pip's chat over the cold open ----
+function bubble(t, at, out, who, str, y, { me = false, typing = 0 } = {}) {
+  const k = spring(t, at, 1.6, 7);
+  const o = clamp((t - at) / 0.2) * (1 - eIn(prog(t, out, out + 0.4)));
+  if (o <= 0) return "";
+  const size = TALL ? 44 : 66;
+  const tw = measure(str, size, 450);
+  const w = typing > 0 ? 400 : tw + (me ? 140 : 300);
+  const h = 190;
+  const x = DW - 150 - w + (1 - k) * 420 + eIn(prog(t, out, out + 0.4)) * 300;
+  const face = !me && PIP ? sprite(PIP.grid.big, "pip", 52, (h - 32 * 4.4) / 2, 4.4) : "";
+  const body =
+    typing > 0
+      ? [0, 1, 2]
+          .map((i) => box(230 + i * 40, h / 2 - 12, 24, 24, `border-radius:50%;background:#f5f5f7;opacity:${fmt(0.35 + 0.65 * Math.abs(Math.sin(t * 6 - i * 0.7)))}`))
+          .join("")
+      : `<div class="type" style="position:absolute;left:${me ? 70 : 220}px;top:${h / 2 - size * 0.62}px;font-size:${size}px;font-weight:450;letter-spacing:-0.01em">${str}</div>`;
+  return box(
+    x,
+    y,
+    w,
+    h,
+    `opacity:${fmt(o)};border-radius:70px;background:${me ? "rgba(44,122,83,.92)" : "rgba(28,32,30,.72)"};backdrop-filter:blur(40px) saturate(1.6);box-shadow:0 40px 120px rgba(0,0,0,.5), inset 0 0 0 2px rgba(255,255,255,.1);transform:scale(${fmt(0.85 + 0.15 * k)});transform-origin:100% 50%`,
+    `${face}${body}<div class="type" style="position:absolute;left:${me ? 70 : 220}px;top:-62px;font-size:40px;font-weight:600;color:#9a9da3;letter-spacing:.02em">${who}</div>`,
+  );
+}
+
+// ---- the asterisk ----
+const FINE =
+  "*This video was not made in PixelArtPitch. It was made by a separate pile of scripts that screenshot PixelArtPitch, written by an AI that was asked to make a video about an app in which AIs make videos, about an app that was itself mostly made by AI and curated by one human who was, at the time, awake well past midnight. The pixel scenes were drawn by PixelArtPitch's engine, which is technically PixelArtPitch, which makes this disclaimer partly untrue, which we regret. Pip was consulted once, for $0.095, and gave a sensible answer that was then trimmed to fit a speech bubble. The wave you saw was already planned. No crew members were harmed, overworked or paid. Results may vary: your pitch video may be shorter, longer, more on-brand, less on-brand, or about a todo app. Past budgets are no guarantee of future budgets. Night may become day without notice; day may become night with a free edit. Every pixel is exact; opinions about pixels are not. Not tested on CRT televisions. Contains chiptune. Do not operate heavy machinery while watching the sprite wall. Open source does not mean the moon is open source; the moon is a library asset. PixelArtPitch, Pip and the crew are not affiliated with any keynote, any fruit, or any company named after a fruit. Side effects may include an urge to make a pitch video, an urge to make a pitch video about pitch videos, and mild recursion. Ask your Producer if PixelArtPitch is right for you. Offer void where pixels are prohibited. Terms, conditions and Reviewer notes apply.";
+function finePrint(t, a, b) {
+  const k = clamp((t - a) / 0.12) * (1 - clamp((t - b) / 0.12));
+  if (k <= 0) return "";
+  const size = TALL ? 24 : 26;
+  return `<div class="abs" style="left:0;right:0;bottom:0;height:${TALL ? 900 : 560}px;background:linear-gradient(transparent, rgba(0,0,0,.92) 45%);opacity:${fmt(k)}"></div><div class="abs type" style="left:${TALL ? 90 : 220}px;right:${TALL ? 90 : 220}px;bottom:${TALL ? 260 : 110}px;white-space:normal;font-size:${size}px;line-height:1.3;font-weight:400;letter-spacing:0;color:rgba(245,245,247,.62);text-align:justify;opacity:${fmt(k)}">${FINE}</div>`;
+}
+
+// ---- crew faces ----
+function face(i, cx, cy, d, { o = 1, s = 1, lit = 1 } = {}) {
+  const [, glyphs, hue] = CREW[i];
+  return box(
+    cx - d / 2,
+    cy - d / 2,
+    d,
+    d,
+    `border-radius:50%;background:${HUE[hue - 1]};opacity:${fmt(o)};transform:scale(${fmt(s)});filter:saturate(${fmt(0.4 + 0.6 * lit)}) brightness(${fmt(0.55 + 0.45 * lit)});box-shadow:0 ${fmt(d * 0.12)}px ${fmt(d * 0.3)}px rgba(0,0,0,.45), inset 0 ${fmt(-d * 0.06)}px 0 rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center`,
+    `<span class="type" style="font-size:${fmt(d * 0.36)}px;font-weight:700;color:#0b0e0c;letter-spacing:.05em">${glyphs}</span>`,
+  );
+}
+
+// ---- the sprite wall (the library) ----
+function spriteWall(t, a, o = 1, blur = 0) {
+  if (!SPR.length || o <= 0) return "";
+  const cols = TALL ? 9 : 14;
+  const rows = 9;
+  const cell = TALL ? 230 : 260;
+  const scroll = (t - a) * 120;
+  let tiles = "";
+  for (let j = -1; j < rows; j++)
+    for (let i = 0; i < cols; i++) {
+      const n = ((j + 40) * 7 + i * 13) % SPR.length;
+      const sp = SPR[n];
+      const fi = Math.floor(t * 8 + i) % sp.anim.length;
+      const u = rowsUrl(sp.anim[fi], `s:${sp.id}:${fi}`);
+      const sc = Math.max(2, Math.floor((cell * 0.62) / Math.max(u.w, u.h)));
+      const bob = Math.round(Math.sin(t * 3 + i * 0.9 + j) * 6);
+      const y = j * cell + (scroll % cell);
+      const d0 = a + 0.03 * ((i * 3 + j * 5) % 17);
+      const pop = eOut(prog(t, d0, d0 + 0.5));
+      tiles += box(
+        i * cell,
+        y,
+        cell - 24,
+        cell - 24,
+        `border-radius:36px;background:rgba(255,255,255,.035);box-shadow:inset 0 0 0 2px rgba(255,255,255,.05);opacity:${fmt(pop)};transform:scale(${fmt(0.6 + 0.4 * pop)})`,
+        `<img class="px" src="${u.url}" style="position:absolute;left:${fmt((cell - 24 - u.w * sc) / 2)}px;top:${fmt((cell - 24 - u.h * sc) / 2 + bob)}px;width:${u.w * sc}px;height:${u.h * sc}px">`,
+      );
+    }
+  const W = cols * cell;
+  return `<div class="abs" style="left:0;top:0;width:${DW}px;height:${DH}px;perspective:2600px;perspective-origin:50% 20%;opacity:${fmt(o)};filter:blur(${fmt(blur)}px)">
+    <div class="abs" style="left:${fmt((DW - W) / 2)}px;top:${fmt(DH * 0.18)}px;width:${W}px;height:${rows * cell}px;transform:rotateX(52deg);transform-origin:50% 0;-webkit-mask-image:linear-gradient(to bottom, transparent 0%, #000 25%, #000 80%, transparent)">${tiles}</div></div>`;
+}
+
+// ---- the shots ----
+function build(t) {
+  let h = "";
+  const bg = (c) => box(0, 0, DW, DH, `background:${c}`);
+
+  // 1-2 · the cold open and the fourth wall (0-18)
+  if (t < 18) {
+    const z = eInOut(prog(t, 14, 16.6));
+    // a slow push on the pixels before the pull
+    const push = 1 + 0.05 * eInOut(prog(t, 0, 14)) * (1 - z);
+    h += `<div class="abs" style="left:0;top:0;width:${DW}px;height:${DH}px;transform:scale(${fmt(push)});transform-origin:45% 70%">${studio(t, z, t)}</div>`;
+    if (t < 1.2) h += bg(`rgba(0,0,0,${fmt(1 - eOut(prog(t, 0, 1.2)))})`);
+    h += words("Every idea deserves a trailer.", t, 2.2, 9.0, { y: DH * (TALL ? 0.2 : 0.27), size: 170 });
+    const by = DH * (TALL ? 0.14 : 0.16);
+    h += bubble(t, 10.2, 13.8, "You", "Have him wave at the camera.", by, { me: true });
+    h += t < 10.95 ? bubble(t, 10.55, 13.8, "Pip", "", by + 300, { typing: 1 }) : bubble(t, 10.55, 13.8, "Pip", "On it. Confirm the card and the crew will make the wave plain to see.", by + 300);
+    if (t > 15.4) {
+      const d = eOut(prog(t, 15.4, 16.4)) * (1 - prog(t, 17.4, 18));
+      h += box(0, 0, DW, DH, `background:radial-gradient(ellipse at 50% 50%, rgba(0,0,0,${fmt(0.55 * d)}), rgba(0,0,0,${fmt(0.85 * d)}))`);
+    }
+    h += words("This video is being made.", t, 15.8, 17.55, { y: DH * 0.45, size: 190 });
+    h += words("Right now.*", t, 16.5, 17.55, { y: DH * 0.45 + 250, size: 190, gradient: `linear-gradient(90deg, ${C.green}, ${C.teal})` });
+    h += finePrint(t, 16.75, 17.5);
+    return h;
+  }
+
+  // 3 · title (18-24): Pip drops in, the crew bursts out of it and lines up, the wordmark sharpens and a light sweeps it
+  if (t < 24) {
+    const out = eIn(prog(t, 23.3, 24));
+    const wrap = `transform:scale(${fmt(1 + 0.12 * out)});filter:blur(${fmt(30 * out)}px);opacity:${fmt(1 - out)};transform-origin:50% 45%`;
+    let inner = "";
+    const pk = spring(t, 18.0, 1.8, 6);
+    const pipY = DH * (TALL ? 0.2 : 0.14);
+    const cell = (TALL ? 14 : 15) * (0.6 + 0.4 * pk);
+    inner += glow(DW / 2, pipY + 16 * cell, 900, "rgba(108,191,142,.35)", eOut(prog(t, 18, 19)) * (0.8 + 0.2 * Math.sin(t * 2)));
+    if (PIP) inner += sprite(PIP.grid.big, "pip", DW / 2 - 16 * cell, pipY - (1 - pk) * 400, cell, `opacity:${fmt(clamp(pk * 2))}`);
+    // the crew: out from Pip in a ring, then into a row
+    const rowY = DH * (TALL ? 0.44 : 0.5);
+    const d = TALL ? 140 : 150;
+    const gap = TALL ? 300 : 230;
+    for (let i = 0; i < 12; i++) {
+      const a0 = 18.25 + i * 0.035;
+      const burst = eOut(prog(t, a0, a0 + 0.5));
+      const settle = spring(t, 18.9 + i * 0.03, 1.5, 6.5);
+      const ang = (i / 12) * Math.PI * 2 - Math.PI / 2;
+      const bx = DW / 2 + Math.cos(ang) * 620 * burst;
+      const by = pipY + 16 * cell + Math.sin(ang) * 620 * burst;
+      const cols = TALL ? 6 : 12;
+      const rx = DW / 2 + ((i % cols) - (cols - 1) / 2) * gap;
+      const ry = rowY + (TALL ? Math.floor(i / cols) * 200 : 0);
+      inner += face(i, lerp(bx, rx, clamp(settle)), lerp(by, ry, clamp(settle)), d, { o: clamp(burst * 3), s: 0.5 + 0.5 * burst });
+    }
+    const wmY = DH * (TALL ? 0.64 : 0.74);
+    const size = TALL ? 300 : 280;
+    inner += words("PixelArtPitch", t, 19.0, 24.5, { y: wmY, size, stagger: 0, dur: 0.9, blur: 40, rise: 40 });
+    inner += sweep("PixelArtPitch", t, 19.9, 1.3, { y: wmY, size });
+    inner += words("Pitch videos, made by a crew of AI agents.", t, 20.4, 24.5, { y: wmY + (TALL ? 220 : 200), size: 92, weight: 450, color: C.dim, track: -0.01, stagger: 0.05 });
+    h += box(0, 0, DW, DH, wrap, inner);
+    return h;
+  }
+
+  // 4 · the brief (24-34): the line, then it slides up as the studio window rises; the brief card comes forward
+  if (t < 34) {
+    const up = eInOut(prog(t, 25.3, 26.1));
+    const ly = lerp(DH * 0.5, DH * (TALL ? 0.14 : 0.1), up);
+    const ls = lerp(220, 120, up);
+    h += words("Tell Pip your idea.", t, 24.0, 33.8, { y: ly, size: ls, stagger: 0.1 });
+    CLIP["r-brief"] = 8.2;
+    h += reveal("r-brief", t, 25.6, 33.9, { cy: DH * (TALL ? 0.5 : 0.56), push: 1.08 });
+    return h;
+  }
+
+  // 5 · the crew (34-50): twelve faces with names, then a carousel of their work, one turn per bar
+  if (t < 50) {
+    const toStrip = eInOut(prog(t, 35.6, 36.4));
+    h += words("A crew of twelve.", t, 34.0, 36.0, { y: DH * (TALL ? 0.26 : 0.24), size: 200 });
+    const beats = [
+      ["r-plan", "They plan.", 0],
+      ["r-script", "They write.", 1],
+      ["r-board", "They storyboard.", 2],
+      ["r-agent", "They draw.", 4],
+      ["r-animate", "They animate.", 6],
+      ["r-review", "They review. You approve.", 11],
+      ["r-teaser", "One message. 12 minutes. $2.68.", -1],
+    ];
+    CLIP["r-plan"] = 2.6;
+    CLIP["r-animate"] = 2.4;
+    CLIP["r-teaser"] = 4.0;
+    const step = clamp(Math.floor((t - 36) / 2), 0, beats.length - 1);
+    const lit = t < 36 ? -1 : beats[step][2];
+    // the faces: a grid with names, then a strip across the top
+    const cols = TALL ? 4 : 6;
+    for (let i = 0; i < 12; i++) {
+      const pop = spring(t, 34.4 + i * 0.05, 1.7, 6.5);
+      const gx = DW / 2 + ((i % cols) - (cols - 1) / 2) * (TALL ? 470 : 520);
+      const gy = DH * (TALL ? 0.4 : 0.47) + Math.floor(i / cols) * (TALL ? 420 : 470);
+      const sx = DW / 2 + (i - 5.5) * (TALL ? 150 : 170);
+      const sy = DH * (TALL ? 0.08 : 0.07);
+      const d = lerp(TALL ? 220 : 240, TALL ? 108 : 120, toStrip);
+      const x = lerp(gx, sx, toStrip);
+      const y = lerp(gy, sy, toStrip);
+      const on = lit < 0 || lit === i ? 1 : 0.25;
+      const bump = lit === i ? 1 + 0.12 * Math.max(0, Math.sin(Math.PI * clamp((t - 36 - step * 2) / 0.4))) : 1;
+      h += face(i, x, y, d, { o: clamp(pop * 2), s: (0.3 + 0.7 * pop) * bump, lit: on });
+      if (toStrip < 0.34)
+        h += `<div class="abs type" style="left:${fmt(x - 300)}px;top:${fmt(y + d / 2 + 30)}px;width:600px;text-align:center;font-size:56px;font-weight:500;color:${C.dim};opacity:${fmt(clamp(pop) * (1 - toStrip * 3))}">${CREW[i][0]}</div>`;
+    }
+    if (t >= 35.9) {
+      // the carousel: windows on a curve; the current one front and flat
+      const turn = Math.max(0, (t - 36) / 2);
+      const pos = Math.min(beats.length - 1, Math.floor(turn) + eExpo(clamp((turn - Math.floor(turn)) / 0.32)) - 1 + (turn >= 1 ? 0 : 1) * 0) ;
+      const p2 = Math.min(beats.length - 1, turn < 1 ? 0 : Math.floor(turn) - 1 + eExpo(clamp((turn - Math.floor(turn)) / 0.32)));
+      void pos;
+      const w = TALL ? DW * 0.86 : DW * 0.66;
+      const items = [];
+      beats.forEach(([id], i) => {
+        const d = i - p2;
+        if (Math.abs(d) > 1.6) return;
+        const o = clamp(1.6 - Math.abs(d)) * eOut(prog(t, 35.9, 36.5));
+        items.push({ d, html: win(id, t - 36 - i * 2 + 0.6, { cx: DW / 2 + d * w * 0.78, cy: DH * (TALL ? 0.52 : 0.56), w, ry: -d * 38, tz: -Math.abs(d) * 900, o, blur: Math.abs(d) * 6, persp: 5200 }) });
+      });
+      for (const x of items.sort((a, b) => Math.abs(b.d) - Math.abs(a.d))) h += x.html;
+      // the line for the card in front
+      const li = clamp(Math.round(p2), 0, beats.length - 1);
+      const la = 36 + li * 2;
+      h += words(beats[li][1], t, la + 0.1, li === beats.length - 1 ? 49.8 : la + 2.05, { y: DH * (TALL ? 0.88 : 0.95), size: 120, stagger: 0.05, dur: 0.45, exit: 0.25, rise: 50 });
+    }
+    return h;
+  }
+
+  // 6 · art (50-60): a wall of the library's sprites in 3D, the library and a sheet over it, a real pitch, three skies
+  if (t < 60) {
+    const wallO = 1 - eIn(prog(t, 56.0, 56.4));
+    h += spriteWall(t, 50, wallO, t > 52 ? 10 * eOut(prog(t, 52, 52.6)) : 0);
+    h += words("Art, drawn and kept.", t, 50.2, 52.4, { y: DH * (TALL ? 0.15 : 0.16), size: 200 });
+    h += reveal("r-library", t, 52.2, 54.7, { w: TALL ? DW * 0.94 : DW * 0.7, push: 1.06 });
+    h += reveal("r-p8", t, 54.6, 56.3, { w: TALL ? DW * 0.94 : DW * 0.7, push: 1.06, ry: -14 });
+    if (t >= 56.2 && t < 57.9) {
+      const k = spring(t, 56.2, 1.3, 6);
+      const out = eIn(prog(t, 57.5, 57.9));
+      const w = (TALL ? DW * 0.94 : DW * 0.74) * (0.9 + 0.1 * k);
+      const fr = 1 + Math.min(47, Math.floor((t - 56.2) * 30));
+      h += `<div class="abs" style="left:0;top:0;width:${DW}px;height:${DH}px;perspective:5000px">${box((DW - w) / 2, DH * 0.5 - (w * 9) / 32, w, (w * 9) / 16, `border-radius:${fmt(w * 0.012)}px;overflow:hidden;opacity:${fmt(clamp(k * 1.5) * (1 - out))};transform:rotateY(${fmt((1 - k) * 25)}deg);box-shadow:0 80px 200px rgba(0,0,0,.7)`, imgTag(`p8/${String(fr).padStart(3, "0")}.jpg`))}</div>`;
+      h += words("A real pitch: GameScrobbler × Divan.", t, 56.35, 57.9, { y: DH * (TALL ? 0.8 : 0.93), size: 70, weight: 450, color: C.dim, track: -0.01, stagger: 0.04, exit: 0.3 });
+    }
+    if (t >= 57.8) {
+      // one frame, three times of day: diagonal wipes on the beat
+      const w = TALL ? DW * 0.94 : DW * 0.72;
+      const hh = (w * 9) / 16;
+      const k = spring(t, 57.8, 1.4, 6);
+      const x = (DW - w) / 2;
+      const y = DH * (TALL ? 0.42 : 0.46) - hh / 2;
+      const layer = (time, m) =>
+        `<img class="px" src="${WORK}pixel/still-7.3-${time}.png" style="position:absolute;inset:0;width:100%;height:100%;-webkit-mask-image:linear-gradient(115deg, #000 ${fmt(m - 2)}%, transparent ${fmt(m + 2)}%);mask-image:linear-gradient(115deg, #000 ${fmt(m - 2)}%, transparent ${fmt(m + 2)}%)">`;
+      const m1 = lerp(-5, 105, eInOut(prog(t, 58.45, 58.95)));
+      const m2 = lerp(-5, 105, eInOut(prog(t, 59.2, 59.7)));
+      h += box(x, y + (1 - k) * 200, w, hh, `border-radius:${fmt(w * 0.012)}px;overflow:hidden;opacity:${fmt(clamp(k * 2))};box-shadow:0 80px 200px rgba(0,0,0,.7)`, `<img class="px" src="${WORK}pixel/still-7.3-night.png" style="position:absolute;inset:0;width:100%;height:100%">${layer("dusk", m1)}${layer("day", m2)}`);
+      const la = t < 58.7 ? 57.9 : t < 59.45 ? 58.7 : 59.45;
+      const lab = la === 57.9 ? "Night." : la === 58.7 ? "Dusk." : "Day.";
+      h += words(lab, t, la, la === 59.45 ? 60.05 : la + 0.75, { y: y + hh + (TALL ? 260 : 230), size: 150, stagger: 0, dur: 0.35, exit: 0.15, rise: 40 });
+    }
+    return h;
+  }
+
+  // 7 · sound (60-66): bars that move with the score, mirrored, and the features in a row
+  if (t < 66) {
+    h += words("And it sounds right.", t, 60.0, 65.8, { y: DH * (TALL ? 0.22 : 0.24), size: 200 });
+    const n = TALL ? 40 : 72;
+    const bw = 28;
+    const gap = 20;
+    const x0 = DW / 2 - (n * (bw + gap)) / 2;
+    const k = eOut(prog(t, 60.5, 61.2)) * (1 - eIn(prog(t, 65.5, 66)));
+    const cy = DH * 0.58;
+    for (let i = 0; i < n; i++) {
+      const tt = t - Math.abs(i - n / 2) * 0.01;
+      const e = ENV ? ENV.rms[clamp(Math.round(tt * ENV.fps), 0, ENV.rms.length - 1)] : 0.35;
+      const v = Math.min(1, e * 3.2) * (0.55 + 0.45 * Math.sin(i * 1.3 + t * 7) ** 2);
+      const bh = (30 + v * 620) * k;
+      const col = `hsl(${fmt(148 + (i / n) * 30)}, 45%, ${fmt(60 + v * 15)}%)`;
+      h += box(x0 + i * (bw + gap), cy - bh, bw, bh, `border-radius:${bw / 2}px;background:${col};box-shadow:0 0 40px ${col}`);
+      h += box(x0 + i * (bw + gap), cy + 16, bw, bh * 0.45, `border-radius:${bw / 2}px;background:linear-gradient(${col}, transparent);opacity:.28`);
+    }
+    const feats = ["Chiptune score", "Effects on the beat", "Captions", "Subtitles"];
+    feats.forEach((f, i) => {
+      const a = 61.6 + i * 0.35;
+      const col = TALL ? i % 2 : i;
+      const row = TALL ? Math.floor(i / 2) : 0;
+      const dx = TALL ? (col - 0.5) * 900 : (i - 1.5) * 820;
+      h += words(f, t, a, 65.8, { y: DH * (TALL ? 0.8 : 0.86) + row * 150, size: 72, weight: 500, color: C.dim, track: -0.01, stagger: 0, dur: 0.5, dx });
+    });
+    return h;
+  }
+
+  // 8 · the claims (66-76)
+  if (t < 76) {
+    if (t < 69.5) {
+      // every pixel exact: the frame pushes in until the pixel grid shows
+      const pz = prog(t, 66.2, 69.3);
+      const z = lerp(1, 9, eExpo(pz) * 0.85 + eInOut(pz) * 0.15);
+      const w = DW * z * (TALL ? 1.8 : 1);
+      const hh = (w * 9) / 16;
+      const fx = 0.505;
+      const fy = 0.705;
+      const x = DW / 2 - fx * w;
+      const y = DH / 2 - fy * hh;
+      h += `<img class="abs px" src="${WORK}pixel/frames/00105.png" style="left:${fmt(x)}px;top:${fmt(y)}px;width:${fmt(w)}px;height:${fmt(hh)}px">`;
+      const cellPx = w / 320;
+      if (cellPx > 40) {
+        const ga = fmt(clamp((cellPx - 40) / 60) * 0.35);
+        h += box(0, 0, DW, DH, `background-image:linear-gradient(rgba(0,0,0,${ga}) 2px, transparent 2px),linear-gradient(90deg, rgba(0,0,0,${ga}) 2px, transparent 2px);background-size:${fmt(cellPx)}px ${fmt(cellPx)}px;background-position:${fmt(x % cellPx)}px ${fmt(y % cellPx)}px`);
+      }
+      h += box(0, 0, DW, DH, "background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,.25), rgba(0,0,0,.75))");
+      h += words("Every pixel exact.", t, 66.15, 69.5, { y: DH * 0.5, size: 210 });
+      h += words("The same document renders the same frames, every time.", t, 66.9, 69.5, { y: DH * 0.5 + 190, size: 72, weight: 450, color: "#c7c7cc", track: -0.01, stagger: 0.03 });
+    } else if (t < 73) {
+      h += reveal("r-undo", t, 69.5, 73.0, { push: 1.06, cy: DH * 0.6, w: TALL ? DW * 0.94 : DW * 0.62 });
+      // the undo: a pill pressed
+      const pillK = eOut(prog(t, 70.4, 70.8)) * (1 - eIn(prog(t, 72.6, 73)));
+      const press = t > 71 ? 1 - 0.12 * Math.sin(Math.PI * clamp((t - 71) / 0.25)) : 0.9 + 0.1 * pillK;
+      h += box(DW / 2 - 230, DH * (TALL ? 0.84 : 0.88) - 70, 460, 140, `border-radius:70px;background:rgba(108,191,142,.95);opacity:${fmt(pillK)};transform:scale(${fmt(press)});display:flex;align-items:center;justify-content:center;box-shadow:0 30px 90px rgba(108,191,142,.35)`, `<span class="type" style="font-size:64px;font-weight:650;color:#0b0e0c">↺ Undo</span>`);
+      h += words("Every edit undoable.", t, 69.55, 73, { y: DH * (TALL ? 0.2 : 0.17), size: 190 });
+    } else {
+      // every dollar counted: the real run's spend meter, its 12 minutes in 2.6 s, the reserve showing as it climbs
+      CLIP["r-budget"] = 2.6;
+      h += reveal("r-budget", t, 73.0, 76.0, { push: 1.05, cy: DH * 0.56, w: TALL ? DW * 0.94 : DW * 0.66 });
+      h += words("Every call reserves its worst case before it runs.", t, 74.0, 76, { y: DH * (TALL ? 0.82 : 0.93), size: 64, weight: 450, color: C.dim, track: -0.01, stagger: 0.03 });
+      h += words("Every dollar counted.", t, 73.05, 76, { y: DH * (TALL ? 0.2 : 0.17), size: 190 });
+    }
+    return h;
+  }
+
+  // 9 · any model, every tool (76-84)
+  if (t < 84) {
+    if (t < 80) {
+      h += words("Any model.", t, 76.0, 80, { y: DH * 0.3, size: 230 });
+      // a drum of names turning through the centre
+      const names = ["Anthropic", "OpenAI", "OpenRouter", "LM Studio", "Ollama", "llama.cpp", "Anthropic", "OpenAI"];
+      const pos = clamp((t - 76.5) / 0.45, 0, names.length - 3);
+      const k = eOut(prog(t, 76.4, 76.9)) * (1 - eIn(prog(t, 79.6, 80)));
+      names.forEach((n, i) => {
+        const d = i - pos;
+        if (Math.abs(d) > 2.5) return;
+        const ang = d * 28;
+        const y = DH * 0.62 + Math.sin((ang * Math.PI) / 180) * 420;
+        const z = Math.cos((ang * Math.PI) / 180);
+        h += `<div class="abs type" style="left:0;top:${fmt(y - 90)}px;width:${DW}px;text-align:center;font-size:150px;font-weight:600;letter-spacing:-0.03em;color:${Math.abs(d) < 0.5 ? C.type : C.dim};opacity:${fmt(k * z ** 3)};transform:perspective(2000px) rotateX(${fmt(-ang)}deg) scale(${fmt(0.75 + 0.25 * z)});filter:blur(${fmt((1 - z) * 16)}px)">${n}</div>`;
+      });
+      h += words("Cloud or local. Each model is tested before it gets a role.", t, 77.2, 80, { y: DH * 0.92, size: 64, weight: 450, color: C.dim, track: -0.01, stagger: 0.03 });
+    } else {
+      // every tool: the registry's names streaming on a tilted plane, MCP lit in the middle
+      const tools = ["project_patch", "script_set_cues", "scene_set_recipes", "cast_asset", "render_still", "export_video", "library_search", "storyboard_set", "sfx_set", "vo_align", "subtitles_translate", "code_set_constants", "look_set_time", "project_undo", "crew_request_change", "ask_user", "timeline_get", "audio_render", "render_contact", "note_add", "project_fork", "question_answer"];
+      const k = eOut(prog(t, 80, 80.6)) * (1 - eIn(prog(t, 83.6, 84)));
+      let rows = "";
+      for (let r = 0; r < 12; r++) {
+        const dir = r % 2 ? -1 : 1;
+        const off = ((((t - 80) * 260 * dir + r * 700) % 3000) + 3000) % 3000;
+        const line = Array.from({ length: 6 }, (_, i) => tools[(r * 5 + i * 3) % tools.length]).join("     ");
+        rows += `<div class="type" style="position:absolute;left:${fmt(off - 2600)}px;top:${r * 150}px;font-family:ui-monospace,Menlo,monospace;font-size:84px;color:rgba(108,191,142,${fmt(0.15 + (0.25 * ((r * 7) % 5)) / 5)});white-space:nowrap">${line}     ${line}</div>`;
+      }
+      h += `<div class="abs" style="left:0;top:0;width:${DW}px;height:${DH}px;perspective:2200px;opacity:${fmt(k)}"><div class="abs" style="left:-400px;top:${fmt(DH * 0.32)}px;width:${DW + 800}px;height:1800px;transform:rotateX(58deg);transform-origin:50% 0;-webkit-mask-image:linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent)">${rows}</div></div>`;
+      const mk = spring(t, 80.9, 1.6, 6);
+      h += box(DW / 2 - 330, DH * 0.5 - 110, 660, 220, `border-radius:110px;background:rgba(17,21,19,.75);backdrop-filter:blur(30px);box-shadow:0 0 0 3px ${C.green}, 0 0 160px rgba(108,191,142,.45);opacity:${fmt(clamp(mk * 2) * k)};transform:scale(${fmt(0.6 + 0.4 * mk)});display:flex;align-items:center;justify-content:center`, `<span class="type" style="font-size:120px;font-weight:700;letter-spacing:-0.02em;color:${C.green}">MCP</span>`);
+      h += words("Every tool.", t, 80.05, 84, { y: DH * 0.2, size: 230 });
+      h += words("Pip, the crew and the studio share one tool registry. Any agent can use it too.", t, 81.4, 84, { y: DH * 0.86, size: 64, weight: 450, color: C.dim, track: -0.01, stagger: 0.03 });
+    }
+    return h;
+  }
+
+  // 10 · back into the player, the finale (84-92)
+  const z = 1 - eInOut(prog(t, 84, 86.4));
+  h += studio(t, z, 18 + (t - 84));
+  if (t < 84.5) h += bg(`rgba(0,0,0,${fmt(1 - eOut(prog(t, 84, 84.5)))})`);
+  if (t > 89.2) {
+    const d = eOut(prog(t, 89.2, 90));
+    h += box(0, 0, DW, DH, `background:linear-gradient(rgba(0,0,0,${fmt(0.75 * d)}), rgba(0,0,0,${fmt(0.25 * d)}) 55%, rgba(0,0,0,${fmt(0.6 * d)}))`);
+    h += words("Open source. Runs on your machine.", t, 89.3, 92.5, { y: DH * (TALL ? 0.22 : 0.2), size: 150, stagger: 0.07 });
+    // the URL types itself in, with a caret
+    const url = "github.com/mehrad77/PixelArtPitch";
+    const n = Math.floor(clamp((t - 90.0) / 0.9) * url.length);
+    if (t > 90.0) h += `<div class="abs type" style="left:0;top:${fmt(DH * (TALL ? 0.22 : 0.2) + 110)}px;width:${DW}px;text-align:center;font-size:${TALL ? 96 : 100}px;font-weight:600;letter-spacing:-0.01em;color:${C.green}">${url.slice(0, n)}<span style="opacity:${Math.floor(t * 3) % 2 ? 1 : 0.2}">▍</span></div>`;
+  }
+  if (t > 91.3) h += bg(`rgba(0,0,0,${fmt(eIn(prog(t, 91.3, 92)))})`);
+  return h;
+}
+
+/** the YouTube thumbnail: the finale's flag moment, Pip and the name */
+function thumb() {
+  let h = studio(0, 0, 22.6);
+  h += box(0, 0, DW, DH, "background:linear-gradient(90deg, rgba(0,0,0,.92) 0%, rgba(0,0,0,.7) 45%, rgba(0,0,0,0) 75%)");
+  if (PIP) h += sprite(PIP.grid.big, "pip", 220, 500, 16);
+  h += `<div class="abs type" style="left:220px;top:1060px;font-size:300px;font-weight:750;letter-spacing:-0.045em;line-height:1">PixelArtPitch</div>`;
+  h += `<div class="abs type" style="left:226px;top:1420px;font-size:130px;font-weight:600;letter-spacing:-0.03em;line-height:1.08;background:linear-gradient(90deg, ${C.green}, ${C.teal});-webkit-background-clip:text;color:transparent">A crew of AI agents<br>makes your pitch video</div>`;
+  return h;
+}
+
+window.renderFrame = async (t) => {
+  await ready;
+  stage.innerHTML = THUMB ? thumb() : build(t);
+  await document.fonts.ready;
+  await Promise.all(
+    [...stage.querySelectorAll("img")].map((i) =>
+      i.complete ? i.decode().catch(() => {}) : new Promise((r) => { i.onload = i.onerror = () => r(); }),
+    ),
+  );
+  return true;
+};
+window.promoReady = ready.then(() => true);
+</script>
