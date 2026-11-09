@@ -446,6 +446,42 @@ test("one reading, one card: menu mode parses by rules, ≤ 3 fields, rights inl
   assert.deepEqual(calls, []);
 });
 
+test("the brief card follows an upload and a rights change: same card, its files, price and warning", async () => {
+  const w = await setup({ localPip: true });
+  const id = (await w.call("POST", "/api/drafts", {})).json.draft.id;
+  const item = await w.say(id, "A 30 s pitch for investors about QuestDay, no voice, let the crew run, under $5.");
+  const card = item.cards[0];
+  assert.equal(card.type, "brief", JSON.stringify(item.cards));
+  assert.equal(card.refs.length, 0);
+  const before = card.estimate.usd[1];
+  // an upload after the card: the same card now lists the logo, its import and its rights warning
+  await w.call("POST", `/api/drafts/${id}/files?name=questday-logo.png`, undefined, {
+    bytes: png(),
+    type: "image/png",
+  });
+  await w.drafts.fresh(id);
+  const items = (await w.call("GET", `/api/pip?draft=${id}`)).json.items;
+  assert.equal(items.at(-1).id, item.id, "no new Pip message");
+  const up = items.at(-1).cards[0];
+  assert.equal(up.id, card.id);
+  assert.equal(up.status, "open");
+  assert.deepEqual(
+    up.refs.map((r: any) => [r.name, r.type, r.rights]),
+    [["questday-logo.png", "logo", "unsure"]],
+  );
+  assert.match(up.warning ?? "", /Not sure blocks the logo/);
+  // the rights pick: the warning goes, the card stays the same one
+  await w.call("PATCH", `/api/drafts/${id}/refs/questday-logo.png`, { rights: "mine" });
+  await w.drafts.fresh(id);
+  const now = (await w.call("GET", `/api/pip?draft=${id}`)).json.items.at(-1).cards[0];
+  assert.equal(now.id, card.id);
+  assert.equal(now.refs[0].rights, "mine");
+  assert.equal(now.warning, undefined);
+  assert.match(now.preview.line, /your logo/);
+  assert.ok(now.estimate.usd[1] >= before);
+  assert.ok(w.events.some((e) => e.event === "pip" && e.data.type === "card" && e.data.card?.id === card.id));
+});
+
 test("a second card only for an unsure likeness; never more than two before the brief", async () => {
   const w = await setup({ localPip: true });
   const id = (await w.call("POST", "/api/drafts", {})).json.draft.id;

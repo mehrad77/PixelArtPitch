@@ -791,6 +791,7 @@ type RefType = "likeness" | "logo" | "style" | "as-is" | "sound" | "voice";
    - Its ETA is now + p50 sec, excluding the person's picks. It is compared with the deadline.
    - Its preview counts the plan's distinct non-gate instances ("about 7 crew members"), new art (chains + imports), and whether the rest comes from the library.
    - It is free: the rules planner only.
+   - It follows the files. An upload (`POST /api/drafts/:id/files`) or a ref's type or rights change (`PATCH /api/drafts/:id/refs/:name`) rebuilds the open brief card in place: the same card id, no new message, a `card` event. Its files, price, preview and warning then match the draft.
 7. **Start** on the brief card → §3.1 Start. It returns `card.result.projectId`, and the UI navigates there.
 
 ### 3.4 The Projects page (D7)

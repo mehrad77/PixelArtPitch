@@ -6,6 +6,7 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 
 ### Crew
 - **Code scenes are priced from what they cost.** A `scene.code` task counts one write plus one repair or critique at p50 and three at p90 (it was five, which put a code scene's p90 at $2.64). Past five ledger rows the ledger prices each call.
+- **The brief card follows your files.** Adding a file, or changing a file's type or rights, rebuilds the open brief card in place, so its files, price and warning are current.
 
 ## v0.5.0 (unreleased)
 

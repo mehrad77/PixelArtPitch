@@ -211,9 +211,9 @@ The server answers these as the mock (`apps/web/src/mock/drafts.ts`) does. The s
 | `POST /api/drafts` | `{ from?: projectId }` | `{ draft: Draft, items: PipItem[] }`; the first item is Pip's "What are we making?", or with `from` "Another one like <title>: same style, cast and settings. What's this one about?" (`from` prefills audience, length, narration, involvement, profile, style and budget; never the idea or the files; `404` for an unknown project). Call it on the first send or the first file drop, never on opening `/new` |
 | `GET /api/drafts/:id` | | `{ draft, items }` (404 with a `fix` once it is started or removed) |
 | `DELETE /api/drafts/:id` | | `{ ok }` (the folder goes) |
-| `POST /api/drafts/:id/files` | raw body, `?name=` (an image or a sound file, ≤ 20 MB) | `{ ref: DraftRef }`: rights start `unsure`, the type is guessed from the name; the name is made safe (last path segment, `[A-Za-z0-9._ -]`, ≤ 80 chars); `415` for another kind of file, `413` past 20 MB |
+| `POST /api/drafts/:id/files` | raw body, `?name=` (an image or a sound file, ≤ 20 MB) | `{ ref: DraftRef }`: rights start `unsure`, the type is guessed from the name; the name is made safe (last path segment, `[A-Za-z0-9._ -]`, ≤ 80 chars); `415` for another kind of file, `413` past 20 MB. An open brief card is rebuilt in place (a `card` event) |
 | `GET /api/drafts/:id/files/:name` | | the file (`DraftRef.url` points here) |
-| `PATCH /api/drafts/:id/refs/:name` | `{ type?, rights? }` | `DraftRef` (the rights chips; 400 with a `fix` for a bad value) |
+| `PATCH /api/drafts/:id/refs/:name` | `{ type?, rights? }` | `DraftRef` (the rights chips; 400 with a `fix` for a bad value). An open brief card is rebuilt in place |
 | `PATCH /api/drafts/:id` | `{ fields }` | `Draft`: each field checked with the registry (400 with a `fix` and `path`), no model call (N7) |
 | `GET /api/drafts/:id/composer` | | `{ title, brief, budgetUsd, profile }` (`budgetUsd`: the draft's, else the brief card's recommendation; `profile`: the draft's, else the settings') |
 | `POST /api/projects` | `+ draft?` | `{ id }`; the draft's files move to `private/refs/`, its conversation to `runs/pip.jsonl`, `brief.source` is `composer` (so `producer.plan` stays and G0 waits) |

@@ -173,9 +173,11 @@ export class DraftConversations {
     this.store.get(id);
     return this.store.refPath(id, name);
   }
-  /** POST /api/drafts/:id/files: rights start `unsure`, the type is guessed from the name */
+  /** POST /api/drafts/:id/files: rights start `unsure`, the type is guessed from the name; an open brief card follows */
   addFile(id: string, name: string, body: Uint8Array, mime = ""): DraftRefT {
-    return this.store.addFile(id, name, body, guessType(name, mime) as RefTypeT);
+    const ref = this.store.addFile(id, name, body, guessType(name, mime) as RefTypeT);
+    this.refreshBrief(id);
+    return ref;
   }
   patchRef(id: string, name: string, patch: { type?: unknown; rights?: unknown }): DraftRefT {
     const types = ["likeness", "logo", "style", "as-is", "sound", "voice"];
@@ -183,7 +185,32 @@ export class DraftConversations {
       throw new StoreError("bad_value", `${name} needs a file type`, `Use one of: ${types.join(", ")}.`, 400);
     if (patch.rights !== undefined && !["mine", "licensed", "unsure"].includes(String(patch.rights)))
       throw new StoreError("bad_value", `Say whose ${name} is`, "Pick one: Mine, Licensed or Not sure.", 400);
-    return this.store.patchRef(id, name, patch as any);
+    const ref = this.store.patchRef(id, name, patch as any);
+    this.refreshBrief(id);
+    return ref;
+  }
+  /** the open brief card's rebuild after a file change, chained per draft (`fresh` waits for it) */
+  private refreshing = new Map<string, Promise<void>>();
+  /**
+   * An upload, or a ref's type or rights change, rebuilds the open brief card in place (same id, no new message): its
+   * files, its price (a logo adds an import, a likeness a drawing) and its warning follow. No model call.
+   */
+  private refreshBrief(id: string) {
+    const prev = this.refreshing.get(id) ?? Promise.resolve();
+    const next = prev
+      .then(async () => {
+        const last = [...this.items(id)].reverse().find((i) => i.kind === "pip");
+        if (last?.kind !== "pip") return;
+        const old = last.cards.find((c) => c.type === "brief" && c.status === "open");
+        if (!old) return;
+        this.saveCard(id, last, { ...(await this.briefCard(id)), id: old.id });
+      })
+      .catch(() => {});
+    this.refreshing.set(id, next);
+  }
+  /** resolves once the brief card follows every file change made so far */
+  fresh(id: string): Promise<void> {
+    return this.refreshing.get(id) ?? Promise.resolve();
   }
   /** PATCH /api/drafts/:id {fields}: the composer's "‹ Back to the conversation" (N7), no model call */
   setFields(id: string, fields: Record<string, unknown>): DraftT {
