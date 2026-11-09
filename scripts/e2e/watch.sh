@@ -1,7 +1,17 @@
 #!/bin/sh
 # usage: PAP_E2E_HOME=<home> watch.sh   a line whenever a project's needs, running state or status line changes;
 # ends when the watchdog stops the studio or the server exits
+#    or: [PAP_E2E_HOME=<home>] watch.sh --project <id>   follows <home>/projects/<id>/runs/events.jsonl from the
+# start (home defaults to ~/.pixelartpitch): a line per finished task, open question, gate, status that waits on
+# the person, whole dollar spent, crew report or question, and warn or error log (watch_filter.py); Ctrl-C ends it
 P=$(dirname "$0")
+if [ "$1" = "--project" ]; then
+  id="${2:?usage: watch.sh --project ID}"
+  H="${PAP_E2E_HOME:-$HOME/.pixelartpitch}"
+  f="$H/projects/$id/runs/events.jsonl"
+  [ -d "$H/projects/$id" ] || { echo "no project $id in $H/projects" >&2; exit 1; }
+  exec tail -n +1 -F "$f" 2>/dev/null | python3 -u "$P/watch_filter.py"
+fi
 H="${PAP_E2E_HOME:?set PAP_E2E_HOME to the --home of driver.ts}"
 prev=""
 while true; do

@@ -1,0 +1,27 @@
+{"seq":1,"event":"run","data":{"id":"run_1","status":"start"},"ts":"2026-11-09T18:00:00.000Z"}
+{"seq":2,"event":"task","data":{"id":"a1","status":"working","kind":"writer.angles","title":"Writing three script angles","usd":0},"ts":"2026-11-09T18:00:01.000Z"}
+{"seq":3,"event":"task","data":{"id":"a1","status":"done","kind":"writer.angles","title":"Writing three script angles","usd":0.0639},"ts":"2026-11-09T18:00:02.000Z"}
+{"seq":4,"event":"task","data":{"id":"a2","status":"failed","kind":"director.board","title":"Boarding load_in","usd":0.5},"ts":"2026-11-09T18:00:03.000Z"}
+{"seq":5,"event":"task","data":{"id":"a3","status":"fallback","kind":"artist.sprite","title":"Drawing the roller","usd":1.25},"ts":"2026-11-09T18:00:04.000Z"}
+{"seq":6,"event":"task","data":{"id":"a4","status":"cancelled","kind":"artist.sprite","title":"Drawing the cat","usd":0},"ts":"2026-11-09T18:00:05.000Z"}
+{"seq":7,"event":"question","data":{"id":"q3","status":"open","kind":"single","question":"Your logo in the video.\nUse it?","options":[{"id":"use","label":"Use it"}]},"ts":"2026-11-09T18:00:06.000Z"}
+{"seq":8,"event":"question","data":{"id":"q3","status":"answered","question":"Your logo in the video. Use it?"},"ts":"2026-11-09T18:00:07.000Z"}
+{"seq":9,"event":"gate","data":{"id":"g1_script","status":"open","items":[]},"ts":"2026-11-09T18:00:08.000Z"}
+{"seq":10,"event":"gate","data":{"id":"g1_script","status":"passed"},"ts":"2026-11-09T18:00:09.000Z"}
+{"seq":11,"event":"gate","data":{"id":"g3_rough","status":"changes"},"ts":"2026-11-09T18:00:10.000Z"}
+{"seq":12,"event":"gate","data":{"id":"g2_animatic","status":"locked"},"ts":"2026-11-09T18:00:11.000Z"}
+{"seq":13,"event":"status","data":{"line":"The crew is working"},"ts":"2026-11-09T18:00:12.000Z"}
+{"seq":14,"event":"status","data":{"line":"Waiting for you: the plan change in Pip's thread","waiting":"plan"},"ts":"2026-11-09T18:00:13.000Z"}
+{"seq":15,"event":"ledger","data":{"usd":0.06,"spentUsd":0.95},"ts":"2026-11-09T18:00:14.000Z"}
+{"seq":16,"event":"ledger","data":{"usd":0.1,"spentUsd":1.05},"ts":"2026-11-09T18:00:15.000Z"}
+{"seq":17,"event":"ledger","data":{"usd":0.2,"spentUsd":1.25},"ts":"2026-11-09T18:00:16.000Z"}
+{"seq":18,"event":"ledger","data":{"usd":2,"spentUsd":3.4},"ts":"2026-11-09T18:00:17.000Z"}
+{"seq":19,"event":"channel","data":{"id":"m1","from":"writer","to":"pip","kind":"report","text":"Wrote three angles."},"ts":"2026-11-09T18:00:18.000Z"}
+{"seq":20,"event":"channel","data":{"id":"m2","from":"director","to":"pip","kind":"question","text":"Three players or four?"},"ts":"2026-11-09T18:00:19.000Z"}
+{"seq":21,"event":"channel","data":{"id":"m3","from":"pip","to":"crew","kind":"brief","text":"Kept the default plan."},"ts":"2026-11-09T18:00:20.000Z"}
+{"seq":22,"event":"log","data":{"level":"info","text":"crew paused now"},"ts":"2026-11-09T18:00:21.000Z"}
+{"seq":23,"event":"log","data":{"level":"warn","text":"Pip couldn't decide; holding"},"ts":"2026-11-09T18:00:22.000Z"}
+{"seq":24,"event":"log","data":{"level":"error","text":"render failed"},"ts":"2026-11-09T18:00:23.000Z"}
+not json at all
+{"seq":25,"event":"task","data":{"id":"a5","status":"done","outcome":"fallback","kind":"artist.sprite","title":"Partial walk cycle","usd":0.3},"ts":"2026-11-09T18:00:24.000Z"}
+{"seq":26,"event":"milestone","data":{"id":"plan.ready@8","text":"Plan ready"},"ts":"2026-11-09T18:00:25.000Z"}

@@ -22,5 +22,7 @@ Helpers (set `PAP_E2E_HOME` to the same home):
 - `api.sh METHOD PATH [JSON]`: one API call with the studio's token.
 - `pip.sh <project|draft:ID|-> "text"`: send Pip a message, wait for the turn, print what came back.
 - `watch.sh`: a line whenever a project's needs, running state or status line changes.
+- `watch.sh --project <id>`: follows `<home>/projects/<id>/runs/events.jsonl` from its start (home from `PAP_E2E_HOME`, else `~/.pixelartpitch`; no studio needed), one timed line per task done, failed or fallback (kind, title, cost), open question (id and text), gate open, passed or changes, status line that waits on the person, whole dollar of project spend, crew report or question in the channel, and warn or error log. The filter is `watch_filter.py` (stdin to stdout); its test is `apps/server/test/e2e-watch.test.ts` on `test/events.jsonl`.
+- `answer.sh <project> <question-id> <option-id> [note]`: answers a question as the person and prints its id and status; on a non-200 or an unknown id it prints the studio's message and exits 1.
 
 Afterwards: `node apps/server/src/cli.ts report <home>/projects/<id> --notes findings.md --picks picks.jsonl` (docs/REPORT.md).
