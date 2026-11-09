@@ -982,6 +982,17 @@
    "tags": [
     "icon"
    ]
+  },
+  {
+   "id": "agent",
+   "kind": "creature",
+   "w": 16,
+   "h": 16,
+   "frames": 6,
+   "tags": [
+    "creature",
+    "walk"
+   ]
   }
  ]
 }
