@@ -1,9 +1,72 @@
 // The asset library, read-only: a grid of cards with pixelated preview sheets, kind and scope filters, and search.
+// Assets come from three folders (docs/API.md, GET /api/library): the repo's public seed, the person's own library,
+// and each project's assets/, which stay private to it.
 import { Badge, Callout, EmptyState, Field, Search, Skeleton, Tag } from "@shabboo/kit/react";
 import { useMemo, useState } from "react";
 import { client } from "../lib/client.ts";
 import { useLoad } from "../lib/hooks.ts";
+import type { LibraryAsset, LibraryDirs, LibraryLayer } from "../lib/types.ts";
 import "./Library.css";
+
+const layerOf = (a: LibraryAsset): LibraryLayer => a.layer ?? (a.scope === "private" ? "project" : "seed");
+const LAYER_WORDS: Record<LibraryLayer, string> = {
+  seed: "Public library",
+  user: "Your library",
+  project: "Private to a project",
+};
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
+/** the three folders, each with what it holds */
+function Folders({ dirs, count }: { dirs: LibraryDirs; count: (l: LibraryLayer) => number }) {
+  return (
+    <section className="lib-dirs" aria-labelledby="lib-dirs-h">
+      <h2 id="lib-dirs-h" className="small">
+        Assets come from three folders
+      </h2>
+      <dl>
+        <div>
+          <dt>{LAYER_WORDS.seed}</dt>
+          <dd>
+            <span className="mono ltr small">{dirs.seed}</span>
+            <span className="muted small">
+              {plural(count("seed"), "asset")}, shipped with PixelArtPitch, read-only.
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt>{LAYER_WORDS.user}</dt>
+          <dd>
+            <span className="mono ltr small">{dirs.user}</span>
+            <span className="muted small">
+              {dirs.userExists
+                ? `${plural(count("user"), "asset")} the crew published for you.`
+                : "Not made yet. Drawings the crew publishes go here."}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt>{LAYER_WORDS.project}</dt>
+          <dd>
+            {dirs.projects.length === 0 ? (
+              <span className="muted small">No project keeps its own assets yet.</span>
+            ) : (
+              <ul className="lib-dir-list">
+                {dirs.projects.map((p) => (
+                  <li key={p.id}>
+                    <span className="mono ltr small">{p.dir}/assets</span>
+                    <span className="muted small">
+                      {p.title}: {plural(p.assets, "asset")}, never copied into a library.
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
 
 export function LibraryPage() {
   const { data, error, loading, reload } = useLoad(() => client.library(), []);
@@ -13,9 +76,8 @@ export function LibraryPage() {
   const assets = data?.assets ?? [];
   const kinds = useMemo(() => [...new Set(assets.map((a) => a.kind))].sort(), [assets]);
   const shown = assets.filter((a) => {
-    const s = a.scope ?? "public";
     if (kind !== "all" && a.kind !== kind) return false;
-    if (scope !== "all" && s !== scope) return false;
+    if (scope !== "all" && layerOf(a) !== scope) return false;
     const needle = q.trim().toLowerCase();
     return (
       !needle ||
@@ -34,6 +96,7 @@ export function LibraryPage() {
         Sprites, tiles, icons and fonts the crew can reuse. Private assets (likenesses, logos) stay in their project and
         are never listed as public.
       </p>
+      {data?.dirs && <Folders dirs={data.dirs} count={(l) => assets.filter((a) => layerOf(a) === l).length} />}
       <search className="lib-filters">
         <Search
           id="lib-q"
@@ -67,9 +130,12 @@ export function LibraryPage() {
           value={scope}
           onChange={(e) => setScope(e.currentTarget.value)}
         >
-          <option value="all">Public and private</option>
-          <option value="public">Public</option>
-          <option value="private">Private to a project</option>
+          <option value="all">All three</option>
+          {(Object.keys(LAYER_WORDS) as LibraryLayer[]).map((l) => (
+            <option key={l} value={l}>
+              {LAYER_WORDS[l]}
+            </option>
+          ))}
         </Field>
       </search>
       {error && (
@@ -94,18 +160,28 @@ export function LibraryPage() {
       )}
       <ul className="lib-grid">
         {shown.map((a) => (
-          <li key={a.id} className="lib-card">
+          <li key={`${a.project?.id ?? layerOf(a)}/${a.id}`} className="lib-card">
             <div className="lib-sheet">
-              <img className="pixelated" src={client.sheetUrl(a.id)} alt={`Preview sheet of ${a.id}`} loading="lazy" />
+              <img
+                className="pixelated"
+                src={a.sheet ?? client.sheetUrl(a.id)}
+                alt={`Preview sheet of ${a.id}`}
+                loading="lazy"
+              />
             </div>
             <div className="lib-meta">
               <h2 className="lib-name mono">{a.id}</h2>
               <span className="muted small">
                 {a.kind} · {a.w}×{a.h} · {a.frames} {a.frames === 1 ? "frame" : "frames"}
               </span>
-              {(a.scope ?? "public") === "private" && (
+              {layerOf(a) === "project" && (
                 <Badge tone="info" caps={false}>
-                  Private to a project
+                  {a.project ? `Private to ${a.project.title}` : "Private to a project"}
+                </Badge>
+              )}
+              {layerOf(a) === "user" && (
+                <Badge tone="muted" caps={false}>
+                  Your library
                 </Badge>
               )}
               {a.description && <p className="small">{a.description}</p>}

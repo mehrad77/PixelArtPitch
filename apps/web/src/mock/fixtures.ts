@@ -351,9 +351,17 @@ export const LIBRARY: LibraryIndex = {
       frames: 2,
       tags: ["brand", "flame"],
       scope: "private",
+      layer: "project",
+      project: { id: "lantern", title: "Lantern pitch" },
       description: "Project logo: private to Lantern.",
     },
   ],
+  dirs: {
+    seed: "~/PixelArtPitch/library",
+    user: "~/.pixelartpitch/library",
+    userExists: false,
+    projects: [{ id: "lantern", title: "Lantern pitch", dir: "~/Movies/PixelArtPitch/lantern", assets: 1 }],
+  },
 };
 
 /** a new 30 s QuestDay pitch, as Start makes it from the draft: its own cues and the plan's 4 scenes, no Lantern art */

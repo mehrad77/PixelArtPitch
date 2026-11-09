@@ -10,7 +10,7 @@ import type { DraftConversations } from "@pap/crew/brief/drafts";
 import { lineOf, lineRows, needsCount, needsWords, openNeeds } from "@pap/crew/brief/line";
 import { PHASE } from "@pap/crew/orchestrator";
 import { InstanceKey } from "@pap/crew/plan/instances";
-import { libraryAssetDir, libraryIndex, userLibraryDir } from "@pap/render";
+import { libraryAssetDir, libraryFile, libraryIndex, renderSheet, userLibraryDir } from "@pap/render";
 import { buildReport, type Report } from "@pap/report";
 import type { GateId, Registry, ToolContext } from "@pap/tools";
 import { isFinalVideo, type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
@@ -893,8 +893,81 @@ export function createApp(o: ServerOpts) {
   app.get("/api/ledger", (c) =>
     c.json(o.hooks?.ledger?.({ project: c.req.query("project"), limit: Number(c.req.query("limit") ?? 200) }) ?? []),
   );
-  // the library's two layers: the person's own first, then the repo's seed (§1.9); `layer` says which
-  app.get("/api/library", (c) => c.json(libraryIndex()));
+  // the library's two layers: the person's own first, then the repo's seed (§1.9); `layer` says which. A project's own
+  // assets ("file:assets/…", likenesses and logos) are a third layer, listed read-only and never copied anywhere.
+  const projectAssets = () =>
+    o.workspace.list().flatMap((x) => {
+      try {
+        const refs: { id: string; src: string; flags?: { private?: boolean } }[] =
+          JSON.parse(readFileSync(join(x.dir, "pitch.json"), "utf8")).assets ?? [];
+        return refs.flatMap((r) => {
+          const m = /^file:assets\/([a-zA-Z0-9_.-]+)\.json$/.exec(r.src);
+          const f = m && join(x.dir, "assets", `${m[1]}.json`);
+          if (!m || !f || !existsSync(f)) return [];
+          const a = JSON.parse(readFileSync(f, "utf8"));
+          if (typeof a?.kind !== "string" || !Array.isArray(a.frames)) return [];
+          return [
+            {
+              id: r.id,
+              kind: a.kind,
+              w: a.w,
+              h: a.h,
+              frames: a.frames.length,
+              tags: Array.isArray(a.tags) ? a.tags : [],
+              description: typeof a.description === "string" ? a.description : undefined,
+              layer: "project" as const,
+              scope: "private" as const,
+              project: { id: x.id, title: x.title },
+              sheet: `/api/library/project/${encodeURIComponent(x.id)}/${encodeURIComponent(m[1])}/sheet.png`,
+            },
+          ];
+        });
+      } catch {
+        return [];
+      }
+    });
+  app.get("/api/library", (c) => {
+    const lib = libraryIndex();
+    const own = projectAssets();
+    const user = userLibraryDir();
+    return c.json({
+      palette: lib.palette,
+      assets: [...lib.assets.map((a) => ({ ...a, scope: "public" as const })), ...own],
+      dirs: {
+        seed: resolve(o.workspace.libraryDir),
+        user,
+        userExists: existsSync(user),
+        projects: o.workspace
+          .list()
+          .map((x) => ({
+            id: x.id,
+            title: x.title,
+            dir: x.dir,
+            assets: own.filter((a) => a.project.id === x.id).length,
+          }))
+          .filter((x) => x.assets > 0),
+      },
+    });
+  });
+  // a project asset's sheet: its own <name>.png when the project keeps one, else drawn from its grid
+  app.get("/api/library/project/:pid/:name/sheet.png", (c) => {
+    const row = o.workspace.list().find((x) => x.id === c.req.param("pid"));
+    const name = c.req.param("name");
+    if (!row || !/^[a-zA-Z0-9_.-]+$/.test(name)) return c.text("not found", 404);
+    const png = join(row.dir, "assets", `${name}.png`);
+    if (existsSync(png)) return fileResponse(png);
+    const f = join(row.dir, "assets", `${name}.json`);
+    if (!existsSync(f)) return c.text("not found", 404);
+    try {
+      const a = JSON.parse(readFileSync(f, "utf8"));
+      const pal = JSON.parse(readFileSync(libraryFile("palettes", `${String(a.palette).split("@")[0]}.json`), "utf8"));
+      const colours = Object.fromEntries(Object.entries<any>(pal.colours).map(([k, v]) => [k, v.hex]));
+      const body = renderSheet(a.grid, { colours, bg: pal.sky, scale: 4, columns: a.frames.length, gap: 8 });
+      return c.body(new Uint8Array(body), 200, { "content-type": "image/png" });
+    } catch {
+      return c.text("not found", 404);
+    }
+  });
   const libDir = (id: string) => libraryAssetDir(id.replace(/[^a-z0-9_-]/g, "")) ?? join(o.workspace.libraryDir, "_");
   app.get("/api/library/:id", (c) => {
     const f = join(libDir(c.req.param("id")), "asset.json");

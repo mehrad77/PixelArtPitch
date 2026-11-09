@@ -319,11 +319,25 @@ export type LibraryAsset = {
   h: number;
   frames: number;
   tags: string[];
-  /** not in library/index.json yet; missing means public */
+  /** missing means public */
   scope?: "public" | "private";
   description?: string;
+  /** where it lives: the repo's seed, the person's own library, or one project's assets/ (missing: from scope) */
+  layer?: LibraryLayer;
+  /** the project a "project" asset belongs to */
+  project?: { id: string; title: string };
+  /** its preview sheet's URL, when it isn't the library's /api/library/:id/sheet.png */
+  sheet?: string;
 };
-export type LibraryIndex = { palette: string; assets: LibraryAsset[] };
+export type LibraryLayer = "seed" | "user" | "project";
+/** the three folders assets come from */
+export type LibraryDirs = {
+  seed: string;
+  user: string;
+  userExists: boolean;
+  projects: { id: string; title: string; dir: string; assets: number }[];
+};
+export type LibraryIndex = { palette: string; assets: LibraryAsset[]; dirs?: LibraryDirs };
 
 export type ApiErrorBody = { code: string; message: string; fix?: string; path?: string };
 

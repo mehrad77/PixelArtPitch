@@ -110,7 +110,8 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/settings/providers/:id/test` | | `{ ok, models: string[], error? }`; `ok` lifts every run held on this provider |
 | `GET /api/models` | | `ModelRow[]` (capability matrix) |
 | `GET /api/ledger` | `?project=&limit=` | ledger rows |
-| `GET /api/library` | | `{ palette, assets: (IndexEntry & { layer: "user" \| "seed" })[] }`: both libraries' `index.json`, the person's own first (it wins on an id both have) |
+| `GET /api/library` | | `{ palette, assets, dirs }`. `assets` holds three layers, each entry an `IndexEntry` plus `layer` and `scope`: `"seed"` (the repo's `library/`) and `"user"` (the person's library, which wins on an id both have) are `scope: "public"`; `"project"` is each project's own `file:assets/…` refs, `scope: "private"`, with `project: { id, title }` and its `sheet` URL. Project assets are listed read-only and never copied into a library. `dirs` is `{ seed, user, userExists, projects: { id, title, dir, assets }[] }`: the three folders, the last only for projects that keep assets |
+| `GET /api/library/project/:pid/:name/sheet.png` | | a project asset's preview sheet: the project's `assets/<name>.png`, else drawn from the asset's grid |
 | `GET /api/library/:id` | | the asset file, from whichever library has it (the person's first) |
 | `GET /api/library/:id/sheet.png` | | its preview sheet |
 | `GET /api/pip` | `?project=` | `{ items: PipItem[], name: "Pip", model, mode: "agent" \| "menu", busy, summary: PipSummary \| null }` (shapes in `docs/ASSISTANT.md`; a summary carries `freed`) |

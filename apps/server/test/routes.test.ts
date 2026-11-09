@@ -1,6 +1,6 @@
 // Small studio routes (docs/API.md): the change preview passes its body to the crew and checks it first.
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -12,6 +12,7 @@ after(() => rmSync(home, { recursive: true, force: true }));
 const { buildRegistry, Workspace } = await import("@pap/tools");
 const { createApp } = await import("../src/app.ts");
 const EXAMPLE = new URL("../../../examples/questday/", import.meta.url).pathname;
+const LIB = new URL("../../../library/", import.meta.url).pathname;
 
 function setup(crew: Record<string, unknown>) {
   const root = join(home, `projects-${Math.random().toString(36).slice(2)}`);
@@ -117,6 +118,37 @@ test("the web build check: stale when dist/index.html is older than the newest s
     const b = (await (await get("/api/build")).json()) as any;
     assert.equal(typeof b.webStale, "boolean");
     assert.ok("builtAt" in b && "srcAt" in b);
+  } finally {
+    workspace.closeAll();
+  }
+});
+
+test("GET /api/library: three layers, a project's own assets private to it, with their folders and sheets", async () => {
+  const { id, get, workspace } = setup({});
+  try {
+    const p = workspace.get(id);
+    const owl = JSON.parse(readFileSync(join(LIB, "owl", "asset.json"), "utf8"));
+    mkdirSync(join(p.dir, "assets"), { recursive: true });
+    writeFileSync(join(p.dir, "assets", "hero.json"), JSON.stringify({ ...owl, id: "hero", tags: ["likeness"] }));
+    const doc = JSON.parse(readFileSync(join(p.dir, "pitch.json"), "utf8"));
+    doc.assets.push({ id: "hero", src: "file:assets/hero.json", flags: { private: true } });
+    writeFileSync(join(p.dir, "pitch.json"), JSON.stringify(doc));
+    const lib = (await (await get("/api/library")).json()) as any;
+    const hero = lib.assets.find((a: any) => a.id === "hero");
+    assert.equal(hero.layer, "project");
+    assert.equal(hero.scope, "private");
+    assert.equal(hero.project.id, id);
+    assert.ok(lib.assets.some((a: any) => a.id === "owl" && a.layer === "seed" && a.scope === "public"));
+    assert.ok(lib.dirs.seed && lib.dirs.user && typeof lib.dirs.userExists === "boolean");
+    assert.deepEqual(
+      lib.dirs.projects.map((x: any) => [x.id, x.assets]),
+      [[id, 1]],
+    );
+    // no <name>.png beside it: the sheet is drawn from its grid
+    const sheet = await get(hero.sheet);
+    assert.equal(sheet.status, 200);
+    assert.equal(sheet.headers.get("content-type"), "image/png");
+    assert.equal((await get(`/api/library/project/${id}/nope/sheet.png`)).status, 404);
   } finally {
     workspace.closeAll();
   }
