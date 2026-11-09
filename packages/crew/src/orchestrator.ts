@@ -102,6 +102,7 @@ import {
   crewBundle,
   cueLines,
   exampleBundle,
+  isEndCard,
   stubSource,
   type Trial,
   trialRender,
@@ -660,15 +661,14 @@ export function mergeChange(a: ChangePlan | undefined, b: ChangePlan): ChangePla
     ...(assets.length ? { assets } : {}),
   };
 }
-const isEndCard = (sc: { kind: string; recipes?: { id: string }[] }) =>
-  sc.kind === "decl" && !!sc.recipes?.some((r) => r.id === "end_card_loop");
 /**
  * which scenes a set of change notes touches and which the Director re-plans; a note on an asset touches the scenes
  * that draw it (`usesOf`) and redraws it
  */
 function planChange(p: OpenProject, notes: Note[], usesOf: (scene: string) => string[] = () => []): ChangePlan {
   const d = p.doc();
-  const all = d.scenes.filter((s) => s.kind === "decl").map((s) => s.id);
+  // every scene a change can redo: recipe scenes and code scenes (an imported scene without a beat stays as it is)
+  const all = d.scenes.filter((s) => s.kind === "decl" || !!s.beat).map((s) => s.id);
   const reboard = new Set<string>();
   const scope = new Set<string>();
   const assets = new Set<string>();
@@ -2261,7 +2261,7 @@ export class Crew {
     ].sort((a, b2) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b2) + 1 || 99));
     const role = notes[0].assignee as RoleT;
     if (!roles.includes(role)) roles.unshift(role);
-    const decl = p.doc().scenes.filter((s) => s.kind === "decl" && !isEndCard(s as any));
+    const decl = p.doc().scenes.filter((s) => (s.kind === "decl" || !!s.beat) && !isEndCard(s as any));
     const scenes = change.reboard ?? change.scope ?? (role === "animator" ? decl.map((s) => s.id) : []);
     return {
       role,
@@ -4370,7 +4370,12 @@ export class Crew {
     const d = p.doc();
     const ops: any[] = [];
     d.scenes.forEach((s, k) => {
-      if (s.kind !== "decl") return;
+      // a code scene drops it from the assets it names
+      if (s.kind === "code") {
+        if (s.assets?.includes(name))
+          ops.push({ op: "replace", path: `/scenes/${k}/assets`, value: s.assets.filter((x) => x !== name) });
+        return;
+      }
       s.recipes.forEach((rc, n) => {
         for (const [key, v] of Object.entries(rc.params ?? {}))
           if (v === name) ops.push({ op: "remove", path: `/scenes/${k}/recipes/${n}/params/${key}` });
@@ -4943,7 +4948,17 @@ export class Crew {
         });
       if (!p.doc().audio.music)
         await p.patch(
-          [{ op: "replace", path: "/audio/music", value: { generator: "chip-bed", settle: d.scenes.at(-1)!.id } }],
+          // the bed settles at the end card (a recipe's end_card_loop or a code scene's endCard), else the last scene
+          [
+            {
+              op: "replace",
+              path: "/audio/music",
+              value: {
+                generator: "chip-bed",
+                settle: (d.scenes.find((s) => isEndCard(s as any)) ?? d.scenes.at(-1)!).id,
+              },
+            },
+          ],
           { reason: "a calm chiptune bed", author: { kind: "agent", role: "sound-designer", task: t.id } },
         );
       const res = await this.tool(p, "mixer", t.id, "audio_render", {});

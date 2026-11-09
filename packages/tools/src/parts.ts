@@ -117,7 +117,7 @@ export function partsOf(i: PartsInput): Parts {
     at = resolveTimeline(doc).at;
   } catch {}
   const drawn = (s: SceneT): string[] | null => {
-    if (s.kind === "code") return doc.assets.map((a) => a.id);
+    if (s.kind === "code") return s.assets?.length ? s.assets : doc.assets.map((a) => a.id);
     if (!at) return null;
     try {
       return compileDecl(s, at).assets;
@@ -141,6 +141,11 @@ export function partsOf(i: PartsInput): Parts {
       const b = doc.code.find((c) => c.id === s.bundle);
       if (!b || !resolves(`file:${b.file}`)) {
         problems.push(`${s.id}'s code is missing`);
+        continue;
+      }
+      // the storyboard's stub is a sketch, not the scene: it counts once the Scene Coder's code replaces it
+      if (b.stub) {
+        problems.push(`${s.id} is still a sketch`);
         continue;
       }
     }

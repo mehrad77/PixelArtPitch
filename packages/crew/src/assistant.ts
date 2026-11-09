@@ -36,6 +36,7 @@ import { BudgetError, type ChatMessage, type ContentPart, type ToolSpec } from "
 import { type CrewSnapshot, humanize, type ProblemAction, type RunReport, STAGE_LINE } from "./orchestrator.ts";
 import { routeChange } from "./plan/route.ts";
 import { fill, card as promptCard } from "./prompts.ts";
+import { isEndCard, sceneMakeup } from "./scene-code.ts";
 
 // ---------------------------------------------------------------- the contract with the UI
 export type PipFile = PipFileT;
@@ -299,11 +300,11 @@ const WORKSPACE = "_workspace";
 export const ROLE_LINE: Record<RoleT, string> = {
   producer: "Producer: reads the brief, asks what only you know, keeps the budget",
   writer: "Writer: writes the script (three angles) and translates subtitles",
-  director: "Director: plans the scenes from the recipe menu",
+  director: "Director: plans the scenes from the recipe menu, or as code scenes with a beat",
   "art-director": "Art Director: specs new art and picks the best drawing",
   "pixel-artist": "Pixel Artist: draws new characters and props",
   animator: "Animator: tunes each scene from stills and your notes",
-  "scene-coder": "Scene Coder: writes custom code scenes (rarely used)",
+  "scene-coder": "Scene Coder: writes the code scenes the Director boards (a beat no recipe draws)",
   "sound-designer": "Sound Designer: places the 8-bit sound effects",
   mixer: "Mixer: balances music, effects and voice",
   editor: "Editor: aligns your narration and exports the video",
@@ -411,7 +412,7 @@ function summary(p: OpenProject | undefined, deps: PipDeps, ws: Workspace): stri
     `Scenes: ${tl.scenes
       .map((s, k) => {
         const sc = d.scenes[k];
-        const rec = sc.kind === "decl" ? sc.recipes.map((r) => r.id).join("+") : "code";
+        const rec = sceneMakeup(sc, d);
         return `${k + 1}. ${s.id} "${sc.title}" ${s.from.toFixed(1)}-${s.to.toFixed(1)} s [${rec}] (${st.sceneStatus[s.id]?.state ?? "planned"})`;
       })
       .join("; ")}.`,
@@ -1595,9 +1596,7 @@ export class Pip {
           k >= 0
             ? [k + 1]
             : owner === "director"
-              ? d.scenes
-                  .map((sc, i) => (sc.kind === "decl" && sc.recipes.some((x) => x.id === "end_card_loop") ? 0 : i + 1))
-                  .filter(Boolean)
+              ? d.scenes.map((sc, i) => (isEndCard(sc) ? 0 : i + 1)).filter(Boolean)
               : d.scenes.map((_, i) => i + 1);
         const others = d.scenes.map((_, i) => i + 1).filter((i) => !touched.includes(i));
         const n = touched.length;

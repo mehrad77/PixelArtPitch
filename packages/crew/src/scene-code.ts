@@ -15,6 +15,21 @@ export function crewBundle(doc: Pick<ProjectT, "scenes" | "code">, sceneId: stri
   return doc.code.find((b) => b.id === s.bundle) ?? null;
 }
 
+/** the closing card: a recipe scene with end_card_loop, or a code scene marked endCard */
+export const isEndCard = (sc: { kind: string; recipes?: { id: string }[]; endCard?: boolean }) =>
+  sc.kind === "decl" ? !!sc.recipes?.some((r) => r.id === "end_card_loop") : !!sc.endCard;
+
+/** how Pip's state lines name a scene's make-up: its recipes, or "code" with the start of its beat */
+export function sceneMakeup(
+  sc: { kind: string; recipes?: { id: string }[]; beat?: string; bundle?: string },
+  doc?: Pick<ProjectT, "code">,
+) {
+  if (sc.kind === "decl") return (sc.recipes ?? []).map((r) => r.id).join("+");
+  const stub = doc?.code.find((c) => c.id === sc.bundle)?.stub;
+  const beat = sc.beat?.trim() ? `: ${sc.beat.trim().slice(0, 60)}${sc.beat.trim().length > 60 ? "…" : ""}` : "";
+  return `code${stub ? " (sketch)" : ""}${beat}`;
+}
+
 /** a scene is a code scene still drawn by its storyboard stub */
 export const isStub = (doc: Pick<ProjectT, "scenes" | "code">, sceneId: string) => !!crewBundle(doc, sceneId)?.stub;
 

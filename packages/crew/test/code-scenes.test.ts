@@ -318,3 +318,46 @@ test("the API sheet can't drift: one line per pap:engine export and per pap:time
   for (const k of ENGINE_EXPORTS) assert.match(sheet, new RegExp(`^- ${k}\\b`, "m"), k);
   assert.match(sheet, /- sprite\(rows, x, y, opts = \{\}\)/);
 });
+
+test("code scenes in every scene check: the end card, the parts, Pip's lines and the lints", async () => {
+  const { crew, p } = await crewOn(() => ({ error: new Error("no model call expected") }));
+  const t = (crew as any).task(p, { kind: "director.storyboard", role: "director", title: "board" });
+  await (crew as any).applyBoard(p, t, codeBoard());
+  const { isEndCard, sceneMakeup } = await import("../src/scene-code.ts");
+  const d = p.doc();
+  assert.equal(isEndCard(d.scenes.find((s: any) => s.id === "end")!), true, "a code scene can be the end card");
+  assert.equal(isEndCard(d.scenes.find((s: any) => s.id === "hub")!), false);
+  assert.match(sceneMakeup(d.scenes.find((s: any) => s.id === "hub")!, d), /^code \(sketch\): 0-1 s: the hero/);
+  // a stub is a sketch, not a finished picture, even after the animatic marks every scene ready
+  for (const s of d.scenes) p.setSceneStatus(s.id, { version: "animatic", state: "ready" });
+  const pictures = p.parts().parts.find((x) => x.id === "pictures")!;
+  assert.notEqual(pictures.state, "ready");
+  assert.match(pictures.why ?? "", /still a sketch/);
+  const { lintProject, lintCodeProbes, lintBundleSource } = await import("@pap/engine/lints");
+  const missing = { ...d, scenes: d.scenes.map((s: any) => (s.id === "hub" ? { ...s, assets: ["dragon"] } : s)) };
+  const ls = lintProject(missing as any, p.timeline());
+  assert.ok(ls.some((l) => l.rule === "missing-asset" && l.scene === "hub" && /dragon/.test(l.message)));
+  const probes = lintCodeProbes("hub", [
+    {
+      t: 1,
+      ms: 400,
+      boxes: [
+        { kind: "text", text: "TOO LOW", x: 10, y: 150, w: 30, h: 8 },
+        { kind: "text", text: "OFF", x: 300, y: 10, w: 40, h: 8 },
+        { kind: "missing-asset", name: "dragon" },
+      ],
+    },
+  ]);
+  assert.deepEqual(probes.map((l) => l.rule).sort(), ["caption-zone", "placeholder-box", "slow-draw", "text-clipped"]);
+  const src = lintBundleSource(
+    "hub",
+    'import { frame } from "pap:engine";\nimport x from "node:fs";\nexport function draw(t) { Math.random(); frame("dragon", "fly"); frame("items", "nope"); }',
+    new Map([["items", ["star"]]]),
+  );
+  assert.deepEqual(src.map((l) => l.rule).sort(), [
+    "bundle-banned",
+    "bundle-import",
+    "missing-frame",
+    "placeholder-box",
+  ]);
+});

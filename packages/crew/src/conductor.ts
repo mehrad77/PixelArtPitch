@@ -9,6 +9,7 @@ import type { ChatMessage, ToolSpec } from "./llm/types.ts";
 import type { ChangePlan, Conductor, Decision, Trigger } from "./orchestrator.ts";
 import { PlanDiffOut } from "./plan/schema.ts";
 import { card, fill } from "./prompts.ts";
+import { sceneMakeup } from "./scene-code.ts";
 
 const ROLES = [
   "producer",
@@ -159,10 +160,7 @@ export class PipConductor implements Conductor {
     const project = [
       `"${d.title}": ${d.brief.idea.slice(0, 300)}`,
       `Stage ${st.stage}. Scenes: ${d.scenes
-        .map(
-          (s) =>
-            `${s.id} [${s.kind === "decl" ? s.recipes.map((r) => r.id).join("+") : "code"}] redos ${ctx.redos.get(s.id) ?? 0}/2`,
-        )
+        .map((s) => `${s.id} [${sceneMakeup(s, d)}] redos ${ctx.redos.get(s.id) ?? 0}/2`)
         .join("; ")}`,
       `Person's open requests: ${
         st.notes
