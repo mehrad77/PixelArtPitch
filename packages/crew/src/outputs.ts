@@ -128,6 +128,9 @@ export const TuneOut = z.object({
 });
 
 /** the Scene Coder's answer: the whole bundle (an ES module) and a line on what it did */
+/** check first (§1.12): is a person's change already true in the frames? */
+export const AlreadyOut = z.object({ already: z.boolean(), why: z.string().max(300).default("") });
+
 export const CodeOut = z.object({
   code: z.string().min(40).max(60000),
   notes: z.string().max(600).default(""),
@@ -141,7 +144,14 @@ export const ReviewOut = z.object({
     .max(12),
   polish: z.array(z.object({ t: z.number(), scene: z.string(), issue: z.string().max(300) })).max(12),
   /** after a person's change: does the cut now do it? (absent: no change was asked, or a weak model left it out) */
-  change: z.object({ done: z.enum(["yes", "partly", "no"]), why: z.string().max(300).default("") }).optional(),
+  change: z
+    .object({
+      done: z.enum(["yes", "partly", "no"]),
+      why: z.string().max(300).default(""),
+      /** the scene ids that still miss the change (only those get its blocker) */
+      scenes: z.array(z.string()).max(12).optional(),
+    })
+    .optional(),
 });
 
 export type PlanOutT = z.infer<typeof PlanOut>;

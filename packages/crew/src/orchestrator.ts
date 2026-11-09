@@ -38,6 +38,7 @@ import type { Gateway } from "./gateway.ts";
 import { errorKind, holdsRun } from "./llm/http.ts";
 import type { ChatMessage, ContentPart } from "./llm/types.ts";
 import {
+  AlreadyOut,
   AnglesOut,
   type AssetKindT,
   artistIssues,
@@ -56,6 +57,7 @@ import {
   templateFor,
 } from "./outputs.ts";
 import { CATALOGUE, ROLE_LABEL, stageOf, taskLabel } from "./plan/catalogue.ts";
+import { type ChangeTier, classifyIn, EVERY } from "./plan/classify.ts";
 import { envOf, estimatePlanTask, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
 import { Executor, type Outcome } from "./plan/executor.ts";
 import { logoFrames, refPng } from "./plan/import.ts";
@@ -384,6 +386,8 @@ type Run = {
     approximated: string[];
     /** scenes a change task left as they were (a re-plan that came back the same, a tune with no change) */
     unchanged?: string[];
+    /** scenes check first found already showing the change (§1.12): nothing re-coded, the note handled */
+    already?: { scene: string; why: string }[];
     /** the time of day a look.time set, and Pip's one line on a cue that still says the old time */
     time?: "night" | "dusk" | "day";
     timeCue?: string;
@@ -493,6 +497,8 @@ export type ChangePreview = {
   sec: [number, number];
   /** one plain sentence: "The Director re-plans scenes 2 and 4, then the Animator tunes them." */
   summary: string;
+  /** the change's tier (§1.12): an `edit` is free, Pip's own (the costliest of the notes' tiers) */
+  tier: ChangeTier;
 };
 /** the preview's sentence for who does what; `nums` are the scenes' numbers */
 export function changeSummary(role: RoleT, nums: string[], assets: string[] = []): string {
@@ -539,6 +545,8 @@ export type RunReport = {
   approximated: string[];
   /** scenes a change task left as they were: "nothing was changed" */
   unchanged?: string[];
+  /** scenes that already showed the change (check first): nothing was re-coded, and the note is done */
+  already?: { scene: string; why: string }[];
   /** the time of day this run set (look.time), and the line on a cue that still says the old one */
   time?: "night" | "dusk" | "day";
   timeCue?: string;
@@ -686,14 +694,14 @@ export function gateNotes(
   const out: { target: { scene?: string }; text: string; assignee: RoleT }[] = [];
   for (const [scene, its] of byScene) {
     const text = [...reasons, ...its].join("; ").slice(0, 2000);
-    out.push({ target: { scene }, text, assignee: routeIn(p.doc(), { text, target: { scene } }, fallback) });
+    out.push({ target: { scene }, text, assignee: routeBy(p, { text, target: { scene } }, fallback) });
   }
   if (loose.length || (!byScene.size && reasons.length)) {
     const text = [...reasons, ...loose].join("; ").slice(0, 2000);
     // words that name a scene ("a bit slower in A grind") are about that scene
     const scene = byScene.size ? undefined : sceneNamed(p, text);
     const target = scene ? { scene } : {};
-    out.push({ target, text, assignee: routeIn(p.doc(), { text, target }, fallback) });
+    out.push({ target, text, assignee: routeBy(p, { text, target }, fallback) });
   }
   return out;
 }
@@ -723,6 +731,47 @@ export function mergeChange(a: ChangePlan | undefined, b: ChangePlan): ChangePla
  * which scenes a set of change notes touches and which the Director re-plans; a note on an asset touches the scenes
  * that draw it (`usesOf`) and redraws it
  */
+/**
+ * The owner of a note by its words (routeIn) and its tier (§1.12): a story change is the Director's re-plan, a code
+ * scene's change beyond a time of day the Scene Coder's patch, a recipe scene's staging the Animator's tune. A drawn
+ * asset, sound, a cue's words and a time of day keep the word router's owner.
+ */
+export function routeBy(
+  p: OpenProject,
+  note: { text: string; target?: { scene?: string; cue?: string; asset?: string }; category?: ChangeCategory },
+  fallback?: RoleT,
+): RoleT {
+  const owner = routeIn(p.doc(), note, fallback);
+  const t = note.target ?? {};
+  if (t.asset || note.category === "sound" || timeAsked(note.text) || owner === "writer") return owner;
+  const c = classifyIn(p, { text: note.text, target: t, category: note.category });
+  if (c.tier === "replan") return "director";
+  if (c.tier === "code_patch" || c.edits?.some((e) => e.tool === "code_set_constants")) return "scene-coder";
+  if (owner === "director") return "animator";
+  return owner;
+}
+/** a note's tier (§1.12): the classifier Pip's card reads, on the project's current code */
+const tierOf = (p: OpenProject, n: Pick<Note, "text" | "target" | "category">) =>
+  classifyIn(p, {
+    text: n.text,
+    target: {
+      ...(n.target.scene ? { scene: n.target.scene } : {}),
+      ...(n.target.cue ? { cue: n.target.cue } : {}),
+      ...(n.target.asset ? { asset: n.target.asset } : {}),
+    },
+    category: n.category as ChangeCategory,
+  });
+/**
+ * the scenes a note makes stale (and so redoes): its scene, the tier's scenes (a time of day: only the code scenes
+ * with a fixed sky; "take X out": only the scenes with X), or, for an Animator's note on the whole video, every scene
+ */
+function noteScenes(p: OpenProject, n: Note, all: string[]): string[] {
+  if (n.target.scene) return [n.target.scene];
+  const c = tierOf(p, n);
+  if (timeAsked(n.text) && !n.target.asset) return c.scenes;
+  if (c.scenes.length) return c.scenes;
+  return n.assignee === "animator" || n.assignee === "scene-coder" ? all : [];
+}
 function planChange(p: OpenProject, notes: Note[], usesOf: (scene: string) => string[] = () => []): ChangePlan {
   const d = p.doc();
   // every scene a change can redo: recipe scenes and code scenes (an imported scene without a beat stays as it is)
@@ -734,21 +783,28 @@ function planChange(p: OpenProject, notes: Note[], usesOf: (scene: string) => st
   let time: ChangePlan["time"];
   for (const n of notes) {
     const asked = timeAsked(n.text);
+    const c = tierOf(p, n);
     if (asked && !n.target.asset) {
-      // the whole video's time of day: look.time sets it, recipe scenes follow, code scenes are re-coded
+      // the whole video's time of day: look.time sets it; recipe scenes and code scenes that read TIME follow, and
+      // only a code scene with a fixed sky is patched (§1.12, check first)
       time = asked;
-      for (const s of d.scenes) if (s.kind === "code" && s.beat) scope.add(s.id);
+      for (const id of c.scenes) scope.add(id);
     } else if (n.target.asset && !n.target.scene) {
       assets.add(n.target.asset);
       for (const s of all) if (usesOf(s).includes(n.target.asset)) scope.add(s);
     } else if (n.assignee === "director") {
-      // a change for the whole video re-plans every scene but the end card
-      const ids = n.target.scene ? [n.target.scene] : d.scenes.filter((s) => !isEndCard(s as any)).map((s) => s.id);
+      // a change for the whole video re-plans every scene but the end card, unless the words say every scene
+      const ids = n.target.scene
+        ? [n.target.scene]
+        : c.tier === "replan" && c.scenes.length
+          ? c.scenes
+          : d.scenes.filter((s) => EVERY.test(n.text) || !isEndCard(s as any)).map((s) => s.id);
       for (const id of ids) {
         reboard.add(id);
         scope.add(id);
       }
     } else if (n.target.scene) scope.add(n.target.scene);
+    else if (c.scenes.length) for (const id of c.scenes) scope.add(id);
     else everywhere = true;
   }
   return {
@@ -2022,7 +2078,7 @@ export class Crew {
         target,
         category: "other",
         text: note.slice(0, 1000),
-        assignee: routeIn(p.doc(), { text: note, target }),
+        assignee: routeBy(p, { text: note, target }),
         by: "user",
       });
       if (!r) {
@@ -2171,14 +2227,17 @@ export class Crew {
    * superseded), the plan gets a change revision, and the crew runs it, unless the person paused it.
    */
   requestChange(p: OpenProject, note: Note, extra: Note[] = []): ChangeResult {
-    // a router without the document (crew_request_change over MCP) sent a code scene's note to the Animator or the
-    // Director: it is the Scene Coder's (§1.12)
-    if (
-      isCodeScene(p.doc(), note.target.scene) &&
-      !timeAsked(note.text) &&
-      (note.assignee === "animator" || (note.assignee === "director" && note.category !== "story"))
-    )
-      note = p.updateNote(note.id, { assignee: "scene-coder" });
+    // a router without the document (crew_request_change over MCP) routes by words only: the tier decides who makes
+    // it (§1.12), the same as Pip's card (a code scene's change is the Scene Coder's patch, a story change a re-plan)
+    if (note.by === "user" && !note.target.asset) {
+      // only ever cheaper: a code scene's change to the Scene Coder, a needless re-plan down to a tune; never up
+      const want = routeBy(p, note as Note & { category: ChangeCategory });
+      if (
+        want !== note.assignee &&
+        (want === "scene-coder" || (note.assignee === "director" && want === "animator" && !timeAsked(note.text)))
+      )
+        note = p.updateNote(note.id, { assignee: want });
+    }
     const stage = noteStage(note);
     const live = this.runs.get(p.id);
     if (live && !live.held) {
@@ -2249,7 +2308,7 @@ export class Crew {
    */
   changeCost(
     p: OpenProject,
-    c: { assignee: string; scene?: string; asset?: string },
+    c: { assignee: string; scene?: string; asset?: string; text?: string; category?: ChangeCategory },
   ): { usd: [number, number]; toUsd: [number, number] } | null {
     const plan = this.planNow(p);
     if (!plan) return null;
@@ -2257,11 +2316,13 @@ export class Crew {
       id: "preview",
       target: { ...(c.scene ? { scene: c.scene } : {}), ...(c.asset ? { asset: c.asset } : {}) },
       assignee: c.assignee,
+      text: c.text ?? "",
+      category: c.category ?? "other",
     } as Note;
     const from = clampToContent(p, OWNER_STAGE[c.assignee] ?? "review");
     const ss = structuredClone(p.state.sceneStatus);
-    for (const id of c.scene ? [c.scene] : c.assignee === "animator" ? Object.keys(ss) : [])
-      if (ss[id]) ss[id] = { version: "animatic", state: "stale" };
+    // the scenes the note redoes, as reopen() marks them (its words decide them, §1.12)
+    for (const id of noteScenes(p, note, Object.keys(ss))) if (ss[id]) ss[id] = { version: "animatic", state: "stale" };
     const change = planChange(p, [note], (s) => this.sceneAssets(p, s));
     const out = changeRevision(
       plan.tasks.map((t) => ({ ...t })),
@@ -2295,7 +2356,7 @@ export class Crew {
             {
               target: named ? { scene: named } : {},
               text,
-              assignee: routeIn(p.doc(), {
+              assignee: routeBy(p, {
                 text,
                 ...(named ? { target: { scene: named } } : {}),
                 ...(b.category ? { category: b.category } : {}),
@@ -2316,17 +2377,7 @@ export class Crew {
     );
     const ss = structuredClone(p.state.sceneStatus);
     for (const n of notes)
-      for (const id of timeAsked(n.text)
-        ? p
-            .doc()
-            .scenes.filter((s) => s.kind === "code" && s.beat)
-            .map((s) => s.id)
-        : n.target.scene
-          ? [n.target.scene]
-          : n.assignee === "animator"
-            ? Object.keys(ss)
-            : [])
-        if (ss[id]) ss[id] = { version: "animatic", state: "stale" };
+      for (const id of noteScenes(p, n, Object.keys(ss))) if (ss[id]) ss[id] = { version: "animatic", state: "stale" };
     const change = planChange(p, notes, (s) => this.sceneAssets(p, s));
     const out = changeRevision(
       before.map((t) => ({ ...t })),
@@ -2354,10 +2405,15 @@ export class Crew {
     if (!roles.includes(role)) roles.unshift(role);
     const decl = p.doc().scenes.filter((s) => (s.kind === "decl" || !!s.beat) && !isEndCard(s as any));
     const scenes = change.reboard ?? change.scope ?? (role === "animator" ? decl.map((s) => s.id) : []);
+    const RANK = ["edit", "tune", "code_patch", "replan"] as const;
+    const tier = notes
+      .map((n) => tierOf(p, n).tier)
+      .reduce<ChangeTier>((a, b) => (RANK.indexOf(b) > RANK.indexOf(a) ? b : a), "edit");
     return {
       role,
       roles,
       scenes,
+      tier,
       usd: [d0(now.usd[0], was.usd[0]), d0(now.usd[1], was.usd[1])],
       sec: [Math.round(d0(now.sec[0], was.sec[0])), Math.round(d0(now.sec[1], was.sec[1]))],
       summary: changeSummary(
@@ -2420,6 +2476,7 @@ export class Crew {
       approximated: r.done.approximated,
       ...(r.done.time ? { time: r.done.time } : {}),
       ...(r.done.timeCue ? { timeCue: r.done.timeCue } : {}),
+      ...(r.done.already?.length ? { already: r.done.already } : {}),
       unchanged: [...new Set(r.done.unchanged ?? [])].filter(
         (x) => !r.done.reboarded.includes(x) && !r.done.redone.has(x),
       ),
@@ -2455,18 +2512,9 @@ export class Crew {
       p,
       owners.reduce((a, b) => (order.indexOf(b) < order.indexOf(a) ? b : a)),
     );
+    // the scenes each note redoes (a time of day: only code scenes with a fixed sky; recipe scenes follow the canvas)
     for (const n of notes)
-      for (const id of timeAsked(n.text)
-        ? // a time of day re-codes the code scenes; recipe scenes follow the canvas as they are
-          p
-            .doc()
-            .scenes.filter((s) => s.kind === "code" && s.beat)
-            .map((s) => s.id)
-        : n.target.scene
-          ? [n.target.scene]
-          : n.assignee === "animator"
-            ? Object.keys(p.state.sceneStatus)
-            : [])
+      for (const id of noteScenes(p, n, Object.keys(p.state.sceneStatus)))
         if (p.state.sceneStatus[id]) p.setSceneStatus(id, { version: "animatic", state: "stale" });
     this.relockFrom(p, from);
     for (const t of p.state.tasks)
@@ -4993,15 +5041,34 @@ export class Crew {
         assets: assetLines(lp, names).join("\n") || "(none: draw with shapes and text)",
         palette: this.palette(p).table,
         api: apiSheet(),
-        example: exampleBundle().trim(),
+        // a patch starts from the scene's own code: the examples (the biggest block) aren't sent
+        examples: current
+          ? ""
+          : `Example bundles for scenes of another video (their assets and cues are not yours):\n\`\`\`js\n${exampleBundle().trim()}\n\`\`\`\n`,
         notes:
           notes.length || asks.length
             ? [...notes, ...asks].map((n) => `${n.id} (${n.category}): ${n.text}`).join("\n")
             : "(none)",
         current: current
-          ? `The scene's code now (revise it for the notes; keep what works):\n\`\`\`js\n${current}\n\`\`\``
+          ? `This is a patch. The scene's code now is below: start from it, change only what the change and the notes name, and keep everything else as it is (the same constants, positions, timings and drawing order). Return the whole module.\n\`\`\`js\n${current}\n\`\`\``
           : "Write the module from scratch.",
       };
+      // a patch (the scene has code) is priced and run as scene.patch at medium effort; a first write at the card's
+      const patch = !!current;
+      // check first (§1.12): is the person's change already true in the current code's frames? One light vision call
+      // on three stills; if it is, nothing is re-coded
+      const told = [...notes.filter((n) => n.by === "user"), ...asks].filter((n) => !timeAsked(n.text));
+      if (patch && told.length && current) {
+        const already = await this.alreadyTrue(p, r, t, lp, s.id, current, told);
+        if (already) {
+          this.handled(p, told, `already in the scene: ${already}`);
+          this.done(p, t, { summary: `nothing to change: ${already}`.slice(0, 200) });
+          p.log(t.id, { kind: "step", title: `Already in the scene: ${already}`.slice(0, 240) });
+          p.setSceneStatus(s.id, { version: "render", state: "ready" });
+          r.done.already = [...(r.done.already ?? []), { scene: s.id, why: already }];
+          return { status: "done", note: `nothing was changed: already true (${already})`.slice(0, 200) };
+        }
+      }
       const tooLong = (e: unknown) =>
         (e as { code?: string })?.code === "structured" || /max_tokens/.test(String((e as Error)?.message ?? e));
       const LIMIT =
@@ -5024,15 +5091,18 @@ export class Crew {
                 history,
                 user: `The module failed its checks in the sandbox:\n- ${issues.join("\n- ")}\n\nFix every one and return the whole module.`,
                 maxOut: 20000,
+                // a repair is a fix of a module that exists: medium effort
+                effort: "medium",
               })
             : await this.ask(p, r, t, {
                 role: "scene-coder",
-                kind: attempt ? "scene.patch" : "scene.code",
+                kind: attempt || patch ? "scene.patch" : "scene.code",
                 prompt: "scene-coder/write",
                 vars,
                 schema: CodeOut,
                 model,
-                ...(attempt ? { extra: [{ type: "text" as const, text: LIMIT }], effort: "medium" as const } : {}),
+                ...(attempt ? { extra: [{ type: "text" as const, text: LIMIT }] } : {}),
+                ...(attempt || patch ? { effort: "medium" as const } : {}),
               });
         } catch (e) {
           if (r.abort.signal.aborted || !tooLong(e)) throw e;
@@ -5055,7 +5125,11 @@ export class Crew {
       // critique rounds on the strip: each returns the whole module; one that breaks loading is dropped
       const span = Math.max(0.2, w.to - w.from);
       const times = Array.from({ length: 6 }, (_, i) => (w.from + 0.1 + (span - 0.2) * (i / 5)).toFixed(2)).join(", ");
-      for (let k = 0; good?.trial.strip && k < this.reviewRounds(); k++) {
+      // at most one critique round: on a first write, one; on a patch, none unless the trial found something
+      const rounds = Math.min(this.reviewRounds(), patch ? (good?.trial.warnings.length ? 1 : 0) : 1);
+      if (good && !rounds)
+        p.log(t.id, { kind: "step", title: "The patch passed its trial cleanly: no critique round" });
+      for (let k = 0; good?.trial.strip && k < rounds; k++) {
         let out: { data: z.infer<typeof CodeOut>; messages: ChatMessage[] };
         try {
           out = await this.ask(p, r, t, {
@@ -5147,6 +5221,38 @@ export class Crew {
       return fb;
     }
     return { status: "done" };
+  }
+
+  /**
+   * Check first (§1.12): before a code scene is patched for a person's change, its current code is drawn in the trial
+   * sandbox (no model) and one light vision call (the Editor's model) says whether the change is already true. The
+   * answer's sentence when it is, else null; any failure is a "no" (the patch goes ahead).
+   */
+  private async alreadyTrue(
+    p: OpenProject,
+    r: Run,
+    t: Task,
+    lp: ReturnType<OpenProject["project"]>,
+    scene: string,
+    code: string,
+    told: Note[],
+  ): Promise<string | null> {
+    try {
+      const trial = await trialRender(lp, scene, code, { signal: r.abort.signal });
+      if (!trial.ok || !trial.stills.length) return null;
+      const out = await this.ask(p, r, t, {
+        role: "editor",
+        kind: "scene.check",
+        prompt: "reviewer/check",
+        vars: { scene, change: told.map((n) => `- ${n.text}`).join("\n") },
+        schema: AlreadyOut,
+        images: trial.stills,
+      });
+      return out.data.already ? out.data.why || "the frames already show it" : null;
+    } catch (e) {
+      if (r.abort.signal.aborted) throw e;
+      return null;
+    }
   }
 
   /**
@@ -5367,11 +5473,39 @@ export class Crew {
       ).data;
       // a change the cut doesn't do is never "ship": a blocker on each scene it should be in that has none
       if (asks.length && rev.change && rev.change.done !== "yes") {
-        const scenes = [
-          ...new Set(
-            asks.flatMap((n) => (n.target.scene ? [n.target.scene] : [...(r.scope ?? d.scenes.map((x) => x.id))])),
-          ),
-        ].filter((id) => d.scenes.some((x) => x.id === id) && !rev.blockers.some((b) => b.scene === id));
+        // the scenes that really miss it, once (P8 copied one note onto four scenes that were already fixed): the
+        // Reviewer's own list, else the scenes its words name, else the notes' scenes, else the run's scope
+        const ids = d.scenes.map((x) => x.id);
+        const named = d.scenes
+          .filter(
+            // "scene hub", the scene's title, or "scene 2" / "scenes 2 and 4"; never a bare id ("at the end")
+            (x, i) =>
+              new RegExp(`\\bscenes?\\s+${x.id}\\b`, "i").test(rev.change?.why ?? "") ||
+              (!!x.title &&
+                x.title.length > 3 &&
+                (rev.change?.why ?? "").toLowerCase().includes(x.title.toLowerCase())) ||
+              new RegExp(`\\bscenes?\\s+(\\d+\\s*(,|and)\\s*)*${i + 1}\\b`, "i").test(rev.change?.why ?? ""),
+          )
+          .map((x) => x.id);
+        const listed = (rev.change?.scenes ?? []).filter((id) => ids.includes(id));
+        const targeted = asks.flatMap((n) => (n.target.scene ? [n.target.scene] : []));
+        const missing = listed.length
+          ? listed
+          : named.length
+            ? named
+            : targeted.length
+              ? targeted
+              : [...(r.scope ?? ids)];
+        const issue = `The change isn't in the cut yet: ${cutWords(asks.map((n) => n.text).join("; "), 140)}`;
+        const scenes = [...new Set(missing)].filter(
+          (id) =>
+            ids.includes(id) &&
+            !rev.blockers.some((b) => b.scene === id) &&
+            // never twice: a scene that already has this open note keeps the one it has
+            !p.state.notes.some(
+              (n) => n.by === "reviewer" && n.status === "open" && n.target.scene === id && n.text.startsWith(issue),
+            ),
+        );
         const w = tl.scenes;
         rev = {
           ...rev,
@@ -5383,11 +5517,7 @@ export class Crew {
               return {
                 t: sw ? +((sw.from + sw.to) / 2).toFixed(1) : 0,
                 scene: id,
-                issue:
-                  `The change isn't in the cut yet: ${cutWords(asks.map((n) => n.text).join("; "), 140)}${rev.change?.why ? ` (${cutWords(rev.change.why, 120)})` : ""}.`.slice(
-                    0,
-                    300,
-                  ),
+                issue: `${issue}${rev.change?.why ? ` (${cutWords(rev.change.why, 120)})` : ""}.`.slice(0, 300),
                 fix: `Do the change: ${cutWords(asks.map((n) => n.text).join("; "), 200)}`.slice(0, 300),
               };
             }),

@@ -165,3 +165,29 @@ test("named constants: read the literals, set them as text, refuse an unknown na
   assert.ok("source" in list);
   assert.match(list.source, /^export const CAST = \["hero"\];$/m);
 });
+
+test("the Scene Coder's examples carry named constants that set as text and still lint", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { lintBundleSource } = await import("@pap/engine/lints");
+  const assets = new Map([
+    ["hero", ["idle0", "idle1", "run0", "run1", "run2", "run3"]],
+    ["items", ["star", "heart"]],
+    ["qblock", ["glow"]],
+    ["tiles", ["ground-top", "ground"]],
+    ["moon", ["moon"]],
+    ["logo", ["big"]],
+  ]);
+  for (const f of ["example.mjs", "example-slots.mjs", "example-finale.mjs"]) {
+    const src = readFileSync(new URL(`../prompts/scene-coder/${f}`, import.meta.url), "utf8");
+    const cs = constantsOf(src);
+    assert.ok(cs.length >= 4, `${f}: ${cs.map((c) => c.name)}`);
+    const first = cs.find((c) => typeof c.value === "number")!;
+    const r = setConstants(src, { [first.name]: (first.value as number) + 2 });
+    assert.ok("source" in r);
+    assert.deepEqual(
+      lintBundleSource("quest", r.source, assets).filter((l) => l.severity === "error"),
+      [],
+      f,
+    );
+  }
+});

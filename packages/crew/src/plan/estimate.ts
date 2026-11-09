@@ -67,12 +67,21 @@ export function sizeParams(t: { kind: string; assetKind?: string; assetSize?: st
   return tpl ? { w: tpl.w, h: tpl.h, frames: tpl.frames.length } : undefined;
 }
 
+/** a code scene's patch (v0.5.2): one scene.patch call at p50, plus one repair at p90 (no critique on a clean trial) */
+export const PATCH_PRICES: [string, number, number][] = [
+  ["scene.patch", 1, 2],
+  // check first: one light vision call before a patch for a person's change (priced on the task's model: an upper bound)
+  ["scene.check", 1, 1],
+];
+
 /**
  * one task's estimate on its resolved model; a placeholder counts `count` runs, a conditional one $0 at p50. Sprite
  * work is scaled by the sprite's size (a 16x16 icon costs less than an 8-frame 16x24 hero).
  */
 export function estimatePlanTask(
   t: Pick<PlanTaskT, "kind" | "role" | "tier" | "conditional" | "expand" | "count"> & {
+    /** scene.code on a scene that has code: one patch call, a repair at p90 (PATCH_PRICES) */
+    patch?: boolean;
     assetKind?: string;
     assetSize?: string;
     motion?: string;
@@ -94,7 +103,7 @@ export function estimatePlanTask(
   let s90 = 0;
   let rough = false;
   const params = sizeParams(t);
-  for (const [kind, c50, c90] of row.prices) {
+  for (const [kind, c50, c90] of t.patch && t.kind === "scene.code" ? PATCH_PRICES : row.prices) {
     if (kind === "asset.critique" && t.critiques === 0) continue;
     const e = estimateCall(
       { kind, model: { id: model, price: priceFor(model), caps: { local } }, ...(params ? { params } : {}) },

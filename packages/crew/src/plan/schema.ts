@@ -74,6 +74,11 @@ export const PlanTask = z.object({
   reason: z.string().max(200).optional(),
   /** why it ended the way it did (skipped, dropped, partial) */
   note: z.string().max(200).optional(),
+  /**
+   * scene.code on a scene that already has its code: a patch of the current module (priced as scene.patch, no
+   * critique round unless the trial finds something)
+   */
+  patch: z.boolean().optional(),
   /** done on a stand-in (kept as built, lints only, a library asset): `POST /crew/retry` redoes it */
   outcome: z.enum(["fallback"]).optional(),
 });

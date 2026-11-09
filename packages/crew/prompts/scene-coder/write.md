@@ -1,5 +1,5 @@
 ---
-version: 3
+version: 4
 maxOut: 24000
 effort: high
 ---
@@ -17,6 +17,14 @@ The sandbox rules (a bundle that breaks one does not load):
    with t once at load time; never loop over every pixel of the screen.
 4. Time every beat from the script: S("c05") is when cue c05 starts, E("c05") when it ends, or the scene's window.
    Never a raw second such as t > 12.4: the script gets re-timed and the scene must move with it.
+
+5. Name what a person may want to change. Put positions, sizes, colours (as palette letters), beat offsets, hold
+   lengths and the cast list as `export const` named constants at the top, one per line, each a plain literal: a
+   number, a "string", true/false or a flat list (export const LOGO_Y = 40; export const HOLD_END = 1.5;
+   export const CAST = ["hero", "gamer"];). Use them in draw(t): text(TITLE, LOGO_X, LOGO_Y + 30),
+   t > E("c05") + HOLD_END. A time is still cue-anchored: the constant is the offset, never the second itself.
+   Upper-case names that say what they are (LOGO_X, LOGO_Y, CAST_X, FLAG_UP, HOLD_END), never A, B, N1. Pip edits
+   these lines directly when the person asks to move, resize or retime something, with no rewrite.
 
 The look (STYLE-GUIDE):
 - Start every draw(t) with skyGradient() and paint the whole scene: the host draws captions and the dissolve over
@@ -66,11 +74,7 @@ Palette letters (letter, hex, use):
 The API (what the two modules export):
 {{api}}
 
-Example bundles for scenes of another video (their assets and cues are not yours):
-```js
-{{example}}
-```
-
+{{examples}}
 Notes to address:
 {{notes}}
 

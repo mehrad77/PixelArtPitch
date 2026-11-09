@@ -627,7 +627,16 @@ export function addRedo(
     const round = Math.min(3, (prev?.round ?? 1) + 1);
     const w = workFor(ctx, s);
     const id = freshId(`${w.stem}_r${round}`, ctx.rev, taken);
-    ts = [...ts, mkTask({ id, kind: w.kind, scene: s, round, dependsOn: o.after ?? [], reason: o.reason }, ctx)];
+    // a code scene coded before is patched, not written again
+    const patch =
+      w.kind === "scene.code" && prev?.kind === "scene.code" && prev.status === "done" && prev.outcome !== "fallback";
+    ts = [
+      ...ts,
+      mkTask(
+        { id, kind: w.kind, scene: s, round, dependsOn: o.after ?? [], reason: o.reason, ...(patch ? { patch } : {}) },
+        ctx,
+      ),
+    ];
     if (prev) ts = waitAlsoOn(ts, [prev.id], [id]);
     added.push(id);
   }
@@ -715,10 +724,30 @@ export function changeRevision(
     keep: keeps,
     reason: "your change",
   });
+  r = { tasks: asPatches(tasks, r.tasks, ctx), ops: r.ops };
   if (change.time) r = addLookTime(r.tasks, r.ops, ctx);
   if (!reboard) return { tasks: r.tasks, ops: r.ops };
   const b = addReboard(r.tasks, reboard, ctx, { reason: "your change" });
   return { tasks: b.tasks, ops: [...r.ops, ...b.ops] };
+}
+
+/**
+ * the scene.code copies a rerun added for scenes whose code was already written (a done scene.code before): patches
+ * of the current module, re-priced as such
+ */
+export function asPatches(before: PlanTaskT[], after: PlanTaskT[], ctx: Pick<RulesCtx, "env">): PlanTaskT[] {
+  // a write that fell back kept the stub: its redo writes from scratch, priced as a write
+  const coded = new Set(
+    before
+      .filter((t) => t.kind === "scene.code" && t.status === "done" && t.outcome !== "fallback")
+      .map((t) => t.scene),
+  );
+  const old = new Set(before.map((t) => t.id));
+  return after.map((t) => {
+    if (old.has(t.id) || t.kind !== "scene.code" || !coded.has(t.scene) || t.patch) return t;
+    const e = estimatePlanTask({ ...t, patch: true }, ctx.env);
+    return { ...t, patch: true, estUsd: e.usd, estSec: e.sec };
+  });
 }
 
 /**

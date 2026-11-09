@@ -21,13 +21,21 @@ import {
 } from "pap:engine";
 import { E, S, SCENES } from "pap:timeline";
 
+// the named constants: what a person may ask to move, resize or retime (Pip edits these lines, no rewrite)
+export const HERO_X = 64;
+export const STAR_X = 128;
+export const STAR_Y = 64;
+export const STAR_GAP = 32;
+export const WALK_IN = 1;
+export const FIRST_STAR = 0.4;
+
 const ID = "quest";
 const SC = SCENES.find((s) => s.id === ID);
 const GROUND = 148;
 // the beats: the hero walks in over the first second, then the three stars land evenly across cue c02
 const WALK0 = SC.from + 0.2;
-const WALK1 = S("c02") + 1;
-const T0 = S("c02") + 0.4;
+const WALK1 = S("c02") + WALK_IN;
+const T0 = S("c02") + FIRST_STAR;
 const GAP = (E("c02") - T0) / 3.5;
 const LANDS = [0, 1, 2].map((i) => T0 + i * GAP);
 
@@ -53,14 +61,14 @@ export function draw(t) {
   backdrop(t);
   // the hero walks from off the left edge to x = 64: walk() steps its run cycle with the distance and turns it to
   // face where it goes; before and after, it breathes on its idle frames
-  walk("hero", { x0: -12, x1: 64, y: GROUND, t0: WALK0, t1: WALK1, t });
+  walk("hero", { x0: -12, x1: HERO_X, y: GROUND, t0: WALK0, t1: WALK1, t });
   let got = 0;
   LANDS.forEach((at, i) => {
     const k = prog(t, at - 0.5, at);
     if (k <= 0) return;
     // each star falls from above the frame and settles in its place, whole pixels only
-    const x = 128 + i * 32;
-    const y = step(-16 + (64 - -16) * ease(k));
+    const x = STAR_X + i * STAR_GAP;
+    const y = step(-16 + (STAR_Y - -16) * ease(k));
     sprite(frame("items", "star"), x, y);
     if (k >= 1) got++;
   });
@@ -69,7 +77,7 @@ export function draw(t) {
   // a flash line under the star just landed, for 0.2 s
   LANDS.forEach((at, i) => {
     const f = clamp((t - at) / 0.2);
-    if (f > 0 && f < 1) rect(124 + i * 32, 82, 24, 1, "B", 1 - f);
+    if (f > 0 && f < 1) rect(STAR_X - 4 + i * STAR_GAP, STAR_Y + 18, 24, 1, "B", 1 - f);
   });
 }
 

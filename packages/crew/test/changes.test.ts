@@ -404,3 +404,62 @@ test("the Reviewer checks the change it was asked for: an unchanged cut is never
   const review = [...p.state.tasks].reverse().find((t) => t.kind === "review.final");
   assert.match(review?.summary ?? "", /^fix:/, "the verdict is fix, not ship");
 });
+
+test("the Reviewer's 'not in the cut' note goes on the scenes that miss it, once", async () => {
+  let changing = false;
+  const { crew, p } = await crewOn((req) => {
+    if (/festival judge/.test(req.system ?? "") && changing)
+      return {
+        json: {
+          verdict: "fix",
+          summary: "one scene misses it",
+          blockers: [],
+          polish: [],
+          change: { done: "partly", why: "one scene still has the small hero", scenes: ["quest"] },
+        },
+      };
+    return tuneAndShip(req);
+  });
+  await crew.run(p, {});
+  changing = true;
+  const reports: any[] = [];
+  crew.onRunEnd = (_p, r) => reports.push(r);
+  const note = p.addNote({
+    target: {},
+    category: "art",
+    text: "make the hero bigger in every scene",
+    assignee: "animator",
+    by: "user",
+  });
+  crew.requestChange(p, note);
+  await wait(() => reports.length > 0 && !crew.status(p).crew.running);
+  const notes = p.state.notes.filter((n) => n.by === "reviewer" && /The change isn't in the cut yet/.test(n.text));
+  assert.ok(notes.length >= 1);
+  assert.deepEqual([...new Set(notes.map((n) => n.target.scene))], ["quest"], "only the scene that misses it");
+  assert.equal(notes.filter((n) => n.status === "open").length <= 1, true, "once, never copied");
+});
+
+test("Pip's card and the crew agree: the change's scenes, owner and price come from the same tier", async () => {
+  const { crew, p } = await crewOn(tuneAndShip);
+  await crew.run(p, {});
+  const { classifyIn } = await import("../src/plan/classify.ts");
+  const { routeBy } = await import("../src/orchestrator.ts");
+  const ids = p.doc().scenes.map((s) => s.id);
+  for (const n of [
+    { text: "make the walk in feel livelier", scene: "grind", tier: "tune", owner: "animator" },
+    { text: "add a scene about our users", tier: "replan", owner: "director" },
+  ]) {
+    const target = n.scene ? { scene: n.scene } : {};
+    const c = classifyIn(p, { text: n.text, target });
+    assert.equal(c.tier, n.tier, n.text);
+    const owner = routeBy(p, { text: n.text, target });
+    assert.equal(owner, n.owner, n.text);
+    const pr = crew.previewChange(p, { text: n.text, ...(n.scene ? { scene: n.scene } : {}) });
+    assert.equal(pr.role, owner, n.text);
+    assert.equal(pr.tier, n.tier, n.text);
+    // the card's scenes: the tier's, else (a whole-video re-plan) every scene but the end card
+    const card = c.scenes.length ? c.scenes : ids.filter((id) => id !== "end");
+    assert.deepEqual(pr.scenes, card, n.text);
+    assert.ok(pr.usd[1] > 0, n.text);
+  }
+});

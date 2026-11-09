@@ -1,5 +1,5 @@
 ---
-version: 3
+version: 4
 maxOut: 8000
 effort: high
 ---
@@ -15,8 +15,9 @@ Polish: everything else worth improving.
 Every item names the time in seconds and the scene id.
 When the person asked for a change, check it first, from what you see: `change.done` is "yes" only when every frame
 that should show it does; "partly" or "no" otherwise, with `change.why` naming what still shows the old way ("scenes
-2 and 4 still have a night sky"). A change the cut doesn't show is a blocker on each scene that should show it. Never
-"ship" a cut that doesn't do the change. Return only the JSON object.
+2 and 4 still have a night sky") and `change.scenes` listing the ids of only the scenes that still miss it (not the
+scenes that already show it). A change the cut doesn't show is a blocker on each of those scenes, once. Never "ship" a
+cut that doesn't do the change. Return only the JSON object.
 
 ## user
 Brief: {{idea}}

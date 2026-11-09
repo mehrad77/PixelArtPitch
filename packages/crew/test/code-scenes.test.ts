@@ -292,18 +292,15 @@ test("scene.code: a critique round that breaks loading is dropped and the last l
     if (isWrite(req)) return { json: { code: hubCode("\n// v1"), notes: "v1" } };
     if (isCritique(req)) {
       critiques++;
-      // round 1 improves it (it loads); round 2 breaks it
-      return critiques === 1
-        ? { json: { code: hubCode("\n// v2"), notes: "slower stars" } }
-        : { json: { code: BROKEN, notes: "a bolder look" } };
+      return { json: { code: BROKEN, notes: "a bolder look" } };
     }
     return { error: new Error("unexpected") };
   });
   const out = await (crew as any).sceneCode(p, run(), pt);
   assert.equal(out.status, "done");
-  assert.equal(critiques, 2);
+  assert.equal(critiques, 1, "a first write gets at most one critique round");
   const src = readFileSync(join(dir, "code", "hub.mjs"), "utf8");
-  assert.match(src, /\/\/ v2/, "the last version that loaded");
+  assert.match(src, /\/\/ v1/, "the last version that loaded");
   assert.ok(!src.includes("boom"));
 });
 
@@ -557,7 +554,7 @@ test("a code redo reads the person's note ahead of the old beat, and its critiqu
   );
 });
 
-test("make it day: no re-board, a no-model look.time patches the canvas, and only the code scenes are re-coded", async () => {
+test("make it day: no re-board, a no-model look.time patches the canvas, and only a fixed-sky code scene is patched", async () => {
   const { routeChange, timeAsked } = await import("../src/plan/route.ts");
   assert.equal(timeAsked("make the sky sunny in a day"), "day");
   assert.equal(timeAsked("sunset instead"), "dusk");
@@ -568,10 +565,18 @@ test("make it day: no re-board, a no-model look.time patches the canvas, and onl
   const c = crew as any;
   const t0 = c.task(p, { kind: "director.storyboard", role: "director", title: "board" });
   await c.applyBoard(p, t0, codeBoard());
-  // the preview: the Director's, no re-board, the code scenes only
+  // the preview: the Director's, no re-board; the code scenes draw their sky from TIME (the stubs call
+  // skyGradient), so none is re-made (§1.12, check first)
   const pr = crew.previewChange(p, { text: "make the sky sunny in a day" });
   assert.equal(pr.role, "director");
-  assert.deepEqual(pr.scenes, ["hub", "end"]);
+  assert.deepEqual(pr.scenes, []);
+  // a code scene with a fixed night sky is the one scene patched
+  const hub = p.doc().code.find((x: any) => x.id === "hub")!;
+  writeFileSync(
+    join(p.dir, hub.file),
+    'import { clear } from "pap:engine";\nexport function draw(t) {\n  clear("#0f1411");\n}\n',
+  );
+  assert.deepEqual(crew.previewChange(p, { text: "make the sky sunny in a day" }).scenes, ["hub"]);
   // the revision: look.time first, the code scenes' redo after it, no storyboard and no tune of the recipe scene
   const ctx = c.rulesCtx(p, 1);
   const ts = rules.rulesPlan(p.doc(), ctx, { scenes: p.doc().scenes.map((s: any) => s.id), newAssets: [] });
@@ -634,4 +639,89 @@ test("an SVG reference reaches vision as a PNG, and an .svg upload is a logo", a
   const [img] = (crew as any).refImage(p, t, "private/refs/gs.svg");
   assert.equal(img.mediaType, "image/png");
   assert.deepEqual([...img.data.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47], "PNG bytes, not the SVG text");
+});
+
+/** the hub coded once (a finished scene), with a person's change on it */
+async function codedHub(answer: (req: Req) => any, text = "the stars should twinkle more") {
+  const b = await boarded(answer);
+  writeFileSync(join(b.dir, "code", "hub.mjs"), hubCode());
+  const k = b.p.doc().code.findIndex((c: any) => c.id === "hub");
+  await b.p.patch([{ op: "replace", path: `/code/${k}/stub`, value: false }], {
+    reason: "t",
+    author: { kind: "user" },
+  });
+  b.p.setSceneStatus("hub", { version: "animatic", state: "stale" });
+  const note = b.p.addNote({ target: { scene: "hub" }, category: "art", text, assignee: "scene-coder", by: "user" });
+  return { ...b, note };
+}
+const isCheck = (req: Req) => /whether a change a person asked for is already true/.test(req.system ?? "");
+
+test("a code redo is a patch: the current code, no examples, medium effort, and no critique on a clean trial", async () => {
+  const seen: string[] = [];
+  const { crew, p, pt } = await codedHub((req) => {
+    if (isCheck(req)) {
+      seen.push("check");
+      assert.equal(
+        (req.messages.at(-1)!.content as any[]).filter((c: any) => c.type === "image").length,
+        3,
+        "three stills",
+      );
+      return { json: { already: false, why: "the stars are still" } };
+    }
+    if (isWrite(req)) {
+      // medium on the card (the fake's caps may lower it further), never the first write's high
+      seen.push(`write:${req.effort === "high" ? "high" : "not high"}`);
+      const u = lastText(req);
+      assert.match(u, /This is a patch\. The scene's code now is below/);
+      assert.match(u, /const ID = "hub"/, "the current code");
+      assert.doesNotMatch(u, /Example bundles for scenes of another video/, "no examples in a patch");
+      return { json: { code: hubCode("\n// twinkle"), notes: "the stars twinkle" } };
+    }
+    if (isCritique(req)) seen.push("critique");
+    return { error: new Error(`unexpected: ${(req.system ?? "").slice(0, 40)}`) };
+  });
+  const out = await (crew as any).sceneCode(p, run(), { ...pt, patch: true });
+  assert.equal(out.status, "done");
+  assert.deepEqual(seen, ["check", "write:not high"]);
+});
+
+test("check first: a change already true in the frames re-codes nothing", async () => {
+  const seen: string[] = [];
+  const { crew, p, pt, note, dir } = await codedHub((req) => {
+    if (isCheck(req)) {
+      seen.push("check");
+      return { json: { already: true, why: "three stars already sit in a row" } };
+    }
+    seen.push("other");
+    return { error: new Error("no write expected") };
+  }, "three stars in a row");
+  const r = run();
+  const out = await (crew as any).sceneCode(p, r, pt);
+  assert.deepEqual(seen, ["check"]);
+  assert.match(out.note, /nothing was changed: already true/);
+  assert.deepEqual(r.done.already, [{ scene: "hub", why: "three stars already sit in a row" }]);
+  const { settleCard } = await import("../src/assistant.ts");
+  const card: any = {};
+  settleCard(card, (crew as any).report(p, r, "done"), p);
+  assert.match(card.result.text, /^Scene 2 already shows it: three stars already sit in a row\./);
+  assert.doesNotMatch(card.result.text, /Nothing was changed|stays open/);
+  assert.equal(readFileSync(join(dir, "code", "hub.mjs"), "utf8"), hubCode(), "the code is as it was");
+  assert.notEqual(p.state.notes.find((x: any) => x.id === note.id)?.status, "open");
+});
+
+test("a change revision patches a coded scene: priced as scene.patch, below a first write", async () => {
+  const { crew, p } = await crewOn(() => ({ error: new Error("no model call expected") }));
+  const c = crew as any;
+  const t0 = c.task(p, { kind: "director.storyboard", role: "director", title: "board" });
+  await c.applyBoard(p, t0, codeBoard());
+  const ctx = c.rulesCtx(p, 1);
+  const ts = rules.rulesPlan(p.doc(), ctx, { scenes: p.doc().scenes.map((s: any) => s.id), newAssets: [] });
+  for (const x of ts) x.status = "done";
+  const first = ts.find((x: any) => x.kind === "scene.code" && x.scene === "hub")!;
+  const ss = Object.fromEntries(p.doc().scenes.map((s: any) => [s.id, { version: "render", state: "ready" }])) as any;
+  ss.hub = { version: "animatic", state: "stale" };
+  const out = rules.changeRevision(ts, { scope: ["hub"] }, "animate", { ...ctx, rev: 2 }, ss);
+  const redo = out.tasks.find((x: any) => x.status === "pending" && x.kind === "scene.code")!;
+  assert.equal(redo.patch, true);
+  assert.ok(redo.estUsd[1] < first.estUsd[1], `${redo.estUsd} < ${first.estUsd}`);
 });

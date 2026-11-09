@@ -333,13 +333,20 @@ export type PipDeps = {
   /** what a change would add to the plan (Crew.changeCost: its revision on a copy), or null without a plan */
   changeCost?: (
     p: OpenProject,
-    c: { assignee: string; scene?: string; asset?: string },
+    c: { assignee: string; scene?: string; asset?: string; text?: string; category?: ChangeCategory },
   ) => { usd: [number, number]; toUsd: [number, number] } | null;
   /** the change's route and the members its revision brings in (Crew.previewChange): the card's faces */
   changePreview?: (
     p: OpenProject,
     b: { text: string; scene?: string; category?: ChangeCategory },
-  ) => { role: RoleT; roles: RoleT[]; summary: string } | null;
+  ) => {
+    role: RoleT;
+    roles: RoleT[];
+    summary: string;
+    scenes?: string[];
+    usd?: [number, number];
+    sec?: [number, number];
+  } | null;
 };
 
 /** the scope words the web once prefilled ("About the moth: "), stripped before slash commands are matched */
@@ -1773,13 +1780,21 @@ export class Pip {
         const others = d.scenes.map((_, i) => i + 1).filter((i) => !touched.includes(i));
         const n = touched.length;
         // the change's own revision on a copy of the plan (only what it touches), else the kinds its tier costs
-        const own = this.deps.changeCost?.(p, { assignee: owner, ...(scene ? { scene } : {}) });
+        const own = this.deps.changeCost?.(p, { assignee: owner, text: words, category, ...(scene ? { scene } : {}) });
         const crewCls = cls.tier === "edit" ? { ...cls, tier: owner === "scene-coder" ? "code_patch" : "tune" } : cls;
         const fromKinds = this.deps.gateway.estimate(
           p.id,
           changeKinds(crewCls as typeof cls).map((k) => ({ ...k, role: k.role as RoleT })),
         );
-        const est = own && fromKinds ? { ...fromKinds, usd: own.usd } : fromKinds;
+        // the card's faces and price are the change's revision on a copy of the plan, with the note's own words (the
+        // same router, tier and scenes the crew runs); with no plan, the kinds the tier costs
+        const preview = this.deps.changePreview?.(p, { text: words, ...(scene ? { scene } : {}), category });
+        const est =
+          preview?.usd && preview.sec
+            ? { usd: preview.usd, sec: preview.sec }
+            : own && fromKinds
+              ? { ...fromKinds, usd: own.usd }
+              : fromKinds;
         const sceneWord = (xs: number[]) => `${xs.length === 1 ? "scene" : "scenes"} ${list(xs.map(String))}`;
         // open review notes the model chose to include: each one is shown, never folded in silently
         const also = ((input.alsoNotes as string[] | undefined) ?? []).map((id) => {
@@ -1800,8 +1815,6 @@ export class Pip {
               ...(also as string[]),
               "The crew checks the cut and exports a new video; the current one is replaced.",
             ];
-        // the card's faces are the members the change's revision really brings in (a re-plan lists the Director)
-        const preview = this.deps.changePreview?.(p, { text: words, ...(scene ? { scene } : {}), category });
         const who: RoleT[] = preview?.roles.length
           ? preview.roles
           : owner === "director"
@@ -2649,6 +2662,7 @@ export function resultFor(
   }
 }
 
+const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
 /** a handoff card's final state, in plain words: what was redone, what was approximated, what is still wrong */
 export function settleCard(c: StoredPlan, r: RunReport, p: OpenProject) {
   const num = (id: string) => {
@@ -2666,11 +2680,15 @@ export function settleCard(c: StoredPlan, r: RunReport, p: OpenProject) {
   if (r.time) parts.push(`The video is now set at ${r.time}.${r.timeCue ? ` ${r.timeCue}` : ""}`);
   if (r.reboarded.length) parts.push(`The Director re-planned ${scenes(r.reboarded)}.`);
   if (r.redone.length) parts.push(`The Animator redid ${scenes(r.redone)}.`);
-  if (r.unchanged?.length && !r.reboarded.length && !r.redone.length && !r.time)
+  // check first: the scenes that already showed it (nothing re-coded, the note done)
+  for (const a of r.already ?? [])
+    parts.push(`${cap(scenes([a.scene]))} already shows it: ${a.why.replace(/\.?$/, ".")}`);
+  const did = r.reboarded.length || r.redone.length || r.time || r.already?.length;
+  if (r.unchanged?.length && !did)
     parts.push(
       `Nothing was changed: the crew left ${scenes(r.unchanged)} as ${r.unchanged.length === 1 ? "it was" : "they were"}. Your note stays open; say it another way, or retry.`,
     );
-  else if (!r.reboarded.length && !r.redone.length && !r.time) parts.push("No scene changed.");
+  else if (!did) parts.push("No scene changed.");
   else if (r.unchanged?.length) parts.push(`Nothing changed in ${scenes(r.unchanged)}.`);
   // what the Director did instead, in plain words; an empty one says nothing
   for (const a of r.approximated) {

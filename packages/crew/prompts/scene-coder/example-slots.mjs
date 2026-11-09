@@ -4,23 +4,30 @@
 import { asset, frame, rect, skyGradient, slots, sprite, text, walk } from "pap:engine";
 import { S, SCENES } from "pap:timeline";
 
+// the named constants: what a person may ask to move, resize or retime (Pip edits these lines, no rewrite)
+export const TITLE = "3 THINGS";
+export const TITLE_Y = 30;
+export const ROW_X = 76;
+export const ROW_Y = 52;
+export const FILL_DELAY = 0.2;
+
 const SC = SCENES.find((s) => s.id === "three");
 const GROUND = 148;
 // slot i fills when its cue starts; what fills it is the icon of that thing
-const FILLS = ["c02", "c03", "c04"].map((c) => S(c) + 0.2);
+const FILLS = ["c02", "c03", "c04"].map((c) => S(c) + FILL_DELAY);
 const ICONS = [
   ["items", "star"],
   ["items", "heart"],
   ["qblock", "glow"],
 ];
-const ROW = { x: 76, y: 52, w: 48, h: 44, gap: 12 };
+const ROW = { x: ROW_X, y: ROW_Y, w: 48, h: 44, gap: 12 };
 
 export function draw(t) {
   skyGradient();
   rect(0, GROUND, 320, 32, "K");
   rect(0, GROUND, 320, 1, "l");
   // the title holds over the row for the whole scene: one short text, above it
-  text("3 THINGS", 160, 30, { align: "center", colour: "B" });
+  text(TITLE, 160, TITLE_Y, { align: "center", colour: "B" });
   const row = slots(3, { ...ROW, filled: FILLS, t });
   row.forEach((s, i) => {
     if (!s.on || !asset(ICONS[i][0])) return;

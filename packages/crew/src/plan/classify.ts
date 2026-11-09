@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProjectT } from "@pap/schema";
 import { type ChangeCategory, constantsOf, type OpenProject } from "@pap/tools";
-import { timeAsked } from "./route.ts";
+import { DIRECTOR, timeAsked } from "./route.ts";
 
 export type ChangeTier = "edit" | "tune" | "code_patch" | "replan";
 /** the write tool an edit uses, and its ready input when a rule decides it (the time, the pacing) */
@@ -180,6 +180,9 @@ function sceneTier(
     return { tier: "code_patch" };
   }
   if (JUDGE.test(text)) return { tier: "tune" };
+  // staging a recipe scene anew (a new cast, a backdrop, a sky, sitting, flying, a sign): the Director re-plans the
+  // scene; swapping or taking out what the project already has stays a params edit
+  if (DIRECTOR.test(text) && !(takeOut && subj.length)) return { tier: "replan" };
   // a recipe's params decide where, how big, when and who: Pip sets them
   if (place || takeOut) return { tier: "edit", edit: { tool: "scene_set_recipes", scene: s.id } };
   return { tier: "tune" };
@@ -326,7 +329,13 @@ export function changeKinds(c: Classified): { kind: string; role: string; count?
       ];
     default:
       return [
-        ...(code ? [{ kind: "scene.patch", role: "scene-coder", count: 2 * code }] : []),
+        // a patch per code scene and its check first (PATCH_PRICES: one call at p50)
+        ...(code
+          ? [
+              { kind: "scene.patch", role: "scene-coder", count: code },
+              { kind: "scene.check", role: "editor", count: code },
+            ]
+          : []),
         ...(tune ? [{ kind: "scene.tune", role: "animator", count: 2 * tune }] : []),
         { kind: "review.final", role: "reviewer", count: 1 },
       ];

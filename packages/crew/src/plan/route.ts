@@ -7,7 +7,7 @@ import { type ChangeCategory, changeOwner } from "@pap/tools";
  * What is on screen and who is in it: cast, staging, recipes, the backdrop, text cards, the end card. The Director
  * re-plans these (a re-board).
  */
-const DIRECTOR =
+export const DIRECTOR =
   /\b(cast|casting|characters?|actors?|npcs?|friends?|crowd|people|someone|staging|recipes?|backdrops?|background|sky|rooftop|setting|location|title card|text card|end card|ending|banner|sign|name ?tag|toast|logo|props?|lantern|lamp|walks? in|joins?|enters?|appears?|shows? up|add(ing)? (a |an |two |three |some |more |another )?(new )?\w*\s*(scenes?|characters?|npcs?|people|items?|props?|beats?|shots?|friends?)|remove|swap|replace|instead of|sits?|sitting|perch(es)?|flies|fly|flying|glows?|glowing|new (beat|scene|shot)s?|order of the scenes)\b/i;
 /** how a scene moves and when, inside the scene: the Animator's */
 const ANIMATOR =

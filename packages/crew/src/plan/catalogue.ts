@@ -209,8 +209,9 @@ export const CATALOGUE: Record<PlanKind, CatalogueRow> = {
     role: "scene-coder",
     stage: "animate",
     calls: [2, 4],
-    // the write, then one repair or critique at p50, three at p90 (P7's code scenes used about one of the two repairs
-    // and two critique rounds a run may take); past MIN_LEDGER_SAMPLES the ledger's own rows price each call
+    // the write, then one critique at p50, three at p90 (two repairs and the one critique round a first write gets,
+    // v0.5.2); a redo of a coded scene is a patch, priced by PATCH_PRICES; past MIN_LEDGER_SAMPLES the ledger's own
+    // rows price each call
     prices: [
       ["scene.code", 1, 1],
       ["scene.patch", 1, 3],
@@ -223,7 +224,7 @@ export const CATALOGUE: Record<PlanKind, CatalogueRow> = {
     vision: true,
     onResume: "skip_ready",
     toolSec: 10,
-    what: "writes one code scene's bundle from the Director's beat, loads it in a trial sandbox, repairs it, then critiques it on a 6-frame strip",
+    what: "writes one code scene's bundle from the Director's beat (or patches the current code on a redo), loads it in a trial sandbox, repairs it, then critiques it once on a 6-frame strip",
   }),
   "look.time": row({
     kind: "look.time",
