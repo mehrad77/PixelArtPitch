@@ -262,7 +262,9 @@ export function checkAsset(input: unknown, palette: StdPalette): StdResult {
     soft.push("Feet planted on the bottom row; the head and hands read in idle and run.");
     if (a.grid.run0) soft.push("Run cycle alternates contact and passing poses; no frame pops.");
     if (a.tags.includes("hero"))
-      soft.push("Faces left like the library characters, or the scene must set faces/artFaces to its direction.");
+      soft.push(
+        "Its facing field says which way the art looks (drawn heroes face right); the engine turns it to its walk.",
+      );
   }
   if (a.kind === "tile" || a.kind === "backdrop") soft.push("Tiles seamlessly left to right.");
   if (a.palette.split("@")[0] !== "pap-night")

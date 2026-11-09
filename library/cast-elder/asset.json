@@ -18,6 +18,7 @@
   "cane"
  ],
  "description": "An elderly customer NPC facing LEFT: a balding man with light skin (S s), white hair at the back and a white moustache (W p), glasses (e frame, P glint), a straw-yellow cardigan with brass buttons (H h j, B) over a white collar, grey trousers (q e), brown shoes (n), leaning on a wooden cane (c n). idle0/idle1 breathe; give raises the cane forward to point. Feet on the bottom row.",
+ "facing": "left",
  "licence": "LicenseRef-PAP-Library",
  "rights": {
   "likeness": false,

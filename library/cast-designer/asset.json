@@ -18,6 +18,7 @@
   "sketchbook"
  ],
  "description": "A designer NPC facing LEFT: a woman with light skin (S s z), a blond bob (H h j) under a red beret (r R), a brass scarf (B c), a violet top (V U), brown trousers (c n) and grey shoes (q e), carrying a sketchbook (c cover, P pages). idle0/idle1 breathe; give holds the sketchbook open with a small red and green sketch (P p, r T). Feet on the bottom row.",
+ "facing": "left",
  "licence": "LicenseRef-PAP-Library",
  "rights": {
   "likeness": false,

@@ -18,6 +18,7 @@
   "commerce"
  ],
  "description": "A shopper NPC facing LEFT: a woman with deep brown skin (s z n), a big curly hair puff (A a), a long mint coat (M m), indigo tights (I N) and red shoes (r R), carrying a red shopping bag with white handles (r R, P). idle0/idle1 breathe; give lifts the bag up to show it. Feet on the bottom row.",
+ "facing": "left",
  "licence": "LicenseRef-PAP-Library",
  "rights": {
   "likeness": false,

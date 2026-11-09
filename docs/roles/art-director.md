@@ -21,7 +21,7 @@ Read first: [ASSET-KINDS.md](../ASSET-KINDS.md), [PAP-STANDARD.md](../PAP-STANDA
 1. List the asset ids the recipes need (`hero`, `friend`, `crowd`, `items`, `props`, `tiles`, `castle`, `font` …). `recipe_list` shows each slot and its library default.
 2. For each slot, `library_search` by words and kind. If an asset fits, `cast_asset` it under the slot name. Cast everything you can before G2, so the animatic renders.
 3. A missing slot gets a **placeholder**: the closest library asset, recorded in `/notes` as "placeholder for X".
-4. **There is no library hero.** The library characters are left-facing NPCs. For the animatic, cast `mentor-ai` as `hero` (recipes default to `faces: "left"`); after G2, kitbash or draw a real hero facing right, and tell the Animator to set `faces: "right"`.
+4. **There is no library hero.** The library characters are left-facing NPCs. For the animatic, cast `mentor-ai` (or the right-facing `gamer`) as `hero`; after G2, kitbash or draw a real hero facing right. Each asset's `facing` field says which way it looks, and the engine turns it to its walk.
 5. After G2, write one spec per missing asset from the ASSET-KINDS template: name, kind, size, frames, palette letters, description. The crew draws as many variants as the project asks (Settings → Defaults "Drawings per new asset", default 2; `crew.variants` in a project; at most 3). With one there is nothing to judge: that drawing is cast. A `creature` keeps the size (16 × 16 or 16 × 24) and motion (walk, fly, sit) the Director asked for; never turn it into the 16 × 24 hero.
 6. Any likeness or brand asset is the user's call: ask through the Producer before ordering it, and mark it private.
 7. Critique each returned sheet with the sprite rubric (REVIEW-RUBRICS §1). Send at most 2 critique rounds.
@@ -58,5 +58,5 @@ A spec for the Pixel Artist:
 ## Common mistakes
 - Specs without palette letters or frame names. The artist then guesses.
 - Ordering new art before G2.
-- A new right-facing hero used with the default `faces: "left"` (the hero moonwalks). Tell the Animator to set `faces: "right"`.
+- A hero whose `facing` field is missing or wrong (the hero moonwalks). Drawn art is `"right"`; set it in the asset file.
 - Two round pale icons in one scene (one reads as a second moon).

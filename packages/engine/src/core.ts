@@ -16,6 +16,8 @@ export type EngineInit = {
   sky: string;
   /** asset name -> frames (letter grids), already resolved with any frame aliases */
   assets: Map<string, Frames | null>;
+  /** asset name -> which way its art looks (characters and creatures that say; others are taken to look left) */
+  facing?: Record<string, "left" | "right">;
   /** the 5x8 font: frame "g<codepoint>" -> rows of "P"/"." */
   fontAssets?: string[];
   w?: number;
@@ -138,6 +140,15 @@ export function createEngine(init: EngineInit) {
     );
   }
 
+  /** which way an asset's art looks: what the project says, else `fallback` (an actor's: left) */
+  function facingOf(name: string, fallback: "left" | "right" = "left"): "left" | "right" {
+    return init.facing?.[name] ?? fallback;
+  }
+  /** the sprite() flip that makes an asset look toward dir ("left" | "right") */
+  function faceTo(name: string, dir: "left" | "right") {
+    return facingOf(name) !== (dir === "left" ? "left" : "right");
+  }
+
   // ---- text ----
   let glyphs: Map<string, Rows> | null = null;
   function font() {
@@ -236,6 +247,8 @@ export function createEngine(init: EngineInit) {
     sprite,
     asset,
     frame,
+    facingOf,
+    faceTo,
     measure,
     text,
     wrap,
@@ -342,6 +355,7 @@ export const ENGINE_EXPORTS = [
   "sprite",
   "asset",
   "frame",
+  "faceTo",
   "measure",
   "text",
   "wrap",

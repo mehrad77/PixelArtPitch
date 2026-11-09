@@ -18,6 +18,7 @@
   "hoodie"
  ],
  "description": "A startup founder NPC facing LEFT: a woman with medium-brown skin (S s z), dark hair in a high bun (A a), a blue hoodie with white drawstrings (L D d, P), indigo trousers (I N) and white sneakers (P p). idle0/idle1 breathe; give holds up a small pitch board with a rising green chart (P p, T). Feet on the bottom row.",
+ "facing": "left",
  "licence": "LicenseRef-PAP-Library",
  "rights": {
   "likeness": false,

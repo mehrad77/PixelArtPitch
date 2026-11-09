@@ -80,6 +80,8 @@ export const ENGINE_DOC: Record<(typeof ENGINE_EXPORTS)[number], string> = {
     "draw letter rows (an asset frame) at x, y (top-left); opts { flip, outline, alpha, colour, scale } (scale is a whole number)",
   asset: "an asset's frames { frameName: rows } by its project id, or null when the project has none",
   frame: "one frame's rows of an asset (frame(id, name)); an unknown id draws an orange placeholder box: never do that",
+  faceTo:
+    'the sprite() flip that turns an asset toward "left" or "right" by the way its art faces (sprite(rows, x, y, { flip: faceTo(id, "left") }))',
   measure: "the pixel width of a text at a scale",
   text: 'text at x, y (top-left of the first line); opts { colour = "P", scale = 1, align = "left"|"center"|"right", shadow = true, alpha }; glyphs are 8 px tall at scale 1; returns the width',
   wrap: "split a text into lines that fit maxW pixels",
@@ -259,8 +261,17 @@ export function cueLines(lp: Pick<LoadedProject, "timeline">, cues: string[]) {
     .map((c) => `${c.id}: S("${c.id}") = ${c.start.toFixed(2)} s, E("${c.id}") = ${c.end.toFixed(2)} s: ${c.text}`);
 }
 
-/** the assets a scene may draw, with frame names and sizes: "founder (16x24): idle0, idle1, run0…" */
-export function assetLines(lp: Pick<LoadedProject, "assets">, names: string[]) {
+/** a description's first sentence, at most 100 characters */
+const oneLine = (s: string) => {
+  const first = s.trim().split(/(?<=[.!?:])\s/)[0] ?? "";
+  return first.length > 100 ? `${first.slice(0, 99).trimEnd()}…` : first;
+};
+
+/**
+ * The assets a scene may draw, with frame names and sizes, which way a character's art faces and what it is:
+ * "founder (16x24, faces left): idle0, idle1, run0… (A startup founder NPC.)"
+ */
+export function assetLines(lp: Pick<LoadedProject, "assets" | "about">, names: string[]) {
   const by = new Map(lp.assets);
   return names
     .filter((n) => by.has(n))
@@ -268,6 +279,10 @@ export function assetLines(lp: Pick<LoadedProject, "assets">, names: string[]) {
       const f = by.get(n) ?? {};
       const first = Object.values(f)[0] ?? [];
       const names = Object.keys(f);
-      return `${n} (${first[0]?.length ?? 0}x${first.length}): ${names.slice(0, 24).join(", ")}${names.length > 24 ? `, … (${names.length} frames)` : ""}`;
+      const a = lp.about?.[n];
+      const walks = a && (a.kind === "character" || a.kind === "creature");
+      const faces = walks ? `, faces ${a.facing ?? "left"}` : "";
+      const what = a?.description ? ` (${oneLine(a.description)})` : "";
+      return `${n} (${first[0]?.length ?? 0}x${first.length}${faces}): ${names.slice(0, 24).join(", ")}${names.length > 24 ? `, … (${names.length} frames)` : ""}${what}`;
     });
 }

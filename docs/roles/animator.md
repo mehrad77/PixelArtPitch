@@ -67,7 +67,7 @@ crew's own scene pass only changes recipe params: they are for an agent working 
 ```
 
 ## Common mistakes
-- The wrong `faces` for the art. The default is `"left"` (library characters look left); set `"right"` for a new hero drawn facing right.
+- A `faces` that contradicts the art. Leave it out: the asset's `facing` says which way it looks (drawn heroes right, library NPCs left), and the engine turns it to its walk.
 - Times as raw numbers that break when the narration is aligned.
 - A toast and a banner in the same scene (two texts).
 - Placing a prop where it lands on a head (`decor` x within 8 px of the hero's x).

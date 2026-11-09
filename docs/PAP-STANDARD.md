@@ -84,6 +84,7 @@ Loops are named `name0, name1, …` (`flag0 flag1`, `cheer0 cheer1`).
 | `id` | Lower case, digits and `-`; unique in the library |
 | `version` | Integer ≥ 1. Bump it on any pixel change; projects pin `lib:<id>@<version>`. |
 | `description` | What it shows, the letters it uses, and the anchor ("feet on the bottom row"). It is used for search. |
+| `facing` | Characters and creatures: `"right"` or `"left"`, the way the art looks (its run frames). Drawn heroes are `"right"`, the library NPCs `"left"`. The engine mirrors the sprite to face its walk. Absent, a "facing left/right" in the description counts, else `"left"`. |
 | `tags` | 3–7 search words. `npc` changes the required frames, and `hero` adds the face-right check. |
 | `provenance.source` | `generated`, `drawn` (by a human), `imported` or `derived` |
 | `provenance.sourceAssets` | Every asset this one was built from (for kitbash and edits). Required when `source` is `derived`. |
@@ -131,4 +132,3 @@ Where this document and `packages/engine/src/standard.ts` (or the schema) differ
 4. **Rights live in two shapes.** `AssetFile.rights` (`likeness`, `brand`, `trademark`, `public`) and the project's `AssetRef.flags` (`private`, `likeness{person, refs}`, `brand{owner, trademark}`) overlap. Keep them consistent by hand.
 5. `provenance.override` and the licence allow-list are conventions of this document; the checker does not read them.
 6. There is no `asset_submit` tool yet (the MCP prompt `draw-asset` names it). For now, artists hand AssetFile JSON to the Art Director, and the gate is run in code.
-7. The library has no hero (no 8-frame, right-facing character). All three library characters are left-facing NPCs (`idle0 idle1 give`).

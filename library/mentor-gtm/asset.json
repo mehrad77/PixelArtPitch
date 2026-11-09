@@ -16,6 +16,7 @@
   "megaphone"
  ],
  "description": "A mentor NPC facing LEFT: a man with grey hair (p q), a navy suit (N I), orange tie (O), holding a small megaphone (P p). idle0/idle1 breathe; give holds the megaphone out. Feet on the bottom row.",
+ "facing": "left",
  "licence": "LicenseRef-PAP-Library",
  "rights": {
   "likeness": false,

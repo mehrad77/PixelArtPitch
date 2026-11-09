@@ -16,6 +16,7 @@
   "clipboard"
  ],
  "description": "A friendly mentor NPC in a pixel platformer, facing LEFT (toward the player): a woman with long dark hair (A a), glasses, a green jacket (G g), holding a clipboard with a checkmark (P, T). idle0/idle1 breathe; give holds out a glowing item with both hands. Feet on the bottom row.",
+ "facing": "left",
  "licence": "LicenseRef-PAP-Library",
  "rights": {
   "likeness": false,

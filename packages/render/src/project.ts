@@ -3,7 +3,15 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Frames } from "@pap/engine";
-import { AssetFile, Project, type ProjectT, resolveTimeline, type Timeline } from "@pap/schema";
+import {
+  AssetFile,
+  assetFacing,
+  type FacingT,
+  Project,
+  type ProjectT,
+  resolveTimeline,
+  type Timeline,
+} from "@pap/schema";
 import { libraryAssetDir, libraryFile } from "./library.ts";
 
 export type Palette = { id: string; sky: string; colours: Record<string, string> };
@@ -32,19 +40,40 @@ function aliased(grid: Frames, alias?: Record<string, string>): Frames {
   return Object.fromEntries(Object.entries(grid).map(([k, v]) => [back[k] ?? k, v]));
 }
 
+/** an asset reference's file: the library's (checked) or the project's own (as written) */
+function assetSource(dir: string, ref: ProjectT["assets"][number]): Record<string, any> {
+  if (ref.src.startsWith("lib:")) {
+    const [id, v] = ref.src.slice(4).split("@");
+    return loadLibraryAsset(id, Number(v));
+  }
+  return JSON.parse(readFileSync(join(dir, ref.src.slice(5)), "utf8"));
+}
+
 export function resolveAssets(dir: string, doc: ProjectT): [string, Frames][] {
   return doc.assets.map((ref) => {
-    let grid: Frames;
-    if (ref.src.startsWith("lib:")) {
-      const [id, v] = ref.src.slice(4).split("@");
-      grid = loadLibraryAsset(id, Number(v)).grid;
-    } else {
-      const raw = JSON.parse(readFileSync(join(dir, ref.src.slice(5)), "utf8"));
-      grid = raw.grid ?? raw.frames;
-    }
-    return [ref.id, aliased(grid, ref.frameAlias)];
+    const raw = assetSource(dir, ref);
+    return [ref.id, aliased(raw.grid ?? raw.frames, ref.frameAlias)];
   });
 }
+
+export type AssetAbout = { kind: string; description: string; facing?: FacingT };
+/** project asset id -> its kind, description and which way its art looks (assetFacing) */
+export function resolveAbout(dir: string, doc: ProjectT): Record<string, AssetAbout> {
+  const out: Record<string, AssetAbout> = {};
+  for (const ref of doc.assets) {
+    const a = assetSource(dir, ref);
+    const facing = assetFacing(a);
+    out[ref.id] = {
+      kind: String(a.kind ?? ""),
+      description: String(a.description ?? ""),
+      ...(facing ? { facing } : {}),
+    };
+  }
+  return out;
+}
+/** project asset id -> which way its art looks, for the assets that say */
+export const facingMap = (about: Record<string, AssetAbout>): Record<string, FacingT> =>
+  Object.fromEntries(Object.entries(about).flatMap(([id, a]) => (a.facing ? [[id, a.facing]] : [])));
 
 export type LoadedProject = {
   dir: string;
@@ -52,6 +81,10 @@ export type LoadedProject = {
   timeline: Timeline;
   palette: Palette;
   assets: [string, Frames][];
+  /** asset id -> which way its art looks, for the assets that say (resolveAbout) */
+  facing?: Record<string, FacingT>;
+  /** asset id -> its kind, description and facing (the Scene Coder's asset lines) */
+  about?: Record<string, AssetAbout>;
   bundles: { id: string; file: string; source: string; fullFrame: boolean; sfx: boolean; initArg: unknown }[];
   /** a trial render: the sandbox records what bundles draw (Renderer.probe) */
   probe?: boolean;
@@ -71,6 +104,8 @@ export function openDoc(dir: string, doc: ProjectT): LoadedProject {
   const timeline = resolveTimeline(doc);
   const palette = loadPalette(doc.canvas.palette);
   const assets = resolveAssets(dir, doc);
+  const about = resolveAbout(dir, doc);
+  const facing = facingMap(about);
   const bundles = doc.code.map((b) => ({
     id: b.id,
     file: b.file,
@@ -79,7 +114,7 @@ export function openDoc(dir: string, doc: ProjectT): LoadedProject {
     sfx: b.sfx,
     initArg: b.initAsset ? JSON.parse(readFileSync(join(dir, b.initAsset), "utf8")) : undefined,
   }));
-  return { dir, doc, timeline, palette, assets, bundles };
+  return { dir, doc, timeline, palette, assets, facing, about, bundles };
 }
 
 /** The values a code bundle sees in "pap:timeline" (the same names as the first video's timeline.mjs). */

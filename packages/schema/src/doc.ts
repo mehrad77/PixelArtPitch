@@ -363,6 +363,11 @@ export const AssetFile = z.object({
   palette: z.string(),
   tags: z.array(z.string()).default([]),
   description: z.string().default(""),
+  /**
+   * which way a character's or creature's art looks (its run frames): drawn heroes face right, the library's NPCs
+   * left. The engine turns the sprite to the way it walks. Absent: assetFacing reads the description.
+   */
+  facing: z.enum(["left", "right"]).optional(),
   licence: z.string(),
   rights: z.object({
     likeness: z.boolean(),
@@ -376,3 +381,14 @@ export const AssetFile = z.object({
   grid: z.record(z.string(), z.array(z.string())),
 });
 export type AssetFileT = z.infer<typeof AssetFile>;
+export type FacingT = "left" | "right";
+
+/**
+ * Which way an asset's art looks: its `facing` field, else the first "facing left|right" (or "faces …") in its
+ * description, else undefined (the engine's fallback: an actor's art is taken to look left, as the old library's did).
+ */
+export function assetFacing(a: { facing?: unknown; description?: unknown }): FacingT | undefined {
+  if (a.facing === "left" || a.facing === "right") return a.facing;
+  const m = /\bfac(?:es|ing)\s+(left|right)\b/i.exec(typeof a.description === "string" ? a.description : "");
+  return m ? (m[1].toLowerCase() as FacingT) : undefined;
+}

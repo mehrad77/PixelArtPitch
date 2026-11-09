@@ -35,7 +35,7 @@ Prefer the picture the beat needs over a recipe that only approximates it (a ban
 - **Layer ids** are `<recipe id>_<part>` (`walk_in_hero`, `block_bump_block`). A recipe used twice in one scene gets `walk_in2_hero`.
 - **Default backdrop:** a scene with no backdrop gets the night sky, ground, lamp and bush automatically. Use `backdrop_night` to change them.
 - **Asset slots** (`hero`, `crowd`, `items`...) are asset ids from the project's `assets`. Some recipes also draw fixed ids (`castle`, `moon`, `skyline`, `tiles`); the crew casts those from the library after the storyboard. The `missing-asset` lint names the `cast_asset` call and library source to add, e.g. `{ "id": "hero", "src": "lib:mentor-ai@1" }`.
-- **Art direction:** `faces` says which way the hero art looks. It defaults to `"left"`, like every library character. Set `"faces": "right"` for art drawn looking right.
+- **Art direction:** the asset's `facing` field says which way its art looks (drawn heroes right, library NPCs left), and every recipe turns the character to face where it walks. `faces` overrides it; leave it out.
 - **Screen layout:** 320×180 px. The ground top is y=148. Captions sit below y=146, so keep words above that.
 
 The menu, in order of use: [backdrop_night](#backdrop_night) · [backdrop_rooftop](#backdrop_rooftop) · [title_card](#title_card) · [walk_in](#walk_in) · [block_bump](#block_bump) · [item_collect](#item_collect) · [spawn_join](#spawn_join) · [toast](#toast) · [banner](#banner) · [crowd_cheer](#crowd_cheer) · [flag_raise](#flag_raise) · [end_card_loop](#end_card_loop)
@@ -103,7 +103,7 @@ The hero walks in from an edge at whole pixels, kicks up footstep dust, slows to
 | param | type | default | range | what |
 |---|---|---|---|---|
 | hero | asset | "hero" | | character asset id |
-| faces | right/left | left | | which way the art looks |
+| faces | right/left | the asset's | | which way the art looks |
 | x | num | 120 | 16–304 | where they stop (centre) |
 | from | left/right | left | | entry edge |
 | speed | num | 30 | 10–80 | px/s (used when `arrive` is far off) |
@@ -121,7 +121,7 @@ The hero walks in from an edge at whole pixels, kicks up footstep dust, slows to
 { "id": "walk_in", "params": { "faces": "left", "x": 140, "arrive": "E(c01)-0.8" } }
 ```
 A sleepy owl walks to a lit lantern and sits down to read: `{ "id": "walk_in", "params": { "hero": "owl", "x": 120, "then": "sit", "prop": { "frame": "lantern", "glow": true } } }`.
-**Mistakes:** `arrive` before `at`; the wrong `faces` for the art (the hero moonwalks).
+**Mistakes:** `arrive` before `at`; a `faces` that contradicts the art (the hero moonwalks): leave `faces` out.
 
 ## block_bump
 The hero jumps and hits a ? block from below. The block bumps up, everything freezes for a 0.06 s hit-stop, the camera shakes, the block turns used and a star pops out and floats. If an earlier recipe made an actor, that actor jumps under the block where it stopped.
@@ -131,7 +131,7 @@ The hero jumps and hits a ? block from below. The block bumps up, everything fre
 |---|---|---|---|---|
 | actor | layer id | "" (last actor) | | who jumps |
 | hero | asset | "hero" | | used only if there is no actor yet |
-| faces | right/left | left | | that hero's art |
+| faces | right/left | the asset's | | that hero's art |
 | x | num | where the actor stops, else 176 | 16–304 | block centre |
 | y | num | 78 | 40–100 | block top (78 = one jump above ground) |
 | hit | time | actor arrival + 0.35 s | | head meets block (the jump starts 0.3 s before) |
@@ -153,7 +153,7 @@ Items pop up above the hero one by one and fly on arcs into HUD slots at the top
 | items | frames | ["star","heart","star"] | 1–8 | one per slot, in order |
 | itemAsset | asset | "items" | | frames: pc, gamepad, handheld, phone, heart, star |
 | hero | asset | "hero" | | |
-| faces | right/left | left | | |
+| faces | right/left | the asset's | | |
 | walk | bool | false | | false: pop above the hero; true: walk over them |
 | x | num | 112 | 16–304 | where the hero stands (a hero already in the scene stays where it stopped) |
 | at | time | t0 + 0.1 s | | first item |
@@ -175,7 +175,7 @@ A second character joins: it drops in from the sky (a squash, dust and a small s
 | param | type | default | range | what |
 |---|---|---|---|---|
 | who | asset | **required** | | the character that joins: cast it ("moth", "cast-developer") |
-| faces | right/left | left | | art direction |
+| faces | right/left | the asset's | | art direction |
 | facing | right/left | left | | which way they look after landing (drop) |
 | x | num | 200 | 16–304 | where they arrive (centre) |
 | at | time | t0 + 0.1 s | | when they start |
@@ -260,7 +260,7 @@ A flagpole beside a castle. The flag climbs to the top, then a flash, fireworks,
 | flagAsset | asset | "props" | | |
 | fireworks | bool | true | | flash and fireworks at the top |
 | hero | asset | "" | | "" for none; reuses the scene's hero with that asset |
-| faces | right/left | left | | |
+| faces | right/left | the asset's | | |
 | second | bool | false | | draw a second copy instead |
 
 ```json
@@ -282,7 +282,7 @@ The end card. The title drops in, PRESS START bounces in and pulses, and a URL l
 | at | time | t0 | | title drops |
 | colour | colour | "B" | | title colour |
 | hero | asset | "" | | "" for none; reuses the scene's hero with that asset |
-| faces | right/left | left | | |
+| faces | right/left | the asset's | | |
 | second | bool | false | | draw a second copy instead |
 
 ```json

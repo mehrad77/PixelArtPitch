@@ -110,7 +110,7 @@ function mergeState(l: LayerT, from: number, add: { t: number; v: string }[]) {
   );
   const lastOld = old[old.length - 1];
   // a leading auto key: the layer's own motion (its walk's run) shows until the first forced state
-  const bridge = (!lastOld || lastOld.v !== "auto") && add.length ? [{ t: from, v: "auto" }] : [];
+  const bridge = lastOld?.v !== "auto" && add.length ? [{ t: from, v: "auto" }] : [];
   l.keys = { ...(l.keys ?? {}), state: [...old, ...bridge, ...add] as any };
 }
 /** a walk speed inside the walk behaviour's range (a reused hero far away just arrives a little late) */
@@ -124,6 +124,12 @@ const second: RParam = {
 };
 
 const asset = (d: string, lib: string, doc: string): RParam => ({ t: "str", d, lib, doc });
+/** an override of the asset's own facing (its asset.json says which way it looks) */
+const FACES: RParam = {
+  t: "enum",
+  of: ["right", "left"],
+  doc: "which way the art looks; leave it out: the asset says (drawn heroes right, library NPCs left)",
+};
 const onScreen = (p: RParam): RParam => ({ ...p, screen: true });
 
 /** the small props a recipe may stand beside a character or on the ground (library `props-small`, 16 x 16) */
@@ -357,12 +363,7 @@ export const RECIPES: Recipe[] = [
     sfx: [],
     params: {
       hero: onScreen(asset("hero", "lib:mentor-ai@1", "character asset id")),
-      faces: {
-        t: "enum",
-        of: ["right", "left"],
-        d: "left",
-        doc: "which way the hero art looks (library mentors look left)",
-      },
+      faces: FACES,
       x: { t: "num", d: 120, min: 16, max: 304, doc: "where the hero stops (centre x)" },
       from: { t: "enum", of: ["left", "right"], d: "left", doc: "which edge they come from" },
       speed: { t: "num", d: 30, min: 10, max: 80, doc: "walking speed in px/s" },
@@ -471,7 +472,7 @@ export const RECIPES: Recipe[] = [
         doc: "layer id of the actor that jumps (default: the last actor, e.g. walk_in's hero)",
       },
       hero: asset("hero", "lib:mentor-ai@1", "character asset, used only when the scene has no actor yet"),
-      faces: { t: "enum", of: ["right", "left"], d: "left", doc: "which way that hero art looks" },
+      faces: FACES,
       x: {
         t: "num",
         def: (h, p) => (h.actor(p.actor) ? Math.round(arrival(h.actor(p.actor)!)?.x ?? 176) : 176),
@@ -557,7 +558,7 @@ export const RECIPES: Recipe[] = [
       items: { t: "strs", d: ["star", "heart", "star"], doc: "item frames, one per slot, in order" },
       itemAsset: asset("items", "lib:items@1", "item asset"),
       hero: asset("hero", "lib:mentor-ai@1", "character asset"),
-      faces: { t: "enum", of: ["right", "left"], d: "left", doc: "which way the hero art looks" },
+      faces: FACES,
       walk: {
         t: "bool",
         d: false,
@@ -727,7 +728,7 @@ export const RECIPES: Recipe[] = [
         doc: "character asset id: cast the newcomer (e.g. moth)",
         screen: true,
       },
-      faces: { t: "enum", of: ["right", "left"], d: "left", doc: "which way the art looks" },
+      faces: FACES,
       facing: { t: "enum", of: ["right", "left"], d: "left", doc: "which way they look after landing" },
       x: { t: "num", d: 200, min: 16, max: 304, doc: "landing spot (centre x)" },
       at: time("t0 + 0.1 s", (h) => h.t0 + 0.1, "when they start falling"),
@@ -1020,7 +1021,7 @@ export const RECIPES: Recipe[] = [
         lib: "lib:mentor-ai@1",
         doc: 'character that walks to the pole and cheers ("" for none)',
       },
-      faces: { t: "enum", of: ["right", "left"], d: "left", doc: "which way the hero art looks" },
+      faces: FACES,
       second,
     },
     expand(p, h) {
@@ -1115,7 +1116,7 @@ export const RECIPES: Recipe[] = [
         lib: "lib:mentor-ai@1",
         doc: 'character that stands and waves under the card ("" for none)',
       },
-      faces: { t: "enum", of: ["right", "left"], d: "left", doc: "which way the hero art looks" },
+      faces: FACES,
       second,
     },
     expand(p, h) {

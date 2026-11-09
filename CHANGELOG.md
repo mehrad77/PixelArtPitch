@@ -8,6 +8,10 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 - **Code scenes are priced from what they cost.** A `scene.code` task counts one write plus one repair or critique at p50 and three at p90 (it was five, which put a code scene's p90 at $2.64). Past five ledger rows the ledger prices each call.
 - **The brief card follows your files.** Adding a file, or changing a file's type or rights, rebuilds the open brief card in place, so its files, price and warning are current.
 
+### Engine
+- **A walking hero runs instead of waving.** `walk_in`, `item_collect`, `flag_raise` and `end_card_loop` key their wave after the walk, and a state before its first key took that key's value, so the hero slid in on the wave frame. A forced state now applies from its first key on, and before it the walk's run cycle shows. The QuestDay golden is regenerated for it (only the hero's pixels change).
+- **Characters face the way their art faces.** Character and creature assets have a `facing` field (`"right"` for drawn heroes, `"left"` for the library NPCs; `gamer` is `"right"`). The engine mirrors an actor by it to face its walk, so drawn heroes no longer walk backwards. The recipes' `faces` and the actor's `artFaces` lose their `"left"` default and only override it. An asset without the field takes "facing left/right" from its description, else left. Code scenes get `faceTo(id, dir)`, and the Scene Coder's asset lines say which way each character faces and what it is.
+
 ## v0.5.0 (unreleased)
 
 ### Code scenes

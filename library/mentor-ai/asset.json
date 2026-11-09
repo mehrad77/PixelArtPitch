@@ -16,6 +16,7 @@
   "robot"
  ],
  "description": "A mentor NPC facing LEFT: a person with a short violet-dyed bob (V U), a hoodie (Y e), holding a tiny friendly robot companion (C E k) in one hand. idle0/idle1 breathe; give lifts the robot forward. Feet on the bottom row.",
+ "facing": "left",
  "licence": "LicenseRef-PAP-Library",
  "rights": {
   "likeness": false,

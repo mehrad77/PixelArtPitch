@@ -25,6 +25,7 @@
   "cute"
  ],
  "description": "A sleepy brown owl character: half-closed eyes, a yellow beak, a pale chest and orange cheek dots, light from the upper left. Idle, run, jump and wave frames. Drawn for the Lumenbook night-lamp pitch.",
+ "facing": "left",
  "licence": "LicenseRef-PAP-Library",
  "rights": {
   "likeness": false,

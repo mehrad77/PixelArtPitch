@@ -15,6 +15,8 @@ export type InitMsg = {
   colours: Record<string, string>;
   sky: string;
   assets: [string, Frames][];
+  /** asset id -> which way its art looks (only the assets that say) */
+  facing?: Record<string, "left" | "right">;
   fontAssets?: string[];
   timeline: Record<string, unknown> & { TIMES: number[][] };
   compose: ComposeCtx & { captionsByHost: boolean };
@@ -161,6 +163,7 @@ process.on("message", async (m: Msg) => {
         colours: m.colours,
         sky: m.sky,
         assets: new Map(m.assets),
+        facing: m.facing,
         fontAssets: m.fontAssets,
         buffer: Buffer.alloc(320 * 180 * 3),
       });

@@ -24,6 +24,7 @@ export function initMessage(p: LoadedProject): InitMsg {
     colours: p.palette.colours,
     sky: p.palette.sky,
     assets: p.assets,
+    facing: p.facing ?? {},
     fontAssets: usesFont ? ["font"] : undefined,
     timeline: timelineModule(p) as InitMsg["timeline"],
     compose: {

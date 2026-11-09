@@ -26,7 +26,7 @@ Most scenes need only [recipes](RECIPES.md). Use hand-written layers when no rec
 | backdrop | style night/plain/rooftop, sky, band true, stars 70, moon true, moonX 262, moonY 18, skyline true, chimneys [252] (rooftop only) | fills the frame; parallax follows the camera. `rooftop` draws a slate roof whose ridge is y=148 (see [backdrop_rooftop](RECIPES.md#backdrop_rooftop)) |
 | tiled | asset "tiles", frame "ground-top", fill "ground", y 148, tile 16, fromX, toX, gaps [] | a ground row |
 | sprite | **asset**, frame, frames [] + fps 4, x, y, anchor topLeft/bottom/center, flip, outline, alpha 1, scale 1–4, colour | `frames` cycles |
-| actor | **asset**, x 160 (feet centre), y 148 (feet), facing, artFaces "left", runFps 10, idleFps 2.5, dust true, outline, frames {} | picks idle, run, jump or wave by itself |
+| actor | **asset**, x 160 (feet centre), y 148 (feet), facing, artFaces (default: the asset's `facing`; art that doesn't say looks left), runFps 10, idleFps 2.5, dust true, outline, frames {} | picks idle, run, jump or wave by itself |
 | text | **text**, x 160, y 40, align center, scale 1–4, fit false, colour "P", shadow true, alpha, maxW 0, lineH 10 | `fit` shrinks to 304 px |
 | panel | x, y, **w**, **h**, border "G", fill "k", alpha 0.88 | dark box with a shadow |
 | group | x, y, alpha + `children` | moves its children together |
@@ -266,7 +266,7 @@ Follows another layer's position (with its visibility), for name tags or carried
 **Mistake:** attaching to an id that does not exist. Recipe ids are `<recipe>_<part>`.
 
 ### fly *(needs at)*
-Flies from where the layer is through the `path` points at `speed`, with a bob, cycling the move frames (`move0`–`move3`, else `run0`–`run3`, else `idle0`/`idle1`). It turns to face the way it goes: an actor through `artFaces`, a sprite as if its art faces right (set `flip: true` on art drawn facing left). A one-way flight slows over its last 0.4 s and then hovers at the last point. With `loop: true` it flies back to its start and goes round again until `until`. After `until` it stays where it got to, with its idle frames, so a `sit` can take over.
+Flies from where the layer is through the `path` points at `speed`, with a bob, cycling the move frames (`move0`–`move3`, else `run0`–`run3`, else `idle0`/`idle1`). It turns to face the way it goes: an actor by its asset's `facing` (or `artFaces`), a sprite as if its art faces right (set `flip: true` on art drawn facing left). A one-way flight slows over its last 0.4 s and then hovers at the last point. With `loop: true` it flies back to its start and goes round again until `until`. After `until` it stays where it got to, with its idle frames, so a `sit` can take over.
 
 | param | default | range |
 |---|---|---|

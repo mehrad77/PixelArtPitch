@@ -25,6 +25,7 @@
   "cute"
  ],
  "description": "A small pale moth character: round head, two antennae with amber tips, speckled wing panels, thin legs. Idle, run, jump and wave frames. Drawn for the Lumenbook night-lamp pitch.",
+ "facing": "left",
  "licence": "LicenseRef-PAP-Library",
  "rights": {
   "likeness": false,

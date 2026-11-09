@@ -1141,7 +1141,8 @@ function drawLayer(e: Engine, l: CLayer, env: Env, ox: number, oy: number, am: n
       if (st.sq) rows = squashRows(rows, 2);
       const scale = Math.max(1, Math.round(p.scale ?? 1));
       const w = (rows[0]?.length ?? 16) * scale;
-      const flip = st.facing !== p.artFaces;
+      // the art's own facing (artFaces overrides the asset's), turned to the way the actor looks
+      const flip = st.facing !== (p.artFaces ?? e.facingOf(p.asset));
       const x = sx - Math.floor(w / 2);
       const y = sy - rows.length * scale + f.bob * scale;
       box = { x, y, w, h: rows.length * scale };

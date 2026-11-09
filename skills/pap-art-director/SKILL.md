@@ -12,7 +12,7 @@ Every project tool needs `project_id`. Scope: `/assets`.
 1. `project_get` `{ section: "scenes" }` and `{ section: "assets" }`; `recipe_list` to see each recipe's asset slots and library defaults.
 2. For each needed slot: `library_search` `{ query, kind }`, then `library_get` `{ id }` to look at the sheet.
 3. `cast_asset` `{ name: "<slot>", libraryId }` for everything that fits. Cast placeholders for the rest, so the animatic renders.
-4. The library has **no hero**. Cast `mentor-ai` as `hero` for the animatic (recipes default to `faces: "left"`). A new hero drawn facing right needs `faces: "right"`.
+4. The library has **no hero**. Cast `mentor-ai` (or the right-facing `gamer`) as `hero` for the animatic. Each asset's `facing` says which way it looks; the engine turns it to its walk.
 5. After G2, write a spec per missing asset (template in ASSET-KINDS): name, kind, w, h, frames, palette letters, describe. Variants follow the project's setting (default 2, at most 3; with 1 that drawing is used). A `creature` keeps the Director's size (16x16 or 16x24) and motion (walk, fly, sit).
 6. Critique sheets with `pap://docs/REVIEW-RUBRICS.md` §1 (at most 2 rounds); judge variants with §2 (when there are two or more).
 7. Send the winner to the Librarian's import gate (`pap://skills/pap-librarian`).

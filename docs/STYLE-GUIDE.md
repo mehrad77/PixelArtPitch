@@ -39,7 +39,7 @@ Rules:
 2. A **1 px dark outline** (`k`, or the darkest tone of the shape) goes around figures, props and icons.
 3. Since the outline is nearly as dark as the sky, the edge that reads is the **first ring inside the outline**. At least 40% of those cells must reach **1.7:1** against the sky (a hard rule); aim for 60% or more (below that is a soft warning). See [PAP-STANDARD.md](PAP-STANDARD.md).
 4. Use clusters, not noise: no lone pixels, and no checkerboard dithering unless the spec asks for it.
-5. New art faces **right** unless the spec says otherwise. The library characters face **left**. Recipes default to `faces: "left"`, so set `faces: "right"` for right-facing art.
+5. New art faces **right** unless the spec says otherwise. The library NPCs face **left** (`gamer` faces right). Every character and creature asset says which way it looks in its `facing` field, and the engine mirrors it to face the way it walks. Never flip one by hand.
 6. **Light sources** (lamps, lanterns, windows) glow in whole palette bands, never a blended halo: the `glow` fx steps from a dark outer tone to a bright core (default `A n c H`), and `B` or `O` may only be the core.
 
 ## 4. Icon first, little text

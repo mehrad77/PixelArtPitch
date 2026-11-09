@@ -162,7 +162,11 @@ export const KIND_SPECS: Record<string, Spec> = {
     x: num(160, "centre x of the feet", -2000, 4000),
     y: num(GROUND, "feet y (the ground is 148)", -400, 400),
     facing: en(["right", "left"], "right", "which way the actor looks when standing"),
-    artFaces: en(["right", "left"], "left", "which way the art itself looks (library characters look left)"),
+    artFaces: {
+      t: "enum",
+      of: ["right", "left"],
+      doc: "which way the art itself looks; leave it out to use the asset's facing (drawn heroes right, library NPCs left)",
+    },
     runFps: num(10, "run cycle frames per second", 1, 24),
     idleFps: num(2.5, "idle breathing frames per second", 0.5, 12),
     dust: bool(true, "footstep puffs while walking and dust on landing"),

@@ -28,7 +28,8 @@ The look (STYLE-GUIDE):
   into it. Faces and icons end above y = 140. Keep text 8 px or more inside the left and right edges.
 - Icon first: at most one short text on screen at a time, at most 3 words, and never the caption's words.
 - Draw only the assets listed for this scene, by their exact names and frame names: an unknown name draws an orange
-  placeholder box. Characters in the library face left; flip: true makes one face right.
+  placeholder box. Each character's line says which way its art faces; faceTo(id, "left" | "right") gives the
+  flip that turns it, so never flip by hand.
 - Light from the upper left; one new thing every 1.5 s or so; motion settles (ease) and then holds so it can be read.
 
 Return the whole module in `code`, and one line in `notes` on what it draws.
@@ -43,7 +44,7 @@ The beat (from the Director):
 Its cues (the captions the host draws; time against them):
 {{cues}}
 
-Assets it may draw (id (width x height): frame names):
+Assets it may draw (id (width x height, which way a character faces): frame names (what it is)):
 {{assets}}
 
 Palette letters (letter, hex, use):

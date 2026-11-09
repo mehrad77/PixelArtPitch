@@ -18,5 +18,5 @@ Every project tool needs `project_id`. Scope: the recipes of **one** scene.
 
 ## Rules
 - One new thing per 1.5 s; motion within 1 s; walk 20–40 px/s; one text of ≤ 3 words.
-- `faces` defaults to `"left"` (library art). Set `"right"` for a hero drawn facing right.
+- Leave `faces` out: the asset's `facing` says which way the art looks, and the engine turns it to its walk.
 - If no recipe can do it, leave a `needs Scene Coder: …` note for the Producer. Never write code.
