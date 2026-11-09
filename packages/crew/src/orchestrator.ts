@@ -39,6 +39,7 @@ import {
   AnglesOut,
   type AssetKindT,
   artistIssues,
+  type BoardSceneT,
   DrawOut,
   type DrawOutT,
   JudgeOut,
@@ -91,6 +92,7 @@ import {
 } from "./plan/store.ts";
 import { validate as validatePlan } from "./plan/validate.ts";
 import { card, fill } from "./prompts.ts";
+import { stubSource } from "./scene-code.ts";
 import { castStudioArt, studioArt, studioLine } from "./studio-art.ts";
 
 const js = (s: z.ZodType) => z.toJSONSchema(s, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
@@ -1195,6 +1197,7 @@ export class Crew {
   /** the asset ids a decl scene's recipes draw: their asset params, or the params' defaults */
   private sceneAssets(p: OpenProject, sceneId: string): string[] {
     const sc = p.doc().scenes.find((s) => s.id === sceneId);
+    if (sc?.kind === "code") return [...(sc.assets ?? [])];
     if (sc?.kind !== "decl") return [];
     const out = new Set<string>();
     for (const rc of sc.recipes) {
@@ -3456,9 +3459,11 @@ export class Crew {
           d.brief.ask || d.brief.idea.split(/call to action:?/i)[1] || "",
         )?.[0];
         const name = /^([A-Z][A-Za-z0-9]+)/.exec(d.brief.idea)?.[1] ?? d.title.split(/\s+/)[0];
-        board = baselineBoard(
-          d.script.cues.map((c) => c.id),
-          { title: name.toUpperCase(), url },
+        board = StoryboardOut.parse(
+          baselineBoard(
+            d.script.cues.map((c) => c.id),
+            { title: name.toUpperCase(), url },
+          ),
         );
         p.emit("log", { level: "warn", role: "director", text: `using the baseline storyboard (${why})` });
         await p.patch(
@@ -3485,7 +3490,9 @@ export class Crew {
       );
       await this.applyBoard(p, t, board);
       this.done(p, t, {
-        summary: board.scenes.map((s) => `${s.title} (${s.recipes.map((x) => x.id).join(", ")})`).join(" → "),
+        summary: board.scenes
+          .map((s) => `${s.title} (${s.kind === "code" ? "code" : s.recipes.map((x) => x.id).join(", ")})`)
+          .join(" → "),
       });
     } catch (e) {
       this.failTask(p, t, e);
@@ -3520,20 +3527,35 @@ export class Crew {
     if (new Set(b.scenes.map((s) => s.id)).size !== b.scenes.length) issues.push("scene ids must be unique");
     // icon-first: show it, don't write it
     const VISUAL = new Set(["walk_in", "block_bump", "item_collect", "spawn_join", "crowd_cheer", "flag_raise"]);
-    const titles = b.scenes.filter((s) => s.recipes.some((r) => r.id === "title_card")).length;
+    const titles = b.scenes.filter((s) => s.kind !== "code" && s.recipes.some((r) => r.id === "title_card")).length;
     if (titles > 1)
       issues.push(
         `${titles} scenes use title_card; use it at most once (the opening), and show the other cues with walk_in, item_collect, block_bump, spawn_join, crowd_cheer or flag_raise`,
       );
     b.scenes.forEach((s, k) => {
       const last = k === b.scenes.length - 1;
+      if (s.kind === "code") {
+        // a code scene is described, not built: the Scene Coder writes it from its beat
+        if (s.beat.trim().length < 20)
+          issues.push(
+            `scene ${s.id} is a code scene with no beat: describe what it shows, second by second, in plain words (at least one sentence)`,
+          );
+        if (s.recipes.length) issues.push(`scene ${s.id} is a code scene: leave its recipes empty`);
+        if (s.endCard && !last) issues.push(`scene ${s.id}: only the last scene may be the end card (endCard: true)`);
+        return;
+      }
+      if (!s.recipes.length) issues.push(`scene ${s.id} has no recipes: give it recipes, or make it kind "code"`);
+      if (s.endCard) issues.push(`scene ${s.id}: endCard is for a code scene; a recipe end card uses end_card_loop`);
       if (!last && k > 0 && !s.recipes.some((r) => VISUAL.has(r.id)))
         issues.push(
-          `scene ${s.id} shows nothing: add a visual recipe (walk_in, item_collect, block_bump, spawn_join, crowd_cheer or flag_raise)`,
+          `scene ${s.id} shows nothing: add a visual recipe (walk_in, item_collect, block_bump, spawn_join, crowd_cheer or flag_raise), or make it a code scene with a beat`,
         );
     });
-    if (!b.scenes.at(-1)?.recipes.some((r) => r.id === "end_card_loop"))
-      issues.push("the last scene must use end_card_loop");
+    const end = b.scenes.at(-1);
+    if (end && !(end.kind === "code" ? end.endCard : end.recipes.some((r) => r.id === "end_card_loop")))
+      issues.push(
+        "the last scene must be the end card: end_card_loop, or a code scene with endCard: true that holds while the music plays out",
+      );
     const norm = (x: string) =>
       x
         .toLowerCase()
@@ -3557,6 +3579,13 @@ export class Crew {
       ...this.plannedArt(p).map((l) => l.split(":")[0]),
       "font",
     ]);
+    for (const s of b.scenes)
+      if (s.kind === "code")
+        for (const a of s.assets)
+          if (!known.has(a))
+            issues.push(
+              `scene ${s.id}.assets: "${a}" is not in the asset list (fix: use a listed asset or add it to newAssets)`,
+            );
     const tl = p.timeline();
     for (const [k, s] of b.scenes.entries())
       s.recipes.forEach((rc, n) => {
@@ -3595,13 +3624,10 @@ export class Crew {
       from: k === 0 ? "0" : `E(${b.scenes[k - 1].cues.at(-1)})+0.1`,
       to: k === n - 1 ? "duration" : `E(${s.cues.at(-1)})+0.1`,
     }));
+    const before = p.doc().scenes.map((s) => s.id);
     await this.tool(p, "director", t.id, "storyboard_set", { scenes: windows, reason: "scenes from the storyboard" });
-    for (const s of b.scenes)
-      await this.tool(p, "director", t.id, "scene_set_recipes", {
-        scene: s.id,
-        recipes: s.recipes,
-        reason: `recipes for ${s.title}`,
-      });
+    for (const s of b.scenes) await this.setSceneForm(p, t, s, `for ${s.title}`);
+    await this.dropOrphanBundles(p, t, before);
     // remember what needs drawing (a drawing from a reference keeps its reference)
     const refs = new Map(
       (this.planNow(p)?.tasks ?? [])
@@ -3615,6 +3641,79 @@ export class Crew {
     for (const sc of b.scenes) p.setSceneStatus(sc.id, { version: "board", state: "ready" });
   }
 
+  /**
+   * One board scene into the document: a recipe scene gets its recipes (a code scene turns back into a recipe scene
+   * first); a code scene gets its beat, its assets and a stub bundle (`code/<scene>.mjs`, `stub: true`) so the
+   * animatic and the stills work before the Scene Coder writes it.
+   */
+  private async setSceneForm(
+    p: OpenProject,
+    t: Task,
+    s: Pick<BoardSceneT, "id" | "kind" | "recipes" | "beat" | "assets"> & { title?: string; endCard?: boolean },
+    why: string,
+  ) {
+    const d = p.doc();
+    const k = d.scenes.findIndex((x) => x.id === s.id);
+    if (k < 0) return;
+    const old = d.scenes[k];
+    const author = { kind: "agent" as const, role: "director" as RoleT, task: t.id };
+    if (s.kind === "code") {
+      mkdirSync(join(p.dir, "code"), { recursive: true });
+      const file = `code/${s.id}.mjs`;
+      writeFileSync(join(p.dir, file), stubSource({ id: s.id, title: s.title ?? old.title ?? s.id, assets: s.assets }));
+      const entry = { id: s.id, file, fullFrame: false, sfx: false, stub: true };
+      const at = d.code.findIndex((c) => c.id === s.id);
+      const { kind: _k, ...base } = old as typeof old & { recipes?: unknown; layers?: unknown; camera?: unknown };
+      const { recipes: _r, layers: _l, camera: _c, ...common } = base as Record<string, unknown>;
+      const scene = {
+        ...common,
+        kind: "code",
+        bundle: s.id,
+        beat: s.beat.trim().slice(0, 2000),
+        assets: s.assets,
+        ...(s.endCard ? { endCard: true } : {}),
+      };
+      await p.patch(
+        [
+          at >= 0 ? { op: "replace", path: `/code/${at}`, value: entry } : { op: "add", path: "/code/-", value: entry },
+          { op: "replace", path: `/scenes/${k}`, value: scene },
+        ],
+        { reason: `a code scene ${why}: the Scene Coder writes it from its beat`, author },
+      );
+      p.log(t.id, { kind: "step", title: `${s.id} is a code scene: ${s.beat.slice(0, 160)}` });
+      return;
+    }
+    if (old.kind === "code") {
+      const { bundle: _b, beat: _bt, assets: _a, endCard: _e, kind: _k, ...common } = old;
+      await p.patch(
+        [{ op: "replace", path: `/scenes/${k}`, value: { ...common, kind: "decl", recipes: [], layers: [] } }],
+        { reason: `${s.id} is built from recipes again`, author },
+      );
+    }
+    await this.tool(p, "director", t.id, "scene_set_recipes", {
+      scene: s.id,
+      recipes: s.recipes,
+      reason: `recipes ${why}`,
+    });
+  }
+
+  /** the crew's bundles no scene uses any more (a stub, or a scene's own code/<scene>.mjs): every listed bundle loads */
+  private async dropOrphanBundles(p: OpenProject, t: Task, formerScenes: string[]) {
+    const d = p.doc();
+    const used = new Set(d.scenes.flatMap((s) => (s.kind === "code" ? [s.bundle] : [])));
+    const gone = d.code
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => !used.has(c.id) && (c.stub || (formerScenes.includes(c.id) && c.file === `code/${c.id}.mjs`)));
+    if (!gone.length) return;
+    await p.patch(
+      gone.reverse().map(({ i }) => ({ op: "remove" as const, path: `/code/${i}` })),
+      {
+        reason: `no scene draws ${gone.map(({ c }) => c.id).join(", ")} any more`,
+        author: { kind: "agent", role: "director", task: t.id },
+      },
+    );
+  }
+
   /** art.cast: the Art Director casts the library assets the scenes' recipes name (and the font) */
   private async cast(p: OpenProject, pt: PlanTaskT): Promise<Outcome> {
     const t = this.task(p, {
@@ -3624,11 +3723,13 @@ export class Crew {
       ...this.ptOf(pt),
     });
     try {
+      // recipe scenes name art in their params; a code scene lists the assets it draws
       const scenes = p
         .doc()
-        .scenes.filter((s) => s.kind === "decl" && (!pt.scenes?.length || pt.scenes.includes(s.id))) as {
-        recipes: { id: string; params: Record<string, unknown> }[];
-      }[];
+        .scenes.filter((s) => !pt.scenes?.length || pt.scenes.includes(s.id))
+        .map((s) =>
+          s.kind === "decl" ? { recipes: s.recipes, assets: [] } : { recipes: [], assets: s.assets ?? [] },
+        ) as { recipes: { id: string; params: Record<string, unknown> }[]; assets: string[] }[];
       const f = join(p.dir, "runs", "new-assets.json");
       const planned = new Set<string>(
         pt.scenes?.length ? [] : (existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : []).map((a: any) => a.name),
@@ -3651,11 +3752,12 @@ export class Crew {
   private async castFor(
     p: OpenProject,
     t: Task,
-    scenes: { recipes: { id: string; params: Record<string, unknown> }[] }[],
+    scenes: { recipes: { id: string; params: Record<string, unknown> }[]; assets?: string[] }[],
     planned: Set<string>,
   ) {
     const d = p.doc();
     const want = new Set<string>(["font"]);
+    for (const s of scenes) for (const a of s.assets ?? []) want.add(a);
     for (const s of scenes)
       for (const rc of s.recipes) {
         const R = (RECIPE_MAP as any)[rc.id];
@@ -3714,7 +3816,9 @@ export class Crew {
         .map(
           (sc) =>
             `${sc.id}${ids.includes(sc.id) ? " (re-plan)" : ""}: ${sc.cues.join(", ")}; ${
-              sc.kind === "decl" ? sc.recipes.map((x) => `${x.id} ${JSON.stringify(x.params)}`).join(", ") : "code"
+              sc.kind === "decl"
+                ? sc.recipes.map((x) => `${x.id} ${JSON.stringify(x.params)}`).join(", ")
+                : `code: ${sc.beat ?? "(hand-written)"}${sc.assets?.length ? ` [assets: ${sc.assets.join(", ")}]` : ""}`
             }`,
         )
         .join("\n");
@@ -3733,6 +3837,15 @@ export class Crew {
         const issues: string[] = [];
         for (const sc of o.scenes) {
           if (!ids.includes(sc.id)) issues.push(`${sc.id} is not one of the scenes to re-plan (${ids.join(", ")})`);
+          if (sc.kind === "code") {
+            if (sc.beat.trim().length < 20)
+              issues.push(`${sc.id}: a code scene needs its beat (what it shows, second by second, in plain words)`);
+            for (const a of sc.assets)
+              if (!known.has(a))
+                issues.push(`${sc.id}.assets: "${a}" is not in the asset list (fix: use a listed asset)`);
+            continue;
+          }
+          if (!sc.recipes.length) issues.push(`${sc.id} has no recipes: give it recipes, or make it kind "code"`);
           sc.recipes.forEach((rc, k) => {
             for (const x of checkRecipeParams(rc.id, rc.params, tl.at, `${sc.id}.recipes[${k}]`))
               issues.push(`${x.path}: ${x.message} (fix: ${x.fix})`);
@@ -3779,11 +3892,12 @@ export class Crew {
       const bad = new Set(issues.map((i) => i.split(/[.: ]/)[0]));
       const good = out.data.scenes.filter((sc) => ids.includes(sc.id) && !bad.has(sc.id));
       for (const sc of good)
-        await this.tool(p, "director", t.id, "scene_set_recipes", {
-          scene: sc.id,
-          recipes: sc.recipes,
-          reason: `re-planned for the person's change: ${vars.change.slice(0, 200)}`,
-        });
+        await this.setSceneForm(
+          p,
+          t,
+          { ...sc, endCard: (p.doc().scenes.find((x) => x.id === sc.id) as { endCard?: boolean })?.endCard },
+          `re-planned for the person's change: ${vars.change.slice(0, 200)}`,
+        );
       for (const sc of good) p.setSceneStatus(sc.id, { version: "board", state: "ready" });
       r.done.reboarded.push(...good.map((x) => x.id));
       const approx = out.data.approximated.trim();
@@ -3803,7 +3917,7 @@ export class Crew {
         verdict: { by: "producer", verdict: "approve", note: "a person's change", at: new Date().toISOString() } as any,
       });
       this.done(p, t, {
-        summary: `${good.map((x) => `${x.id}: ${p.doc().scenes.find((s) => s.id === x.id)?.kind === "decl" ? x.recipes.map((y) => y.id).join("+") : ""}`).join("; ")}${approx ? `. Approximated: ${approx}` : ""}`,
+        summary: `${good.map((x) => `${x.id}: ${p.doc().scenes.find((s) => s.id === x.id)?.kind === "decl" ? x.recipes.map((y) => y.id).join("+") : "code"}`).join("; ")}${approx ? `. Approximated: ${approx}` : ""}`,
       });
     } catch (e) {
       this.failTask(p, t, e);

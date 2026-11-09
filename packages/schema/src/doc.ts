@@ -170,6 +170,12 @@ export const CodeScene = SceneBase.extend({
   kind: z.literal("code"),
   /** id of an entry in `code` */
   bundle: Id,
+  /** the Director's beat: what the scene shows, second by second, in plain words (the Scene Coder writes it) */
+  beat: z.string().max(2000).optional(),
+  /** the asset ids the scene draws (cast before it is coded; the plan waits for any new art among them) */
+  assets: z.array(z.string()).max(16).optional(),
+  /** the closing card that holds while the music plays out (a recipe scene marks it with end_card_loop) */
+  endCard: z.boolean().optional(),
 });
 export const Scene = z.discriminatedUnion("kind", [DeclScene, CodeScene]);
 
@@ -182,6 +188,8 @@ export const CodeBundle = z.object({
   initAsset: z.string().optional(),
   /** the bundle exports sfxEvents() */
   sfx: z.boolean().default(false),
+  /** a placeholder the storyboard wrote (backdrop, title, assets): not a finished picture until the Scene Coder's */
+  stub: z.boolean().optional(),
 });
 
 // ---- audio, mix, delivery ----

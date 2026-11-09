@@ -3,7 +3,9 @@ import { type ChildProcess, fork } from "node:child_process";
 import { compileDecl } from "@pap/engine/decl";
 import { PAP_ROOT } from "./library.ts";
 import { type LoadedProject, timelineModule } from "./project.ts";
-import type { InitMsg } from "./sandbox-child.ts";
+import type { InitMsg, ProbeBox } from "./sandbox-child.ts";
+
+export type { ProbeBox };
 
 export const W = 320;
 export const H = 180;
@@ -39,6 +41,7 @@ export function initMessage(p: LoadedProject): InitMsg {
         ? { id: s.id, from: win.from, to: win.to, kind: "code" as const, bundle: s.bundle }
         : { id: s.id, from: win.from, to: win.to, kind: "decl" as const, compiled: compileDecl(s, timeline.at) };
     }),
+    ...(p.probe ? { probe: true } : {}),
     bundles: p.bundles.map((b) => ({
       id: b.id,
       source: b.source,
@@ -162,6 +165,11 @@ export class Renderer {
     while (!f) await new Promise((r) => setImmediate(r));
     this.onFrame = null;
     return f;
+  }
+
+  /** a trial render's probe (LoadedProject.probe): what the scene's bundle draws at t, and its draw time in ms */
+  probe(t: number): Promise<{ scene: string; boxes: ProbeBox[]; ms: number }> {
+    return this.serial(() => this.call({ cmd: "probe", t }));
   }
 
   async sfxEvents(): Promise<{ t: number; type: string }[]> {

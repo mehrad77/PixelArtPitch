@@ -51,7 +51,12 @@ export function missingAssets(
   const known = new Set(doc.assets.map((a) => a.id));
   const out: { scene: string; id: string; libraryId: string | null }[] = [];
   doc.scenes.forEach((s, si) => {
-    if (s.kind !== "decl") return;
+    // a code scene names the assets it draws (the storyboard's list)
+    if (s.kind === "code") {
+      for (const id of s.assets ?? [])
+        if (!known.has(id)) out.push({ scene: s.id, id, libraryId: libraryIdFor(id, library) });
+      return;
+    }
     let cs: CompiledScene;
     try {
       cs = compileDecl(s, at, { path: `scenes[${si}]` });
@@ -203,7 +208,30 @@ export function lintProject(doc: ProjectT, tl: Timeline, opts: LintOpts = {}): L
   const contrastDone = new Set<string>();
   const compiled: (CompiledScene | null)[] = doc.scenes.map(() => null);
   doc.scenes.forEach((s, si) => {
-    if (s.kind !== "decl") return;
+    if (s.kind === "code") {
+      // a code scene: its bundle is listed, and the assets it names are in the project (on-screen checks need its
+      // frames: lintCodeProbes and lintBundleSource)
+      if (!doc.code.some((b) => b.id === s.bundle))
+        add({
+          rule: "missing-bundle",
+          severity: "error",
+          scene: s.id,
+          message: `the scene's bundle "${s.bundle}" is not in /code`,
+          fix: `add { "id": "${s.bundle}", "file": "code/${s.bundle}.mjs", "fullFrame": false } to /code`,
+        });
+      for (const id of s.assets ?? [])
+        if (!known.has(id))
+          add({
+            rule: "missing-asset",
+            severity: "error",
+            scene: s.id,
+            message: `the scene names asset "${id}" but the project has no asset with that id (it renders as a placeholder box)`,
+            fix: libraryIdFor(id)
+              ? `cast it: cast_asset { "name": "${id}", "libraryId": "${libraryIdFor(id)}" }`
+              : `add an asset with id "${id}" or draw an asset the project has`,
+          });
+      return;
+    }
     // ---- raw seconds
     for (const [path, v] of timeFields(s))
       if (isRaw(v))
@@ -598,6 +626,129 @@ export async function lintFrames(
         fix: "check the scene has layers and its assets resolve",
       });
     }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- code scenes
+
+/** one probed frame of a code scene: what its bundle drew (the render sandbox's `probe`) and how long the draw took */
+export type CodeProbe = {
+  t: number;
+  ms: number;
+  boxes: (
+    | { kind: "text"; text: string; x: number; y: number; w: number; h: number }
+    | { kind: "panel"; x: number; y: number; w: number; h: number }
+    | { kind: "missing-asset"; name: string }
+    | { kind: "missing-frame"; name: string; frame: string }
+  )[];
+};
+/** a draw this slow is a repair: the sandbox stops a frame at 250 ms, and a slower machine renders the export */
+export const CODE_DRAW_MS = 150;
+
+/**
+ * The on-screen checks for a code scene, over probed frames: text off the frame, text or a panel in the caption zone,
+ * a frame asked of an asset the project lacks (a placeholder box) or of a frame name it lacks, and a slow draw.
+ * Each rule is reported once, at its first frame.
+ */
+export function lintCodeProbes(scene: string, probes: CodeProbe[], o: { captions?: boolean } = {}): Lint[] {
+  const out: Lint[] = [];
+  const seen = new Set<string>();
+  const add = (key: string, l: Omit<Lint, "scene">) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ scene, ...l });
+  };
+  for (const p of probes) {
+    const t = r2(p.t);
+    if (p.ms > CODE_DRAW_MS)
+      add("slow", {
+        rule: "slow-draw",
+        severity: "error",
+        t,
+        message: `draw(${t}) took ${Math.round(p.ms)} ms (the sandbox stops a frame at 250 ms; keep it under ${CODE_DRAW_MS})`,
+        fix: "precompute what doesn't change with t at load time, and draw fewer pixels per frame (no per-pixel loops over the whole screen)",
+      });
+    for (const b of p.boxes) {
+      if (b.kind === "missing-asset")
+        add(`asset:${b.name}`, {
+          rule: "placeholder-box",
+          severity: "error",
+          t,
+          message: `frame("${b.name}", …) draws a placeholder box: the project has no asset "${b.name}"`,
+          fix: "draw only the assets listed for the scene, by their exact names",
+        });
+      else if (b.kind === "missing-frame")
+        add(`frame:${b.name}:${b.frame}`, {
+          rule: "missing-frame",
+          severity: "error",
+          t,
+          message: `asset "${b.name}" has no frame "${b.frame}" (frame() falls back to its first frame)`,
+          fix: `use one of the frame names listed for ${b.name}`,
+        });
+      else if (b.kind === "text") {
+        if (b.x < 0 || b.y < 0 || b.x + b.w > 320 || b.y + b.h > 180)
+          add(`clip:${b.text}`, {
+            rule: "text-clipped",
+            severity: "error",
+            t,
+            message: `"${b.text}" runs off the frame (${b.x},${b.y} ${b.w}x${b.h})`,
+            fix: "shorten it, lower its scale, or move it inside 0..320 x 0..180",
+          });
+        else if (o.captions !== false && b.y + b.h > CAPTION_TOP)
+          add(`zone:${b.text}`, {
+            rule: "caption-zone",
+            severity: "error",
+            t,
+            message: `"${b.text}" reaches y=${b.y + b.h}, into the caption zone (below y=${CAPTION_TOP})`,
+            fix: `move it up so it ends above y=${CAPTION_TOP}`,
+          });
+      } else if (o.captions !== false && b.y + b.h > CAPTION_TOP + 2 && b.y < 180)
+        add(`panel:${b.x},${b.y}`, {
+          rule: "caption-zone",
+          severity: "error",
+          t,
+          message: `a panel at ${b.x},${b.y} ${b.w}x${b.h} reaches into the caption zone (below y=${CAPTION_TOP})`,
+          fix: `move it up so it ends above y=${CAPTION_TOP}`,
+        });
+    }
+  }
+  return out;
+}
+
+/**
+ * A code bundle's source checked before it runs: it exports draw, imports only pap:engine and pap:timeline, uses no
+ * randomness, clock, globals or code from strings, and every literal frame("name", "frame") / asset("name") names an
+ * asset (and frame) the project has. `assets` maps each project asset to its frame names.
+ */
+export function lintBundleSource(scene: string, src: string, assets: Map<string, string[]>): Lint[] {
+  const out: Lint[] = [];
+  const add = (rule: string, message: string, fix: string, severity: Lint["severity"] = "error") =>
+    out.push({ rule, severity, scene, message, fix });
+  if (!/export\s+(function\s+draw\b|const\s+draw\b|\{[^}]*\bdraw\b)/.test(src))
+    add("bundle-shape", "the module does not export draw(t)", "add `export function draw(t) { … }`");
+  for (const m of src.matchAll(/(?:^|[\s;])import\s[^;]*?from\s*["']([^"']+)["']/g))
+    if (m[1] !== "pap:engine" && m[1] !== "pap:timeline")
+      add("bundle-import", `it imports "${m[1]}"`, 'import only from "pap:engine" and "pap:timeline"');
+  const banned: [RegExp, string][] = [
+    [/\bMath\.random\b/, "Math.random (renders must be byte-exact: use rnd(i) from pap:engine)"],
+    [/\b(Date\.now|new Date|performance\.now)\b/, "the clock (a frame is a pure function of t)"],
+    [/\b(eval|Function)\s*\(/, "code from strings"],
+    [/\b(process|require|fetch|globalThis|setTimeout|setInterval)\b/, "a host global (the sandbox has none)"],
+  ];
+  for (const [re, what] of banned)
+    if (re.test(src)) add("bundle-banned", `it uses ${what}`, "remove it; see the sandbox rules");
+  for (const m of src.matchAll(/\b(frame|asset)\(\s*["']([^"']+)["'](?:\s*,\s*["']([^"']+)["'])?/g)) {
+    const [, fn, name, f] = m;
+    const frames = assets.get(name);
+    if (!frames)
+      add(
+        "placeholder-box",
+        `${fn}("${name}") names an asset the project doesn't have (it draws as a placeholder box)`,
+        `use one of: ${[...assets.keys()].join(", ")}`,
+      );
+    else if (fn === "frame" && f && !frames.includes(f))
+      add("missing-frame", `asset "${name}" has no frame "${f}"`, `its frames: ${frames.join(", ")}`);
   }
   return out;
 }

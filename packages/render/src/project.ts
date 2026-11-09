@@ -53,6 +53,8 @@ export type LoadedProject = {
   palette: Palette;
   assets: [string, Frames][];
   bundles: { id: string; file: string; source: string; fullFrame: boolean; sfx: boolean; initArg: unknown }[];
+  /** a trial render: the sandbox records what bundles draw (Renderer.probe) */
+  probe?: boolean;
 };
 
 export function readDoc(dir: string): ProjectT {
@@ -85,6 +87,7 @@ export function timelineModule(p: Pick<LoadedProject, "doc" | "timeline">) {
   const { timeline } = p;
   return {
     CUES: timeline.cues.map((c) => c.text),
+    CUE_IDS: timeline.cues.map((c) => c.id),
     TIMES: timeline.cues.map((c) => [c.start, c.end]),
     HOLD: timeline.hold,
     END_CARD_HOLD: timeline.endHold,

@@ -44,21 +44,29 @@ export const AnglesOut = z.object({
   recommended: z.number().int().min(0).max(2).default(0),
 });
 
+/**
+ * A board scene: built from the recipe menu (`kind` "recipe", the default), or a code scene (`kind` "code") the Scene
+ * Coder writes from its `beat`: what it shows, second by second, in plain words, and the `assets` it draws. One object
+ * for both (not a union) so a board without `kind` still parses; `checkBoard` checks each form.
+ */
+export const BoardScene = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9_]*$/),
+  title: z.string().min(1).max(60),
+  cues: z.array(z.string()).min(1),
+  kind: z.enum(["recipe", "code"]).default("recipe"),
+  recipes: z
+    .array(z.object({ id: z.string(), params: z.record(z.string(), z.unknown()).default({}) }))
+    .max(8)
+    .default([]),
+  beat: z.string().max(1500).default(""),
+  assets: z.array(z.string()).max(12).default([]),
+  /** a code scene that is the closing card (it holds while the music plays out) */
+  endCard: z.boolean().default(false),
+});
+export type BoardSceneT = z.infer<typeof BoardScene>;
+
 export const StoryboardOut = z.object({
-  scenes: z
-    .array(
-      z.object({
-        id: z.string().regex(/^[a-z][a-z0-9_]*$/),
-        title: z.string().min(1).max(60),
-        cues: z.array(z.string()).min(1),
-        recipes: z
-          .array(z.object({ id: z.string(), params: z.record(z.string(), z.unknown()) }))
-          .min(1)
-          .max(8),
-      }),
-    )
-    .min(1)
-    .max(8),
+  scenes: z.array(BoardScene).min(1).max(8),
   newAssets: z
     .array(
       z.object({
@@ -80,10 +88,13 @@ export const ReboardOut = z.object({
     .array(
       z.object({
         id: z.string(),
+        kind: z.enum(["recipe", "code"]).default("recipe"),
         recipes: z
           .array(z.object({ id: z.string(), params: z.record(z.string(), z.unknown()).default({}) }))
-          .min(1)
-          .max(6),
+          .max(6)
+          .default([]),
+        beat: z.string().max(1500).default(""),
+        assets: z.array(z.string()).max(12).default([]),
       }),
     )
     .min(1)
@@ -114,6 +125,12 @@ export const TuneOut = z.object({
       }),
     )
     .max(3),
+});
+
+/** the Scene Coder's answer: the whole bundle (an ES module) and a line on what it did */
+export const CodeOut = z.object({
+  code: z.string().min(40).max(60000),
+  notes: z.string().max(600).default(""),
 });
 
 export const ReviewOut = z.object({

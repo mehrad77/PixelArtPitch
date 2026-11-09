@@ -24,12 +24,21 @@ export type InitMsg = {
   ))[];
   bundles: { id: string; source: string; fullFrame: boolean; sfx: boolean; initArg: unknown }[];
   frameTimeoutMs?: number;
+  /** a trial render (the Scene Coder's checks): bundles get text, panel and frame wrapped to record what they draw */
+  probe?: boolean;
 };
+/** what a bundle drew in one probed frame: text and panel boxes, and frames asked of assets the project lacks */
+export type ProbeBox =
+  | { kind: "text"; text: string; x: number; y: number; w: number; h: number }
+  | { kind: "panel"; x: number; y: number; w: number; h: number }
+  | { kind: "missing-asset"; name: string }
+  | { kind: "missing-frame"; name: string; frame: string };
 type Msg =
   | InitMsg
   | { cmd: "frames"; from: number; to: number; fps: number; hold: number; id: number }
   | { cmd: "frame"; t: number; id: number }
-  | { cmd: "sfx"; id: number };
+  | { cmd: "sfx"; id: number }
+  | { cmd: "probe"; t: number; id: number };
 
 type Bundle = { ctx: vm.Context; ns: any; draw: vm.Script; fullFrame: boolean; sfx: boolean };
 
@@ -38,20 +47,54 @@ let init: InitMsg;
 const bundles = new Map<string, Bundle>();
 const send = (m: unknown) => process.send!(m);
 
+let probeLog: ProbeBox[] = [];
+/** the engine a probed bundle sees: the same functions, with text, panel and frame recording their boxes first */
+function probed(e: Engine): Engine {
+  const num = (v: unknown, d = 0) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+  return {
+    ...e,
+    text(str: string, x: number, y: number, opts: any = {}) {
+      const scale = num(opts?.scale, 1);
+      const w = e.measure(String(str), scale);
+      const ax = Math.round(opts?.align === "center" ? x - w / 2 : opts?.align === "right" ? x - w : x);
+      probeLog.push({ kind: "text", text: String(str).slice(0, 80), x: ax, y: Math.round(num(y)), w, h: 8 * scale });
+      return e.text(str, x, y, opts);
+    },
+    panel(x: number, y: number, w: number, h: number, opts?: any) {
+      probeLog.push({ kind: "panel", x: Math.round(num(x)), y: Math.round(num(y)), w: num(w), h: num(h) });
+      return e.panel(x, y, w, h, opts);
+    },
+    frame(name: string, f: string, fallback?: [number, number]) {
+      const a = e.asset(name);
+      if (!a) probeLog.push({ kind: "missing-asset", name: String(name) });
+      else if (!(f in a)) probeLog.push({ kind: "missing-frame", name: String(name), frame: String(f) });
+      return e.frame(name, f, fallback);
+    },
+  };
+}
+
 async function loadBundle(b: InitMsg["bundles"][number]): Promise<Bundle> {
   const ctx = vm.createContext(Object.create(null), {
     name: `pap:bundle/${b.id}`,
     codeGeneration: { strings: false, wasm: false },
   });
+  const api = init.probe ? probed(engine) : engine;
   const engineMod = new vm.SyntheticModule(
     [...ENGINE_EXPORTS],
     function (this: vm.SyntheticModule) {
-      for (const k of ENGINE_EXPORTS) this.setExport(k, (engine as any)[k]);
+      for (const k of ENGINE_EXPORTS) this.setExport(k, (api as any)[k]);
     },
     { context: ctx, identifier: "pap:engine" },
   );
   const tl = init.timeline;
-  const tlExports = { ...tl, S: (i: number) => tl.TIMES[i][0], E: (i: number) => tl.TIMES[i][1] };
+  // S(4) or S("c05"): a cue by its index or its id
+  const ids = (tl.CUE_IDS ?? []) as string[];
+  const cue = (c: number | string) => {
+    const k = typeof c === "number" ? c : ids.indexOf(c);
+    if (!tl.TIMES[k]) throw new Error(`no cue ${JSON.stringify(c)}: use a cue id (${ids.join(", ")}) or its index`);
+    return tl.TIMES[k];
+  };
+  const tlExports = { ...tl, S: (c: number | string) => cue(c)[0], E: (c: number | string) => cue(c)[1] };
   const timelineMod = new vm.SyntheticModule(
     Object.keys(tlExports),
     function (this: vm.SyntheticModule) {
@@ -133,6 +176,14 @@ process.on("message", async (m: Msg) => {
       drawAt(m.t);
       await out(Buffer.from(engine.buf));
       send({ ok: true, cmd: "frame", id: m.id });
+    } else if (m.cmd === "probe") {
+      // what this scene's bundle draws at t, and how long its draw takes (no frame is sent)
+      const sc = sceneAt(init.scenes, m.t);
+      probeLog = [];
+      const t0 = performance.now();
+      drawScene(sc, m.t);
+      const ms = performance.now() - t0;
+      send({ ok: true, cmd: "probe", id: m.id, scene: sc.id, boxes: probeLog, ms });
     } else if (m.cmd === "sfx") {
       const events: { t: number; type: string }[] = [];
       for (const b of bundles.values())
