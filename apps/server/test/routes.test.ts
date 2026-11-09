@@ -355,3 +355,32 @@ test("POST /api/p/:id/export: runs export_video (local, no model calls); 409 whi
     workspace.closeAll();
   }
 });
+
+test("an export from before versions is v1: a finished project keeps its video", async () => {
+  const root = join(home, `legacy-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(root, { recursive: true });
+  cpSync(EXAMPLE, join(root, "qd"), { recursive: true, filter: (f) => !f.endsWith(".pap-lock") });
+  const workspace = new Workspace(() => [root]);
+  try {
+    const p = workspace.get(workspace.list().find((x) => x.dir === join(root, "qd"))!.id);
+    mkdirSync(join(p.dir, "out"), { recursive: true });
+    writeFileSync(join(p.dir, "out", "questday.mp4"), "old");
+    assert.deepEqual(
+      p.versions({ shown: true }).map((v) => [v.v, v.file]),
+      [[1, "out/questday.mp4"]],
+    );
+    assert.deepEqual(p.versions(), [], "the crew only acts on recorded versions");
+    // the next export overwrites that same file before it's recorded: it becomes v1, not a v2 beside a lost v1
+    writeFileSync(join(p.dir, "out", "questday.mp4"), "new");
+    assert.equal(p.recordVersion(join(p.dir, "out", "questday.mp4"), { rev: p.doc().rev, sec: 1 }).v, 1);
+    // a video kept under another name stays v1, and the new one is v2
+    writeFileSync(join(p.dir, "out", "cut.mp4"), "next");
+    assert.equal(p.recordVersion(join(p.dir, "out", "cut.mp4"), { rev: p.doc().rev, sec: 1 }).v, 2);
+    assert.deepEqual(
+      p.versions().map((v) => v.v),
+      [1, 2],
+    );
+  } finally {
+    workspace.closeAll();
+  }
+});

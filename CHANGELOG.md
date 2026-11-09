@@ -6,6 +6,8 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 
 ### Parts and versions
 - **Parts:** a project says what it has, as five parts (Idea, Story, Pictures, Sound, Video), each missing, partial, ready or stale. They're worked out from the document, not from where the crew stopped, so a handmade project with a full script, scenes and sound reads as such (`partsOf` in `@pap/tools`).
+- **The five steps are gone.** The project page shows its five parts and one version line ("v2 · exported 3 Nov · up to date", "v2 is older than your changes · Export v3", "Making v3 · v2 still plays", "No video yet · Export"), with a free Export (a local render, no model calls). Cards show five part marks, and "Finished" is now **Has a video**. A rerun stays in Working with "v2 plays". A video exported before versions counts as v1.
+- **The crew starts from what the project has.** A project no crew has run starts where its content ends, with the gates of the parts it already has passed by content. A change starts where its note belongs, not where the crew last stopped, so an animation note on a handmade project no longer reruns everything from the brief. The run ends on "Exported v<N>".
 - **Versions:** every export is a numbered version (v1, v2, …) with the document rev it was made from. The video is copied to `out/versions/v<N>.mp4` and listed in `history/versions.jsonl`, which stays with the project. `GET /api/p/:id` sends `parts` and `versions`, `GET /api/p/:id/versions/:v.mp4` plays an older one, and the export's task row records its `v`.
 
 ## v0.3.0 (unreleased)
@@ -112,7 +114,7 @@ The first release: a local studio where a crew of AI agents makes short pixel-ar
 - **Resume after a crash.** State is rebuilt from the event log, and saved responses are reused.
 
 ### The studio
-- **A Simple view and a Studio view.** Simple has the film, the five steps, and Pip with the crew faces. Studio adds the HUD, the stage nav, a 7-track timeline, and the Crew, Inbox, Notes and Changes panels.
+- **A Simple view and a Studio view.** Simple has the film, the five steps (replaced by parts in v0.4), and Pip with the crew faces. Studio adds the HUD, the stage nav, a 7-track timeline, and the Crew, Inbox, Notes and Changes panels.
 - **Each crew face carries a small mark of its trade.** Pip wears the crown.
 - **Settings → Roles** follows the crew. Profiles (Best, Balanced, Local, Custom) are priced per 60 s video, and each role has a fallback model.
 - **The Docs page** reads the repo's guides in place. It lists every studio tool with its inputs and examples, and the tools your own MCP servers add.

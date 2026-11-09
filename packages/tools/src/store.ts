@@ -794,9 +794,13 @@ export class OpenProject {
 
   // ---- versions and parts ----
   /** every export, oldest first (history/versions.jsonl: kept with the project, so it survives deleting runs/) */
-  versions(): Version[] {
+  /**
+   * Every recorded export, oldest first. `shown` (what the studio shows, not what the crew acts on) also counts an
+   * export from before versions were recorded as v1, so a finished project keeps its video.
+   */
+  versions(opts: { shown?: boolean } = {}): Version[] {
     const f = join(this.dir, "history", "versions.jsonl");
-    if (!existsSync(f)) return [];
+    if (!existsSync(f)) return opts.shown ? this.legacyVersion() : [];
     return readFileSync(f, "utf8")
       .split("\n")
       .filter(Boolean)
@@ -806,7 +810,41 @@ export class OpenProject {
    * An export becomes the next version: `src` (the finished video in out/) is copied to out/versions/v<N>.mp4 and
    * the entry appended to history/versions.jsonl. `rev` is the document rev the export rendered.
    */
+  /**
+   * An export from before versions were recorded: its video in out/ is v1, so a finished project keeps its video. It
+   * counts as the current rev when it is newer than pitch.json, else as older than the changes.
+   */
+  private legacyVersion(): Version[] {
+    const out = join(this.dir, "out");
+    const video = this.files()
+      .filter(isFinalVideo)
+      .map((x) => ({ name: x.name, at: statSync(join(out, x.name)).mtime }))
+      .sort((a, b) => b.at.getTime() - a.at.getTime())[0];
+    if (!video) return [];
+    const rev = this.doc().rev;
+    const docAt = statSync(join(this.dir, "pitch.json")).mtime;
+    return [
+      {
+        v: 1,
+        rev: video.at >= docAt ? rev : Math.max(0, rev - 1),
+        at: video.at.toISOString(),
+        file: `out/${video.name}`,
+        sec: 0,
+        sha1: "",
+      },
+    ];
+  }
   recordVersion(src: string, meta: { rev: number; sec: number; delivery?: string }): Version {
+    // the first recorded export keeps an older one as v1
+    if (!existsSync(join(this.dir, "history", "versions.jsonl")))
+      for (const old of this.legacyVersion().filter((x) => resolve(this.dir, x.file) !== resolve(src))) {
+        mkdirSync(join(this.dir, "out", "versions"), { recursive: true });
+        copyFileSync(join(this.dir, old.file), join(this.dir, "out", "versions", "v1.mp4"), constants.COPYFILE_FICLONE);
+        appendFileSync(
+          join(this.dir, "history", "versions.jsonl"),
+          `${JSON.stringify({ ...old, file: "out/versions/v1.mp4" })}\n`,
+        );
+      }
     const v = this.versions().reduce((m, x) => Math.max(m, x.v), 0) + 1;
     const file = `out/versions/v${v}.mp4`;
     mkdirSync(join(this.dir, "out", "versions"), { recursive: true });
@@ -852,13 +890,13 @@ export class OpenProject {
       }
   }
   /** what the project has (partsOf), with its library and files looked up on disk */
-  parts(): Parts {
+  parts(opts: { shown?: boolean } = {}): Parts {
     let lib: Set<string> | null = null;
     return partsOf({
       doc: this._doc,
       sceneStatus: this.state.sceneStatus,
       history: this.readHistory(),
-      versions: this.versions(),
+      versions: this.versions(opts),
       resolves: (src) => {
         if (src.startsWith("lib:")) {
           lib ??= new Set(libraryIndex().assets.map((a) => a.id));

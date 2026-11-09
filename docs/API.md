@@ -32,7 +32,7 @@ type ProjectState = { doc: Project; rev: number; timeline: Timeline /* cues, sce
     slots: Record<string, { size: number; used: number }> /* per endpoint, plus "render" */;
     runStartedAt: string | null /* the current or last run's start: older failures belong to an older run */;
     held: string | null /* the run is held for the person, and why (a rejected key, Pip's hold) */ };
-  status: { line: string; phase: number;
+  status: { line: string; phase?: number /* deprecated: no longer written; read `parts` and `versions` */;
     problem?: { text: string; action: "retry" | "change_model" | "add_budget" | "fix_key"; taskId?: string;
       provider?: string /* fix_key: the provider to fix in Settings → Providers */;
       kind?: "auth" | "credit" | "unreachable" | "rate" | "budget" | "other" };
@@ -224,7 +224,7 @@ The server answers these as the mock (`apps/web/src/mock/drafts.ts`) does. The s
 | `GET /api/settings/profiles` | | `{ best, balanced, local, custom }`: each `Record<Role, { model, fallback? }>` or null (N22) |
 | `POST /api/models/:id/probe` | (the id encoded, or with its slashes as is) | `ModelRow` after a fresh probe (spends a few cents on a paid model), `404` with a `fix` for a model no enabled provider lists (N21) |
 
-- `GET /api/projects` lists drafts too: `{ id: "draft_…", title /* "New video" until the first message */, draft: true, createdAt, updatedAt, status: { line /* Pip's last question */, phase: 0 } }` with the other fields zeroed. Projects also carry `needs` ("one pick", "your OK on the rough cut", "N things").
+- `GET /api/projects` lists drafts too: `{ id: "draft_…", title /* "New video" until the first message */, draft: true, createdAt, updatedAt, status: { line /* Pip's last question */ } }` with the other fields zeroed. Projects also carry `needs` ("one pick", "your OK on the rough cut", "N things").
 - `GET /api/settings`: `roles` names every role, defaults included (N20), and `effective: Record<Role, { model, fallback: string | null, source: "saved" | "default", fallbackSource: "saved" | "producer" | "none" }>`.
 - An unknown `/api/*` route is a JSON `404` with a `fix`, never the UI's page.
 - A `QuestionT` may carry `rights: { asset, private: true }` (the plan's `rights` node, N15): only the person answers it (`403 person_only` otherwise), and it never times out.

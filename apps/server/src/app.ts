@@ -254,7 +254,7 @@ export function createApp(o: ServerOpts) {
     watched.add(p);
     const key = () => {
       try {
-        return JSON.stringify(p.parts());
+        return JSON.stringify(p.parts({ shown: true }));
       } catch {
         return "";
       }
@@ -276,7 +276,7 @@ export function createApp(o: ServerOpts) {
   };
   /** the latest export and whether it shows the document as it is now (null before the first export) */
   const versionOf = (p: OpenProject, parts: Parts) => {
-    const last = p.versions().at(-1);
+    const last = p.versions({ shown: true }).at(-1);
     if (!last) return null;
     return { v: last.v, at: last.at, upToDate: parts.parts.find((x) => x.id === "video")?.state === "ready" };
   };
@@ -327,8 +327,8 @@ export function createApp(o: ServerOpts) {
       milestones: p.markers(),
       sceneStatus: p.state.sceneStatus,
       // what the project has (Idea, Story, Pictures, Sound, Video) and every export, oldest first
-      parts: p.parts(),
-      versions: p.versions().map((v) => ({ ...v, url: `/api/p/${p.id}/versions/${v.v}.mp4` })),
+      parts: p.parts({ shown: true }),
+      versions: p.versions({ shown: true }).map((v) => ({ ...v, url: `/api/p/${p.id}/versions/${v.v}.mp4` })),
       // the production plan (null until a crew first runs) and the crew members that come and go (N4)
       plan: o.crew?.planView?.(p) ?? null,
       instances: o.crew?.instances?.(p) ?? [],
@@ -362,7 +362,7 @@ export function createApp(o: ServerOpts) {
           const p = proj(x.id);
           const st = o.crew?.status(p);
           const needs = needsOf(p);
-          const parts = p.parts();
+          const parts = p.parts({ shown: true });
           extra = {
             stage: p.state.stage,
             spentUsd: st?.budget.spentUsd ?? 0,
@@ -539,8 +539,10 @@ export function createApp(o: ServerOpts) {
     const p = proj(c.req.param("id"));
     const m = /^([1-9]\d{0,5})\.mp4$/.exec(c.req.param("name"));
     if (!m) return c.text("bad version", 400);
-    const f = join(p.dir, "out", "versions", `v${m[1]}.mp4`);
-    if (!existsSync(f)) return c.text("no such version", 404);
+    // a version's own file: out/versions/v<N>.mp4, or out/<name>.mp4 for an export from before versions
+    const entry = p.versions({ shown: true }).find((x) => x.v === Number(m[1]));
+    const f = entry ? join(p.dir, entry.file) : "";
+    if (!entry || !existsSync(f)) return c.text("no such version", 404);
     return fileResponse(f, c.req.header("range"));
   });
   app.get("/api/p/:id/proxy.mp4", (c) => {
