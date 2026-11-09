@@ -4,6 +4,7 @@ import { Registry } from "./registry.ts";
 
 export * from "./align.ts";
 export * from "./assist.ts";
+export * from "./constants.ts";
 export * from "./defs.ts";
 export * from "./drafts.ts";
 export * from "./parts.ts";

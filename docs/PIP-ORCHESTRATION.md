@@ -24,6 +24,8 @@ Places where this spec departs from the person's brief are marked **Changed from
 | `packages/crew/src/plan/store.ts` | `runs/plan.json`, `runs/plan.jsonl`, views, the `plan` events **(added in P1a)** |
 | `packages/crew/src/plan/import.ts` | The logo import: a small PNG reader, a box downscale, the quantize **(added in P1a)** |
 | `packages/crew/src/plan/route.ts` | The one change router, `routeChange` (§1.12) **(added in v0.3)** |
+| `packages/crew/src/plan/classify.ts` | The change tiers, `classifyChange` and `changeKinds` (§1.12) **(added in v0.5.2)** |
+| `packages/tools/src/constants.ts` | A code scene's named constants: `constantsOf`, `setConstants` (§1.12) **(added in v0.5.2)** |
 | `packages/tools/src/words.ts` | `cutWords`, `plainText` (§1.14) **(added in v0.3)** |
 | `apps/server/src/build.ts` | The stale web build check (§1.15) **(added in v0.3)** |
 
@@ -611,6 +613,20 @@ In P5, G3's "Change something" always went to the Animator while Pip sent the sa
   - `closeClaims` runs when a task ends done or skipped (the executor's status hook) and after each revision: when every task of a claim is done, skipped or dropped, its notes become `done`. A failed task keeps them open for the retry. This is the one place a person's note closes for good; the handlers only mark a claimed note `picked_up` (`handled`), and close the crew's own notes and unclaimed ones as before.
   - The run-end re-trigger starts a change only for open notes of the person's made during the run that no revision claimed (and not the run's own change).
 - **Auto skips the leftover G3.** At `involvement: "auto"`, `rough()` logs the Reviewer's leftover blockers on the changed scenes and passes G3 (and the export follows). At `key` and `every` it asks, as before.
+
+- **Tiers: what a change costs** (v0.5.2, after the P8 run). In P8 one note cost about $5.50 because four code scenes were rewritten from scratch, and "make it day" was carded as a $1.76-2.66 re-plan although setting `canvas.time` alone made every scene day. `classifyChange(note, doc, { source })` (`plan/classify.ts`, pure, no model) gives every note one of four tiers, the scenes it touches and one sentence on how. `source` reads a code scene's current bundle.
+
+  | Tier | Cost | When | Example |
+  |---|---|---|---|
+  | `edit` | $0, Pip makes it in the same turn | the time of day when every code scene reads `TIME` (or calls `skyGradient()`); a caption or cue's words; a recipe scene's position, size, timing or cast; a code scene's named constants (`LOGO_Y`, `HOLD_END`, `CAST`); the whole video's pace by rule | "make it in daytime", "fix the typo in cue 3", "move the logo up a bit", "slower", "hold the end longer" |
+  | `tune` | the Animator's tune | a recipe scene that needs judgement ("feel livelier", "smoother") | "make the walk in feel livelier" |
+  | `code_patch` | `scene.patch` calls | a code scene change beyond its constants: the Scene Coder patches the current code | "take the extra gamer out of every scene", "put the logo on the castle's own flag" |
+  | `replan` | a re-board | add, cut or reorder scenes, a new beat, new art | "add a scene about our users" |
+
+  - **Which scenes.** A named scene (`target.scene`, or "scene 3" in the words); else the scenes whose title, beat, assets, recipe params or code show the most of what the note names ("the castle's own flag" is the scene with a castle and a flag, not every scene with the logo); "every scene" with a subject is every scene that has it; with none, every scene, the end card included.
+  - **The pace by rule.** "slower": `script.timing.wps` × 0.85 and `pause` + 0.1; "faster": × 1.15 and − 0.1; "hold the end longer": `composition.endHold` + 2 s. A narrated video (timing `aligned`) keeps its pace from the voice, so "slower" there isn't an edit.
+  - **Check first, by rule.** A time of day only patches the code scenes that don't read `TIME`; "take X out" only touches the scenes that have X. A scene without named constants is a `code_patch`, never a guessed edit.
+  - `changeKinds(c)` is the model calls a tier costs (the gateway's estimate kinds): none for an edit, `scene.patch` ×2 per code scene, `scene.tune` ×2 per recipe scene, one review.
 
 ### 1.13 The crew knows its tools (v0.3, after the P5 run)
 
