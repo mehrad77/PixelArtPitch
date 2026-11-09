@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 maxOut: 24000
 effort: high
 ---
@@ -18,7 +18,9 @@ The beat of scene "{{scene}}" ({{from}}-{{to}} s):
 The strip below shows six frames of the scene, left to right, top to bottom, at {{times}} s.
 Check: does it show the beat, in order and on time? Is each thing readable at 1x (silhouette, contrast against the
 night)? Anything clipped, overlapping, crowded, in the caption zone or a placeholder box? Does motion settle and hold
-long enough to read?
+long enough to read? Does every character that moves walk (run frames, facing where it goes, drawn with walk())?
+Does a counted list show numbered slots, a finale fly the logo with flag(), and the end card's final hold show the
+logos, PRESS START and the URL together?
 {{lints}}
 
 The code now:

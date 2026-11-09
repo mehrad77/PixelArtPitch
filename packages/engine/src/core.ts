@@ -365,4 +365,8 @@ export const ENGINE_EXPORTS = [
   "step",
   "prog",
   "rnd",
+  // the kit (kit.ts): drawn with the functions above
+  "walk",
+  "flag",
+  "slots",
 ] as const;

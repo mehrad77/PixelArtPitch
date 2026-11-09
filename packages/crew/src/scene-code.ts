@@ -3,6 +3,7 @@
 // candidate bundle in the sandbox, probes what it draws and renders its stills, without touching the project.
 import { readFileSync } from "node:fs";
 import { createEngine, ENGINE_EXPORTS } from "@pap/engine/core";
+import { withKit } from "@pap/engine/kit";
 import { type CodeProbe, type Lint, lintBundleSource, lintCodeProbes } from "@pap/engine/lints";
 import { encodePng, type LoadedProject, openRenderer, png, type Renderer } from "@pap/render";
 import { type ProjectT, resolveTimeline, SfxType } from "@pap/schema";
@@ -91,6 +92,10 @@ export const ENGINE_DOC: Record<(typeof ENGINE_EXPORTS)[number], string> = {
   step: "round v to a multiple of n (whole pixels: step(x))",
   prog: "0..1 progress of t through [a, b], clamped",
   rnd: "deterministic noise in 0..1 from an integer i (the only randomness allowed)",
+  walk: "a character walking: walk(id, { x0, x1, y = 148, t0, t1, t, fps = 8, scale, face }) draws idle before t0 and after t1 and run0-run3 between, one step per 32/fps px so the feet never slide, turned to face its travel; x is the feet centre; returns { x, frame, facing, box }. Every walk, run or stroll is walk(): never hand-roll a run cycle or flip by hand",
+  flag: "a flag flying a logo: flag(id, { x, y = 148, pole = 96, t, up = 1 }) draws the pole at x, a green cloth the logo's big frame plus 8 px with a 1 px light ring, its tail rippling; up 0..1 raises it (prog(t, a, b)); returns the cloth box. A castle or goal-flag finale flies the product's logo with it",
+  slots:
+    "numbered slots for a counted list: slots(n, { x, y, w = 48, h = 40, gap = 8, filled, t }) draws n panels in a row numbered 1..n, green once filled; filled is a count or the time each slot fills (a 0.3 s flash); returns [{ i, x, y, w, h, on }] to draw each item inside",
 };
 
 /** one line per name in "pap:timeline" (timelineModule's keys plus S and E); a test keeps it equal */
@@ -123,7 +128,10 @@ function signature(name: string, v: unknown) {
 
 /** the engine and timeline API a bundle gets, one line each, from the real exports */
 export function apiSheet() {
-  const e = createEngine({ colours: { P: "#ffffff" }, sky: "#000000", assets: new Map() }) as Record<string, unknown>;
+  const e = withKit(createEngine({ colours: { P: "#ffffff" }, sky: "#000000", assets: new Map() })) as Record<
+    string,
+    unknown
+  >;
   const missing = ENGINE_EXPORTS.filter((k) => !(k in ENGINE_DOC));
   if (missing.length) throw new Error(`ENGINE_DOC lacks ${missing.join(", ")}`);
   const eng = ENGINE_EXPORTS.map((k) => `- ${signature(k, e[k])}: ${ENGINE_DOC[k]}`);
@@ -131,8 +139,17 @@ export function apiSheet() {
   return `import { … } from "pap:engine":\n${eng.join("\n")}\n\nimport { … } from "pap:timeline":\n${tl.join("\n")}`;
 }
 
-/** the public example bundle the prompt shows (written for PAP; it uses only library assets) */
-export const exampleBundle = () => readFileSync(new URL("../prompts/scene-coder/example.mjs", import.meta.url), "utf8");
+/** the public example bundles the prompt shows (written for PAP; they use only library assets), one after another */
+export const EXAMPLES = [
+  ["example.mjs", "a scene: a walk-in and a beat per cue"],
+  ["example-slots.mjs", "a counted list: numbered slots that fill one per cue"],
+  ["example-finale.mjs", "the end card: a logo flag and the final hold"],
+] as const;
+export const exampleBundle = () =>
+  EXAMPLES.map(([file, what], i) => {
+    const src = readFileSync(new URL(`../prompts/scene-coder/${file}`, import.meta.url), "utf8").trim();
+    return i ? `// ===== another example, ${what} =====\n${src}` : src;
+  }).join("\n\n");
 
 // ---------------------------------------------------------------- the trial render
 
@@ -219,7 +236,8 @@ export async function trialRender(
         return { ...empty, errors };
       }
     }
-    for (const l of lintCodeProbes(sceneId, probes, { captions: lp.doc.composition.captions.enabled }))
+    const walkers = [...assets].filter(([, f]) => f.includes("run0") || f.includes("move0")).map(([n]) => n);
+    for (const l of lintCodeProbes(sceneId, probes, { captions: lp.doc.composition.captions.enabled, walkers }))
       (l.severity === "error" ? errors : warnings).push(lintLine(l));
     let sfx = false;
     if (wantsSfx)

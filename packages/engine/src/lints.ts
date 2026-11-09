@@ -641,6 +641,7 @@ export type CodeProbe = {
     | { kind: "panel"; x: number; y: number; w: number; h: number }
     | { kind: "missing-asset"; name: string }
     | { kind: "missing-frame"; name: string; frame: string }
+    | { kind: "sprite"; name: string; frame: string; x: number; y: number }
   )[];
 };
 /** a draw this slow is a repair: the sandbox stops a frame at 250 ms, and a slower machine renders the export */
@@ -651,7 +652,18 @@ export const CODE_DRAW_MS = 150;
  * a frame asked of an asset the project lacks (a placeholder box) or of a frame name it lacks, and a slow draw.
  * Each rule is reported once, at its first frame.
  */
-export function lintCodeProbes(scene: string, probes: CodeProbe[], o: { captions?: boolean } = {}): Lint[] {
+/** a frame a walking character must not glide on: standing, waving or holding something out */
+const STILL_FRAME = /^(idle\d*|wave|give)$/;
+
+/**
+ * `walkers` are the assets with a run (or move) cycle: one that moves 2 px or more the same way across three probed
+ * frames while it shows only idle or wave frames is gliding, a hand-rolled walk (walk() steps it).
+ */
+export function lintCodeProbes(
+  scene: string,
+  probes: CodeProbe[],
+  o: { captions?: boolean; walkers?: Iterable<string> } = {},
+): Lint[] {
   const out: Lint[] = [];
   const seen = new Set<string>();
   const add = (key: string, l: Omit<Lint, "scene">) => {
@@ -703,7 +715,7 @@ export function lintCodeProbes(scene: string, probes: CodeProbe[], o: { captions
             message: `"${b.text}" reaches y=${b.y + b.h}, into the caption zone (below y=${CAPTION_TOP})`,
             fix: `move it up so it ends above y=${CAPTION_TOP}`,
           });
-      } else if (o.captions !== false && b.y + b.h > CAPTION_TOP + 2 && b.y < 180)
+      } else if (b.kind === "panel" && o.captions !== false && b.y + b.h > CAPTION_TOP + 2 && b.y < 180)
         add(`panel:${b.x},${b.y}`, {
           rule: "caption-zone",
           severity: "error",
@@ -711,6 +723,27 @@ export function lintCodeProbes(scene: string, probes: CodeProbe[], o: { captions
           message: `a panel at ${b.x},${b.y} ${b.w}x${b.h} reaches into the caption zone (below y=${CAPTION_TOP})`,
           fix: `move it up so it ends above y=${CAPTION_TOP}`,
         });
+    }
+  }
+  for (const name of new Set(o.walkers ?? [])) {
+    const seen = probes.flatMap((p) => {
+      const b = p.boxes.find((x) => x.kind === "sprite" && x.name === name);
+      return b?.kind === "sprite" ? [{ t: p.t, x: b.x, frame: b.frame }] : [];
+    });
+    for (let i = 2; i < seen.length; i++) {
+      const [a, b, c] = [seen[i - 2], seen[i - 1], seen[i]];
+      const d1 = b.x - a.x;
+      const d2 = c.x - b.x;
+      if (Math.abs(d1) < 2 || Math.abs(d2) < 2 || Math.sign(d1) !== Math.sign(d2)) continue;
+      if (![a, b, c].every((s) => STILL_FRAME.test(s.frame))) continue;
+      add(`glide:${name}`, {
+        rule: "walk-glide",
+        severity: "warn",
+        t: r2(b.t),
+        message: `${name} moves from x=${a.x} to x=${c.x} while it shows only ${[...new Set([a.frame, b.frame, c.frame])].join("/")}: it glides instead of walking`,
+        fix: `draw it with walk("${name}", { x0, x1, y, t0, t1, t }), which steps run0-run3 with the distance and faces its travel`,
+      });
+      break;
     }
   }
   return out;

@@ -8,7 +8,7 @@ Read first: [STYLE-GUIDE.md](../STYLE-GUIDE.md), [RECIPES.md](../RECIPES.md) (to
 - Again as a redo (round 2 or 3) when the Reviewer or the person sends a note on a code scene: the note comes to you.
 
 ## Inputs
-- The brief, the scene's `beat`, its cues with their `S()`/`E()` times, its `assets` with frame names and sizes, the palette letters, the engine API sheet (generated from `pap:engine` and `pap:timeline`), one example bundle, the sandbox rules, and the open notes on the scene.
+- The brief, the scene's `beat`, its cues with their `S()`/`E()` times, its `assets` with frame names, sizes, which way each character faces and a one-line description, the palette letters, the engine API sheet (generated from `pap:engine` and `pap:timeline`), three example bundles (a walk-in, a counted list, an end card), the sandbox rules, and the open notes on the scene.
 - Over MCP: `project_get` `scene:<id>` and `all`, `timeline_get`, `library_get`, `render_still`.
 
 ## Outputs (patch scope and tools)
@@ -30,11 +30,16 @@ Read first: [STYLE-GUIDE.md](../STYLE-GUIDE.md), [RECIPES.md](../RECIPES.md) (to
 ## How to work
 1. Read the beat. Draw what it says, where and when it says.
 2. Write the smallest bundle: `export function draw(t) { … }` for the scene window only. Time every beat from the script: `S("c05")`, `E("c05")` or the scene's window (`SCENES.find((s) => s.id === "<id>")`), never a raw second.
-3. Keep the style rules: palette letters only, one text, the caption zone clear (the host draws captions unless `fullFrame` is set; prefer `fullFrame: false`).
-4. Derive SFX from the same constants as the motion, in `sfxEvents()`.
-5. Register it: add `{ "id", "file": "code/<id>.mjs", "fullFrame": false, "sfx": true }` to `/code`, and set the scene to `{ "kind": "code", "bundle": "<id>" }`.
-6. The crew loads it in a trial sandbox, probes 12 frames and renders stills at the start, middle and end. A load or draw error, text off the frame or in the caption zone, a placeholder box (an asset or frame the project lacks), a draw over 150 ms or bad `sfxEvents()` comes back as a repair, at most 2 rounds. Then `reviewRounds` critique rounds on a 6-frame strip: return the whole revised module, or the same one with "ship" in `notes`. A round that breaks loading is dropped.
-7. If no version loads, the stub stays and a note says so; the run goes on.
+3. Use the kit in `pap:engine`:
+   - Every character that moves is `walk(id, { x0, x1, y, t0, t1, t })`. It steps run0-run3 one step per 4 px (at `fps` 8), so the feet never slide, and turns the art to face its travel by the asset's `facing`. A character standing still is `walk()` with `x0 = x1` and `face`. Never flip one by hand (`faceTo(id, dir)` gives the flip when you need it).
+   - A counted list ("three things") is `slots(n, { x, y, w, h, filled, t })`: n numbered panels that fill one per cue, each with its item drawn inside the box it returns.
+   - A castle or goal-flag finale flies the product's logo: `flag(logo, { x, y, pole: 96, t, up })`. It draws the logo's 32×32 `big` frame on a green cloth 8 px larger, with a light ring and a rippling tail.
+   - The end card's final hold shows the logos, PRESS START and the URL together, from the last cue to the end.
+4. Keep the style rules: palette letters only, one text, the caption zone clear (the host draws captions unless `fullFrame` is set; prefer `fullFrame: false`).
+5. Derive SFX from the same constants as the motion, in `sfxEvents()`.
+6. Register it: add `{ "id", "file": "code/<id>.mjs", "fullFrame": false, "sfx": true }` to `/code`, and set the scene to `{ "kind": "code", "bundle": "<id>" }`.
+7. The crew loads it in a trial sandbox, probes 12 frames and renders stills at the start, middle and end. A load or draw error, text off the frame or in the caption zone, a placeholder box (an asset or frame the project lacks), a draw over 150 ms or bad `sfxEvents()` comes back as a repair, at most 2 rounds. A character with a run cycle that moves 2 px or more over three probed frames on only idle or wave frames is a `walk-glide` warning (draw it with `walk()`). Then `reviewRounds` critique rounds on a 6-frame strip: return the whole revised module, or the same one with "ship" in `notes`. A round that breaks loading is dropped.
+8. If no version loads, the stub stays and a note says so; the run goes on.
 
 ## Stop conditions
 - The scene renders without a sandbox error, the stills pass REVIEW-RUBRICS §3, and the golden test still passes if the project has one.
@@ -63,3 +68,5 @@ Read first: [STYLE-GUIDE.md](../STYLE-GUIDE.md), [RECIPES.md](../RECIPES.md) (to
 - Using `Math.random` for stars (breaks byte-exact renders). Use a seeded hash of the index.
 - Sub-pixel positions that shimmer at ×6.
 - Drawing into the caption zone.
+- A hand-rolled walk: a run cycle on a clock over an eased move (the feet slide), or an idle frame sliding across. Use `walk()`.
+- Flipping a character by hand: drawn heroes face right and library NPCs left; `walk()` and `faceTo()` read the asset's `facing`.

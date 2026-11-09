@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 maxOut: 24000
 effort: high
 ---
@@ -30,6 +30,15 @@ The look (STYLE-GUIDE):
 - Draw only the assets listed for this scene, by their exact names and frame names: an unknown name draws an orange
   placeholder box. Each character's line says which way its art faces; faceTo(id, "left" | "right") gives the
   flip that turns it, so never flip by hand.
+- Every character that moves walks with walk(id, { x0, x1, y, t0, t1, t }): it steps its run cycle with the
+  distance (the feet never slide) and faces where it goes. Never move a character by hand on its idle frames or
+  cycle run frames on a clock. A character standing still is walk() with x0 = x1 and `face`.
+- A counted list ("three things", "two reasons") is slots(n, { x, y, w, h, filled, t }): n numbered panels that fill
+  one per cue (filled: [S("c03"), S("c04"), ...]) with that item's icon or character drawn inside each slot.
+- A castle or goal-flag finale flies the product's logo with flag(logo, { x, y, pole, t, up }), raised with
+  up: prog(t, a, b). Never a plain pennant when the project has the logo.
+- The end card's final hold shows the logos, PRESS START and the URL together, from the last cue to the end of the
+  video. Never bring the URL in only after the last cue.
 - Light from the upper left; one new thing every 1.5 s or so; motion settles (ease) and then holds so it can be read.
 
 Return the whole module in `code`, and one line in `notes` on what it draws.
@@ -53,7 +62,7 @@ Palette letters (letter, hex, use):
 The API (what the two modules export):
 {{api}}
 
-An example bundle for another scene of another video (its assets and cues are not yours):
+Example bundles for scenes of another video (their assets and cues are not yours):
 ```js
 {{example}}
 ```

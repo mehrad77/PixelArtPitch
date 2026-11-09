@@ -9,6 +9,7 @@ import vm from "node:vm";
 import { type ComposeCtx, captions, dissolving, sceneAt, transitions } from "@pap/engine/compose";
 import { createEngine, ENGINE_EXPORTS, type Engine, type Frames } from "@pap/engine/core";
 import { type CompiledScene, drawDecl } from "@pap/engine/decl";
+import { withKit } from "@pap/engine/kit";
 
 export type InitMsg = {
   cmd: "init";
@@ -34,7 +35,8 @@ export type ProbeBox =
   | { kind: "text"; text: string; x: number; y: number; w: number; h: number }
   | { kind: "panel"; x: number; y: number; w: number; h: number }
   | { kind: "missing-asset"; name: string }
-  | { kind: "missing-frame"; name: string; frame: string };
+  | { kind: "missing-frame"; name: string; frame: string }
+  | { kind: "sprite"; name: string; frame: string; x: number; y: number };
 type Msg =
   | InitMsg
   | { cmd: "frames"; from: number; to: number; fps: number; hold: number; id: number }
@@ -50,9 +52,11 @@ const bundles = new Map<string, Bundle>();
 const send = (m: unknown) => process.send!(m);
 
 let probeLog: ProbeBox[] = [];
-/** the engine a probed bundle sees: the same functions, with text, panel and frame recording their boxes first */
+/** the engine a probed bundle sees: the same functions, with text, panel and frame recording their boxes first, and
+ * sprite recording which asset frame it drew where (the walk check) */
 function probed(e: Engine): Engine {
   const num = (v: unknown, d = 0) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+  const origin = new WeakMap<object, { name: string; frame: string }>();
   return {
     ...e,
     text(str: string, x: number, y: number, opts: any = {}) {
@@ -70,7 +74,14 @@ function probed(e: Engine): Engine {
       const a = e.asset(name);
       if (!a) probeLog.push({ kind: "missing-asset", name: String(name) });
       else if (!(f in a)) probeLog.push({ kind: "missing-frame", name: String(name), frame: String(f) });
-      return e.frame(name, f, fallback);
+      const rows = e.frame(name, f, fallback);
+      if (a && f in a && rows && typeof rows === "object") origin.set(rows, { name: String(name), frame: String(f) });
+      return rows;
+    },
+    sprite(rows: any, x: number, y: number, opts?: any) {
+      const o = rows && typeof rows === "object" ? origin.get(rows) : undefined;
+      if (o) probeLog.push({ kind: "sprite", ...o, x: Math.round(num(x)), y: Math.round(num(y)) });
+      return e.sprite(rows, x, y, opts);
     },
   };
 }
@@ -80,7 +91,7 @@ async function loadBundle(b: InitMsg["bundles"][number]): Promise<Bundle> {
     name: `pap:bundle/${b.id}`,
     codeGeneration: { strings: false, wasm: false },
   });
-  const api = init.probe ? probed(engine) : engine;
+  const api = withKit(init.probe ? probed(engine) : engine);
   const engineMod = new vm.SyntheticModule(
     [...ENGINE_EXPORTS],
     function (this: vm.SyntheticModule) {
