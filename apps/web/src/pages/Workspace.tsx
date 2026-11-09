@@ -22,6 +22,7 @@ import { askedByGate, isStaleDigest } from "../lib/human.ts";
 import { usePipOpenRequest } from "../lib/pip.ts";
 import { usePlayback } from "../lib/playback.ts";
 import type { NoteStatus, NoteTarget, ProjectState, Role, Stage } from "../lib/types.ts";
+import { playUrl } from "../lib/versions.ts";
 import "./Workspace.css";
 
 type Tab = "crew" | "stage" | "inbox" | "notes" | "changes";
@@ -264,7 +265,7 @@ function Workspace({
           projectId={id}
           state={state}
           pb={pb}
-          proxy={view.proxy}
+          proxy={playUrl(state, view.proxy)}
           overlays={overlays}
           setOverlays={setOverlays}
           compare={compare}

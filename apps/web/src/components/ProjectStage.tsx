@@ -25,6 +25,7 @@ import {
   PART_STAGE,
   PART_WORD,
   partDetail,
+  playUrl,
   versionLineOf,
   versionWords,
 } from "../lib/versions.ts";
@@ -340,7 +341,7 @@ function Stage({
             projectId={projectId}
             state={state}
             pb={pb}
-            proxy={view.proxy}
+            proxy={playUrl(state, view.proxy)}
             overlays={NO_OVERLAYS}
             setOverlays={() => {}}
             compare={false}

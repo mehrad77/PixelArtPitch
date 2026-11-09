@@ -44,6 +44,17 @@ export const partsLabel = (parts: PartLike[]) => parts.map(partLabel).join(", ")
 export const latestVersion = (versions: Version[] | undefined) =>
   (versions ?? []).reduce<Version | null>((m, v) => (!m || v.v > m.v ? v : m), null);
 
+/**
+ * What the player plays with sound: the latest version while it is up to date (the Video part is ready), else the
+ * rough cut's proxy, else nothing (frames, silent). A change in progress keeps the proxy or frames, which show it.
+ */
+export function playUrl(s: ProjectState, proxy: string | null): string | null {
+  const last = latestVersion(s.versions);
+  const video = s.parts?.parts.find((p) => p.id === "video");
+  if (last?.url && video?.state === "ready") return last.url;
+  return proxy;
+}
+
 /** a version exists (an older server sends no versions: its exported video counts) */
 export const hasVersion = (s: ProjectState) =>
   s.versions ? s.versions.length > 0 : s.files.some((f) => f.kind === "video");

@@ -6,7 +6,7 @@ import { hasVersionIdle, humanStatus, needsNarration } from "../src/lib/human.ts
 import { kindOf } from "../src/lib/projects.ts";
 import { applyEvent } from "../src/lib/reducer.ts";
 import type { Part, ProjectState, ProjectSummary, Version } from "../src/lib/types.ts";
-import { exportLabel, partDetail, partsLabel, versionLineOf, versionWords } from "../src/lib/versions.ts";
+import { exportLabel, partDetail, partsLabel, playUrl, versionLineOf, versionWords } from "../src/lib/versions.ts";
 
 const part = (id: Part["id"], state: Part["state"], done = state === "ready" ? 1 : 0, of = 1): Part => ({
   id,
@@ -168,4 +168,18 @@ test("a mock-shaped journey: export → v1 → a change → Making v2 · v1 stil
   s = applyEvent(s, { event: "x-state", data: { crew: { state: "idle" } as never } });
   s = applyEvent(s, { event: "parts", data: { parts: [...fourReady, part("video", "ready")], next: null } });
   assert.equal(line(s), "v2 · exported 3 Nov · up to date");
+});
+
+test("the player plays the latest version while it is up to date, else the proxy", () => {
+  const ready = state({
+    parts: { parts: [...fourReady, part("video", "ready")], next: null },
+    versions: [version(1), version(2)],
+  });
+  assert.equal(playUrl(ready, "/api/p/x/proxy.mp4"), "/api/p/x/versions/2.mp4");
+  const older = state({
+    parts: { parts: [...fourReady, part("video", "stale")], next: "review" },
+    versions: [version(1)],
+  });
+  assert.equal(playUrl(older, "/api/p/x/proxy.mp4"), "/api/p/x/proxy.mp4");
+  assert.equal(playUrl(state(), null), null);
 });
