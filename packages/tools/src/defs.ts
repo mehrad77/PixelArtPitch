@@ -20,6 +20,7 @@ import {
 import { Brief, Cue, PatchOp, type ProjectT, type RoleT, SfxType, TimeExpr } from "@pap/schema";
 import { z } from "zod";
 import { fitRuns, speechRuns } from "./align.ts";
+import { constantsOf } from "./constants.ts";
 import { defineTool, fail, ok, QuestionInput, type ToolContext } from "./registry.ts";
 import type { OpenProject } from "./store.ts";
 
@@ -27,6 +28,17 @@ const b64 = (u: Uint8Array) => Buffer.from(u).toString("base64");
 const pngImg = (data: Uint8Array, caption?: string) => ({ mediaType: "image/png" as const, data, caption });
 const author = (ctx: ToolContext) => ctx.author;
 const P = (ctx: ToolContext) => ctx.project!;
+/** a code bundle's named constants, NAME -> value ({} when it has none or can't be read) */
+function codeConstants(p: OpenProject, bundle: string) {
+  const e = p.doc().code.find((c) => c.id === bundle);
+  try {
+    return e
+      ? Object.fromEntries(constantsOf(readFileSync(join(p.dir, e.file), "utf8")).map((c) => [c.name, c.value]))
+      : {};
+  } catch {
+    return {};
+  }
+}
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 
 // ---------------------------------------------------------------- projects
@@ -93,6 +105,8 @@ export const projectGet = defineTool({
           to: s.to,
           seconds: [+tl.scenes[k].from.toFixed(2), +tl.scenes[k].to.toFixed(2)],
           recipes: s.kind === "decl" ? s.recipes.map((r) => r.id) : [],
+          // a code scene's named constants: what code_set_constants can change with no model call
+          ...(s.kind === "code" ? { constants: codeConstants(P(ctx), s.bundle) } : {}),
         })),
         duration: +tl.duration.toFixed(2),
         assets: d.assets.map((a) => a.id),
@@ -105,7 +119,7 @@ export const projectGet = defineTool({
         return fail("not_found", `no scene ${i.section.slice(6)}`, {
           fix: `scenes: ${d.scenes.map((x) => x.id).join(", ")}`,
         });
-      data = s;
+      data = s.kind === "code" ? { ...s, constants: codeConstants(P(ctx), s.bundle) } : s;
     } else data = (d as any)[i.section];
     return ok({ rev: d.rev, data });
   },

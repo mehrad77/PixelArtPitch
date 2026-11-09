@@ -6,6 +6,7 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 
 ### Crew
 - **Every change has a tier.** `classifyChange` sorts a note into `edit` (free: Pip does it), `tune`, `code_patch` or `replan`, with the scenes it touches. "Make it in daytime" is a free edit when every code scene draws its sky from `TIME`; "move the logo up a bit" is an edit of the scene's `LOGO_Y`; "take the extra gamer out of every scene" patches only the scenes that have the gamer; only a story change re-plans.
+- **Two edits with no model call.** `look_set_time` sets the time of day; `code_set_constants` changes a code scene's named constants after a trial render, and a value that fails it changes nothing. `project_get` lists each code scene's constants.
 
 ### Studio
 - **One timeline for Pip's thread and the milestones.** The simple view's separate "Milestones" column is gone: milestones sit among the turns, newest first, on one spine with a dot per entry (a turn hangs its framed block off its dot, a milestone is one quiet line, the newest dot is lit). The three newest milestones always show; a longer run between two turns keeps its first and folds the rest into "N more milestones", which expands in place. The timeline sits on the page, with no panel behind it.

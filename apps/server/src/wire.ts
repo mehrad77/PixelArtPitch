@@ -18,8 +18,10 @@ import {
 } from "@pap/crew/llm/index";
 import { Crew } from "@pap/crew/orchestrator";
 import { routeChange } from "@pap/crew/plan/route";
+import { trialRender } from "@pap/crew/scene-code";
 import { setUserLibrary } from "@pap/render";
 import {
+  codeSetConstantsTool,
   crewRequestChangeTool,
   DraftStore,
   defineTool,
@@ -195,6 +197,8 @@ export async function wireCrew(deps: {
       (p, note, extra) => crew.requestChange(p, note, extra),
       (n) => routeChange(n),
     ),
+    // Pip's free edit of a code scene's named constants, checked in the Scene Coder's trial sandbox
+    codeSetConstantsTool((lp, scene, source) => trialRender(lp, scene, source)),
   );
   const pip = new Pip({
     workspace: deps.workspace,

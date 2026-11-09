@@ -26,6 +26,7 @@ import {
   STAGES,
   type Stage,
   StoreError,
+  setTimeOfDay,
   type Task,
   type ToolContext,
   type Workspace,
@@ -5153,7 +5154,6 @@ export class Crew {
    * re-coded after it with the note (scene.code). A cue that still says the old time gets one line from Pip.
    */
   private async lookTime(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
-    const d = p.doc();
     const notes = (r.change?.notes ?? [])
       .map((id) => p.state.notes.find((n) => n.id === id))
       .filter((n): n is Note => !!n && !!timeAsked(n.text));
@@ -5166,31 +5166,21 @@ export class Crew {
       title: `Setting the video at ${words[want]}`,
       ...this.ptOf(pt),
     });
-    const was = (d.canvas as { time?: string }).time ?? "night";
-    if (was === want) {
+    const set = await setTimeOfDay(p, want, { kind: "agent", role: "director", task: t.id });
+    if (!set.changed) {
       this.done(p, t, { summary: `it is already ${words[want]}` });
       p.log(t.id, { kind: "step", title: `The video is already set at ${words[want]}` });
       return { status: "done", note: `nothing was changed: already ${words[want]}` };
     }
-    await p.patch(
-      // the time only: a built-in palette follows it (paletteFor)
-      [{ op: "add", path: "/canvas/time", value: want }],
-      {
-        reason: `the person's change: the video is set at ${words[want]}`,
-        author: { kind: "agent", role: "director", task: t.id },
-      },
-    );
-    const codes = new Set(d.scenes.filter((s) => s.kind === "code" && s.beat).map((s) => s.id));
+    const codes = new Set(r.change?.scope ?? []);
     r.done.time = want;
     // the cue that says the old time ("Night falls.") is the person's words: Pip says so, once
-    const old = want === "night" ? /\b(sun|sunny|day|daylight|sunset|dusk)\b/i : /\bnight\b/i;
-    const cue = d.script.cues.find((c) => old.test(c.text));
-    if (cue) {
-      r.done.timeCue = `Cue ${d.script.cues.indexOf(cue) + 1} still says "${cue.text}" Tell me if its words should change too.`;
-      p.log(t.id, { kind: "step", title: `${cue.id} still says "${cue.text}"` });
+    if (set.cue) {
+      r.done.timeCue = set.cue.line;
+      p.log(t.id, { kind: "step", title: `${set.cue.id} still says the old time` });
     }
     this.done(p, t, {
-      summary: `set at ${words[want]}${codes.size ? `; ${codes.size} code ${codes.size === 1 ? "scene is" : "scenes are"} re-coded with the note` : ""}`,
+      summary: `set at ${words[want]}${codes.size ? `; ${codes.size} code ${codes.size === 1 ? "scene is" : "scenes are"} patched (a fixed sky)` : ""}`,
     });
     return { status: "done" };
   }
