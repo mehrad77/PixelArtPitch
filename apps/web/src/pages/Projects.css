@@ -115,16 +115,18 @@
   border-radius: var(--radius);
   background: var(--surface-raised);
 }
-/* the "⋯" shows on hover or focus; it never leaves the tab order */
-.pcard-tools [data-shab-menu] {
+/* the "⋯" shows on hover or focus, and stays while its menu is open; it never leaves the tab order. Only the trigger
+   fades: the menu's items carry [data-shab-menu] too, and once hidden with it an open menu showed an empty box. */
+.pcard-tools .menu-trigger {
   opacity: 0;
 }
-.pcard:hover .pcard-tools [data-shab-menu],
-.pcard:focus-within .pcard-tools [data-shab-menu] {
+.pcard:hover .pcard-tools .menu-trigger,
+.pcard:focus-within .pcard-tools .menu-trigger,
+.pcard-tools .menu:has(:popover-open) .menu-trigger {
   opacity: 1;
 }
 @media (hover: none) {
-  .pcard-tools [data-shab-menu] {
+  .pcard-tools .menu-trigger {
     opacity: 1;
   }
 }
