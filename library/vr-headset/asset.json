@@ -1,0 +1,63 @@
+{
+ "id": "vr-headset",
+ "version": 1,
+ "kind": "icon",
+ "w": 16,
+ "h": 16,
+ "frames": [
+  "icon"
+ ],
+ "palette": "pap-night@1",
+ "tags": [
+  "icon"
+ ],
+ "description": "16x16 icon, frame 'icon', transparent background, 1 px k outline all round. Front view of a VR headset. Strap: a 2 px band on rows 6-7 sticks out as stubs at cols 0-1 and 14-15. It is Y, with a q top row on the left stub and an f bottom edge. Body: a wide rounded rectangle at cols 2-13, rows 4-11, with 1 px cut corners. The shell is F, with a 1 px q highlight on the top edge and the upper-left corner (light from the upper left). The right and bottom inner edges are f. Visor: an inset panel at cols 4-11, rows 6-9, filled f, with a k rim and a q seam line along its top. Nose notch: k pixels at cols 7-8, row 11. Lens glints: each eye has a 2x1 E streak on row 7, at cols 5-6 and 9-10, with one C pixel below the left end of each streak. The left glint also gets one p pixel at its top-left. The body is about 3/4 of the width and half the height. Chunky and readable at 1x, flat items-icon style. No text or logos.",
+ "licence": "LicenseRef-PAP-Library",
+ "rights": {
+  "likeness": false,
+  "brand": false,
+  "trademark": false,
+  "public": true
+ },
+ "provenance": {
+  "source": "generated",
+  "role": "pixel-artist",
+  "model": "anthropic/claude-opus-5-5",
+  "provider": "anthropic",
+  "origin": "scrobble_hub_teaser",
+  "judgeReason": "Variant 2 has the more symmetric, compact silhouette with clear strap nubs on both sides and the two cyan lens glints read cleanly at small size. Variant 1's offset side strap pieces look uneven and less polished.",
+  "promptVersion": "pixel-artist/draw@2"
+ },
+ "hash": "eba05bb8-ad4e-45",
+ "standard": {
+  "ok": true,
+  "hard": [],
+  "soft": [
+   "Reads as a icon (16x16 icon, frame 'icon', transparent background, 1 px k outline all round. Front view of a VR headset. Strap: a 2 px band on rows 6-7 sticks out as stubs at cols 0-1 and 14-15. It is Y, with a q top row on the left stub and an f bottom edge. Body: a wide rounded rectangle at cols 2-13, rows 4-11, with 1 px cut corners. The shell is F, with a 1 px q highlight on the top edge and the upper-left corner (light from the upper left). The right and bottom inner edges are f. Visor: an inset panel at cols 4-11, rows 6-9, filled f, with a k rim and a q seam line along its top. Nose notch: k pixels at cols 7-8, row 11. Lens glints: each eye has a 2x1 E streak on row 7, at cols 5-6 and 9-10, with one C pixel below the left end of each streak. The left glint also gets one p pixel at its top-left. The body is about 3/4 of the width and half the height. Chunky and readable at 1x, flat items-icon style. No text or logos.) at 1x on the night sky.",
+   "Light comes from the upper left: right and bottom edges take the darker tone."
+  ],
+  "stats": {
+   "edge:icon": 0.76
+  }
+ },
+ "grid": {
+  "icon": [
+   "................",
+   "................",
+   "................",
+   "................",
+   "...kkkkkkkkkk...",
+   "kkkqqqqqqFFFfkkk",
+   "kqkqkpkkkkkkfkYk",
+   "kYkqkEEffEEkfkYk",
+   "kfkFkCfffCfkfkfk",
+   "kkkFkkkkkkkkfkkk",
+   "..kFfffkkffffk..",
+   "...kkkkkkkkkk...",
+   "................",
+   "................",
+   "................",
+   "................"
+  ]
+ }
+}

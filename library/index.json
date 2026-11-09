@@ -962,6 +962,26 @@
     "dash",
     "animated"
    ]
+  },
+  {
+   "id": "gamer",
+   "kind": "character",
+   "w": 16,
+   "h": 24,
+   "frames": 8,
+   "tags": [
+    "character"
+   ]
+  },
+  {
+   "id": "vr-headset",
+   "kind": "icon",
+   "w": 16,
+   "h": 16,
+   "frames": 1,
+   "tags": [
+    "icon"
+   ]
   }
  ]
 }
