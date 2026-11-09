@@ -63,6 +63,7 @@ Read first: [PAP-STANDARD.md](../PAP-STANDARD.md), [ASSET-KINDS.md](../ASSET-KIN
 ## Common mistakes
 - Rows one cell short or long. Count every row.
 - A dark-only silhouette (`k` and `K`) that vanishes on the night sky.
+- A hero or creature drawn facing left. Draw it facing **right** (its run frames lead with the face): the asset's `facing` is `"right"`, and the engine mirrors it to walk left.
 - Shading with black instead of the darker tone of the same colour group.
 - A run cycle where every frame is redrawn (it flickers; hard rule `swap`).
 - Feet floating 1 row above the bottom (hard rule `feet`).

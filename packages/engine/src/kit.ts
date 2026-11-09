@@ -103,7 +103,10 @@ export function skylineFor(rows: Rows, layer: string, time: string): Rows {
   if (time !== "day" && time !== "dusk") return rows;
   const key = `${time}:${layer}`;
   let byKey = skylineCache.get(rows);
-  if (!byKey) skylineCache.set(rows, (byKey = new Map()));
+  if (!byKey) {
+    byKey = new Map();
+    skylineCache.set(rows, byKey);
+  }
   const hit = byKey.get(key);
   if (hit) return hit;
   const map = SKYLINE_TONES[time][layer === "near" ? "near" : "far"];
