@@ -47,7 +47,7 @@ import {
   usePip,
   WORKSPACE,
 } from "../lib/pip.ts";
-import { planCrew, planDiff, planUsd, titleWords } from "../lib/plancard.ts";
+import { planCrew, planDiff, planUsd, revisionOnce, titleWords, wholeReason } from "../lib/plancard.ts";
 import { Link, navigate } from "../lib/router.tsx";
 import { cutWords, dedupeMarkers } from "../lib/text.ts";
 import { type Entry, foldRuns, type Marker, type Turn, timelineOf, trackOf, turnsOf } from "../lib/thread.ts";
@@ -236,11 +236,14 @@ function PipSaid({
 }) {
   const own = fixOfItem(it);
   const shown = it.cards.some((c) => fixOfCard(c));
+  // a plan change's reason is said once, on its card: Pip's line only frames it
+  const plan = it.cards.find((c): c is Extract<PipCard, { type: "plan" }> => c.type === "plan" && !!c.revision);
+  const text = plan ? revisionOnce(it.text, plan).text : it.text;
   return (
     <>
-      {it.text && (
+      {text && (
         <p className="pip-text" dir="auto">
-          {it.text}
+          {text}
         </p>
       )}
       {it.why && <WhyTrace why={it.why} />}
@@ -692,7 +695,11 @@ function PlanCard({
 }) {
   const [edit, setEdit] = useState(card.editable?.value ?? "");
   const [err, setErr] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
   const working = card.status === "running";
+  // a plan change: the reason once, here, in whole sentences; the effects name who comes in
+  const effects = revisionOnce("", card).effects;
+  const reason = card.revision ? wholeReason(card.detail) : { lead: card.detail, more: null };
   // a plan change shows its price as a diff, so the range of the delta isn't repeated under it
   const diff = planDiff(card);
   // the crew by role, never by department (which folds the Director into the Writer): by instance where the card
@@ -764,12 +771,21 @@ function PlanCard({
         </p>
       )}
       <p className="pip-plan-detail" dir="auto">
-        {card.detail}
+        {reason.lead}
+        {reason.more && more && <> {reason.more}</>}
+        {reason.more && (
+          <>
+            {" "}
+            <button type="button" className="linkish small" aria-expanded={more} onClick={() => setMore((x) => !x)}>
+              {more ? "less" : "more"}
+            </button>
+          </>
+        )}
       </p>
       {meta.length > 0 && <p className="small muted pip-plan-meta">{meta.join(" · ")}</p>}
-      {card.effects.length > 0 && (
+      {effects.length > 0 && (
         <ul className="pip-effects small">
-          {card.effects.map((e) => (
+          {effects.map((e) => (
             <li key={e} dir="auto">
               {e}
             </li>

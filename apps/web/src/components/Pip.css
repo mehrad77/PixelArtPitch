@@ -823,14 +823,12 @@ a.pip-file:hover {
 /* ---- the simple view's thread as turns, newest first: a turn is read top-down (your bubble at the inline end,
    Pip's reply at the inline start under it), each with its time; milestones sit between them on the same timeline
    (below) ---- */
-/* each turn is its own block: framed, read top-down, apart from the turns around it */
+/* each turn hangs off its dot on the timeline, read top-down, with no frame: the person's words keep a light bubble,
+   Pip's are plain text, and a card is the one box */
 .pip-turn {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--stroke);
-  border-radius: calc(var(--radius) * 3);
-  background: var(--surface);
+  padding-block: var(--space-1) var(--space-3);
 }
 .pip-turn-time {
   justify-self: start;
@@ -878,7 +876,7 @@ a.pip-file:hover {
 .pip-dot {
   --dot: 0.5rem;
   position: absolute;
-  /* from the entry's start edge back across the gutter to the axis (a turn's 1px border shifts it by one) */
+  /* from the entry's start edge back across the gutter to the axis */
   inset-inline-start: calc(var(--tl-axis) + var(--tl-spine) / 2 - var(--tl-gutter) - var(--dot) / 2);
   inline-size: var(--dot);
   block-size: var(--dot);
@@ -889,8 +887,7 @@ a.pip-file:hover {
 }
 .pip-turn > .pip-dot {
   --dot: 0.75rem;
-  inset-inline-start: calc(var(--tl-axis) + var(--tl-spine) / 2 - var(--tl-gutter) - var(--dot) / 2 - 1px);
-  inset-block-start: calc(var(--space-3) + 0.1em);
+  inset-block-start: var(--space-1);
   box-shadow: inset 0 0 0 2px var(--stroke-control);
 }
 .pip-milestone > .pip-dot {
@@ -984,15 +981,16 @@ a.pip-file:hover {
 .pip-turn .pip-user {
   justify-self: end;
   border-end-end-radius: var(--radius);
+  /* a light wash, no ring: enough to tell who spoke */
   background: var(--state-selected);
-  box-shadow: inset 0 0 0 1px var(--stroke-control);
   font-size: var(--step-0);
 }
+/* Pip's words are plain text on the timeline, no bubble */
 .pip-turn .pip-says {
   justify-self: start;
-  border-end-start-radius: var(--radius);
-  background: var(--surface-raised);
-  box-shadow: inset 0 0 0 1px var(--stroke);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
 /* a reply that carries a card takes the turn's width (a card sizes to its container, not its words) */
 .pip-turn .pip-says:has(.pip-card, .pip-why) {

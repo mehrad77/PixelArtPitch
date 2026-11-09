@@ -12,7 +12,7 @@ import { draftFrames, liveFrame } from "../src/lib/draft.ts";
 import { askedByGate, humanStatus, milestones, sentence, theMember } from "../src/lib/human.ts";
 import { stuckInstances, waitingInstances } from "../src/lib/instances.ts";
 import { isPick, needsItems, previewOf } from "../src/lib/needs.ts";
-import { planCrew, planDiff, planUsd, titleWords } from "../src/lib/plancard.ts";
+import { planCrew, planDiff, planUsd, revisionOnce, titleWords, wholeReason } from "../src/lib/plancard.ts";
 import { applyEvent } from "../src/lib/reducer.ts";
 import { foldRuns, timelineOf, turnsOf } from "../src/lib/thread.ts";
 import type {
@@ -448,4 +448,46 @@ test("a picked drawing names its asset; without a name it says Picked the drawin
     milestones({ ...blank(), tasks: [judge("j3", "Pick")] }).map((m) => m.text),
     ["Picked the drawing"],
   );
+});
+
+test("a plan change says its reason once, in whole words: Pip frames it, the card carries it, Adds names who", () => {
+  const reason =
+    "Pip sent load_in back to the Director: Remove recipe 4. The narration names three players. A fourth character is off-brief and is clipped at t";
+  const card = {
+    id: "c",
+    type: "plan",
+    title: "Plan change",
+    detail: reason,
+    who: [],
+    usd: [0.1, 0.2],
+    sec: null,
+    effects: [
+      `Adds Director: ${reason}`,
+      `Adds Art director: ${reason}`,
+      `Adds Animator · scene 1: ${reason}`,
+      "Changes Writer: a line of its own",
+      "The rest of the video waits for your answer: everything left needs these steps.",
+    ],
+    confirmLabel: "Go ahead",
+    revision: { rev: 2, ops: [] },
+    status: "proposed",
+  } as unknown as Extract<PipCard, { type: "plan" }>;
+  const once = revisionOnce(`The plan grew past what you approved: ${reason}`, card);
+  assert.equal(once.text, "The plan grew past what you approved.");
+  assert.deepEqual(once.effects, [
+    "Adds Director, Art director and Animator · scene 1",
+    "Changes Writer: a line of its own",
+    "The rest of the video waits for your answer: everything left needs these steps.",
+  ]);
+  const all = [once.text, ...once.effects].join(" ");
+  assert.ok(!all.includes("Remove recipe 4"), "the reason is only on the card's body");
+  // the body: whole sentences, the rest behind "more", never a cut word
+  assert.deepEqual(wholeReason(reason), {
+    lead: "Pip sent load_in back to the Director: Remove recipe 4. The narration names three players.",
+    more: "A fourth character is off-brief and is clipped at…",
+  });
+  assert.deepEqual(wholeReason("and remove the separate frees"), { lead: "and remove the separate…", more: null });
+  assert.deepEqual(wholeReason("Scene 1 goes back."), { lead: "Scene 1 goes back.", more: null });
+  // a card that is no revision keeps its words
+  assert.equal(revisionOnce("Hi", { ...card, revision: undefined }).text, "Hi");
 });

@@ -69,3 +69,39 @@ export function planCrew(card: Plan): { planner: string | null; names: string[];
     }
   return { planner, names: names.filter((n) => n !== planner), roles };
 }
+
+const GREW = "The plan grew past what you approved: ";
+const listed = (xs: string[]) => (xs.length < 2 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+const same = (a: string, b: string) => a.trim() === b.trim();
+
+/** a reason the server cut short (no closing mark): whole sentences first, the rest behind "more", never a cut word.
+ * `more` is null when nothing is held back; a cut line ends in "…" */
+export function wholeReason(text: string): { lead: string; more: string | null } {
+  const t = text.trim();
+  if (!t || /[.!?…)"'”’]$/.test(t)) return { lead: t, more: null };
+  // the last word may be cut mid-way: drop it, and any comma or dash it leaves
+  const whole = t.replace(/\s*\S+$/, "").replace(/[\s,;:–—-]+$/, "");
+  if (!whole) return { lead: t, more: null };
+  const end = Math.max(...[". ", "! ", "? "].map((m) => whole.lastIndexOf(m)));
+  if (end < 0) return { lead: `${whole}…`, more: null };
+  return { lead: whole.slice(0, end + 1), more: `${whole.slice(end + 2)}…` };
+}
+
+/** a plan change says its reason once: Pip's line only frames it, the card's body carries it, and its "Adds" lines
+ * name who comes in ("Adds Director and Animator · scene 1"), never the reason again */
+export function revisionOnce(text: string, card: Plan): { text: string; effects: string[] } {
+  if (!card.revision || !card.detail) return { text, effects: card.effects };
+  const reason = card.detail;
+  const said =
+    text.startsWith(GREW) && same(text.slice(GREW.length), reason) ? "The plan grew past what you approved." : text;
+  const groups = new Map<string, string[]>();
+  const rest: string[] = [];
+  for (const e of card.effects) {
+    const m = /^(Adds|Drops|Changes) (.+?): ([\s\S]+)$/.exec(e);
+    if (m && same(m[3], reason)) {
+      const names = groups.get(m[1]) ?? [];
+      groups.set(m[1], [...names, m[2]]);
+    } else rest.push(e);
+  }
+  return { text: said, effects: [...[...groups].map(([verb, names]) => `${verb} ${listed(names)}`), ...rest] };
+}
