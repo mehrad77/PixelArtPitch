@@ -45,6 +45,11 @@ The settings role is `assistant`. Its default model is `anthropic/claude-sonnet-
   - `note_add`
   - `question_answer` and `gate_decide`: only when the person asked in words, and the card states the decision
 - **Always available:** `feature_request` (new; it runs directly, since it only appends a line).
+- **Free edits, run directly in the turn (v0.5.2, `PIP_EDIT`):** `look_set_time`, `code_set_constants`, `script_set_cues` (`keepTiming: true` keeps a narrated video's aligned times for a typo or a reword), `scene_set_recipes`, `cast_asset`, `sfx_set`, and `project_patch` only on the pace and time paths (`EDIT_PATHS`: `/script/timing/wps|pause|lead|minCue`, `/composition/hold|endHold`, `/canvas/time`).
+  - These are the `edit` tier (PIP-ORCHESTRATION §1.12): `crew_request_change` on such a note answers the model "This is a free edit you make yourself: … Use <tool> now", and the model makes it. A time of day or a pace edit decided by rule (`ruleEdit`) is a card instead in menu mode or from the card path: **"I can do this now: free"**, $0, no faces, "Do it" runs the tool.
+  - The code runs each one (`Pip.edit`), never the prompt: refused while the crew works on the project ("send the change with crew_request_change"), and a project_patch off `EDIT_PATHS` is refused. It renders the frame that shows the edit before and after (`out/edit-r<rev>-before.png`, `-after.png`, scale 2) and adds a files card with both and an **Undo** card (`undoCard`, the same card `/undo` makes; `project_undo` on that change). The export, if any, is marked superseded. A failed edit says "Nothing was changed." and the model hears why.
+  - Pip then replies "Done: <what changed>" in one sentence (`assistant/system.md` v3).
+- **The crew card (`crew_request_change`) reads the tier.** The title names the scene by number and drops the UI's anchor ("At 0:54 (quest): too fast" → "Ask the crew: scene 2, too fast"); the price is `changeKinds` of the tier (a code scene's change is `scene.patch` calls, not a rewrite) or the crew's own revision; a `code_patch` goes to the Scene Coder, who reads the note (`NOTE_READERS`: Animator, Writer, Director, Producer, Scene Coder; the card warns only for the others). Bundled review notes (`alsoNotes`) keep a change the crew's.
 
 ### New tools (in `packages/tools`, so MCP gets them too)
 
@@ -305,7 +310,7 @@ Routine "done" reports are not triggers.
 ## Rules the code must enforce
 
 1. **"Propose, don't act" is enforced in code, not in the prompt.**
-   - Pip's loop runs a tool directly only when `ToolDef.effects === "read"`, or when the tool is `feature_request`. Any other call becomes a plan card, whatever the model asks for.
+   - Pip's loop runs a tool directly only when `ToolDef.effects === "read"`, when the tool is `feature_request`, or when it is one of `PIP_EDIT` while the crew isn't working (project_patch only on `EDIT_PATHS`). Any other call becomes a plan card, whatever the model asks for.
    - Direct reads run as `author {kind: "user", via: "pip"}`, so registry role checks don't block them. The effects allowlist above is therefore the only gate, and it must stay strict.
    - A card's `{tool, input, projectId}` lives on the server only. On confirm, the server never takes them from the client, except the one `editable` field.
 2. **The gateway gets a metered, lane-scheduled `chat()` that takes tools.**

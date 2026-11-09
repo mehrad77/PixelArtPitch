@@ -222,6 +222,11 @@ export const scriptSetCues = defineTool({
       .min(1)
       .max(60),
     reason: z.string().min(3).max(300),
+    /**
+     * a caption fix (a typo, a reword) on a narrated video: keep the voice's aligned timings. Only when every cue keeps
+     * its id; otherwise the timing goes back to estimates.
+     */
+    keepTiming: z.boolean().default(false),
   }),
   output: z.object({ rev: z.number(), cues: z.array(z.object({ id: z.string(), text: z.string() })) }),
   roles: ["writer", "producer", "editor"],
@@ -239,7 +244,9 @@ export const scriptSetCues = defineTool({
     if (ids.size !== cues.length)
       return fail("duplicate_id", "two cues share an id", { fix: "give every cue its own id or leave ids out" });
     const ops: any[] = [{ op: "replace", path: "/script/cues", value: cues }];
-    if (d.script.timing.mode === "aligned") ops.push({ op: "replace", path: "/script/timing/mode", value: "estimate" });
+    const sameCues = cues.length === d.script.cues.length && cues.every((c, k) => c.id === d.script.cues[k].id);
+    if (d.script.timing.mode === "aligned" && !(i.keepTiming && sameCues))
+      ops.push({ op: "replace", path: "/script/timing/mode", value: "estimate" });
     const r = await P(ctx).patch(ops, { reason: i.reason, baseRev: d.rev, author: author(ctx) });
     return ok({ rev: r.rev, cues });
   },

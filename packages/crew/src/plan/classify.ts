@@ -5,8 +5,10 @@
 //   tune        a recipe scene that needs the Animator's judgement
 //   code_patch  a code scene change beyond its constants: the Scene Coder patches the current code
 //   replan      a story change (add, cut or reorder scenes, a new beat, new art): the Director re-plans
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ProjectT } from "@pap/schema";
-import { type ChangeCategory, constantsOf } from "@pap/tools";
+import { type ChangeCategory, constantsOf, type OpenProject } from "@pap/tools";
 import { timeAsked } from "./route.ts";
 
 export type ChangeTier = "edit" | "tune" | "code_patch" | "replan";
@@ -41,6 +43,27 @@ export type ClassifyDoc = Pick<ProjectT, "scenes" | "script" | "composition" | "
 /** a code scene's current bundle text (null: none, or unknown) */
 export type SourceOf = (scene: string) => string | null;
 
+/** a project's code scenes' current bundle text, read from disk */
+export const sourceIn =
+  (p: Pick<OpenProject, "dir" | "doc">): SourceOf =>
+  (scene) => {
+    const d = p.doc();
+    const s = d.scenes.find((x) => x.id === scene);
+    const e = s?.kind === "code" ? d.code.find((c) => c.id === s.bundle) : undefined;
+    if (!e) return null;
+    try {
+      return readFileSync(join(p.dir, e.file), "utf8");
+    } catch {
+      return null;
+    }
+  };
+/** classifyChange on an open project, its code read from disk */
+export const classifyIn = (p: Pick<OpenProject, "dir" | "doc">, note: ClassifyNote) =>
+  classifyChange(note, p.doc(), { source: sourceIn(p) });
+/** the edit Pip makes without words of its own: the time of day or the pace (a rule decided the input) */
+export const ruleEdit = (c: Classified) =>
+  c.tier === "edit" ? c.edits?.find((e) => e.tool === "look_set_time" || e.tool === "project_patch") : undefined;
+
 const RANK: ChangeTier[] = ["edit", "tune", "code_patch", "replan"];
 const worst = (a: ChangeTier, b: ChangeTier) => (RANK.indexOf(b) > RANK.indexOf(a) ? b : a);
 
@@ -58,6 +81,21 @@ const END_LONGER =
 /** where and how big: a named constant or a recipe param decides it */
 const PLACE =
   /\b(up|down|left|right|higher|lower|raise|bigger|smaller|larger|move|moves|shift|nudge|closer|further|farther|longer|shorter|earlier|later|sooner|hold|centre|center|size|position|place)\b/i;
+/** a scene's own pace ("too fast", "slower"): its hold or duration constants, else a patch */
+const PACE = /\b(fast|faster|slow|slower|quick|quicker|rushed|speed|pace|longer|shorter|linger)\b/i;
+const TIMING_PARTS = new Set([
+  "hold",
+  "dur",
+  "duration",
+  "speed",
+  "pace",
+  "fps",
+  "delay",
+  "gap",
+  "beat",
+  "step",
+  "wait",
+]);
 /** taste, which needs the Animator's eye on a recipe scene */
 const JUDGE =
   /\b(feel|feels|lively|livelier|smoother|choppy|jumpy|dynamic|energy|energetic|boring|flat|awkward|natural|nicer|polish|exciting|punchier|fun)\b/i;
@@ -111,11 +149,13 @@ function subjects(text: string, doc: ClassifyDoc, src: SourceOf): string[] {
 function constantsHit(source: string, subj: string[], text: string): string[] {
   const t = text.toLowerCase();
   const holdWords = /\b(hold|end|ending|last|final|longer|shorter|pause)\b/.test(t);
+  const pace = PACE.test(t);
   return constantsOf(source)
     .filter((c) => {
       const parts = c.name.toLowerCase().split("_");
       if (subj.some((w) => parts.some((p) => p === w || p === `${w}s` || `${p}s` === w))) return true;
       if (holdWords && parts.some((p) => p === "hold" || p === "end")) return true;
+      if (pace && parts.some((p) => TIMING_PARTS.has(p))) return true;
       const vals = Array.isArray(c.value) ? c.value : [c.value];
       return subj.some((w) => vals.some((v) => typeof v === "string" && v.toLowerCase() === w));
     })
@@ -129,7 +169,7 @@ function sceneTier(
   subj: string[],
   src: SourceOf,
 ): { tier: ChangeTier; edit?: EditHow } {
-  const place = PLACE.test(text);
+  const place = PLACE.test(text) || PACE.test(text);
   const takeOut = REMOVE.test(text) || SWAP.test(text);
   if (s.kind === "code") {
     const code = src(s.id);

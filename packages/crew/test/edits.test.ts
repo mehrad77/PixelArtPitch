@@ -15,6 +15,7 @@ const EXAMPLE = new URL("../../../examples/questday/", import.meta.url).pathname
 
 const { buildRegistry, codeSetConstantsTool, Workspace } = await import("@pap/tools");
 const { trialRender } = await import("../src/scene-code.ts");
+const { QUEST_CODE, withCodeScene } = await import("./fixtures/code-scene.ts");
 
 const open: InstanceType<typeof Workspace>[] = [];
 after(() => {
@@ -22,55 +23,15 @@ after(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-/** a QuestDay scene drawn by code with named constants at the top */
-export const QUEST_CODE = `import { rect, skyGradient, text, walk } from "pap:engine";
-import { E, S } from "pap:timeline";
-export const BOARD_X = 120;
-export const BOARD_Y = 40;
-export const TITLE = "QUESTS";
-export function draw(t) {
-  skyGradient();
-  rect(BOARD_X, BOARD_Y, 80, 50, "k");
-  text(TITLE, BOARD_X + 40, BOARD_Y + 6, { align: "center", colour: "B" });
-  walk("hero", { x0: 60, x1: 60, t0: S("c02"), t1: E("c02"), t, face: "right" });
-}
-`;
-
 let n = 0;
 /** QuestDay with its "quest" scene as a code scene, and a registry with code_set_constants */
-export async function questdayWithCode(dirRoot = root) {
+async function questdayWithCode(dirRoot = root) {
   const dir = join(dirRoot, `edits_${++n}`);
   cpSync(EXAMPLE, dir, { recursive: true, filter: (f) => !f.endsWith(".pap-lock") });
-  mkdirSync(join(dir, "code"), { recursive: true });
-  writeFileSync(join(dir, "code", "quest.mjs"), QUEST_CODE);
   const workspace = new Workspace(() => [dir]);
   open.push(workspace);
   const p = workspace.get(workspace.list().find((x) => x.dir === dir)!.id);
-  const k = p.doc().scenes.findIndex((s) => s.id === "quest");
-  const sc = p.doc().scenes[k];
-  await p.patch(
-    [
-      { op: "add", path: "/code/-", value: { id: "quest", file: "code/quest.mjs", fullFrame: false, sfx: false } },
-      {
-        op: "replace",
-        path: `/scenes/${k}`,
-        value: {
-          ...sc,
-          recipes: undefined,
-          layers: undefined,
-          camera: undefined,
-          id: "quest",
-          kind: "code",
-          bundle: "quest",
-          title: sc.title || "One quest board",
-          cues: sc.cues,
-          beat: "the quest board",
-          assets: ["hero"],
-        },
-      },
-    ],
-    { reason: "t", author: { kind: "user" } },
-  );
+  await withCodeScene(p);
   const registry = buildRegistry().add(codeSetConstantsTool((lp, s, src) => trialRender(lp, s, src)));
   const ctx = { author: { kind: "user" as const, via: "pip" }, project: p, workspace, emit: () => {} };
   return { p, dir, registry, ctx };

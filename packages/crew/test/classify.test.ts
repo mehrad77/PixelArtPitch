@@ -92,6 +92,9 @@ const FIXTURE: { note: string; scene?: string; src?: Record<string, string>; tie
   { note: "make the walk in feel livelier", scene: "grind", tier: "tune", scenes: ["grind"] },
   { note: "move the hero a bit to the right", scene: "grind", tier: "edit", scenes: ["grind"] },
   { note: "the stars should twinkle more", scene: "stars", tier: "code_patch", scenes: ["stars"] },
+  // a scene's own pace: its hold constant when it has one, else a patch (never a full rewrite)
+  { note: "too fast", scene: "board", tier: "edit", scenes: ["board"] },
+  { note: "too fast", scene: "stars", tier: "code_patch", scenes: ["stars"] },
   { note: "add more energy to every scene", tier: "code_patch", scenes: ["grind", "board", "stars", "finale"] },
 ];
 

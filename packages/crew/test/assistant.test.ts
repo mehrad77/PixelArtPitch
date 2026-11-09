@@ -21,6 +21,7 @@ const { FakeProvider, FAKE_CAPS, Ledger, SecretStore, defaultSettings, setPriceO
 const { wireCrew } = await import("../../../apps/server/src/wire.ts");
 const { createApp } = await import("../../../apps/server/src/app.ts");
 
+const { QUEST_CODE, withCodeScene } = await import("./fixtures/code-scene.ts");
 type Step = import("../src/llm/fake.ts").FakeStep;
 type Req = import("../src/llm/types.ts").ChatRequest;
 
@@ -123,9 +124,9 @@ test("propose, don't act: a write the model asks for becomes a card and does not
   script([
     {
       toolCalls: [
-        { name: "crew_request_change", input: { text: "make the hero bigger", scene: "2", category: "art" } },
+        { name: "crew_request_change", input: { text: "make the hero feel livelier", scene: "2", category: "art" } },
         { name: "note_add", input: { target: { scene: "intro" }, category: "art", text: "x" } },
-        // not one of Pip's tools at all
+        // Pip's own project_patch is only the pace and the time of day
         {
           name: "project_patch",
           input: { ops: [{ op: "replace", path: "/title", value: "hacked" }], reason: "no", baseRev: rev },
@@ -135,7 +136,7 @@ test("propose, don't act: a write the model asks for becomes a card and does not
     },
     { toolCalls: [{ name: "reply", input: { text: "I'll ask the crew." } }] },
   ]);
-  const item = await pip!.ask(id, "make the hero bigger in scene 2").done;
+  const item = await pip!.ask(id, "make the hero feel livelier in scene 2").done;
   assert.equal(p.rev(), rev, "the document is unchanged");
   assert.equal(p.state.notes.length, notes, "no note was added");
   assert.equal(p.doc().title === "hacked", false);
@@ -155,6 +156,7 @@ test("propose, don't act: a write the model asks for becomes a card and does not
   const toolTexts = last.messages.filter((m) => m.role === "tool").map((m) => String(m.content));
   assert.ok(toolTexts.some((t) => /Proposed to the person as a card/.test(t)));
   assert.ok(toolTexts.some((t) => /isn't one of your tools/.test(t)));
+  assert.ok(toolTexts.some((t) => /project_patch is yours only for the pace/.test(t)));
   // no server-only fields leave the server
   const json = JSON.stringify(pip!.items(id));
   assert.ok(!/"action"|"tool"|"input"|"projectId"/.test(json), json.slice(0, 400));
@@ -741,7 +743,7 @@ test("/why, /budget and /undo answer without a model call", async () => {
   await pip!.ask(id, "what files are there").done;
   const k0 = fake.calls.length;
   const why = (await pip!.ask(id, "/why").done) as any;
-  assert.match(why.text, /fake\/model in agent mode \(prompt assistant\/system@2\)/);
+  assert.match(why.text, /fake\/model in agent mode \(prompt assistant\/system@3\)/);
   assert.match(why.text, /files_list → ok/);
   assert.match(why.text, /cost \$0\.00/);
   const show = (await pip!.ask(id, "/budget").done) as any;
@@ -1208,4 +1210,88 @@ test("a plan change's card: the reason once and whole, Pip's line the framing, e
     cutSentences(reason, 150),
     "The Reviewer found the cut off-brief. A fourth character is off-brief and is clipped at the edge in scene 2.",
   );
+});
+
+test("Pip makes a free edit itself: a code scene's constant, a still before and after, an Undo card", async () => {
+  const { pip, p, id, dir } = await setup();
+  await withCodeScene(p);
+  const rev = p.rev();
+  script([
+    { toolCalls: [{ name: "crew_request_change", input: { text: "move the board up a bit", scene: "quest" } }] },
+    {
+      toolCalls: [
+        {
+          name: "code_set_constants",
+          input: { scene: "quest", set: { BOARD_Y: 30 }, reason: "move the board up a bit" },
+        },
+      ],
+    },
+    { toolCalls: [{ name: "reply", input: { text: "Done: the board sits 10 px higher." } }] },
+  ]);
+  const k0 = fake.calls.length;
+  const item = (await pip!.ask(id, "move the board up a bit").done) as any;
+  // crew_request_change told the model it is an edit to make itself, with the tool
+  const told = fake.calls[k0 + 1].messages.filter((m) => m.role === "tool").map((m) => String(m.content));
+  assert.match(told[0], /free edit you make yourself.*code_set_constants/s);
+  assert.equal(p.rev(), rev + 1, "one change, made in the turn");
+  assert.match(readFileSync(join(dir, p.doc().code.find((c) => c.id === "quest")!.file), "utf8"), /BOARD_Y = 30;/);
+  assert.equal(item.text, "Done: the board sits 10 px higher.");
+  const files = item.cards.find((c: any) => c.type === "files");
+  assert.deepEqual(
+    files.files.map((f: any) => f.name),
+    [`edit-r${rev}-before.png`, `edit-r${rev + 1}-after.png`],
+  );
+  const undo = item.cards.find((c: any) => c.type === "plan");
+  assert.match(undo.title, /^Undo: move the board up a bit/);
+  assert.deepEqual(undo.usd, [0, 0]);
+  await pip!.decide(id, undo.id, "confirm").done;
+  assert.equal(p.doc().code.find((c) => c.id === "quest")!.file, "code/quest.mjs", "the old code is back");
+  // a value that fails the trial render: the model hears it, nothing changes
+  const rev2 = p.rev();
+  script([
+    {
+      toolCalls: [{ name: "code_set_constants", input: { scene: "quest", set: { BOARD_Y: 150 }, reason: "down low" } }],
+    },
+    { toolCalls: [{ name: "reply", input: { text: "That would cover the captions." } }] },
+  ]);
+  const k1 = fake.calls.length;
+  await pip!.ask(id, "move the board down to the bottom").done;
+  const said = fake.calls[k1 + 1].messages.filter((m) => m.role === "tool").map((m) => String(m.content));
+  assert.match(said[0], /trial_failed.*Nothing was changed/s);
+  assert.equal(p.rev(), rev2);
+  assert.equal(readFileSync(join(dir, "code/quest.mjs"), "utf8"), QUEST_CODE);
+});
+
+test("make it in daytime: a free card that sets the time, no crew; never an edit while the crew works", async () => {
+  const { pip, p, id } = await setup();
+  await withCodeScene(p);
+  script([
+    { toolCalls: [{ name: "crew_request_change", input: { text: "make it in daytime" } }] },
+    { toolCalls: [{ name: "reply", input: { text: "A card." } }] },
+  ]);
+  const item = (await pip!.ask(id, "make it in daytime").done) as any;
+  const card = item.cards[0];
+  assert.equal(card.title, "I can do this now: free");
+  assert.deepEqual(card.usd, [0, 0]);
+  assert.deepEqual(card.who, []);
+  await pip!.decide(id, card.id, "confirm").done;
+  assert.equal(p.doc().canvas.time, "day");
+});
+
+test("a code scene's change card: the scene by number, no stale warning, a patch not a rewrite", async () => {
+  const { pip, p, id } = await setup();
+  // a code scene without constants: its own pace is a patch
+  await withCodeScene(p, QUEST_CODE.replace(/^export const (BOARD_X|BOARD_Y|TITLE) = (.*);$/gm, "const $1 = $2;"));
+  const text = "At 0:54 (quest): too fast";
+  script([
+    { toolCalls: [{ name: "crew_request_change", input: { text, category: "timing" } }] },
+    { toolCalls: [{ name: "reply", input: { text: "A card." } }] },
+  ]);
+  const item = (await pip!.ask(id, text).done) as any;
+  const card = item.cards[0];
+  const n = p.doc().scenes.findIndex((s) => s.id === "quest") + 1;
+  assert.equal(card.title, `Ask the crew: scene ${n}, too fast`);
+  assert.equal(card.warning, undefined, "the Scene Coder reads the note");
+  assert.match(card.detail, /The Scene Coder patches the code of scene/);
+  assert.deepEqual(card.who.slice(0, 1), ["scene-coder"]);
 });

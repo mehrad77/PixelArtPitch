@@ -35,6 +35,7 @@ import { estimateInputTokens } from "./llm/budget.ts";
 import { costUsd, priceFor } from "./llm/prices.ts";
 import { BudgetError, type ChatMessage, type ContentPart, type ToolSpec } from "./llm/types.ts";
 import { type CrewSnapshot, humanize, type ProblemAction, type RunReport, STAGE_LINE } from "./orchestrator.ts";
+import { changeKinds, classifyIn, EVERY, ruleEdit } from "./plan/classify.ts";
 import { routeIn } from "./plan/route.ts";
 import { fill, card as promptCard } from "./prompts.ts";
 import { isEndCard, sceneMakeup } from "./scene-code.ts";
@@ -213,6 +214,30 @@ export const PIP_PROPOSE = [
   "question_answer",
   "gate_decide",
 ] as const;
+/**
+ * Free edits Pip makes itself in the same turn (the `edit` tier, §1.12), never while the crew works: each runs as the
+ * person via Pip (so /undo finds it), with a still before and after and an Undo card. project_patch only on the pace
+ * and time paths (EDIT_PATHS).
+ */
+export const PIP_EDIT = [
+  "look_set_time",
+  "code_set_constants",
+  "script_set_cues",
+  "scene_set_recipes",
+  "cast_asset",
+  "sfx_set",
+  "project_patch",
+] as const;
+const EDIT_SET = new Set<string>(PIP_EDIT);
+/** the paths Pip's own project_patch may touch: the pace and the time of day */
+export const EDIT_PATHS = /^\/(script\/timing\/(wps|pause|lead|minCue)|composition\/(hold|endHold)|canvas\/time)$/;
+/** the UI's anchor ("At 0:54 (scene ready): ") in front of a note: the scene it names, and the words after it */
+export function splitAnchor(text: string): { scene?: string; words: string } {
+  const m = /^\s*At \d+:\d{2}(?:\.\d+)?\s*(?:\(([^)]{1,80})\))?:\s*/i.exec(text);
+  return m
+    ? { ...(m[1] ? { scene: m[1].replace(/^scene\s+/i, "").trim() } : {}), words: text.slice(m[0].length) }
+    : { words: text };
+}
 /** the one write Pip runs without a card: it only appends a line */
 export const PIP_ALWAYS = "feature_request";
 const MAX_STEPS = 8;
@@ -246,6 +271,32 @@ export type ExternalToolT = {
 };
 /** whether an external tool may run without a card: only a read-only tool on a connection trusted for reads */
 export const extDirect = (t: ExternalToolT) => t.trust === "read" && t.readOnlyHint === true;
+
+/** the card that undoes one change of the history (/undo, and the Undo after Pip's own edit) */
+export function undoCard(
+  p: OpenProject,
+  last: { seq: number; reason: string; ts: string; author: { role?: string; kind: string }; ops: { path: string }[] },
+): StoredPlan {
+  return {
+    id: rid("card"),
+    type: "plan",
+    status: "proposed",
+    title: `Undo: ${last.reason.slice(0, 70)}`,
+    detail: `Change #${last.seq} by ${last.author.role ?? last.author.kind} (via Pip) on ${last.ts.slice(0, 16).replace("T", " ")} goes back: ${last.ops
+      .map((o) => o.path)
+      .slice(0, 4)
+      .join(", ")}.`,
+    who: [],
+    usd: [0, 0],
+    sec: null,
+    effects: [
+      "Adds the inverse change to the history; nothing is deleted.",
+      "Later work on the same paths may need redoing.",
+    ],
+    confirmLabel: "Undo it",
+    action: { tool: "project_undo", input: { seq: last.seq, reason: "undone through Pip (/undo)" }, projectId: p.id },
+  };
+}
 
 export class PipBusy extends StoreError {
   constructor() {
@@ -326,7 +377,7 @@ const STAGE_WORD: Record<string, string> = {
   deliver: "the export",
 };
 /** owners whose stage reads a change note today; others reopen their stage but can't act on the words */
-const NOTE_READERS = new Set(["animator", "writer", "director", "producer"]);
+const NOTE_READERS = new Set(["animator", "writer", "director", "producer", "scene-coder"]);
 /**
  * The budget in plain words, never "$0 cap" or "$0-0": no cap is "No budget cap is set.", nothing spent is "Nothing
  * spent yet.", and a zero estimate is left out.
@@ -920,29 +971,7 @@ export class Pip {
             ? `Nothing to undo in the project. The last thing I did was "${lastCard.title}", which made files, not a change I can undo.`
             : "There's no change of mine to undo.",
         );
-      const card: StoredPlan = {
-        id: rid("card"),
-        type: "plan",
-        status: "proposed",
-        title: `Undo: ${last.reason.slice(0, 70)}`,
-        detail: `Change #${last.seq} by ${last.author.role ?? last.author.kind} (via Pip) on ${last.ts.slice(0, 16).replace("T", " ")} goes back: ${last.ops
-          .map((o) => o.path)
-          .slice(0, 4)
-          .join(", ")}.`,
-        who: [],
-        usd: [0, 0],
-        sec: null,
-        effects: [
-          "Adds the inverse change to the history; nothing is deleted.",
-          "Later work on the same paths may need redoing.",
-        ],
-        confirmLabel: "Undo it",
-        action: {
-          tool: "project_undo",
-          input: { seq: last.seq, reason: "undone through Pip (/undo)" },
-          projectId: p.id,
-        },
-      };
+      const card = undoCard(p, last);
       return say("Here's what goes back.", [card]);
     }
     // /compact
@@ -1092,7 +1121,7 @@ export class Pip {
 
   // ---------------------------------------------------------------- agent mode
   private allowed(p?: OpenProject): Set<string> {
-    const names = [...PIP_READ, ...PIP_PROPOSE, PIP_ALWAYS].filter((n) => {
+    const names = [...PIP_READ, ...PIP_PROPOSE, ...PIP_EDIT, PIP_ALWAYS].filter((n) => {
       const t = this.deps.registry.get(n);
       return !!t && (p || !t.project || n === "project_fork");
     });
@@ -1448,6 +1477,7 @@ export class Pip {
       }
     }
     delete input.project_id;
+    if (EDIT_SET.has(name) && proj) return this.edit(name, input, proj, cards, st, vision);
     if (def.effects === "read" || name === PIP_ALWAYS) {
       const res = await this.deps.registry.call(name, input, this.ctx(proj));
       if (!res.ok)
@@ -1499,7 +1529,7 @@ export class Pip {
       )
     )
       return { content: "Already proposed; it's on the card.", isError: false };
-    const made = this.planCards(name, input, proj);
+    const made = this.planCards(name, input, proj, { agent: true });
     if ("error" in made) return err(made.error);
     const first = made.cards[0];
     if (lend.length && first.type === "plan" && first.action) {
@@ -1508,6 +1538,104 @@ export class Pip {
     }
     cards.push(...made.cards);
     return { content: proposed(made.cards[0] as PlanCard), isError: false };
+  }
+
+  /**
+   * One of Pip's free edits (PIP_EDIT, §1.12): run as the person via Pip, with a still before and after (saved in out/
+   * and shown as a files card) and an Undo card; the export, if any, is marked as older than the project. Never while
+   * the crew works on the project, and project_patch only on EDIT_PATHS.
+   */
+  private async edit(
+    name: string,
+    input: Record<string, unknown>,
+    p: OpenProject,
+    cards: StoredCard[],
+    st: { files: Map<string, PipFile> },
+    vision: boolean,
+  ): Promise<{ content: string | ContentPart[]; isError: boolean }> {
+    const err = (x: string) => ({ content: x, isError: true });
+    if (this.deps.crewRunning?.(p))
+      return err(
+        "The crew is working on this project: don't edit it yourself. Send the change with crew_request_change; the next review reads it.",
+      );
+    if (name === "project_patch") {
+      const ops = Array.isArray(input.ops) ? (input.ops as { path?: unknown }[]) : [];
+      const bad = ops.filter((o) => !EDIT_PATHS.test(String(o?.path ?? "")));
+      if (!ops.length || bad.length)
+        return err(
+          `project_patch is yours only for the pace and the time of day (${EDIT_PATHS.source}); ${bad.map((o) => String(o?.path)).join(", ") || "no ops"} isn't. Use the edit tool for it, or crew_request_change.`,
+        );
+      input.baseRev ??= p.rev();
+    }
+    // the frame that shows the edit: its scene's middle, the changed cue's middle, the end card's, or the first scene's
+    const at = (): number => {
+      const tl = p.timeline();
+      const mid = (a: number, b: number) => +((a + b) / 2).toFixed(2);
+      const sc = typeof input.scene === "string" ? tl.scenes.find((x) => x.id === input.scene) : undefined;
+      if (sc) return mid(sc.from, sc.to);
+      if (name === "script_set_cues" && Array.isArray(input.cues)) {
+        const d = p.doc();
+        const k = (input.cues as { text?: string; id?: string }[]).findIndex(
+          (c, i) => (c.id ?? d.script.cues[i]?.id) && c.text !== d.script.cues[i]?.text,
+        );
+        const c = tl.cues[Math.max(0, k)] ?? tl.cues[0];
+        if (c) return mid(c.start, c.end);
+      }
+      if (name === "project_patch" && JSON.stringify(input.ops).includes("endHold"))
+        return +Math.max(0, tl.duration - 0.5).toFixed(2);
+      const first = tl.scenes[0];
+      return first ? mid(first.from, first.to) : 0;
+    };
+    const still = async (tag: string) => {
+      try {
+        const t = at();
+        const png = await p.still(t, 2);
+        const file = `edit-r${p.rev()}-${tag}.png`;
+        mkdirSync(join(p.dir, "out"), { recursive: true });
+        writeFileSync(join(p.dir, "out", file), png);
+        return { t, png, file };
+      } catch {
+        return null;
+      }
+    };
+    const before = await still("before");
+    const seq0 = (await p.history()).at(-1)?.seq ?? 0;
+    const res = await this.deps.registry.call(name, input, this.ctx(p));
+    if (!res.ok)
+      return err(
+        `${res.error.code}: ${res.error.message}${res.error.fix ? ` (fix: ${res.error.fix})` : ""}. Nothing was changed.`,
+      );
+    const entry = (await p.history()).filter((h) => h.seq > seq0 && h.author.via === "pip").at(-1);
+    if (!entry) return { content: `Nothing changed: ${JSON.stringify(res.data).slice(0, 400)}`, isError: false };
+    const after = await still("after");
+    // the export no longer shows the project: say so where the files are listed
+    for (const t of p.state.tasks)
+      if (t.kind === "deliver.export" && t.status === "done" && !t.supersededBy)
+        p.upsertTask({ ...t, supersededBy: `edit:${entry.seq}` });
+    const shots = [before, after].filter((x): x is NonNullable<typeof x> => !!x);
+    const files = outFiles(
+      p,
+      shots.map((x) => x.file),
+    );
+    for (const f of files) st.files.set(f.name, f);
+    if (files.length) cards.push({ id: rid("card"), type: "files", files });
+    cards.push(undoCard(p, entry));
+    const text = `Done (change #${entry.seq}, free): ${JSON.stringify(res.data).slice(0, 1500)}. The stills before and after are on a card, with an Undo card. Reply "Done: …" in one sentence; the exported video doesn't have this yet, so offer export_video only if they want the file.`;
+    if (vision && shots.length)
+      return {
+        content: [
+          { type: "text", text },
+          ...shots.map(
+            (x): ContentPart => ({
+              type: "image",
+              mediaType: "image/png",
+              data: Buffer.from(x.png).toString("base64"),
+            }),
+          ),
+        ],
+        isError: false,
+      };
+    return { content: text, isError: false };
   }
 
   private ctx(p?: OpenProject): ToolContext {
@@ -1525,6 +1653,8 @@ export class Pip {
     tool: string,
     input: Record<string, unknown>,
     p?: OpenProject,
+    /** agent: an edit Pip can make itself comes back as an instruction to make it (menu mode has no edit tools) */
+    o: { agent?: boolean } = {},
   ): { cards: StoredCard[] } | { error: string } {
     const base = { id: rid("card"), type: "plan" as const, status: "proposed" as const };
     const action: Action = { tool, input, ...(p ? { projectId: p.id } : {}) };
@@ -1575,7 +1705,14 @@ export class Pip {
         )
           return { error: "a slash command is not a change: run it as a command (/context, /budget, /why)" };
         const d = p.doc();
+        // the UI's anchor ("At 0:54 (scene ready): too fast") names the scene; the card names it by number
+        const anchor = splitAnchor(String(input.text ?? "").replace(ABOUT_PREFIX, ""));
         let scene = input.scene === undefined ? undefined : String(input.scene);
+        if (scene === undefined && anchor.scene) {
+          const a = anchor.scene.toLowerCase();
+          scene = d.scenes.find((s) => s.id.toLowerCase() === a || (s.title ?? "").toLowerCase() === a)?.id ?? scene;
+          if (scene === undefined && /^\d+$/.test(a)) scene = a;
+        }
         if (scene !== undefined) {
           const n = /^(?:scene\s*)?(\d+)$/i.exec(scene.trim());
           const hit = n ? d.scenes[Number(n[1]) - 1] : d.scenes.find((s) => s.id === scene);
@@ -1584,46 +1721,64 @@ export class Pip {
           scene = hit.id;
           input.scene = hit.id;
         }
-        // the one router: the same words reach the same member as at a gate (routeChange)
-        const owner = routeIn(d, {
-          text: String(input.text ?? ""),
-          target: { ...(scene ? { scene } : {}), ...(input.cue ? { cue: String(input.cue) } : {}) },
-          category: (input.category as ChangeCategory | undefined) ?? "other",
-        });
+        const words = anchor.words.trim() || String(input.text ?? "");
+        const category = (input.category as ChangeCategory | undefined) ?? "other";
+        const target = { ...(scene ? { scene } : {}), ...(input.cue ? { cue: String(input.cue) } : {}) };
+        // the tier (§1.12): the same classifier the crew's plan reads, so the card is what runs
+        const cls = classifyIn(p, { text: words, target, category });
+        // review notes bundled with it make it the crew's work
+        const bundled = ((input.alsoNotes as string[] | undefined) ?? []).length > 0;
+        if (cls.tier === "edit" && !bundled) {
+          const rule = ruleEdit(cls);
+          if (rule && !running) {
+            c = {
+              ...base,
+              title: "I can do this now: free",
+              detail: cls.how,
+              who: [],
+              usd: [0, 0],
+              sec: null,
+              effects: ["No crew run and no model call.", "You can undo it."],
+              confirmLabel: "Do it",
+              action: {
+                tool: rule.tool,
+                input: { ...rule.input, ...(rule.tool === "project_patch" ? { baseRev: p.rev() } : {}) },
+                projectId: p.id,
+              },
+            };
+            break;
+          }
+          if (o.agent && !running)
+            return {
+              error: `This is a free edit you make yourself, not a crew change: ${cls.how} Use ${[...new Set((cls.edits ?? []).map((e) => e.tool))].join(" or ")} now (project_get lists a code scene's constants), then reply "Done: …".`,
+            };
+        }
+        // the one router: the same words reach the same member as at a gate (routeChange); the tier decides a code
+        // scene's patch and a recipe scene's tune
+        const routed = routeIn(d, { text: words, target, category });
+        const owner: RoleT =
+          cls.tier === "code_patch" || (cls.tier === "edit" && cls.edits?.some((e) => e.tool === "code_set_constants"))
+            ? "scene-coder"
+            : cls.tier === "replan" && !target.cue && category !== "sound" && routed !== "pixel-artist"
+              ? "director"
+              : routed;
         const stage = OWNER_STAGE[owner] ?? "review";
-        const k = scene ? d.scenes.findIndex((s) => s.id === scene) : -1;
-        // which scenes the change redoes: one, or (a whole-video story change) every scene but the end card
-        const touched =
-          k >= 0
-            ? [k + 1]
-            : owner === "director"
-              ? d.scenes.map((sc, i) => (isEndCard(sc) ? 0 : i + 1)).filter(Boolean)
-              : d.scenes.map((_, i) => i + 1);
+        // which scenes the change redoes: the tier's, else every scene ("every scene" is every scene, the end card too)
+        // (a whole-video re-plan leaves the end card unless the words say every scene)
+        const touched = cls.scenes.length
+          ? cls.scenes.map((id) => d.scenes.findIndex((s) => s.id === id) + 1).filter((x) => x > 0)
+          : owner === "director" && !EVERY.test(words)
+            ? d.scenes.map((sc, i) => (isEndCard(sc) ? 0 : i + 1)).filter(Boolean)
+            : d.scenes.map((_, i) => i + 1);
         const others = d.scenes.map((_, i) => i + 1).filter((i) => !touched.includes(i));
         const n = touched.length;
-        // the change's own revision on a copy of the plan (only what it touches), else the kinds it touches
+        // the change's own revision on a copy of the plan (only what it touches), else the kinds its tier costs
         const own = this.deps.changeCost?.(p, { assignee: owner, ...(scene ? { scene } : {}) });
-        const fromKinds = this.deps.gateway.estimate(p.id, [
-          ...(owner === "director" ? [{ kind: "director.storyboard", role: "director" as RoleT }] : []),
-          ...(owner === "writer"
-            ? [
-                { kind: "writer.angles", role: "writer" as RoleT },
-                { kind: "director.storyboard", role: "director" as RoleT },
-              ]
-            : []),
-          ...(["animator", "director", "writer"].includes(owner)
-            ? // the tune, plus the one fix round a review may ask for
-              [{ kind: "scene.tune", role: "animator" as RoleT, count: 2 * (owner === "writer" ? d.scenes.length : n) }]
-            : []),
-          // a code scene's redo: the Scene Coder's write (or revision) and its repair or critique calls
-          ...(owner === "scene-coder"
-            ? [
-                { kind: "scene.code", role: "scene-coder" as RoleT, count: n },
-                { kind: "scene.patch", role: "scene-coder" as RoleT, count: 2 * n },
-              ]
-            : []),
-          { kind: "review.final", role: "reviewer" as RoleT, count: 2 },
-        ]);
+        const crewCls = cls.tier === "edit" ? { ...cls, tier: owner === "scene-coder" ? "code_patch" : "tune" } : cls;
+        const fromKinds = this.deps.gateway.estimate(
+          p.id,
+          changeKinds(crewCls as typeof cls).map((k) => ({ ...k, role: k.role as RoleT })),
+        );
         const est = own && fromKinds ? { ...fromKinds, usd: own.usd } : fromKinds;
         const sceneWord = (xs: number[]) => `${xs.length === 1 ? "scene" : "scenes"} ${list(xs.map(String))}`;
         // open review notes the model chose to include: each one is shown, never folded in silently
@@ -1646,11 +1801,7 @@ export class Pip {
               "The crew checks the cut and exports a new video; the current one is replaced.",
             ];
         // the card's faces are the members the change's revision really brings in (a re-plan lists the Director)
-        const preview = this.deps.changePreview?.(p, {
-          text: String(input.text ?? ""),
-          ...(scene ? { scene } : {}),
-          category: (input.category as ChangeCategory | undefined) ?? "other",
-        });
+        const preview = this.deps.changePreview?.(p, { text: words, ...(scene ? { scene } : {}), category });
         const who: RoleT[] = preview?.roles.length
           ? preview.roles
           : owner === "director"
@@ -1663,10 +1814,13 @@ export class Pip {
             ? `The Director re-plans ${sceneWord(touched)} from the recipe menu and the library cast, the Animator tunes ${n === 1 ? "it" : "them"}, then the Reviewer checks.`
             : owner === "animator"
               ? `The Animator redoes ${sceneWord(touched)} with your note, then the Reviewer checks.`
-              : `The ${ROLE_NAME(owner)} gets your note and redoes that part, then the Reviewer checks.`;
+              : owner === "scene-coder"
+                ? `The Scene Coder patches the code of ${sceneWord(touched)} with your note (the rest of the code stays), then the Reviewer checks.`
+                : `The ${ROLE_NAME(owner)} gets your note and redoes that part, then the Reviewer checks.`;
+        const k = scene ? d.scenes.findIndex((s) => s.id === scene) : -1;
         c = {
           ...base,
-          title: `Ask the crew: ${cutWords(String(input.text), 60)}`,
+          title: `Ask the crew: ${k >= 0 ? `scene ${k + 1}, ` : ""}${cutWords(words, 60)}`,
           detail,
           who,
           usd: est ? [+est.usd[0].toFixed(2), +est.usd[1].toFixed(2)] : null,
