@@ -521,6 +521,7 @@ The faces at each moment are the §2 checkpoint table.
   - Pip: "Your video is ready. A new video is exported, with scene 2's change."
   - Pip's line: "Your video is ready."
   - The milestone: "Your video is ready".
+  - The parts line: Idea, Story, Pictures, Sound and Video each ✓, and beside them the version line "v1 · exported 9 Nov · up to date".
 - **Changed from the brief**: C8 and C12; the G3 press passes G4 (Decision 2).
 - **SR**: "Editor finished." Then the status region gives Pip's line.
 - **Focus**: "Looks good" unmounts on press, so focus goes to the Pip field.
@@ -548,7 +549,15 @@ The faces at each moment are the §2 checkpoint table.
 - **"Change something" at a gate, priced as you type.** The note goes to `POST /api/p/:id/changes/preview` (debounced, newest answer wins) and the line beside "Send changes" is the server's route and price: "The Director re-boards scene 3, then the Animator redoes it and the Reviewer checks: about $0.14–$0.18, about 2 min." A server without the route falls back to the card's own estimate. "Send changes" asks again ("Yes, send changes") only when the upper price passes $0.50. The rough cut's sheet isn't a checkbox: only scene items are, under "Which scenes need another pass" (optional).
 - **Readable text.** "0 of 0 steps" is never said (a stage with no steps of its own says nothing); a done plan card's faces come from its roles by instance (a Director re-plan shows the Director), and an update that carries only the result keeps them.
 - **Fix the key, from Pip.** When Pip's own key is rejected, its reply carries the fix (a card `{type: "fix", action: "fix_key", provider}`, or `problem` on the item): "Fix the key", which opens Settings › Providers on that provider with its key field focused.
-- **Projects.** A rerun (a change after the video exists) is Working, never ✓ Finished: `running` is read before `finished`.
+- **Projects.** A rerun (a change after the video exists) is Working ("Working · v1 plays"), never ✓ Has a video: `running` is read before `version`. The Has a video group is a version and no crew running.
+- **Parts and versions, not steps (v0.4).** The page shows what the video has, not where the crew is: five parts (Idea, Story, Pictures, Sound, Video), each an icon and a word ("Story ✓", "Pictures 3 of 5", "Video older than your changes"), from `parts` (never `stage`). A part that isn't ready links to its Studio stage. The card shows the same five as small marks, one screen-reader label: "Idea ready, Story ready, Pictures 3 of 5, Sound missing, no video". A handmade project no crew has worked on is Not started, whatever parts it has.
+- **The version line** sits beside the parts (`lib/versions.ts`), in one of four forms:
+  - "v2 · exported 3 Nov · up to date"
+  - "v2 is older than your changes · **Export v3**"
+  - "Making v3 · v2 still plays" (a crew is running; the last version keeps playing)
+  - "No video yet · **Export**", only once Idea to Sound are ready. Otherwise, with no version, it says nothing.
+
+  Export (`POST /api/p/:id/export`) is the local render of the next version: "Free: a local render, no model calls". It isn't offered while a crew runs.
 - **An old build.** `GET /api/build` says when the served UI is older than its sources: one quiet line under the header, "This studio is running an old build. Rebuild with `pnpm --filter @pap/web build`.", with Hide.
 
 ## 5. Every string, by place
@@ -661,7 +670,7 @@ The Tick column counts from that row's trigger. A row with no trigger keeps coun
 | | | +4 | t_14 done; s02 `end`; reviewer `live`; t_15 working |
 | | | +6 | t_15 done; reviewer `end`; `pip item` "The rough cut is ready again, with your change."; `pip card` c_ch done "Scene 2 redone; the hero is 2× now."; `gate` g3 open |
 | 11 | `gate:g3_rough` | +0 | `gate` g3 passed (and G4 approved with it); editor `spawn`; t_16 working |
-| | | +4 | t_16 done; editor `end`; `x-state` files; `gate` g4 passed; `milestone` "Your video is ready"; `pip item` "Your video is ready. A new video is exported, with scene 2's change." with the files card |
+| | | +4 | t_16 done; editor `end`; `x-state` files and versions (v1); `parts` (Video ✓); `gate` g4 passed; `milestone` "Your video is ready"; `pip item` "Your video is ready. A new video is exported, with scene 2's change." with the files card |
 | 12 | `ask:why did you add a Pixel artist?` (with `about: {instance: "pixel-artist:founder"}`) | +2 | `pip item` "The library had no founder sprite, so I added one drawing. It was $0.31 of your $3." |
 
 The `ledger` events follow each task's `usd` from §2 as it ends. Pip's six metered turns are $0.02 each, $0.12 in all.

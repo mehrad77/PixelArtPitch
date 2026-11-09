@@ -5,7 +5,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ApiError } from "./api.ts";
 import { findCard, laterCard, revertCard } from "./cards.ts";
 import { client } from "./client.ts";
-import { hasVideo, humanStatus, PHASES, phaseOf } from "./human.ts";
+import { hasVersionIdle, humanStatus } from "./human.ts";
 import { navigate } from "./router.tsx";
 import { freshStage } from "./stage.ts";
 import type {
@@ -467,15 +467,15 @@ export function pipMood(c: Conv, state: ProjectState | null): PipMood {
   if (c.listening) return "listening";
   if (last?.kind === "pip" && last.cards.some((k) => (k.type === "plan" || k.type === "form") && k.status === "done"))
     return "happy";
-  if (state && phaseOf(state) >= PHASES.length) return "happy";
+  if (state && hasVersionIdle(state)) return "happy";
   return "idle";
 }
 
 /** 2–4 things to ask, from where the project is; none of them sends itself */
 export function suggestions(state: ProjectState | null): string[] {
   if (!state) return ["Start a new video", "What's each project doing?"];
-  if (phaseOf(state) >= PHASES.length && hasVideo(state))
-    return ["Subtitles in another language", "Change something", MAKE_ANOTHER];
+  // a version and no crew making the next one
+  if (hasVersionIdle(state)) return ["Subtitles in another language", "Change something", MAKE_ANOTHER];
   const st = humanStatus(state);
   if (st.tone === "problem") return ["What went wrong?", "What can I do about it?"];
   if (st.tone === "needs") return ["What do they need from me?", "Explain the choice"];

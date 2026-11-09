@@ -1,4 +1,4 @@
-// The project in plain words, for the default (simple) view: five steps instead of nine stages, one status
+// The project in plain words, for the default (simple) view: five parts instead of nine stages, one status
 // sentence, milestones and money as one quiet line. The rule: if the crew can fix it alone, the person never hears
 // about it; if it can't, they get one sentence and one button. Pure functions, no React.
 import { clock, duration } from "./format.ts";
@@ -16,29 +16,11 @@ import type {
   Stage,
   Task,
 } from "./types.ts";
+import { hasVersion } from "./versions.ts";
 
-// ---- five steps ----
-export const PHASES: { label: string; stages: Stage[] }[] = [
-  { label: "Idea", stages: ["brief"] },
-  { label: "Story", stages: ["script", "storyboard"] },
-  { label: "Pictures", stages: ["art", "animate"] },
-  { label: "Sound", stages: ["narrate", "sound"] },
-  { label: "Finished", stages: ["review", "deliver"] },
-];
-export const phaseOfStage = (stage: Stage) =>
-  Math.max(
-    0,
-    PHASES.findIndex((p) => p.stages.includes(stage)),
-  );
 export const hasVideo = (s: ProjectState) => s.files.some((f) => f.kind === "video");
-/** 0..4 for the step the crew is on; 5 once the video is out and nobody is working */
-export function phaseOf(s: ProjectState): number {
-  const busy = s.tasks.some((t) => t.status === "working" || t.status === "queued");
-  if (hasVideo(s) && s.stage === "deliver" && !busy) return PHASES.length;
-  const p = s.status?.phase;
-  // a project made before status tracking has phase 0 but a later stage: trust the further of the two
-  return Math.max(p != null && p >= 0 && p < PHASES.length ? p : 0, phaseOfStage(s.stage));
-}
+/** the video is out and nobody is making the next one: what "done" means now (a version, no crew running) */
+export const hasVersionIdle = (s: ProjectState) => hasVersion(s) && !crewRunning(s);
 
 // ---- recovered failures ----
 /** a failed task is recovered when a later task with the same role and kind (and parent, if any) started after it */
@@ -252,9 +234,10 @@ export const openAsks = (s: ProjectState) => {
   return s.questions.filter((q) => q.status === "open" && !own.has(q.id));
 };
 
+/** the person narrates, the Sound part isn't ready, there's no take yet, and the Editor waits for one */
 export const needsNarration = (s: ProjectState) =>
   s.doc.brief.narration === "user" &&
-  phaseOf(s) === 3 &&
+  s.parts?.parts.find((p) => p.id === "sound")?.state !== "ready" &&
   !s.doc.audio.vo.length &&
   s.tasks.some((t) => t.role === "editor" && t.status === "waiting_user");
 
@@ -302,7 +285,7 @@ export function humanStatus(s: ProjectState): HumanStatus {
   if (why.kind === "not_started") return { text: "Waiting to start", tone: "info" };
   if (why.kind === "stopped") return { text: "Stopped", tone: "paused" };
   if (crew === "paused") return { text: "Paused. Nothing is spent while the crew waits.", tone: "paused" };
-  if (phaseOf(s) >= PHASES.length) return { text: "Your video is ready.", tone: "info" };
+  if (hasVersionIdle(s)) return { text: "Your video is ready.", tone: "info" };
   if (s.status?.line && !/^Waiting to start/i.test(s.status.line))
     return { text: s.status.line, tone: crew === "pausing" ? "paused" : "working" };
   const lead = leadWorking(s);
@@ -506,8 +489,7 @@ export function waitReason(s: ProjectState): WaitReason {
   if (crew === "paused")
     return { kind: "paused", text: `Paused by you during ${STAGE_WORD[stage]}.`, action: "resume", stage };
   // 8. finished (before the "not running" cases: a finished crew is not running either)
-  if (phaseOf(s) >= PHASES.length)
-    return { kind: "finished", text: "Everything is done. Your video is in Finished.", action: "open" };
+  if (hasVersionIdle(s)) return { kind: "finished", text: "Everything is done. Your video is ready.", action: "open" };
   if (!crewRunning(s)) {
     // 4. nothing done yet
     if (!s.tasks.length) return { kind: "not_started", text: "The crew hasn't started yet.", action: "start" };

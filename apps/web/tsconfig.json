@@ -12,7 +12,10 @@
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
-    "types": []
+    "types": [],
+    "paths": {
+      "@pap/tools/parts": ["./src/lib/tools-parts.d.ts"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

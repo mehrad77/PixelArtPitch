@@ -34,13 +34,13 @@ export type ProjectSummary = {
   /** a crew is working on it in this process right now */
   running?: boolean;
   paused?: boolean;
-  status?: { line: string; phase: number; problem?: ProjectStatus["problem"] };
-  /** 0..4, or 5 once the video is out */
-  phase?: number;
+  status?: { line: string; problem?: ProjectStatus["problem"] };
   /** how many milestones are reached */
   milestones?: number;
-  /** a video exists */
-  finished?: boolean;
+  /** what it has, Idea … Video, states only (no `why`) */
+  parts?: Omit<Part, "why">[];
+  /** its latest export, and whether that shows the document as it is now; null before the first */
+  version?: { v: number; at: string; upToDate: boolean } | null;
   /** roles with a task in progress */
   working?: Role[];
   /** extension: roles waiting on the person */
@@ -205,8 +205,8 @@ export type ProblemAction = "retry" | "change_model" | "add_budget" | "fix_key";
 /** extension: the one sentence the person sees, and the one problem the crew can't fix alone */
 export type ProjectStatus = {
   line: string;
-  /** 0..4: Idea, Story, Pictures, Sound, Finished */
-  phase: number;
+  /** no longer read: older servers and drafts still send it */
+  phase?: number;
   etaSec?: number;
   problem?: { text: string; action: ProblemAction; taskId: string; provider?: string };
   /** the crew waits on a card in Pip's thread (not a problem): the plan change, or the budget */
@@ -394,7 +394,9 @@ export type ServerEvent =
   /** PIP-ORCHESTRATION §4.3: the plan view; `revision` only on a new revision */
   | { event: "plan"; data: { view: PlanView; revision?: PlanRevisionSummary } }
   /** PIP-ORCHESTRATION §4.3: one instance changed (derived, transient) */
-  | { event: "instance"; data: { instance: Instance; change: InstanceChange } };
+  | { event: "instance"; data: { instance: Instance; change: InstanceChange } }
+  /** what the project has, sent (transient) when it changes: after a patch, a scene's status, a stage or an export */
+  | { event: "parts"; data: Parts };
 
 export type ConnState = "connecting" | "open" | "retrying";
 
@@ -628,6 +630,8 @@ export interface Client {
   addNote(id: string, n: NoteInput): Promise<Note>;
   gate(id: string, gate: GateId, v: GateVerdict): Promise<Gate>;
   crewRun(id: string, stage?: Stage): Promise<void>;
+  /** POST …/export: the local render of the next version (no model calls); 409 while a crew runs */
+  exportVideo(id: string): Promise<{ file: string; v: number }>;
   crewPause(id: string, mode: "after_step" | "now"): Promise<void>;
   crewResume(id: string): Promise<void>;
   /** extension: POST …/crew/retry { taskId }; falls back to crew/run for `stage` when the server has no retry */

@@ -3,7 +3,7 @@
 // making?" and the field; after Start the same places fill with the film, the crew, the status sentence and what
 // needs you. Every part keeps its place in the tree, so the field (and its words, and the focus) never remounts.
 // Watching rules as in Studio: nothing the crew does moves the playhead or the focus.
-import { Button, Callout, Popover, Skeleton, Steps } from "@shabboo/kit/react";
+import { Button, Callout, Popover, Skeleton } from "@shabboo/kit/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../lib/api.ts";
 import { glideTo, isTyping, newKeys, scrollToNeed, whereIs } from "../lib/attention.ts";
@@ -12,13 +12,22 @@ import { channelSummary, useChannel } from "../lib/channel.ts";
 import { client } from "../lib/client.ts";
 import { usePublishProject } from "../lib/current.ts";
 import { isControlTarget, type ProjectView, useProject, useThrottled } from "../lib/hooks.ts";
-import { crewStateOf, currentView, effectOf, humanStatus, PHASES, phaseOf, plainUsd } from "../lib/human.ts";
+import { crewRunning, crewStateOf, currentView, effectOf, humanStatus, plainUsd } from "../lib/human.ts";
 import { needsItems } from "../lib/needs.ts";
 import { adoptConv, askPip, NEW_TALK, seedConv, usePip, usePipOpenRequest } from "../lib/pip.ts";
 import { usePlayback } from "../lib/playback.ts";
 import { Link, navigate } from "../lib/router.tsx";
 import { adopt, FIRST_LINE, STARTERS } from "../lib/stage.ts";
 import type { PipItem, ProjectState } from "../lib/types.ts";
+import {
+  exportLabel,
+  PART_ICON,
+  PART_STAGE,
+  PART_WORD,
+  partDetail,
+  versionLineOf,
+  versionWords,
+} from "../lib/versions.ts";
 import { drawLogo } from "../mock/art.ts";
 import { FLAGS } from "../mock/client.ts";
 import { JOURNEY } from "../mock/journey.ts";
@@ -324,15 +333,7 @@ function Stage({
           Reconnecting to the server…
         </p>
       )}
-      {state ? (
-        <Steps
-          className="sp-steps"
-          size="sm"
-          items={PHASES.map((p) => ({ label: p.label }))}
-          current={phaseOf(state)}
-          aria-label="Where your video is"
-        />
-      ) : null}
+      {state && projectId ? <PartsLine projectId={projectId} state={state} /> : null}
       <div className="sp-film">
         {state && projectId ? (
           <Viewer
@@ -550,6 +551,96 @@ function StageTalk({
 }
 
 /** a quiet Pause: after this step, or now; while paused, Resume is the primary button */
+/**
+ * What the video has, as five parts (an icon and a word each: "Story ✓", "Pictures 3 of 5", "Video older than your
+ * changes"; one that isn't ready links to its Studio stage), and the version line beside them with Export, the local
+ * render of the next version (no model calls).
+ */
+function PartsLine({ projectId, state }: { projectId: string; state: ProjectState }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const running = crewRunning(state);
+  const line = versionLineOf(state, running);
+  const label = line && exportLabel(line);
+  const parts = state.parts?.parts ?? [];
+  const exportNow = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      await client.exportVideo(projectId);
+    } catch (e) {
+      setErr(`${(e as Error).message}.${e instanceof ApiError && e.fix ? ` ${e.fix}.` : " Try again."}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!parts.length && !line) return null;
+  return (
+    <div className="sp-parts">
+      {parts.length > 0 && (
+        <ul className="sp-parts-list" aria-label="What your video has">
+          {parts.map((p) => {
+            const body = (
+              <>
+                <span className="sp-part-icon" aria-hidden="true">
+                  {PART_ICON[p.state]}
+                </span>
+                <span className="sp-part-word">{PART_WORD[p.id]}</span>
+                {partDetail(p) ? (
+                  <span className="sp-part-detail">{partDetail(p)}</span>
+                ) : (
+                  <span className="visually-hidden">ready</span>
+                )}
+              </>
+            );
+            return (
+              <li key={p.id} className="sp-part" data-state={p.state} title={p.why}>
+                {p.state === "ready" || p.id === "video" ? (
+                  <span>{body}</span>
+                ) : (
+                  <Link href={`/p/${encodeURIComponent(projectId)}/${PART_STAGE[p.id]}`} title={p.why}>
+                    {body}
+                    <span className="visually-hidden">, open in Studio</span>
+                  </Link>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {line && (
+        <p className="sp-version small">
+          <span dir="auto" role="status">
+            {line.kind === "current" ? (
+              <>
+                v{line.v} · exported <time dateTime={line.at}>{line.date}</time> · up to date
+              </>
+            ) : (
+              versionWords(line)
+            )}
+          </span>
+          {label && (
+            <>
+              {" · "}
+              <Button size="sm" variant="primary" onClick={exportNow} disabled={busy} aria-describedby="sp-export-cost">
+                {busy ? "Exporting…" : label}
+              </Button>{" "}
+              <span id="sp-export-cost" className="muted">
+                Free: a local render, no model calls
+              </span>
+            </>
+          )}
+        </p>
+      )}
+      {err && (
+        <p className="small" role="alert">
+          {err}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function PauseControl({ projectId, state }: { projectId: string; state: ProjectState }) {
   const crew = crewStateOf(state);
   const [err, setErr] = useState<string | null>(null);

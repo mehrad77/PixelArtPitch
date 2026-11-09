@@ -10,6 +10,7 @@
   "dependencies": {
     "@pap/engine": "workspace:*",
     "@pap/schema": "workspace:*",
+    "@pap/tools": "workspace:*",
     "@shabboo/kit": "^0.4.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

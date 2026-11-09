@@ -97,8 +97,10 @@ export function useProject(id: string | null): ProjectView {
       if (e.event === "pip") return forwardPip(id, e);
       if (e.event === "channel") return forwardChannel(id, e);
       setSeq((x) => x + 1);
-      if (e.event === "patch") {
-        setHistory((h) => (h.some((x) => x.seq === e.data.seq) ? h : [...h, e.data]));
+      // an export is a new version: refetch for the versions list (the `parts` event brings the parts alone)
+      if (e.event === "patch" || (e.event === "render" && e.data.kind === "final")) {
+        if (e.event === "patch") setHistory((h) => (h.some((x) => x.seq === e.data.seq) ? h : [...h, e.data]));
+        else setState((s) => (s ? applyEvent(s, e) : s));
         if (refetch.current) clearTimeout(refetch.current);
         refetch.current = setTimeout(
           () =>

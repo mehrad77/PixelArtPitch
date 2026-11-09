@@ -55,6 +55,8 @@ export function applyEvent(s: ProjectState, e: ServerEvent): ProjectState {
       return s;
     case "status":
       return { ...s, status: e.data };
+    case "parts":
+      return { ...s, parts: e.data };
     case "milestone":
       return { ...s, milestones: upsert(s.milestones ?? [], e.data) };
     case "activity": {

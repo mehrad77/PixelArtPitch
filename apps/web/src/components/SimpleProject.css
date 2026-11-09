@@ -193,3 +193,43 @@
   font-family: var(--font-serif);
   max-inline-size: var(--measure);
 }
+
+/* what the video has (five parts, an icon and a word each) and the version line beside it */
+.sp-parts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+.sp-parts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+.sp-part > * {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  color: var(--text-muted);
+}
+.sp-part[data-state="ready"] .sp-part-icon {
+  color: var(--text-accent);
+}
+.sp-part[data-state="stale"] .sp-part-icon {
+  color: var(--status-warning);
+}
+.sp-part[data-state="ready"] .sp-part-word {
+  color: var(--text);
+}
+.sp-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+}

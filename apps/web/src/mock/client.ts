@@ -1,7 +1,9 @@
 // The in-browser mock backend (?mock=1 or VITE_PAP_MOCK=1). One singleton holds every project; a simulated crew
 // runs a project only while something subscribes to it (ref-counted, so React's StrictMode double effects are safe).
 // The simulation never seeks, scrolls or opens anything: it only emits events, like the server would.
-import { humanStatus, PHASES, phaseOf, problemOf, STAGE_WORD } from "../lib/human.ts";
+import { partsOf } from "@pap/tools/parts";
+import { ApiError } from "../lib/api.ts";
+import { crewRunning, humanStatus, problemOf, STAGE_WORD } from "../lib/human.ts";
 import { msgsOf } from "../lib/instances.ts";
 import { applyEvent } from "../lib/reducer.ts";
 import { mergeSettings } from "../lib/settings.ts";
@@ -28,6 +30,7 @@ import type {
   ModelRow,
   Note,
   NoteInput,
+  Parts,
   PatchEntryT,
   PatchOpT,
   PipDecision,
@@ -47,6 +50,7 @@ import type {
   Stage,
   Task,
   TimelineJSON,
+  Version,
   WorkspaceLine,
 } from "../lib/types.ts";
 import { type Beat, closing, failure, middle, opening, wholeRun } from "./activity.ts";
@@ -95,6 +99,8 @@ const wait = (ms = 120) => new Promise((r) => setTimeout(r, ms));
 
 type MockProject = {
   state: ProjectState;
+  /** syncParts is running (its own events don't start it again) */
+  syncing?: boolean;
   history: PatchEntryT[];
   seq: number;
   phase: number;
@@ -578,6 +584,7 @@ class MockBackend {
   get(id: string) {
     const p = this.projects.get(id);
     if (!p) throw Object.assign(new Error(`No project ${id}`), { status: 404 });
+    if (!p.state.versions) this.syncParts(p, true);
     return p;
   }
 
@@ -756,6 +763,46 @@ class MockBackend {
     p.seq++;
     const copy = clone(e);
     for (const l of p.listeners) l(copy);
+    if (["patch", "x-state", "stage", "render"].includes(e.event)) this.syncParts(p);
+  }
+  /**
+   * What the server does after a patch, a scene's status or an export: a new exported video is the next version
+   * (history/versions.jsonl), and the parts go out as a `parts` event when they change. `quiet` sets them without
+   * events (a project read before anyone listens).
+   */
+  syncParts(p: MockProject, quiet = false) {
+    if (p.syncing) return;
+    p.syncing = true;
+    try {
+      const video = p.state.files.find((f) => f.kind === "video");
+      const had = p.state.versions ?? [];
+      let versions = had;
+      if (video && !had.some((v) => v.url === video.url)) {
+        const v = had.reduce((m, x) => Math.max(m, x.v), 0) + 1;
+        versions = [
+          ...had,
+          {
+            v,
+            rev: p.state.doc.rev,
+            at: iso(),
+            file: `out/versions/v${v}.mp4`,
+            sec: p.state.timeline.duration,
+            sha1: "mock",
+            url: video.url,
+          },
+        ];
+      }
+      const parts = mockParts(p, versions);
+      const changed = JSON.stringify(parts) !== JSON.stringify(p.state.parts);
+      if (quiet) {
+        p.state = { ...p.state, versions, ...(parts ? { parts } : {}) };
+        return;
+      }
+      if (versions !== had) this.x(p, { versions });
+      if (parts && changed) this.emit(p, { event: "parts", data: parts });
+    } finally {
+      p.syncing = false;
+    }
   }
   setTask(p: MockProject, first: string, patch: Partial<Task> & { role?: Role; title?: string }) {
     const id = p.alias.get(first) ?? first;
@@ -830,13 +877,11 @@ class MockBackend {
     const st: ProjectStatus = own
       ? {
           line: own.line,
-          phase: Math.min(PHASES.length - 1, phaseOf(bare)),
           ...(own.problem ? { problem: own.problem } : {}),
           ...(own.waiting ? { waiting: own.waiting } : {}),
         }
       : {
           line: h.text,
-          phase: Math.min(PHASES.length - 1, phaseOf(bare)),
           ...(eta && eta[1] > 0 ? { etaSec: (eta[0] + eta[1]) / 2 } : {}),
           ...(problemOf(bare) ? { problem: problemOf(bare) } : {}),
         };
@@ -1599,6 +1644,26 @@ const be = () => {
   return backend;
 };
 
+/** partsOf over the mock's state: its scene statuses in the crew's words (approval and locked are drawn) */
+function mockParts(p: MockProject, versions: Version[]): Parts | null {
+  const sceneStatus: Record<string, { version: SceneStatus["version"]; state: string }> = {};
+  for (const [id, st] of Object.entries(p.state.sceneStatus ?? {}))
+    sceneStatus[id] = {
+      version: st.version,
+      state: st.stale ? "stale" : st.state === "approval" || st.state === "locked" ? "ready" : st.state,
+    };
+  try {
+    return partsOf({
+      doc: p.state.doc,
+      sceneStatus,
+      history: p.history,
+      versions,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export class MockClient implements Client {
   readonly mock = true;
 
@@ -1611,11 +1676,13 @@ export class MockClient implements Client {
   }
   async projects(): Promise<ProjectSummary[]> {
     await wait();
-    const list = [...be().projects.values()].map(({ state: s }): ProjectSummary => {
+    const list = [...be().projects.values()].map((mp): ProjectSummary => {
+      if (!mp.state.versions) be().syncParts(mp, true);
+      const s = mp.state;
       const crew = s.crew?.state ?? "running";
       const running = crew === "running" || crew === "pausing";
       const times = s.tasks.flatMap((t) => [t.startedAt, t.endedAt]).filter((x): x is string => !!x);
-      const finished = s.files.some((f) => f.kind === "video");
+      const last = s.versions?.at(-1);
       const mid = s.timeline.scenes[Math.floor(s.timeline.scenes.length / 2)];
       const h = humanStatus(s);
       return {
@@ -1634,10 +1701,12 @@ export class MockClient implements Client {
         updatedAt: running ? new Date().toISOString() : (times.sort().at(-1) ?? iso(-3 * 3600)),
         running,
         paused: crew === "paused",
-        phase: phaseOf(s),
-        status: { line: h.text, phase: Math.min(PHASES.length - 1, phaseOf(s)), problem: problemOf(s) },
+        status: { line: h.text, problem: problemOf(s) },
         milestones: s.milestones?.length ?? 0,
-        finished,
+        parts: s.parts?.parts.map(({ id, state, done, of }) => ({ id, state, done, of })),
+        version: last
+          ? { v: last.v, at: last.at, upToDate: s.parts?.parts.find((x) => x.id === "video")?.state === "ready" }
+          : null,
         working: [...new Set(s.tasks.filter((t) => t.status === "working").map((t) => t.role))],
         waiting: [...new Set(s.tasks.filter((t) => t.status === "waiting_user").map((t) => t.role))],
         thumb: mid ? this.frameUrl(s.doc.id, (mid.from + mid.to) / 2, 1) : undefined,
@@ -1658,7 +1727,7 @@ export class MockClient implements Client {
       updatedAt: d.updatedAt,
       createdAt: d.createdAt,
       draft: true,
-      status: { line: be().drafts.lastLine(be().pip.conv(d.id).items), phase: 0 },
+      status: { line: be().drafts.lastLine(be().pip.conv(d.id).items) },
     }));
     return [...list, ...drafts];
   }
@@ -1849,6 +1918,23 @@ export class MockClient implements Client {
       p.tick = 0;
     }
     be().x(p, { crew: { state: "running" } });
+  }
+  /** the server's POST …/export: a new mp4 in out/ is the next version (no model calls); 409 while a crew runs */
+  async exportVideo(id: string) {
+    await wait(400);
+    const b = be();
+    const p = b.get(id);
+    if (crewRunning(p.state))
+      throw new ApiError(409, {
+        code: "busy",
+        message: "the crew is working on this project",
+        fix: "wait for it to finish, or pause it",
+      });
+    const name = p.state.doc.delivery[0]?.out ?? "pitch.mp4";
+    const files = mockFiles(name, p.state.timeline.cues, 18_400_000);
+    b.x(p, { files: [...p.state.files.filter((f) => !files.some((x) => x.name === f.name)), ...files] });
+    b.emit(p, { event: "render", data: { kind: "final", url: files[0].url } });
+    return { file: `out/${name}`, v: p.state.versions?.at(-1)?.v ?? 1 };
   }
   async crewPause(id: string, mode: "after_step" | "now") {
     await wait();

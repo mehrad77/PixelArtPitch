@@ -8,11 +8,11 @@ import { Readable } from "node:stream";
 import type { Pip } from "@pap/crew/assistant";
 import type { DraftConversations } from "@pap/crew/brief/drafts";
 import { lineOf, lineRows, needsCount, needsWords, openNeeds } from "@pap/crew/brief/line";
-import { PHASE } from "@pap/crew/orchestrator";
 import { InstanceKey } from "@pap/crew/plan/instances";
 import { libraryAssetDir, libraryFile, libraryIndex, renderSheet, userLibraryDir } from "@pap/render";
 import { buildReport, type Report } from "@pap/report";
 import type { GateId, Registry, ToolContext } from "@pap/tools";
+import type { Parts } from "@pap/tools/parts";
 import { isFinalVideo, type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
@@ -245,7 +245,41 @@ export function createApp(o: ServerOpts) {
     );
   });
 
-  const proj = (id: string) => o.workspace.get(id);
+  // the parts (Idea … Video) as a transient `parts` SSE event when they change: recomputed after a patch, a scene's
+  // status, a stage change or an export, from whoever caused it (the person, the crew, a tool), deduped by value
+  const partsSeen = new Map<string, string>();
+  const watched = new WeakSet<OpenProject>();
+  const watchParts = (p: OpenProject) => {
+    if (watched.has(p)) return;
+    watched.add(p);
+    const key = () => {
+      try {
+        return JSON.stringify(p.parts());
+      } catch {
+        return "";
+      }
+    };
+    partsSeen.set(p.id, key());
+    p.events.on("event", (e: { event: string; data: any }) => {
+      if (!["patch", "scene", "stage", "render"].includes(e.event)) return;
+      if (e.event === "render" && e.data?.kind !== "final") return;
+      const k = key();
+      if (!k || k === partsSeen.get(p.id)) return;
+      partsSeen.set(p.id, k);
+      p.events.emit("event", { seq: 0, event: "parts", data: JSON.parse(k), ts: new Date().toISOString() });
+    });
+  };
+  const proj = (id: string) => {
+    const p = o.workspace.get(id);
+    watchParts(p);
+    return p;
+  };
+  /** the latest export and whether it shows the document as it is now (null before the first export) */
+  const versionOf = (p: OpenProject, parts: Parts) => {
+    const last = p.versions().at(-1);
+    if (!last) return null;
+    return { v: last.v, at: last.at, upToDate: parts.parts.find((x) => x.id === "video")?.state === "ready" };
+  };
   const ctxFor = (p: OpenProject | undefined): ToolContext => ({
     author: { kind: "user" },
     project: p,
@@ -328,6 +362,7 @@ export function createApp(o: ServerOpts) {
           const p = proj(x.id);
           const st = o.crew?.status(p);
           const needs = needsOf(p);
+          const parts = p.parts();
           extra = {
             stage: p.state.stage,
             spentUsd: st?.budget.spentUsd ?? 0,
@@ -342,11 +377,10 @@ export function createApp(o: ServerOpts) {
             running: st?.crew?.running ?? false,
             paused: p.state.paused,
             status: p.state.status,
-            // projects made before status tracking only have a stage
-            phase: Math.max(p.state.status?.phase ?? 0, PHASE[p.state.stage] ?? 0),
             milestones: p.state.milestones.length,
-            // a finished video (not the rough cut's proxy) and no crew working on it now: a live rerun isn't finished
-            finished: p.files().some(isFinalVideo) && !(st?.crew?.running ?? false),
+            // what it has (states only) and its latest export: "Has a video" is a version and no crew running
+            parts: parts.parts.map(({ id, state, done, of }) => ({ id, state, done, of })),
+            version: versionOf(p, parts),
             working: p.state.tasks.filter((t) => t.status === "working").map((t) => t.role),
             // removing it may also move its folder to the app's trash (only inside the app's own projects folder)
             canTrash: o.workspace.canTrash(x.id),
@@ -393,6 +427,27 @@ export function createApp(o: ServerOpts) {
     return c.json(o.workspace.remove(id, { trash }));
   });
   app.get("/api/p/:id", (c) => c.json(stateOf(proj(c.req.param("id")))));
+  // Export: the local render of the next version (export_video), no model calls. One at a time, and never while a
+  // crew runs (the crew exports its own at deliver)
+  const exporting = new Set<string>();
+  app.post("/api/p/:id/export", async (c) => {
+    const p = proj(c.req.param("id"));
+    const b = await c.req.json().catch(() => ({}));
+    if (o.crew?.status(p).crew?.running)
+      throw new StoreError("busy", "the crew is working on this project", "wait for it to finish, or pause it", 409);
+    if (exporting.has(p.id)) throw new StoreError("busy", "this project is already exporting", "wait for it", 409);
+    exporting.add(p.id);
+    try {
+      const input = {
+        ...(typeof b?.delivery === "string" ? { delivery: b.delivery } : {}),
+        ...(b?.captions === "burned" || b?.captions === "none" ? { captions: b.captions } : {}),
+      };
+      const res = await o.registry.call("export_video", input, ctxFor(p));
+      return res.ok ? c.json(res.data) : c.json(res, 400);
+    } finally {
+      exporting.delete(p.id);
+    }
+  });
   app.get("/api/p/:id/history", async (c) =>
     c.json(await proj(c.req.param("id")).history(Number(c.req.query("since") ?? 0))),
   );

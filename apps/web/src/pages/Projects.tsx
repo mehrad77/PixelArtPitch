@@ -1,5 +1,5 @@
-// The Projects overview: one card per project, grouped Needs you, Working, Stopped, Finished, Not started. Each card
-// shows its live thumbnail, the five steps, the plain status with an icon and a word (never colour alone), the faces
+// The Projects overview: one card per project, grouped Needs you, Working, Stopped, Has a video, Not started. Each
+// card shows its live thumbnail, its five parts, the plain status with an icon and a word (never colour alone), the faces
 // of whoever is working, money as one quiet line and when it last moved. Motion is stepped and calm, and stills under
 // reduced motion. The disk path sits in the card's "⋯" menu.
 import { Button, Callout, Dialog, Menu, Skeleton } from "@shabboo/kit/react";
@@ -11,18 +11,19 @@ import { client } from "../lib/client.ts";
 import { STAGE_LABEL } from "../lib/derive.ts";
 import { ago, duration } from "../lib/format.ts";
 import { useLoad } from "../lib/hooks.ts";
-import { type Member, memberOf, PHASES, setView, usdPlain } from "../lib/human.ts";
+import { type Member, memberOf, setView, usdPlain } from "../lib/human.ts";
 import { MAKE_ANOTHER, makeAnother } from "../lib/pip.ts";
 import { type Kind, kindOf } from "../lib/projects.ts";
 import { Link, LinkButton, navigate } from "../lib/router.tsx";
 import type { ProjectSummary, WorkspaceLine } from "../lib/types.ts";
+import { PART_ICON, PART_WORD, partLabel, partsLabel } from "../lib/versions.ts";
 import "./Projects.css";
 
 const GROUPS: { id: string; title: string; kinds: Kind[] }[] = [
   { id: "needs", title: "Needs you", kinds: ["needs"] },
   { id: "working", title: "Working", kinds: ["working"] },
   { id: "stopped", title: "Stopped", kinds: ["problem", "stopped"] },
-  { id: "finished", title: "Finished", kinds: ["finished"] },
+  { id: "finished", title: "Has a video", kinds: ["finished"] },
   { id: "fresh", title: "Not started", kinds: ["fresh"] },
   // an unstarted /new: only its conversation is saved (PIP-JOURNEY §3.6)
   { id: "drafts", title: "Drafts", kinds: ["draft"] },
@@ -108,7 +109,8 @@ function StatusMark({ p, kind }: { p: ProjectSummary; kind: Kind }) {
               <span />
               <span />
             </span>,
-            "Working",
+            // a rerun: the last version keeps playing
+            p.version ? `Working · v${p.version.v} plays` : "Working",
           ]
         : kind === "problem"
           ? [
@@ -129,7 +131,7 @@ function StatusMark({ p, kind }: { p: ProjectSummary; kind: Kind }) {
                   <span key="i" className="pm-check">
                     ✓
                   </span>,
-                  "Finished",
+                  p.version ? `Has a video · v${p.version.v}` : "Has a video",
                 ]
               : [<span key="i" className="pm-ring" />, "Not started"];
   return (
@@ -142,14 +144,16 @@ function StatusMark({ p, kind }: { p: ProjectSummary; kind: Kind }) {
   );
 }
 
-/** Idea · Story · Pictures · Sound · Finished as five segments */
-function MiniSteps({ phase }: { phase: number }) {
-  const at = Math.max(0, Math.min(PHASES.length, phase));
-  const label = at >= PHASES.length ? "All five steps done" : `Step ${at + 1} of ${PHASES.length}: ${PHASES[at].label}`;
+/** Idea · Story · Pictures · Sound · Video as five marks: a shape and a bar each (never colour alone), one label */
+function PartMarks({ parts }: { parts: NonNullable<ProjectSummary["parts"]> }) {
   return (
-    <ol className="psteps" aria-label={label}>
-      {PHASES.map((ph, i) => (
-        <li key={ph.label} data-state={i < at ? "done" : i === at ? "now" : "todo"} title={ph.label} />
+    <ol className="psteps" aria-label={partsLabel(parts)}>
+      {parts.map((x) => (
+        <li key={x.id} data-state={x.state} title={partLabel(x)}>
+          <span className="psteps-word" aria-hidden="true">
+            {PART_ICON[x.state]} {PART_WORD[x.id]}
+          </span>
+        </li>
       ))}
     </ol>
   );
@@ -207,7 +211,6 @@ function ProjectCard({
   };
   const href = `/p/${encodeURIComponent(p.id)}`;
   const video = kind === "finished" ? p.video || client.proxyUrl(p.id) : "";
-  const phase = p.phase ?? (p.finished ? PHASES.length : (p.status?.phase ?? 0));
   const raw = kind === "problem" ? (p.status?.problem?.text ?? p.status?.line) : p.status?.line;
   // the mark already says these
   const line = raw && !/^(Stopped|Waiting to start|Your video is ready)\.?$/.test(raw) ? raw : "";
@@ -231,7 +234,7 @@ function ProjectCard({
             {p.title}
           </Link>
         </h3>
-        <MiniSteps phase={phase} />
+        {p.parts && <PartMarks parts={p.parts} />}
         <StatusMark p={p} kind={kind} />
         {line && (
           <p className="pcard-line" dir="auto">

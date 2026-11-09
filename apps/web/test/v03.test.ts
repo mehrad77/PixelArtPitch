@@ -134,12 +134,13 @@ test("milestones: one row while it repeats, newest first, in a track of their ow
   );
 });
 
-test("Projects: a rerun is Working, not ✓ Finished", () => {
+test("Projects: a rerun is Working with v2 still playing, not ✓ Has a video", () => {
   const p = (over: Partial<ProjectSummary>): ProjectSummary =>
     ({ id: "x", title: "x", needsYou: 0, stage: "review", spentUsd: 1, updatedAt: "", ...over }) as ProjectSummary;
-  assert.equal(kindOf(p({ finished: true, running: true })), "working");
-  assert.equal(kindOf(p({ finished: true, running: false })), "finished");
-  assert.equal(kindOf(p({ finished: true, running: true, needsYou: 1 })), "needs");
+  const v2 = { v: 2, at: "2026-11-03T10:00:00Z", upToDate: false };
+  assert.equal(kindOf(p({ version: v2, running: true })), "working");
+  assert.equal(kindOf(p({ version: v2, running: false })), "finished");
+  assert.equal(kindOf(p({ version: v2, running: true, needsYou: 1 })), "needs");
   assert.equal(kindOf(p({ draft: true })), "draft");
 });
 

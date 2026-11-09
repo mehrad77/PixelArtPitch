@@ -221,6 +221,9 @@ importers:
       '@pap/schema':
         specifier: workspace:*
         version: link:../../packages/schema
+      '@pap/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       '@shabboo/kit':
         specifier: ^0.4.3
         version: 0.4.3(react@19.3.1)

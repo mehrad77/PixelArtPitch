@@ -152,6 +152,9 @@ export class HttpClient implements Client {
   async crewRun(id: string, stage?: Stage) {
     await this.post(`/api/p/${enc(id)}/crew/run`, stage ? { stage } : {});
   }
+  exportVideo(id: string) {
+    return this.post<{ file: string; v: number }>(`/api/p/${enc(id)}/export`);
+  }
   async crewPause(id: string, mode: "after_step" | "now") {
     await this.post(`/api/p/${enc(id)}/crew/pause`, { mode });
   }
