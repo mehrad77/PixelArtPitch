@@ -2,9 +2,29 @@
 
 Each release's section is also its GitHub release notes: the release job in `.github/workflows/ci.yml` publishes the section whose heading matches the tag.
 
-## v0.5.2 (unreleased)
+## v0.6.0 (2026-11-10)
 
-### Crew
+[![Watch the PixelArtPitch trailer (1:32)](https://img.youtube.com/vi/vzSFIVovytY/maxresdefault.jpg)](https://youtu.be/vzSFIVovytY)
+
+**[Watch the trailer on YouTube](https://youtu.be/vzSFIVovytY)** (1:32). The app footage in it is real: a new project went from one typed message to a finished 30-second teaser in 12 minutes, for $2.68.
+
+Everything since v0.1.0, in one release. Code scenes the crew writes itself, Pip making small edits for free, changes that cost only what they touch, day, dusk and night (per scene), walks that face the right way, logo flags, parts and versions, a playable rough cut with sound, and the crew stopping to tell you when something goes wrong.
+
+### Highlights
+- **The crew writes code scenes.** When a beat needs its own picture, the Director boards a code scene and the Scene Coder writes it, tries it in a sandbox, repairs and critiques it.
+- **Pip makes small edits itself, free.** The time of day, a caption, a scene's settings or named constants, the sound plan, the pace: done in the same turn with stills before and after and an Undo, no crew run.
+- **Changes cost what they touch.** Every note gets a tier (edit, tune, code patch, re-plan); a code redo is a patch, not a rewrite, and a check first skips work that's already done.
+- **Night, dusk and day**, for the whole video or one scene, with the palettes, skies and backdrops to match.
+- **Characters walk and face the way they go**, players stay on stage, a list becomes numbered boxes, and a finale flies your logo on a flag. SVG logos import cleanly.
+- **Parts and versions.** A project shows its five parts (Idea, Story, Pictures, Sound, Video) and every export is a numbered version; the rough cut plays with sound and never shows an old cut.
+- **Failures stop and tell you**, "Redo what failed" reruns only what failed, and at 80% of the cap you can finish within the budget.
+- **The studio**: one timeline for Pip and the milestones, the run report, the Library's three folders, and the public library grew (a common pack of 35 assets, the moth, the owl, `gamer`, `vr-headset`, `agent`).
+
+Every change, in full:
+
+### Pip edits for free, changes cost what they touch, a time of day per scene
+
+#### Crew
 - **Every change has a tier.** `classifyChange` sorts a note into `edit` (free: Pip does it), `tune`, `code_patch` or `replan`, with the scenes it touches. "Make it in daytime" is a free edit when every code scene draws its sky from `TIME`; "move the logo up a bit" is an edit of the scene's `LOGO_Y`; "take the extra gamer out of every scene" patches only the scenes that have the gamer; only a story change re-plans.
 - **Pip makes small edits itself.** The time of day, a caption, a recipe scene's settings, a code scene's named constants, the sound plan or the pace: Pip makes the edit in the same turn, shows a still before and after, and adds an Undo card. A rule-decided edit on a card says "I can do this now: free". Never while the crew works.
 - **A code scene's change card tells the truth.** The Scene Coder reads your note, so the card no longer warns that it can't; the title names the scene by number instead of repeating the "At 0:54 (…)" anchor; a code scene's own pace is its hold constant, or a patch, never a full rewrite.
@@ -15,24 +35,24 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 - **The Reviewer files "the change isn't in the cut" once,** on the scenes it lists as still missing it, never copied onto every changed scene.
 - **Two edits with no model call.** `look_set_time` sets the time of day; `code_set_constants` changes a code scene's named constants after a trial render, and a value that fails it changes nothing. `project_get` lists each code scene's constants.
 
-### Engine
+#### Engine
 - **A scene can have its own time of day.** `scene.time` (night, dusk or day) overrides the video's `canvas.time` for that scene, so a day story can end at dusk. The renderer loads each time's palette and draws those scenes with an engine of their own (one shared frame buffer), so a code scene's `TIME` and sky, a backdrop's `auto` sky and the palette all follow the scene. `sceneTime()` in `@pap/schema` resolves it. `look_set_time { time, scenes }` sets it with no model call ("make scene 6 sunset" is a free edit for Pip); `look_set_time { time }` for the whole video drops every scene's own time. The crew's `look.time` sets a scene's time when the note names one, and prompts name the scenes set at another time. The Director doesn't board scene times from the idea yet.
 
-### Studio
+#### Studio
 - **The mock shows Pip's own edits.** `?mock=1&journey=todo&scenario=edits` stops at the rough cut; "make the hero bigger in scene 2" is done by Pip at once with an Undo card, and "make it in daytime" gets the free card "I can do this now: free".
 - **Play never shows an old cut.** The rough cut (`out/proxy.mp4`) records the document rev it shows (`out/proxy.json`), and the state says whether it is current (`proxy: { rev, fresh }`). While it is older than your changes the player plays the live frames, silent ("Silent preview: the rough cut with sound is catching up with your changes"), and the studio re-renders it a few seconds after the last change (free, local, never while the crew runs). Before, a paused frame showed the new day sky while Play showed the old night.
 - **One timeline for Pip's thread and the milestones.** The simple view's separate "Milestones" column is gone: milestones sit among the turns, newest first, on one spine with a dot per entry (a turn hangs its framed block off its dot, a milestone is one quiet line, the newest dot is lit). The three newest milestones always show; a longer run between two turns keeps its first and folds the rest into "N more milestones", which expands in place. The timeline sits on the page, with no panel behind it.
 - **A plan change's reason shows once, in whole sentences; Pip's timeline has no nested boxes.** The card's detail carries the reason whole (cut, if at all, at a sentence); Pip's line is "The plan grew past what you approved." and each effect names only who joins.
 
-### Library
+#### Library
 - **`agent`**: a 16×16 boxy robot with idle and four walk frames, drawn by the crew during the promo's teaser run.
 
-### Promo
+#### Promo
 - **`scripts/promo/`**: the tools behind PixelArtPitch's own promo video: a recorder for real studio pages, the studio's mock captures, a chiptune score and mix on a 120 BPM bar grid, a frame-exact DOM compositor in headless Chrome (16:9 and 9:16, a thumbnail) and the shorter cuts. See its README.
 
-## v0.5.1 (unreleased)
+### Walks, logo flags, counted boxes, day and dusk
 
-### Crew
+#### Crew
 - **The players stay on screen in code scenes too.** The Scene Coder's prompt keeps the listed players on the ground line, idling and reacting, even when the beat doesn't name them.
 - **Code scenes are priced from what they cost.** A `scene.code` task counts one write plus one repair or critique at p50 and three at p90 (it was five, which put a code scene's p90 at $2.64). Past five ledger rows the ledger prices each call.
 - **The brief card follows your files.** Adding a file, or changing a file's type or rights, rebuilds the open brief card in place, so its files, price and warning are current.
@@ -43,7 +63,7 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 - **The Reviewer checks the change it was asked for.** After your change, the Reviewer sees your note and must say whether the cut now does it. If it doesn't, the cut is never "ready to ship": each changed scene gets a blocker and is redone.
 - **The time of day, from the idea to a change.** Pip reads it from the idea ("sunny", "in the day", "at sunset"), the brief card shows "Time of day", and Start sets the canvas. "Make it day" or "sunset instead" later is a `look.time` task with no model call: it sets the canvas time and the palette follows, recipe scenes follow, and only the code scenes are re-coded, with your note. If a cue still says "Night falls", Pip says so in one line.
 
-### Engine
+#### Engine
 - **A walking hero runs instead of waving.** `walk_in`, `item_collect`, `flag_raise` and `end_card_loop` key their wave after the walk, and a state before its first key took that key's value, so the hero slid in on the wave frame. A forced state now applies from its first key on, and before it the walk's run cycle shows. The QuestDay golden is regenerated for it (only the hero's pixels change).
 - **Characters face the way their art faces.** Character and creature assets have a `facing` field (`"right"` for drawn heroes, `"left"` for the library NPCs; `gamer` is `"right"`). The engine mirrors an actor by it to face its walk, so drawn heroes no longer walk backwards. The recipes' `faces` and the actor's `artFaces` lose their `"left"` default and only override it. An asset without the field takes "facing left/right" from its description, else left. Code scenes get `faceTo(id, dir)`, and the Scene Coder's asset lines say which way each character faces and what it is.
 - **Walk, flag and slots for code scenes.** `pap:engine` gains a kit (`packages/engine/src/kit.ts`): `walk(id, { x0, x1, y, t0, t1, t, fps })` steps run0-run3 one step per 4 px so the feet never slide, faces its travel and breathes before and after; `flag(logo, { x, y, pole, t, up })` flies the logo's `big` frame on a green cloth with a light ring and a rippling tail; `slots(n, { x, y, w, h, filled, t })` draws numbered panels that fill one per cue with a flash. A trial render records the sprites a bundle draws, and a character with a run cycle that moves on only idle or wave frames is a `walk-glide` warning. The Scene Coder's prompt teaches all three and the end card's final hold (logos, PRESS START and the URL together), with three example bundles written fresh: a walk-in, a counted list and a finale.
@@ -51,9 +71,9 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 - **A dead render sandbox no longer takes the studio down.** The renderer rejects pending calls when its child dies, never throws from a send on a closed channel, and starts a fresh child on the next call.
 - **Day and dusk.** `canvas.time` (`"night" | "dusk" | "day"`, absent means night, so old projects render byte for byte as before) picks the palette: `pap-day@1` and `pap-dusk@1` keep every `pap-night` letter and hex and add seven of their own (sky ramp, cloud, sun), and `paletteFor()` makes a built-in palette follow the time. `backdrop_night` and `backdrop_rooftop` follow it, or their own `sky` param: day is a blue ramp, a sun, slow clouds, unlit windows, no stars and no lamp glow; dusk an amber ramp, a low sun, the first stars and a few lit windows. Code scenes get `TIME`, `skyGradient()`, `sun()`, `clouds(t)` and `stars(t)`, the stub and the examples draw the sky for `TIME`, and the Scene Coder is told never to hard-code a night. The library passes the sprite check on both new skies.
 
-## v0.5.0 (unreleased)
-
 ### Code scenes
+
+#### Code scenes
 - **The Director can board a code scene.** When a beat needs its own picture (a diagram, a map, a build, a transformation, a counter) or the device needs its own language (a game's title screen, HUD or overworld), the scene is `kind: "code"` with a beat, second by second, and the assets it draws. The end card can be one (`endCard: true`). Recipes still tell the beats they fit; the "fewer than 1 in 10" stance is gone.
 - **A stub until it's coded.** The board writes each code scene a stub bundle (the night, its title, its assets), so the animatic and the stills work at once.
 - **The Scene Coder writes it.** A new plan task, `scene.code`, takes the scene's tune's place: it writes the bundle from the beat, loads it in a trial sandbox and repairs it (at most twice) on a load or draw error, text off the frame or in the caption zone, a placeholder box, a slow draw or bad sound events, then critiques it on a 6-frame strip for `reviewRounds` rounds. A round that breaks it is dropped. If nothing loads, the stub stays with a note and the run goes on.
@@ -61,48 +81,48 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 - **Changes reach the coder.** A note on a code scene goes to the Scene Coder and redoes only that scene's code; a story change still re-boards it.
 - **Everything knows code scenes:** the estimate before the board counts about a third of the scenes as code scenes, the parts call a stub a sketch, Pip names a code scene by its beat, and the music settles at a code end card.
 
-### Studio art
+#### Studio art
 - Projects can use the studio's private art: another project's likeness or logo is copied in with its flags when a scene uses it, and its rights are still asked.
 
-### Library
+#### Library
 - Two new assets from the code-scene smoke run: `gamer`, a 16×24 character with a ponytail, a hoodie and headphones (8 frames), and `vr-headset`, a 16×16 icon.
 
-## v0.4.0 (unreleased)
-
 ### Parts and versions
+
+#### Parts and versions
 - **Parts:** a project says what it has, as five parts (Idea, Story, Pictures, Sound, Video), each missing, partial, ready or stale. They're worked out from the document, not from where the crew stopped, so a handmade project with a full script, scenes and sound reads as such (`partsOf` in `@pap/tools`).
 - **The five steps are gone.** The project page shows its five parts and one version line ("v2 · exported 3 Nov · up to date", "v2 is older than your changes · Export v3", "Making v3 · v2 still plays", "No video yet · Export"), with a free Export (a local render, no model calls). Cards show five part marks, and "Finished" is now **Has a video**. A rerun stays in Working with "v2 plays". A video exported before versions counts as v1.
 - **The crew starts from what the project has.** A project no crew has run starts where its content ends, with the gates of the parts it already has passed by content. A change starts where its note belongs, not where the crew last stopped, so an animation note on a handmade project no longer reruns everything from the brief. The run ends on "Exported v<N>".
 - **Versions:** every export is a numbered version (v1, v2, …) with the document rev it was made from. The video is copied to `out/versions/v<N>.mp4` and listed in `history/versions.jsonl`, which stays with the project. `GET /api/p/:id` sends `parts` and `versions`, `GET /api/p/:id/versions/:v.mp4` plays an older one, and the export's task row records its `v`.
 
-## v0.3.0 (unreleased)
+### Pip and the crew in step
 
 Fixes for what the P5 run showed: Pip and the crew now share one picture of the run, the same words reach the same crew member, a note closes once it's done, and the crew knows what the engine can draw.
 
-### Pip and the crew in step
+#### Pip and the crew in step
 - **A hold always asks.** When the crew stops for you, there's a question with real choices (Redo with the Director, Accept the look, Tell Pip what to change; or Fix the key, Try again), and it counts in Needs you. Answering it starts the crew again.
 - **A change answers a held crew.** Asking for a change while the crew waits on you starts it at once, instead of "picked up at the next review".
 - **Pip says what is really happening:** started now, queued behind a named step, or waiting for your answer to a named question.
 - **Asking you is Pip's last resort.** A refused plan change is corrected once before Pip asks you, and the recommended answer is the cheapest one that fits the budget: library art before new drawings.
 
-### Changes and notes
+#### Changes and notes
 - **One door for changes.** Pip, a gate's "Change something" and a hold's "Tell Pip" send the same words to the same crew member: cast, staging, backdrops and cards to the Director, timing and motion to the Animator. Ticked items keep their scene.
 - **The estimate matches the route.** `POST /api/p/:id/changes/preview` says who a change goes to, the scenes it redoes, what it costs and how long it takes, before anything runs.
 - **A note closes when the work that applies it is done**, so an approved rough cut exports once, with no extra cut after it.
 - **"Let the crew run"** no longer stops at the rough cut over leftover problems: they're logged and the video exports.
 
-### The crew knows its tools
+#### The crew knows its tools
 - **Sit, fly, glow and a sign from the recipe menu:** `walk_in` `then: "sit"` and `prop` (a glowing lantern beside the hero), `spawn_join` `motion: "fly"` and `follow`, lanterns and candles with `glow: true` in the backdrops, and `nameTag: "sign"`. The Director's menu lists every on-screen param, and its cards no longer say "no recipe does that".
 - **`spawn_join` needs `who`**, and its banner is off unless you ask for one. A storyboard without `who` is sent back with the cast to use.
 
-### Readable and playable
+#### Readable and playable
 - **A playable rough cut:** each review writes `out/proxy.mp4` with its sound.
 - **No ids in what you read.** The crew channel, the chat's markers and Pip's cards name scenes and assets, not `lib:owl@1` or `t_draw_owl`, and long lines end on a whole word. The script pick shows whole cues.
 - **One marker per thing that happened**, and the status line leaves "Waiting for you" once you answer a gate.
 - **Pip's reply to a rejected key** says so, with a Fix the key button.
 - **Reports read as sentences**, and the Reviewer's says what it found ("Found 6 problems in scenes 2 and 4.").
 
-### The studio
+#### The studio
 - **Asks in Pip's chat, in the crew drawer too.** Open questions and gates show inline in Pip's thread, answerable there.
 - **Turns read on their own.** Each exchange is its own block, read top to bottom; milestones are a separate "newest first" track.
 - **The page goes to what needs you.** A new ask glides into view; while you type, a "Needs you" pill points to it instead.
@@ -114,33 +134,33 @@ Fixes for what the P5 run showed: Pip and the crew now share one picture of the 
 - **Remove a project** from its card's ⋯ menu. It leaves the list and its folder stays; a project in PixelArtPitch's own projects folder can also move to PixelArtPitch's trash folder. Nothing is deleted.
 - **A rerun is Working on Projects**, not ✓ Finished; Pip's box never keeps words typed on New video; an old UI build says so in a banner.
 
-### For contributors
+#### For contributors
 - `pap serve` warns when the studio UI build is older than its source; `--build` rebuilds it, and `GET /api/build` tells the page.
 - `scripts/e2e/` holds the end-to-end driver: a throwaway home, the web app built first, a spend watchdog, no keys.
 
-## v0.2.0 (unreleased)
+### When something goes wrong, cost and speed
 
 Fixes for everything the first long paid run showed: failures now stop and tell you, changes cost what they touch, and you decide how much the crew may spend and think.
 
-### When something goes wrong
+#### When something goes wrong
 - **A rejected key, no credit or a model server that's down pauses the crew.** It no longer carries on with stand-ins. Pip tells you once what happened and what was kept, the status line names the cause, and "Fix the key" opens Settings at that provider. Saving the key, or a passing test, picks the run up where it stopped.
 - **"Redo what failed"** reruns only the failed steps and the ones that fell back to a stand-in, with the work after them.
 - **A wait is not a crash.** A plan change or the budget waiting on you shows as "Waiting for you", never as "stuck", and these cards count in Needs you.
 - **Pip reads the live state** each turn, so it no longer says the crew is still working after the export.
 
-### Changes, gates and the library
+#### Changes, gates and the library
 - **A change redoes only what it touches.** Art you already have and questions you already answered stay as they are, so estimates stay honest.
 - **A rerun asks again at the gates it reopened.** An old approval no longer passes a new rough cut, and "Change something" is never taken as a pass.
 - **Publishing goes to your own library**, and you're asked once per asset. The repo's library is a read-only seed; `pap library promote <id>` moves an asset into it on purpose, after the standard and rights checks.
 - **Slash commands are never changes**, and Pip's plan changes are checked before they're accepted.
 
-### Cost and speed
+#### Cost and speed
 - **Highest thinking effort** (Settings → Defaults, default medium) caps how hard any model thinks.
 - **Drawings per new asset** (1–3, default 2, or per project). With one there's no judging step.
 - **Finish within the budget.** At 80% of the cap the first choice is "Finish within $X", which lists exactly what the crew leaves out. "Raise the cap" comes second.
 - **Creatures** (a moth, an owl) are drawn at their own size, walking, flying or perching, not as a walking hero.
 
-### The studio
+#### The studio
 - **The script angles show in full** at the first pick, each with "Use this one".
 - **The simple view never sends you to Studio.** "Change something" opens a field on the card.
 - **The crew drawer is readable and live.** Each step is named ("Drew variant 2"), a working step shows "Thinking… about 4,200 tokens · 48 s", and Settings › Experimental can paint a drawing row by row as it streams.
@@ -148,12 +168,12 @@ Fixes for everything the first long paid run showed: failures now stop and tell 
 - **Pip's thread is chat bubbles**, newest first. "Ask Pip about this" is a clearable chip.
 - **Run report** in a project's ⋯ menu, and `pap report` on the command line: one page with who worked when, what it cost, what failed and what was drawn. No model calls.
 
-### Engine and library
+#### Engine and library
 - **A rooftop backdrop, fly and sit behaviours, a glow for lamps and lanterns, and a sign-style label.** The new `rooftop` example uses them all.
 - **A common library pack of 35 assets**, authored in code with no model calls: ground, floors, walls, roof, water, sky, clouds, stars, plants, props, lights and fire, icons, a spinning coin and fx. Later runs cast them instead of paying to draw.
 - **The moth and the owl** from the paid run joined the library, and like every library character they face left.
 
-### For contributors
+#### For contributors
 - **The mock plays the paid run's situations** without any model calls: `?mock=1&journey=todo&scenario=revision|overrun|publish|keyfail`.
 
 ## v0.1.0 (2026-11-07)
