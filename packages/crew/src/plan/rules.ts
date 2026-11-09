@@ -415,7 +415,7 @@ export function startPlan(
       const s = state.sceneStatus[t.scene];
       if (s?.version === "render" && s.state === "ready") done(t);
     }
-    if (t.asset && hasArt(doc, t.asset) && t.kind !== "lib.publish")
+    if (t.asset && hasArt(doc, t.asset) && t.kind !== "lib.publish" && !asksAgain(doc, t))
       if (t.kind !== "gate" || t.status !== "done") done(t, "already in the project");
     if (t.kind === "lib.publish" && tasks.find((x) => x.id === "t_g4")?.status === "done")
       done(t, "asked at the last export");
@@ -914,4 +914,45 @@ export function finishWithin(
   // 4. the library questions
   if (!fits()) for (const t of ts.filter((x) => x.kind === "lib.publish" && !x.expand && open(x))) drop(t, "publish");
   return { tasks: ts, ops, trims, fits: fits(), restUsd: Math.round(rest() * 10000) / 10000 };
+}
+
+// ---------------------------------------------------------------- studio art (docs/RIGHTS.md)
+
+/** a rights OK the art alone never passes: the asset was cast from another project (`copiedFrom`), its OK wasn't */
+const asksAgain = (doc: Pick<ProjectT, "assets">, t: PlanTaskT) =>
+  t.kind === "gate" && t.gate === "rights" && doc.assets.some((a) => a.id === t.asset && !!a.copiedFrom);
+
+/**
+ * Studio art cast into the project (another project's likeness or brand, `copiedFrom`): already drawn, so no chain
+ * and no cost, only the person's rights OK, after the animatic like a drawn likeness's. Every pending scene tune that
+ * uses it waits for that OK. An asset that already has a rights gate (pending or answered) gets none.
+ */
+export function copiedRights(
+  tasks: PlanTaskT[],
+  doc: ProjectT,
+  ctx: RulesCtx,
+): { tasks: PlanTaskT[]; ops: PlanOpT[]; reason: string } | null {
+  const ts = tasks.map((t) => ({ ...t, dependsOn: [...t.dependsOn] }));
+  const asked = new Set(
+    ts.filter((t) => t.kind === "gate" && t.gate === "rights" && t.status !== "dropped").map((t) => t.asset),
+  );
+  const art = doc.assets.filter((a) => a.copiedFrom && (a.flags.likeness || a.flags.brand) && !asked.has(a.id));
+  if (!art.length) return null;
+  const taken = new Set(ts.map((t) => t.id));
+  const g2 = latest(ts, (t) => t.kind === "gate" && t.gate === "g2_animatic" && t.status !== "dropped")?.id ?? "t_g2";
+  const ops: PlanOpT[] = [];
+  for (const a of art) {
+    const id = freshId(`t_rights_${idPart(a.id)}`, ctx.rev, taken);
+    ts.push(mkTask({ id, kind: "gate", gate: "rights", asset: a.id, dependsOn: [g2] }, ctx));
+    ops.push({ op: "add", task: id, reason: `${a.id} comes from ${a.copiedFrom}: only you can say yes` });
+    for (const t of ts)
+      if (
+        t.kind === "scene.tune" &&
+        t.status === "pending" &&
+        (!t.scene || !ctx.assetsOf || ctx.assetsOf(t.scene).includes(a.id)) &&
+        !t.dependsOn.includes(id)
+      )
+        t.dependsOn.push(id);
+  }
+  return { tasks: ts, ops, reason: "Studio art the scenes use needs your OK." };
 }

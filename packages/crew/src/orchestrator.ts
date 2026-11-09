@@ -63,6 +63,7 @@ import {
   addRedo,
   addReviewRound,
   changeRevision,
+  copiedRights,
   expandPlan,
   finishWithin,
   hasArt,
@@ -90,6 +91,7 @@ import {
 } from "./plan/store.ts";
 import { validate as validatePlan } from "./plan/validate.ts";
 import { card, fill } from "./prompts.ts";
+import { castStudioArt, studioArt, studioLine } from "./studio-art.ts";
 
 const js = (s: z.ZodType) => z.toJSONSchema(s, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
 const img = (data: Uint8Array, mediaType: "image/png" | "image/jpeg" = "image/png"): ContentPart => ({
@@ -3352,6 +3354,25 @@ export class Crew {
       return `${a.id}: ${a.kind} ${a.w}x${a.h}, frames ${f.frames.slice(0, 10).join(", ")}${f.frames.length > 10 ? ", …" : ""}`;
     });
   }
+  // ---- studio art (docs/RIGHTS.md): other projects' private assets, listed and cast like library art
+  /** the studio art lines for the Director's asset list: private, with the project each comes from */
+  private studioList(p: OpenProject) {
+    return studioArt(
+      this.deps.workspace,
+      p,
+      libraryIndex().assets.map((a) => a.id),
+    ).map(studioLine);
+  }
+  /** cast studio art the scenes name (copied in, flags and all), then a rights OK for each likeness or brand */
+  private async castStudio(p: OpenProject, t: Task, names: string[]) {
+    const lib = libraryIndex().assets.map((a) => a.id);
+    const brought = await castStudioArt(this.deps.workspace, p, names, lib, t.id);
+    for (const name of brought) p.log(t.id, { kind: "step", title: `Cast ${name} from the studio's private art` });
+    if (brought.length)
+      this.planRevise(p, null, { by: "code", trigger: "expand", reason: "Studio art the scenes use." }, (ts, ctx) =>
+        copiedRights(ts, p.doc(), ctx),
+      );
+  }
   /** art the plan already brings in (imported logos, drawings from references), for the Director's asset list */
   private plannedArt(p: OpenProject): string[] {
     const plan = this.planNow(p);
@@ -3384,7 +3405,7 @@ export class Crew {
       const d = p.doc();
       // one compact line per recipe: small models drown in a full JSON catalogue
       const catalog = recipeMenu(recipeCatalog());
-      const libNames = [...this.libraryList(), ...this.plannedArt(p)];
+      const libNames = [...this.libraryList(), ...this.studioList(p), ...this.plannedArt(p)];
       const asks = noteLines(p, "director");
       const vars = {
         idea: asks.length ? `${d.brief.idea}\n\nChanges the person asked for:\n- ${asks.join("\n- ")}` : d.brief.idea,
@@ -3530,6 +3551,7 @@ export class Crew {
         }
     const known = new Set([
       ...this.libraryList().map((l) => l.split(":")[0]),
+      ...this.studioList(p).map((l) => l.split(":")[0]),
       ...b.newAssets.map((a) => a.name),
       ...d.assets.map((a) => a.id),
       ...this.plannedArt(p).map((l) => l.split(":")[0]),
@@ -3647,6 +3669,11 @@ export class Crew {
         await this.tool(p, "art-director", t.id, "cast_asset", { name: "font", libraryId: "font-5x8" });
       else if (lib.has(name)) await this.tool(p, "art-director", t.id, "cast_asset", { name, libraryId: name });
     }
+    await this.castStudio(
+      p,
+      t,
+      [...want].filter((n) => !lib.has(n) && !planned.has(n)),
+    );
     // the compiled scenes draw fixed-id assets no param names (flag_raise's castle, the backdrop's moon, skyline and
     // tiles): cast every one the library has, or frame() draws a placeholder box
     const { missingAssets } = await import("@pap/engine/lints");
@@ -3692,7 +3719,7 @@ export class Crew {
         )
         .join("\n");
       const cueText = d.script.cues.map((c) => `${c.id}: ${c.text}`).join("\n");
-      const lib = this.libraryList();
+      const lib = [...this.libraryList(), ...this.studioList(p)];
       const known = new Set([...lib.map((l) => l.split(":")[0]), ...d.assets.map((a) => a.id), "font"]);
       const vars = {
         change: notes.map((n) => n.text).join("\n") || "(see the notes)",

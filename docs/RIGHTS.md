@@ -13,7 +13,13 @@ Short rules. When in doubt, mark it **private** and ask the user (through the Pr
 | A **derivative** of anything above (kitbash, recolour, crop, edit) | Always (it inherits) | Inheritance |
 | Generic art from a spec with no references (a castle, a moon, a generic gamepad) | Public candidate | Only after the import gate and the user's opt-in |
 
-A private asset lives only in its project's `assets/` folder. Its ref says `"flags": { "private": true }`, plus `likeness` or `brand` where they apply.
+A private asset lives in a project's `assets/` folder. Its ref says `"flags": { "private": true }`, plus `likeness` or `brand` where they apply.
+
+**Private means private to the studio** (this app's workspace), not to one project. Any project in the studio may use another project's private art; it only stays out of the public library and the public repo.
+
+- The Library page lists it as "Private to a project", and the Director's asset list shows it as private studio art, with the project it comes from.
+- When a scene uses one, the Art director casts it by copying its `.json` (and `.png`) into the project's `assets/`, listed as `file:assets/<name>.json` with all its flags and `copiedFrom` (the source project). Never into the library.
+- A likeness or a brand cast this way still asks: the plan adds a `rights` pick after the animatic, the scenes that use it wait for it, and it is never passed by itself, even though the art already exists. It needs no drawing and costs nothing.
 
 ## 2. References
 

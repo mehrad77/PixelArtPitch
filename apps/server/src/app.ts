@@ -14,6 +14,7 @@ import { buildReport, type Report } from "@pap/report";
 import type { GateId, Registry, ToolContext } from "@pap/tools";
 import type { Parts } from "@pap/tools/parts";
 import { isFinalVideo, type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
+import { studioAssets } from "@pap/tools/studio";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
@@ -979,38 +980,22 @@ export function createApp(o: ServerOpts) {
     c.json(o.hooks?.ledger?.({ project: c.req.query("project"), limit: Number(c.req.query("limit") ?? 200) }) ?? []),
   );
   // the library's two layers: the person's own first, then the repo's seed (§1.9); `layer` says which. A project's own
-  // assets ("file:assets/…", likenesses and logos) are a third layer, listed read-only and never copied anywhere.
+  // assets ("file:assets/…", likenesses and logos) are a third layer: the studio's private art, which any project here
+  // may cast (copied into that project, flags and all) and which never goes into the library or the public repo.
   const projectAssets = () =>
-    o.workspace.list().flatMap((x) => {
-      try {
-        const refs: { id: string; src: string; flags?: { private?: boolean } }[] =
-          JSON.parse(readFileSync(join(x.dir, "pitch.json"), "utf8")).assets ?? [];
-        return refs.flatMap((r) => {
-          const m = /^file:assets\/([a-zA-Z0-9_.-]+)\.json$/.exec(r.src);
-          const f = m && join(x.dir, "assets", `${m[1]}.json`);
-          if (!m || !f || !existsSync(f)) return [];
-          const a = JSON.parse(readFileSync(f, "utf8"));
-          if (typeof a?.kind !== "string" || !Array.isArray(a.frames)) return [];
-          return [
-            {
-              id: r.id,
-              kind: a.kind,
-              w: a.w,
-              h: a.h,
-              frames: a.frames.length,
-              tags: Array.isArray(a.tags) ? a.tags : [],
-              description: typeof a.description === "string" ? a.description : undefined,
-              layer: "project" as const,
-              scope: "private" as const,
-              project: { id: x.id, title: x.title },
-              sheet: `/api/library/project/${encodeURIComponent(x.id)}/${encodeURIComponent(m[1])}/sheet.png`,
-            },
-          ];
-        });
-      } catch {
-        return [];
-      }
-    });
+    studioAssets(o.workspace).map((a) => ({
+      id: a.id,
+      kind: a.kind,
+      w: a.w,
+      h: a.h,
+      frames: a.frames.length,
+      tags: a.tags,
+      description: a.description,
+      layer: "project" as const,
+      scope: "private" as const,
+      project: { id: a.project.id, title: a.project.title },
+      sheet: `/api/library/project/${encodeURIComponent(a.project.id)}/${encodeURIComponent(a.file)}/sheet.png`,
+    }));
   app.get("/api/library", (c) => {
     const lib = libraryIndex();
     const own = projectAssets();

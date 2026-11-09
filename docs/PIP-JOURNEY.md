@@ -413,6 +413,7 @@ Each step lists:
   - Bubble over Pip (P2): "Brought in the Writer for three script angles".
   - Pip's line: the status sentence, "Writing your script", then "The artist has a question for you." while the logo pick is open.
 - **Changed from the brief**: the milestone text (C9); the logo pick comes here, right after the import (C10).
+- **Studio art**: the studio's private art (another project's likenesses and logos, docs/RIGHTS.md §1) is in the Director's asset list too. When the board uses one, the Art director casts it into this project as a copy, flags and all, and its `rights` pick opens after the animatic, the same question as for a fresh likeness or logo. It is never answered for the person.
 - **SR**: "Pip brought in the Writer for three script angles. Pip brought in the Art director to bring in your logo."
 - **Focus**: Start unmounts, so focus goes to the Pip field.
 - **RM**: the faces appear without the slide, and the baton is still for 1.2 s.

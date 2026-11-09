@@ -262,6 +262,11 @@ export const AssetRef = z.object({
   publish: z.enum(["yes", "no"]).optional(),
   /** a library asset standing in for art the crew couldn't draw (the judge's fallback): a retry draws it */
   standIn: z.boolean().optional(),
+  /**
+   * the project this asset was cast from (studio art, docs/RIGHTS.md): it keeps its flags, and a likeness or a brand
+   * asks its rights again here, never carried over
+   */
+  copiedFrom: z.string().optional(),
 });
 
 export const Role = z.enum([
