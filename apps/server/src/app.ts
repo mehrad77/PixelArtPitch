@@ -12,6 +12,7 @@ import { InstanceKey } from "@pap/crew/plan/instances";
 import { libraryAssetDir, libraryFile, libraryIndex, renderSheet, userLibraryDir } from "@pap/render";
 import { buildReport, type Report } from "@pap/report";
 import type { GateId, Registry, ToolContext } from "@pap/tools";
+import { writeProxy } from "@pap/tools/defs";
 import type { Parts } from "@pap/tools/parts";
 import { isFinalVideo, type OpenProject, StoreError, type Workspace } from "@pap/tools/store";
 import { studioAssets } from "@pap/tools/studio";
@@ -246,6 +247,36 @@ export function createApp(o: ServerOpts) {
     );
   });
 
+  // the rough cut keeps up with the person's changes: a proxy older than the document is re-rendered (free, local, no
+  // model calls) a few seconds after the last change, one at a time per project, never while the crew runs (its
+  // review writes one); the player plays live frames, silent, until then
+  const proxyJobs = new Map<string, { timer?: ReturnType<typeof setTimeout>; busy?: boolean }>();
+  const refreshProxy = (p: OpenProject, delayMs = 3000) => {
+    const info = p.proxyInfo();
+    if (!info || info.fresh) return;
+    const job = proxyJobs.get(p.id) ?? {};
+    proxyJobs.set(p.id, job);
+    if (job.busy) return;
+    if (job.timer) clearTimeout(job.timer);
+    job.timer = setTimeout(async () => {
+      job.timer = undefined;
+      if (p.proxyInfo()?.fresh !== false) return;
+      // the crew's own review renders one; look again once it's idle
+      if (o.crew?.status(p).crew?.running) return refreshProxy(p, 15000);
+      job.busy = true;
+      try {
+        await writeProxy(p);
+      } catch (e: any) {
+        p.emit("log", { level: "warn", text: `no playable rough cut: ${String(e?.message ?? e).slice(0, 160)}` });
+        return;
+      } finally {
+        job.busy = false;
+      }
+      // a change that landed while it encoded: go again
+      refreshProxy(p);
+    }, delayMs);
+  };
+
   // the parts (Idea … Video) as a transient `parts` SSE event when they change: recomputed after a patch, a scene's
   // status, a stage change or an export, from whoever caused it (the person, the crew, a tool), deduped by value
   const partsSeen = new Map<string, string>();
@@ -262,6 +293,7 @@ export function createApp(o: ServerOpts) {
     };
     partsSeen.set(p.id, key());
     p.events.on("event", (e: { event: string; data: any }) => {
+      if (e.event === "patch") refreshProxy(p);
       if (!["patch", "scene", "stage", "render"].includes(e.event)) return;
       if (e.event === "render" && e.data?.kind !== "final") return;
       const k = key();
@@ -307,6 +339,8 @@ export function createApp(o: ServerOpts) {
     return {
       doc: p.doc(),
       rev: p.rev(),
+      // the rough cut the player plays, and whether it shows the document as it is (a stale one is being redone)
+      proxy: p.proxyInfo(),
       timeline,
       stage: p.state.stage,
       gates: p.state.gates,
@@ -427,7 +461,11 @@ export function createApp(o: ServerOpts) {
     const trash = c.req.query("trash") === "1";
     return c.json(o.workspace.remove(id, { trash }));
   });
-  app.get("/api/p/:id", (c) => c.json(stateOf(proj(c.req.param("id")))));
+  app.get("/api/p/:id", (c) => {
+    const p = proj(c.req.param("id"));
+    refreshProxy(p, 500);
+    return c.json(stateOf(p));
+  });
   // Export: the local render of the next version (export_video), no model calls. One at a time, and never while a
   // crew runs (the crew exports its own at deliver)
   const exporting = new Set<string>();

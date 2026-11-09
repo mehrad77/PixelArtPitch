@@ -24,7 +24,7 @@ export function Viewer({
   projectId,
   state,
   pb,
-  proxy,
+  proxy: built,
   overlays,
   setOverlays,
   compare,
@@ -47,6 +47,11 @@ export function Viewer({
   /** minimal only: the paused frame was pressed at (x, y) in the viewport */
   onSteer?: (t: number, x: number, y: number) => void;
 }) {
+  // the rough cut plays only while it shows the document as it is: one older than the person's changes (the server
+  // is re-rendering it) gives way to the live frames, silent, so playing never shows what the paused frame no longer
+  // does (a state without the field is from before v0.5.2: trust the proxy)
+  const behind = !!built && state.proxy?.fresh === false;
+  const proxy = behind ? null : built;
   const canvas = useRef<HTMLCanvasElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [frameError, setFrameError] = useState(false);
@@ -236,7 +241,9 @@ export function Viewer({
       ? muted
         ? "Your browser kept the sound off. Press Pause, then Play, to hear it."
         : "Rough cut with sound"
-      : "Silent preview, frame by frame";
+      : behind
+        ? "Silent preview: the rough cut with sound is catching up with your changes"
+        : "Silent preview, frame by frame";
 
   return (
     <section className="viewer" aria-label="Viewer">

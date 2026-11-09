@@ -907,7 +907,8 @@ export const exportVideo = defineTool({
 });
 
 /**
- * The rough cut as a playable proxy (PIP-ORCHESTRATION §1.14): `out/proxy.mp4` at scale 2 with the mix in
+ * The rough cut as a playable proxy (PIP-ORCHESTRATION §1.14): `out/proxy.mp4` at scale 2 (its document rev in
+ * `out/proxy.json`) with the mix in
  * `out/audio.wav` (mixed now when the project has none), through the export's own `encode()`. Emits
  * `render { kind: "proxy" }` when it is written.
  */
@@ -917,6 +918,8 @@ export async function writeProxy(
 ): Promise<{ file: string; seconds: number }> {
   const out = join(p.dir, "out");
   mkdirSync(out, { recursive: true });
+  // the document rev it shows, taken before the render: a change that lands while it encodes leaves it older
+  const rev = p.doc().rev;
   const r = await p.renderer_();
   const audio = join(out, "audio.wav");
   if (!existsSync(audio)) {
@@ -931,6 +934,7 @@ export async function writeProxy(
     audio,
     ...(o.onProgress ? { onProgress: o.onProgress } : {}),
   });
+  writeFileSync(join(out, "proxy.json"), `${JSON.stringify({ rev, at: new Date().toISOString() })}\n`);
   p.emit("render", { type: "render", kind: "proxy", url: `/api/p/${p.id}/proxy.mp4` });
   return { file: "out/proxy.mp4", seconds: res.seconds };
 }

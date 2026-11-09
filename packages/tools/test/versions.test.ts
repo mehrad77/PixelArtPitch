@@ -88,3 +88,28 @@ test("recordVersion: the list survives deleting runs/, and numbering goes on fro
   assert.ok(existsSync(join(p2.dir, "history", "versions.jsonl")));
   w2.closeAll();
 });
+
+test("the rough-cut proxy knows its rev: a change makes it older, a note doesn't, a new one is current", async () => {
+  const { writeProxy } = await import("../src/defs.ts");
+  const { w, p } = fresh();
+  after(() => w.closeAll());
+  assert.equal(p.proxyInfo(), null, "no proxy yet");
+  await writeProxy(p);
+  assert.deepEqual(p.proxyInfo(), { rev: p.doc().rev, fresh: true });
+  // a note isn't in the picture: still current
+  await p.patch([{ op: "replace", path: "/budget/capUsd", value: 2 }], { reason: "cap", author: { kind: "user" } });
+  assert.equal(p.proxyInfo()?.fresh, true);
+  // the time of day is: older than the document
+  await p.patch([{ op: "add", path: "/canvas/time", value: "day" }], { reason: "day", author: { kind: "user" } });
+  assert.equal(p.proxyInfo()?.fresh, false);
+  await writeProxy(p);
+  assert.deepEqual(p.proxyInfo(), { rev: p.doc().rev, fresh: true });
+  // a proxy from before out/proxy.json counts from its file time
+  rmSync(join(p.dir, "out", "proxy.json"));
+  assert.equal(p.proxyInfo()?.fresh, true);
+  await p.patch([{ op: "replace", path: "/canvas/time", value: "night" }], {
+    reason: "night",
+    author: { kind: "user" },
+  });
+  assert.equal(p.proxyInfo()?.fresh, false);
+});

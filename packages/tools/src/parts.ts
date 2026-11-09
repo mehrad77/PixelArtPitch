@@ -63,6 +63,17 @@ const NOT_EXPORTED = [
   /^\/assets\/\d+\/publish$/,
 ];
 
+/**
+ * Whether anything a render shows changed after document rev `rev` (an export's, or the rough-cut proxy's): a patch
+ * outside notes, budget, crew, brief and publish flags. A rev with no patch on record (pitch.json edited by hand)
+ * counts as a change.
+ */
+export function changedSince(rev: number, docRev: number, history: { baseRev: number; ops: { path: string }[] }[]) {
+  if (rev >= docRev) return false;
+  const since = history.filter((h) => h.baseRev >= rev);
+  return !since.length || since.some((h) => h.ops.some((o) => !NOT_EXPORTED.some((re) => re.test(o.path))));
+}
+
 const part = (id: PartId, state: PartState, done: number, of: number, why?: string): Part => ({
   id,
   state,
@@ -209,11 +220,7 @@ export function partsOf(i: PartsInput): Parts {
   const latest = (i.versions ?? []).reduce<Version | null>((m, v) => (!m || v.v > m.v ? v : m), null);
   if (!latest) parts.push(part("video", "missing", 0, 1, "no video yet"));
   else {
-    const since = history.filter((h) => h.baseRev >= latest.rev);
-    const changed =
-      latest.rev < doc.rev &&
-      // a rev with no patch on record (pitch.json edited by hand) counts as a change
-      (!since.length || since.some((h) => h.ops.some((o) => !NOT_EXPORTED.some((re) => re.test(o.path)))));
+    const changed = changedSince(latest.rev, doc.rev, history);
     // a scene the crew is redoing (stale, or drafting its new version) keeps the video older than the document
     const redoing = scenes.some((s) => ["stale", "drafting"].includes(status[s.id]?.state ?? ""));
     parts.push(

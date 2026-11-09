@@ -93,12 +93,21 @@ export function useProject(id: string | null): ProjectView {
         (r) => live && r.ok && setProxy((p) => p ?? probe),
         () => {},
       );
+    // a rebuilt proxy often keeps its URL; a fresh query makes the <video> load it again (a blob: or data: URL is new
+    // each time, and a query would break it). Logs before v0.3.1 carry "files/proxy.mp4", which the page would resolve
+    // against /p/<id>
+    const proxyUrlOf = (raw: string) => {
+      const url = /^(blob|data|https?):|^\//.test(raw) ? raw : client.proxyUrl(id);
+      return /^(blob|data):/.test(url) ? url : `${url}${url.includes("?") ? "&" : "?"}v=${Date.now()}`;
+    };
     const on = (e: ServerEvent) => {
       if (e.event === "pip") return forwardPip(id, e);
       if (e.event === "channel") return forwardChannel(id, e);
       setSeq((x) => x + 1);
       // an export is a new version: refetch for the versions list (the `parts` event brings the parts alone)
-      if (e.event === "patch" || (e.event === "render" && e.data.kind === "final")) {
+      // a new proxy refetches too: the state says whether it is current (state.proxy.fresh)
+      if (e.event === "patch" || (e.event === "render" && (e.data.kind === "final" || e.data.kind === "proxy"))) {
+        if (e.event === "render" && e.data.kind === "proxy") setProxy(proxyUrlOf(e.data.url));
         if (e.event === "patch") setHistory((h) => (h.some((x) => x.seq === e.data.seq) ? h : [...h, e.data]));
         else setState((s) => (s ? applyEvent(s, e) : s));
         if (refetch.current) clearTimeout(refetch.current);
@@ -112,16 +121,7 @@ export function useProject(id: string | null): ProjectView {
         );
         return;
       }
-      if (e.event === "render") {
-        if (e.data.kind === "still") setLastStill(e.data.url);
-        // a rebuilt proxy often keeps its URL; a fresh query makes the <video> load it again
-        // (a blob: or data: URL is new each time, and a query would break it)
-        if (e.data.kind === "proxy") {
-          // logs before v0.3.1 carry "files/proxy.mp4", which the page would resolve against /p/<id>
-          const url = /^(blob|data|https?):|^\//.test(e.data.url) ? e.data.url : client.proxyUrl(id);
-          setProxy(/^(blob|data):/.test(url) ? url : `${url}${url.includes("?") ? "&" : "?"}v=${Date.now()}`);
-        }
-      }
+      if (e.event === "render" && e.data.kind === "still") setLastStill(e.data.url);
       setState((s) => (s ? applyEvent(s, e) : s));
     };
     const off = client.subscribe(id, on, setConn);

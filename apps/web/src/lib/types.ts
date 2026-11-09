@@ -249,6 +249,8 @@ export type TaskProgress = {
 export type ProjectState = {
   doc: ProjectT;
   rev: number;
+  /** the rough cut the player plays (out/proxy.mp4): the rev it shows, and whether that is the document as it is */
+  proxy?: { rev: number; fresh: boolean } | null;
   timeline: TimelineJSON;
   stage: Stage;
   gates: Gate[];

@@ -28,7 +28,7 @@ import {
   type ProjectT,
   resolveTimeline,
 } from "@pap/schema";
-import { type Parts, partsOf, type Version } from "./parts.ts";
+import { changedSince, type Parts, partsOf, type Version } from "./parts.ts";
 import { Question, QuestionInput, type QuestionT } from "./registry.ts";
 import { cutWords, type PlainCtx, plainText } from "./words.ts";
 
@@ -896,6 +896,25 @@ export class OpenProject {
         g.status = "passed";
         g.verdict = { by: "content", verdict: "approve", at, note: "already in the project" };
       }
+  }
+  /**
+   * The rough-cut proxy (out/proxy.mp4): the document rev it shows and whether it still matches the document; null
+   * without one. A proxy from before out/proxy.json counts from its file time: the rev after the last patch older
+   * than it.
+   */
+  proxyInfo(): { rev: number; fresh: boolean } | null {
+    const f = join(this.dir, "out", "proxy.mp4");
+    if (!existsSync(f)) return null;
+    const history = this.readHistory();
+    let rev: number;
+    try {
+      rev = Number(JSON.parse(readFileSync(join(this.dir, "out", "proxy.json"), "utf8")).rev);
+      if (!Number.isFinite(rev)) throw new Error("no rev");
+    } catch {
+      const at = statSync(f).mtime.getTime();
+      rev = history.filter((h) => Date.parse(h.ts) <= at).reduce((m, h) => Math.max(m, h.baseRev + 1), 0);
+    }
+    return { rev, fresh: !changedSince(rev, this._doc.rev, history) };
   }
   /** what the project has (partsOf), with its library and files looked up on disk */
   parts(opts: { shown?: boolean } = {}): Parts {
