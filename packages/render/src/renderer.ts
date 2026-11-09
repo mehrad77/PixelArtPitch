@@ -54,12 +54,16 @@ export function initMessage(p: LoadedProject): InitMsg {
 }
 
 export class Renderer {
-  private child: ChildProcess;
+  private child!: ChildProcess;
   private pending = new Map<number, { res: (v: any) => void; rej: (e: Error) => void }>();
   private seq = 0;
   private buf: Buffer = Buffer.alloc(0);
   private onFrame: ((f: Buffer) => void | Promise<void>) | null = null;
-  private ready: Promise<void>;
+  private ready!: Promise<void>;
+  /** the child died (a crash, a kill, an edit that broke its import graph): the next call starts a new one */
+  private dead: Error | null = null;
+  private closed = false;
+  private respawning: Promise<void> | null = null;
   /** frames come back on one pipe: one frame request at a time, in order */
   private chain: Promise<unknown> = Promise.resolve();
   private serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -71,7 +75,14 @@ export class Renderer {
 
   constructor(project: LoadedProject) {
     this.project = project;
-    this.child = fork(new URL("./sandbox-child.ts", import.meta.url).pathname, [], {
+    this.spawn();
+  }
+
+  /** start a sandbox child; its death rejects every pending call and never throws out of this process */
+  private spawn() {
+    this.dead = null;
+    this.buf = Buffer.alloc(0);
+    const child = fork(new URL("./sandbox-child.ts", import.meta.url).pathname, [], {
       execArgv: [
         "--permission",
         `--allow-fs-read=${PAP_ROOT}/*`,
@@ -83,7 +94,9 @@ export class Renderer {
       env: {},
       stdio: ["ignore", "pipe", "inherit", "ipc"],
     });
-    this.child.stdout!.on("data", (chunk: Buffer) => {
+    this.child = child;
+    child.stdout!.on("data", (chunk: Buffer) => {
+      if (child !== this.child) return;
       this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;
       while (this.buf.length >= FRAME_BYTES) {
         const f = this.buf.subarray(0, FRAME_BYTES);
@@ -97,7 +110,9 @@ export class Renderer {
       readyRes = res;
       readyRej = rej;
     });
-    this.child.on("message", (m: any) => {
+    this.ready.catch(() => {});
+    child.on("message", (m: any) => {
+      if (child !== this.child) return;
       if (m.ready) return readyRes();
       if (m.cmd === "init") {
         const p = this.pending.get(-1);
@@ -109,24 +124,55 @@ export class Renderer {
       this.pending.delete(m.id);
       m.ok ? p.res(m) : p.rej(new Error(m.error));
     });
-    this.child.on("exit", (code) => {
-      const err = new Error(`render sandbox exited (${code})`);
+    const die = (err: Error) => {
+      if (child !== this.child || this.dead) return;
+      this.dead = err;
       readyRej(err);
       for (const p of this.pending.values()) p.rej(err);
       this.pending.clear();
+    };
+    child.on("error", (e) => die(new Error(`render sandbox failed: ${e.message}`)));
+    child.on("exit", (code, signal) => die(new Error(`render sandbox exited (${signal ?? code})`)));
+  }
+
+  /** a dead child is replaced (and given the project again) before the next call; a closed renderer stays closed */
+  private async alive() {
+    if (!this.dead) return;
+    if (this.closed) throw new Error("the renderer is closed");
+    this.respawning ??= (async () => {
+      this.spawn();
+      await this.ready;
+      await this.send(initMessage(this.project), -1);
+    })().finally(() => {
+      this.respawning = null;
+    });
+    await this.respawning;
+  }
+
+  private send(msg: any, id: number): Promise<any> {
+    return new Promise((res, rej) => {
+      if (this.dead) return rej(this.dead);
+      this.pending.set(id, { res, rej });
+      const fail = (e: Error) => {
+        this.pending.delete(id);
+        rej(new Error(`render sandbox channel closed: ${e.message}`));
+      };
+      try {
+        this.child.send(id === -1 ? msg : { ...msg, id }, (e) => e && fail(e));
+      } catch (e: any) {
+        fail(e);
+      }
     });
   }
 
-  private call(msg: any, id = ++this.seq): Promise<any> {
-    return new Promise((res, rej) => {
-      this.pending.set(id, { res, rej });
-      this.child.send(id === -1 ? msg : { ...msg, id });
-    });
+  private async call(msg: any, id = ++this.seq): Promise<any> {
+    await this.alive();
+    return this.send(msg, id);
   }
 
   async start() {
     await this.ready;
-    await this.call(initMessage(this.project), -1);
+    await this.send(initMessage(this.project), -1);
     return this;
   }
 
@@ -140,9 +186,17 @@ export class Renderer {
     this.onFrame = (f) => {
       got.push(f);
     };
+    let failed: unknown = null;
     const done = this.call({ cmd: "frames", from, to, fps: FPS, hold: this.project.timeline.hold });
-    // deliver in order as they arrive
+    done.catch((e) => {
+      failed = e;
+    });
+    // deliver in order as they arrive (a child that dies stops the wait)
     while (i < to) {
+      if (failed) {
+        this.onFrame = null;
+        throw failed;
+      }
       if (got.length) {
         await onFrame(got.shift()!, i++);
         continue;
@@ -162,8 +216,16 @@ export class Renderer {
     this.onFrame = (b) => {
       f = b;
     };
-    await this.call({ cmd: "frame", t });
-    while (!f) await new Promise((r) => setImmediate(r));
+    try {
+      await this.call({ cmd: "frame", t });
+      while (!f) {
+        if (this.dead) throw this.dead;
+        await new Promise((r) => setImmediate(r));
+      }
+    } catch (e) {
+      this.onFrame = null;
+      throw e;
+    }
     this.onFrame = null;
     return f;
   }
@@ -178,7 +240,13 @@ export class Renderer {
   }
 
   close() {
+    this.closed = true;
     this.child.kill();
+  }
+
+  /** the sandbox child's pid (a test kills it to check the renderer recovers) */
+  get pid() {
+    return this.child.pid;
   }
 }
 
