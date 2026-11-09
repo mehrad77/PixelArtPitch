@@ -12,7 +12,7 @@
 
 **[Watch the trailer](https://youtu.be/vzSFIVovytY)** (1:32): the app footage is a real run, from one typed message to a finished teaser in 12 minutes for $2.68.
 
-You tell Pip what you're making: a 30-second pitch for your app, a launch teaser, a demo-day opener. Pip runs a crew of AI agents: a Writer, Director, Art Director, Pixel Artists, Animators, Sound Designer, Mixer, Editor and Reviewer. They work through your video on a 320×180 canvas, by night, dusk or day and ask you only for the picks that matter: which script, does the animatic feel right, is the rough cut good. Everything runs on your machine, and every dollar is counted before it is spent.
+You tell Pip what you're making: a 30-second pitch for your app, a launch teaser, a demo-day opener. Pip runs a crew of AI agents: a Writer, Director, Art Director, Pixel Artists, Animators, Sound Designer, Mixer, Editor and Reviewer. They work through your video on a 320×180 canvas, by night, dusk or day, and ask you only for the picks that matter: which script, does the animatic feel right, is the rough cut good. Everything runs on your machine, and every dollar is counted before it is spent.
 
 > Status: early and moving fast. It already makes real videos end to end. See [`examples/questday`](examples/questday), a fictional 15 s launch.
 
