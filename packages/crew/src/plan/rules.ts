@@ -694,7 +694,7 @@ export function addReboard(
  */
 export function changeRevision(
   tasks: PlanTaskT[],
-  change: { reboard?: string[]; scope?: string[] },
+  change: { reboard?: string[]; scope?: string[]; time?: "night" | "dusk" | "day" },
   from: Stage,
   ctx: RulesCtx,
   sceneStatus: RuntimeState["sceneStatus"],
@@ -709,10 +709,34 @@ export function changeRevision(
     : undefined;
   const scope = change.scope ? new Set(change.scope) : null;
   const keeps = (t: PlanTaskT) => !!keep?.(t) || (!!scope && isSceneWork(t) && !!t.scene && !scope.has(t.scene));
-  const r = reopenFrom(tasks, from, ctx.rev, { sceneStatus, exclude, keep: keeps, reason: "your change" });
+  let r: { tasks: PlanTaskT[]; ops: PlanOpT[] } = reopenFrom(tasks, from, ctx.rev, {
+    sceneStatus,
+    exclude,
+    keep: keeps,
+    reason: "your change",
+  });
+  if (change.time) r = addLookTime(r.tasks, r.ops, ctx);
   if (!reboard) return { tasks: r.tasks, ops: r.ops };
   const b = addReboard(r.tasks, reboard, ctx, { reason: "your change" });
   return { tasks: b.tasks, ops: [...r.ops, ...b.ops] };
+}
+
+/**
+ * A time-of-day change: look.time (no model call) first, and every live task at the animate stage or later waits
+ * for it, so the code scenes are re-coded and the review sees the new sky.
+ */
+function addLookTime(tasks: PlanTaskT[], ops: PlanOpT[], ctx: RulesCtx) {
+  const id = freshId("t_look_time", ctx.rev, new Set(tasks.map((t) => t.id)));
+  const reason = "your change: the time of day";
+  const ts = tasks.map((t) =>
+    isLive(t) && stageIdx(stageOf(t)) >= stageIdx("animate")
+      ? { ...t, dependsOn: [...new Set([...t.dependsOn, id])] }
+      : t,
+  );
+  return {
+    tasks: [...ts, mkTask({ id, kind: "look.time", dependsOn: [], reason }, ctx)],
+    ops: [...ops, { op: "add" as const, task: id, reason }],
+  };
 }
 
 /**

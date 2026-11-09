@@ -193,6 +193,8 @@ function spawnLine(kind: string, role: string, s: string) {
       return s ? `Pip brought in an Animator for scene ${s}` : "Pip brought in the Animator for the scenes";
     case "scene.code":
       return s ? `Pip brought in a Scene coder for scene ${s}` : "Pip brought in the Scene coder for the code scenes";
+    case "look.time":
+      return "Pip brought in the Director to set the time of day";
     case "vo.align":
       return "Pip brought in the Editor to fit your narration";
     case "sound.mix":

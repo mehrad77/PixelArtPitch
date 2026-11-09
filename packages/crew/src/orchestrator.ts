@@ -11,7 +11,7 @@ import { extname, join } from "node:path";
 import { RECIPE_MAP } from "@pap/engine/recipes";
 import { checkAsset } from "@pap/engine/standard";
 import { contactSheet, libraryAssetDir, libraryFile, libraryIndex, publishAsset, renderSheet } from "@pap/render";
-import type { RoleT } from "@pap/schema";
+import { type RoleT, TIME_PALETTES } from "@pap/schema";
 import {
   type ChangeCategory,
   type ChannelMsg,
@@ -59,7 +59,7 @@ import { Executor, type Outcome } from "./plan/executor.ts";
 import { logoFrames } from "./plan/import.ts";
 import { aboutText, type Instance, InstanceTracker } from "./plan/instances.ts";
 import { applyDiff, type PipRevisionResult, pipRevision, planPromptVars } from "./plan/pip.ts";
-import { isCodeScene, routeIn } from "./plan/route.ts";
+import { isCodeScene, routeIn, timeAsked } from "./plan/route.ts";
 import {
   addReboard,
   addRedo,
@@ -380,6 +380,9 @@ type Run = {
     approximated: string[];
     /** scenes a change task left as they were (a re-plan that came back the same, a tune with no change) */
     unchanged?: string[];
+    /** the time of day a look.time set, and Pip's one line on a cue that still says the old time */
+    time?: "night" | "dusk" | "day";
+    timeCue?: string;
     exported: boolean;
   };
   /** triggers waiting for Pip (handled at the end of the stage) */
@@ -435,7 +438,19 @@ type Variant = { frames: DrawOutT; std: any; model: string; judge?: string } | n
  * a change run: its notes, the scenes it may redo, the scenes the Director re-plans, and the drawn assets it redraws
  * (a note on an asset)
  */
-export type ChangePlan = { notes: string[]; scope?: string[]; reboard?: string[]; assets?: string[] };
+export type ChangePlan = {
+  notes: string[];
+  scope?: string[];
+  reboard?: string[];
+  assets?: string[];
+  /** the time of day the change sets (look.time, no model call); its code scenes are in `scope` */
+  time?: "night" | "dusk" | "day";
+};
+/** the video's time of day (canvas.time; absent: night) */
+const timeOf = (d: { canvas: { time?: string } }) => d.canvas.time ?? "night";
+/** the stage a person's note reopens: its owner's, or the animate stage for a time of day (look.time) */
+const noteStage = (n: { assignee: string; text?: string }): Stage =>
+  timeAsked(n.text ?? "") ? "animate" : (OWNER_STAGE[n.assignee] ?? "review");
 /** the crew right now, for Pip's turn context and its card copy (Crew.snapshot) */
 export type CrewSnapshot = {
   running: boolean;
@@ -520,6 +535,9 @@ export type RunReport = {
   approximated: string[];
   /** scenes a change task left as they were: "nothing was changed" */
   unchanged?: string[];
+  /** the time of day this run set (look.time), and the line on a cue that still says the old one */
+  time?: "night" | "dusk" | "day";
+  timeCue?: string;
   /** Reviewer blockers still open on the scenes the change touched */
   openBlockers: { scene: string; text: string }[];
   exported: boolean;
@@ -694,6 +712,7 @@ export function mergeChange(a: ChangePlan | undefined, b: ChangePlan): ChangePla
     ...(a.scope && b.scope ? { scope: u(a.scope, b.scope) } : {}),
     ...(reboard.length ? { reboard } : {}),
     ...(assets.length ? { assets } : {}),
+    ...((b.time ?? a.time) ? { time: b.time ?? a.time } : {}),
   };
 }
 /**
@@ -708,8 +727,14 @@ function planChange(p: OpenProject, notes: Note[], usesOf: (scene: string) => st
   const scope = new Set<string>();
   const assets = new Set<string>();
   let everywhere = false;
+  let time: ChangePlan["time"];
   for (const n of notes) {
-    if (n.target.asset && !n.target.scene) {
+    const asked = timeAsked(n.text);
+    if (asked && !n.target.asset) {
+      // the whole video's time of day: look.time sets it, recipe scenes follow, code scenes are re-coded
+      time = asked;
+      for (const s of d.scenes) if (s.kind === "code" && s.beat) scope.add(s.id);
+    } else if (n.target.asset && !n.target.scene) {
       assets.add(n.target.asset);
       for (const s of all) if (usesOf(s).includes(n.target.asset)) scope.add(s);
     } else if (n.assignee === "director") {
@@ -727,6 +752,7 @@ function planChange(p: OpenProject, notes: Note[], usesOf: (scene: string) => st
     ...(everywhere ? {} : { scope: [...scope] }),
     ...(reboard.size ? { reboard: all.filter((id) => reboard.has(id)) } : {}),
     ...(assets.size ? { assets: [...assets] } : {}),
+    ...(time ? { time } : {}),
   };
 }
 
@@ -2145,10 +2171,11 @@ export class Crew {
     // Director: it is the Scene Coder's (§1.12)
     if (
       isCodeScene(p.doc(), note.target.scene) &&
+      !timeAsked(note.text) &&
       (note.assignee === "animator" || (note.assignee === "director" && note.category !== "story"))
     )
       note = p.updateNote(note.id, { assignee: "scene-coder" });
-    const stage = OWNER_STAGE[note.assignee] ?? "review";
+    const stage = noteStage(note);
     const live = this.runs.get(p.id);
     if (live && !live.held) {
       p.emit("log", { level: "info", text: `${note.id} waits for the next review: the crew is working` });
@@ -2281,13 +2308,20 @@ export class Crew {
     const before = this.planNow(p)?.tasks ?? startPlan(p.doc(), p.state, ctx);
     const from = clampToContent(
       p,
-      notes
-        .map((n) => OWNER_STAGE[n.assignee] ?? "review")
-        .reduce((a, x) => (STAGES.indexOf(x) < STAGES.indexOf(a) ? x : a)),
+      notes.map((n) => noteStage(n)).reduce((a, x) => (STAGES.indexOf(x) < STAGES.indexOf(a) ? x : a)),
     );
     const ss = structuredClone(p.state.sceneStatus);
     for (const n of notes)
-      for (const id of n.target.scene ? [n.target.scene] : n.assignee === "animator" ? Object.keys(ss) : [])
+      for (const id of timeAsked(n.text)
+        ? p
+            .doc()
+            .scenes.filter((s) => s.kind === "code" && s.beat)
+            .map((s) => s.id)
+        : n.target.scene
+          ? [n.target.scene]
+          : n.assignee === "animator"
+            ? Object.keys(ss)
+            : [])
         if (ss[id]) ss[id] = { version: "animatic", state: "stale" };
     const change = planChange(p, notes, (s) => this.sceneAssets(p, s));
     const out = changeRevision(
@@ -2380,6 +2414,8 @@ export class Crew {
       redone: [...r.done.redone],
       reboarded: r.done.reboarded,
       approximated: r.done.approximated,
+      ...(r.done.time ? { time: r.done.time } : {}),
+      ...(r.done.timeCue ? { timeCue: r.done.timeCue } : {}),
       unchanged: [...new Set(r.done.unchanged ?? [])].filter(
         (x) => !r.done.reboarded.includes(x) && !r.done.redone.has(x),
       ),
@@ -2408,7 +2444,7 @@ export class Crew {
   /** reopen the earliest stage the open notes need; returns the stage the crew should run from */
   private reopen(p: OpenProject, notes: Note[]): Stage {
     const order = STAGES;
-    const owners = notes.map((n) => OWNER_STAGE[n.assignee] ?? "review");
+    const owners = notes.map((n) => noteStage(n));
     // not past a part that's still missing: the crew makes it first, and the note is read when its stage comes
     // (read before the scenes below go stale, or every note would clamp to the art)
     const from = clampToContent(
@@ -2416,11 +2452,17 @@ export class Crew {
       owners.reduce((a, b) => (order.indexOf(b) < order.indexOf(a) ? b : a)),
     );
     for (const n of notes)
-      for (const id of n.target.scene
-        ? [n.target.scene]
-        : n.assignee === "animator"
-          ? Object.keys(p.state.sceneStatus)
-          : [])
+      for (const id of timeAsked(n.text)
+        ? // a time of day re-codes the code scenes; recipe scenes follow the canvas as they are
+          p
+            .doc()
+            .scenes.filter((s) => s.kind === "code" && s.beat)
+            .map((s) => s.id)
+        : n.target.scene
+          ? [n.target.scene]
+          : n.assignee === "animator"
+            ? Object.keys(p.state.sceneStatus)
+            : [])
         if (p.state.sceneStatus[id]) p.setSceneStatus(id, { version: "animatic", state: "stale" });
     this.relockFrom(p, from);
     for (const t of p.state.tasks)
@@ -2875,6 +2917,8 @@ export class Crew {
         return p.doc().scenes.find((s) => s.id === t.scene)?.kind === "code"
           ? this.sceneCode(p, r, t)
           : this.tune(p, r, t);
+      case "look.time":
+        return this.lookTime(p, r, t);
       case "vo.align":
         return this.narrate(p, r, t);
       case "sound.mix":
@@ -3499,6 +3543,7 @@ export class Crew {
         cues: d.script.cues.map((c) => `${c.id}: ${c.text}`).join("\n"),
         recipes: catalog,
         assets: libNames.join("\n"),
+        time: timeOf(d),
       };
       let board: z.infer<typeof StoryboardOut> | null = null;
       let why = "";
@@ -3997,6 +4042,7 @@ export class Crew {
         board: `${board}\n\nCues:\n${cueText}`,
         recipes,
         assets: lib.join("\n"),
+        time: timeOf(d),
       };
       const tl = p.timeline();
       const check = (o: z.infer<typeof ReboardOut>) => {
@@ -4085,7 +4131,7 @@ export class Crew {
       if (!good.length) {
         // a change that changes nothing says so (P7: "Replaced night sky…" with no patch): no "re-planned", no
         // approximation, the person's notes stay open, and the task is a fallback a retry redoes
-        (r.done.unchanged ??= []).push(...ids);
+        r.done.unchanged = [...(r.done.unchanged ?? []), ...ids];
         this.releaseClaims(
           p,
           notes.map((n) => n.id),
@@ -4895,7 +4941,8 @@ export class Crew {
     const notes = this.codeNotes(p, s.id);
     const asks = (r.change?.notes ?? [])
       .map((id) => p.state.notes.find((n) => n.id === id))
-      .filter((n): n is Note => !!n && !n.target.scene && (!r.scope || r.scope.has(s.id)));
+      .filter((n): n is Note => !!n && (!n.target.scene || !!timeAsked(n.text)) && (!r.scope || r.scope.has(s.id)))
+      .filter((n) => !notes.includes(n));
     try {
       const lp = p.project();
       const tl = p.timeline();
@@ -5087,6 +5134,58 @@ export class Crew {
     return { status: "done" };
   }
 
+  /**
+   * look.time: the video's time of day from the person's change, with no model call. It patches `canvas.time` and
+   * the built-in palette that goes with it; the backdrops of recipe scenes follow the canvas, and the code scenes are
+   * re-coded after it with the note (scene.code). A cue that still says the old time gets one line from Pip.
+   */
+  private async lookTime(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const d = p.doc();
+    const notes = (r.change?.notes ?? [])
+      .map((id) => p.state.notes.find((n) => n.id === id))
+      .filter((n): n is Note => !!n && !!timeAsked(n.text));
+    const want = r.change?.time ?? (notes.length ? timeAsked(notes.at(-1)!.text) : null);
+    if (!want) return { status: "skipped", note: "no time of day was asked" };
+    const words = { night: "night", dusk: "dusk", day: "day" } as const;
+    const t = this.task(p, {
+      kind: "look.time",
+      role: "director",
+      title: `Setting the video at ${words[want]}`,
+      ...this.ptOf(pt),
+    });
+    const was = (d.canvas as { time?: string }).time ?? "night";
+    const palette = TIME_PALETTES[want];
+    const builtIn = Object.values(TIME_PALETTES).includes(d.canvas.palette);
+    if (was === want && (!builtIn || d.canvas.palette === palette)) {
+      this.done(p, t, { summary: `it is already ${words[want]}` });
+      p.log(t.id, { kind: "step", title: `The video is already set at ${words[want]}` });
+      return { status: "done", note: `nothing was changed: already ${words[want]}` };
+    }
+    await p.patch(
+      [
+        { op: "add", path: "/canvas/time", value: want },
+        ...(builtIn ? [{ op: "replace" as const, path: "/canvas/palette", value: palette }] : []),
+      ],
+      {
+        reason: `the person's change: the video is set at ${words[want]}`,
+        author: { kind: "agent", role: "director", task: t.id },
+      },
+    );
+    const codes = new Set(d.scenes.filter((s) => s.kind === "code" && s.beat).map((s) => s.id));
+    r.done.time = want;
+    // the cue that says the old time ("Night falls.") is the person's words: Pip says so, once
+    const old = want === "night" ? /\b(sun|sunny|day|daylight|sunset|dusk)\b/i : /\bnight\b/i;
+    const cue = d.script.cues.find((c) => old.test(c.text));
+    if (cue) {
+      r.done.timeCue = `Cue ${d.script.cues.indexOf(cue) + 1} still says "${cue.text}" Tell me if its words should change too.`;
+      p.log(t.id, { kind: "step", title: `${cue.id} still says "${cue.text}"` });
+    }
+    this.done(p, t, {
+      summary: `set at ${words[want]}${codes.size ? `; ${codes.size} code ${codes.size === 1 ? "scene is" : "scenes are"} re-coded with the note` : ""}`,
+    });
+    return { status: "done" };
+  }
+
   /** vo.align: the person's narration take, aligned and applied */
   private async narrate(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const d = p.doc();
@@ -5256,6 +5355,7 @@ export class Crew {
               : d.brief.idea,
             cues: tl.cues.map((c) => `${c.id} ${c.start.toFixed(1)}-${c.end.toFixed(1)}s: ${c.text}`).join(" | "),
             scenes: tl.scenes.map((s) => `${s.id} ${s.from.toFixed(1)}-${s.to.toFixed(1)}s`).join(", "),
+            time: timeOf(d),
             change: asks.length
               ? `The change the person asked for in this run (answer "change": does the cut now do it?):\n${asks.map((n) => `- ${n.target.scene ? `${n.target.scene}: ` : ""}${n.text}`).join("\n")}\n`
               : "",

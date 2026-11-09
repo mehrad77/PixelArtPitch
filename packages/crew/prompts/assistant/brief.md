@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 maxOut: 900
 effort: low
 ---
@@ -11,7 +11,8 @@ Rules:
 1. `fields`: one entry per thing the person actually said. `quote` is the exact words from their message that say
    it (at most 120 characters, copied, not paraphrased). Never fill a field they didn't mention.
    - keys: audience, lengthSec, narration, budget, involvement, deadline (a day, YYYY-MM-DD), style (up to 3 of:
-     playful, calm, bold, cosy, retro).
+     playful, calm, bold, cosy, retro), time (night, dusk or day: when the video is set, only when the words say,
+     e.g. "sunny" or "in the day" is day, "at sunset" is dusk, "night-time" is night).
    - values: an id from the list below, or a number for lengthSec and budget.
    - Leave out idea, title and references: code sets those.
 2. `ask`: the open fields worth asking now, at most 3, from the "can ask" list only, most important first. You may

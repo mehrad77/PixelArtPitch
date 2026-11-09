@@ -17,6 +17,7 @@ export const BRIEF_KEYS = [
   "involvement",
   "profile",
   "style",
+  "time",
   "references",
 ] as const;
 export type BriefFieldKey = (typeof BRIEF_KEYS)[number];
@@ -57,6 +58,12 @@ export const NARRATION = [
 ] as const;
 export const LENGTHS = [15, 30, 45, 60] as const;
 export const STYLES = ["playful", "calm", "bold", "cosy", "retro"] as const;
+/** the time of day a video is set in (canvas.time; never asked: night unless the idea says) */
+export const TIMES = [
+  { id: "night", label: "Night" },
+  { id: "dusk", label: "Dusk" },
+  { id: "day", label: "Day" },
+] as const;
 export const RIGHTS: { id: Rights; label: string }[] = [
   { id: "mine", label: "Mine" },
   { id: "licensed", label: "Licensed" },
@@ -182,6 +189,10 @@ export function checkValue(key: string, v: unknown, ctx: { localOn?: boolean } =
         return bad(key, "The style takes up to 3 tags", `Use up to 3 of: ${STYLES.join(", ")}.`);
       return { ok: true, value: [...new Set(xs.map(String))] };
     }
+    case "time":
+      return TIMES.some((x) => x.id === v)
+        ? { ok: true, value: v }
+        : bad(key, 'Pick one for "Time of day"', `Use one of: ${TIMES.map((x) => x.id).join(", ")}.`);
     case "references":
       return bad(key, "Files are added by dropping them", "Send the file to POST /api/drafts/:id/files.");
     default:
@@ -346,11 +357,22 @@ export function rulesRead(text: string): Partial<Record<BriefFieldKey, unknown>>
   if (/investor/.test(t)) out.audience = "investors";
   else if (/\b(users?|customers)\b/.test(t)) out.audience = "users";
   else if (/\blaunch\b/.test(t)) out.audience = "launch";
+  const time = timeOfIdea(t);
+  if (time) out.time = time;
   if (/let (the crew|it) run|surprise me/.test(t)) out.involvement = "auto";
   else if (/every step/.test(t)) out.involvement = "every";
   out.title = titleOf(text);
   out.idea = ideaOf(text);
   return out;
+}
+/** the time of day an idea is set in: "sunny", "in the day" → day; "at sunset", "dusk" → dusk; "night" → night */
+export function timeOfIdea(text: string): "night" | "dusk" | "day" | undefined {
+  const t = text.toLowerCase();
+  if (/\b(sunset|sundown|dusk|twilight|golden hour)\b/.test(t)) return "dusk";
+  if (/\b(sunny|sunshine|daylight|day-?time|midday|blue sky)\b|\b(in|during|by) (the )?(broad )?day\b/.test(t))
+    return "day";
+  if (/\b(night|night-?time|nighttime|moonlit|at midnight)\b/.test(t)) return "night";
+  return undefined;
 }
 /** the first capitalized word that doesn't start a sentence, + " pitch"; else the first 6 words */
 export function titleOf(text: string): string {
@@ -408,6 +430,8 @@ export function inheritFrom(doc: ProjectT): Partial<Record<BriefFieldKey, unknow
     involvement: b.involvement,
   };
   if (aud) out.audience = aud;
+  const time = (doc.canvas as { time?: string }).time;
+  if (time && time !== "night") out.time = time;
   if (doc.crew.profile !== "custom") out.profile = doc.crew.profile;
   const style = b.tone.map((x) => x.toLowerCase()).filter((x) => (STYLES as readonly string[]).includes(x));
   if (style.length) out.style = [...new Set(style)].slice(0, 3);

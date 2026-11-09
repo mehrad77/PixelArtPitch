@@ -808,6 +808,7 @@ export type BriefFieldKey =
   | "involvement"
   | "profile"
   | "style"
+  | "time"
   | "references";
 export type BriefFieldAsk = {
   key: BriefFieldKey;

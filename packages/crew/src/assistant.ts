@@ -2505,13 +2505,14 @@ export function settleCard(c: StoredPlan, r: RunReport, p: OpenProject) {
     return;
   }
   const parts: string[] = [];
+  if (r.time) parts.push(`The video is now set at ${r.time}.${r.timeCue ? ` ${r.timeCue}` : ""}`);
   if (r.reboarded.length) parts.push(`The Director re-planned ${scenes(r.reboarded)}.`);
   if (r.redone.length) parts.push(`The Animator redid ${scenes(r.redone)}.`);
-  if (r.unchanged?.length && !r.reboarded.length && !r.redone.length)
+  if (r.unchanged?.length && !r.reboarded.length && !r.redone.length && !r.time)
     parts.push(
       `Nothing was changed: the crew left ${scenes(r.unchanged)} as ${r.unchanged.length === 1 ? "it was" : "they were"}. Your note stays open; say it another way, or retry.`,
     );
-  else if (!r.reboarded.length && !r.redone.length) parts.push("No scene changed.");
+  else if (!r.reboarded.length && !r.redone.length && !r.time) parts.push("No scene changed.");
   else if (r.unchanged?.length) parts.push(`Nothing changed in ${scenes(r.unchanged)}.`);
   // what the Director did instead, in plain words; an empty one says nothing
   for (const a of r.approximated) {

@@ -4,7 +4,7 @@
 // itself spends nothing but the reading, metered on the workspace guard; the brief card is the rules plan, free.
 // Draft turns stream as `pip` events on /api/events with `draft` on each (the third conversation kind).
 import { randomUUID } from "node:crypto";
-import type { ProjectT, RoleT } from "@pap/schema";
+import { type ProjectT, type RoleT, TIME_PALETTES } from "@pap/schema";
 import {
   copyLook,
   type DraftRefT,
@@ -46,6 +46,7 @@ import {
   type Profile,
   REF_TYPE_LABEL,
   type RefType,
+  TIMES,
   titleOf,
 } from "./registry.ts";
 
@@ -578,6 +579,11 @@ export class DraftConversations {
         ...(Array.isArray(f.style) && f.style.length
           ? [{ key: "style" as const, label: "Style", value: (f.style as string[]).join(", ") }]
           : []),
+        {
+          key: "time" as const,
+          label: "Time of day",
+          value: TIMES.find((x) => x.id === f.time)?.label ?? "Night",
+        },
       ],
       refs: d.refs.map((r) => ({ ...r, label: isSensitive(r.type as RefType) ? "Private to this project" : "" })),
       estimate: { usd: est.usd, sec: est.sec, rough: est.rough },
@@ -604,6 +610,16 @@ export class DraftConversations {
         await copyLook(src, p, { kind: "user" }, { skipPrivate: true, budget: false });
       } catch {}
     }
+    // the time of day the idea set: the canvas and its built-in palette (night needs nothing)
+    const time = TIMES.find((x) => x.id === d.fields.time)?.id;
+    if (time && time !== "night")
+      await p.patch(
+        [
+          { op: "add", path: "/canvas/time", value: time },
+          { op: "replace", path: "/canvas/palette", value: TIME_PALETTES[time] },
+        ],
+        { reason: `the idea is set at ${time}`, author: { kind: "user" } },
+      );
     const crew = { profile, models: { ...(p.doc().crew.models ?? {}), ...models } };
     if (JSON.stringify(crew) !== JSON.stringify(p.doc().crew))
       await p.patch([{ op: "replace", path: "/crew", value: crew }], {

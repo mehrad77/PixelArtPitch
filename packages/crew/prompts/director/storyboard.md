@@ -1,5 +1,5 @@
 ---
-version: 8
+version: 9
 maxOut: 12000
 effort: high
 ---
@@ -25,7 +25,9 @@ Hard rules:
 2. Captions already show every cue word for word: never put a cue's text on screen. On-screen text (title, banner,
    toast) is at most 3 words, at most once or twice in the whole video.
 3. Every recipe scene starts with "backdrop_night", or "backdrop_rooftop" when the script is on a roof (slate roof, chimneys
-   to perch on), never both; a title_card or end_card_loop paints its own. Then the recipes that show the cues. Icon-first: show it, don't write it. At most one short text per scene.
+   to perch on), never both; a title_card or end_card_loop paints its own. Both backdrops follow the video's time
+   of day ({{time}}): the name stays, the sky changes. A code scene's beat says "the sky", never "night sky" or "stars",
+   unless the video is set at night. Then the recipes that show the cues. Icon-first: show it, don't write it. At most one short text per scene.
 4. Times in params are cue-anchored expressions: S(c02) is when cue c02 starts, E(c02) when it ends; add small offsets
    like "S(c02)+0.4". Never raw seconds. Leave a param out to take its default.
 5. Use only asset names from the asset list. If the video needs a character or object the library lacks, use the
@@ -52,6 +54,8 @@ Return only the JSON object.
 
 ## user
 Brief: {{idea}}
+
+The video is set at: {{time}}
 
 Cues:
 {{cues}}

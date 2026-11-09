@@ -148,7 +148,15 @@ export type RuntimeState = {
   };
   milestones: { id: string; at: string; text: string; image?: string }[];
   /** a person's change the crew is making (kept across restarts, so a resumed run still reports on it) */
-  change?: { notes: string[]; scope?: string[]; reboard?: string[]; assets?: string[]; startedAt: string };
+  change?: {
+    notes: string[];
+    scope?: string[];
+    reboard?: string[];
+    assets?: string[];
+    /** a time-of-day change (look.time) */
+    time?: "night" | "dusk" | "day";
+    startedAt: string;
+  };
   sceneStatus: Record<
     string,
     { version: "slate" | "board" | "animatic" | "render"; state: "planned" | "drafting" | "ready" | "stale" }

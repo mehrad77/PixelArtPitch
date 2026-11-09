@@ -14,6 +14,28 @@ const ANIMATOR =
   /\b(faster|slower|speed|timing|tempo|earlier|later|sooner|delay|longer|shorter|pause|hold it|linger|bounce|smoother|jumpy|choppy|motion|moves?|moving|animation|animate|bigger|smaller|size|scale|position|higher|lower|left|right|closer|further|zoom|camera)\b/i;
 const WRITER = /\b(narration|voice ?over|vo|script|words?|wording|line|lines|say|says|caption|subtitle|tagline)\b/i;
 
+/**
+ * The time of day a person's words ask for ("make it day", "sunny", "at sunset instead", "back to night"), or null.
+ * A complaint that names the old time ("it's still night!") asks nothing here: the redo of the scenes that show it
+ * is the coder's.
+ */
+export function timeAsked(text: string): "day" | "dusk" | "night" | null {
+  const t = (text ?? "").toLowerCase();
+  if (/\b(sunset|sundown|dusk|twilight|golden hour|evening)\b/.test(t)) return "dusk";
+  if (
+    /\b(sunny|sunshine|daylight|day-?time|midday|noon|morning|afternoon|blue sky)\b/.test(t) ||
+    /\b(in|during|by) (the )?(broad )?day\b/.test(t) ||
+    /\b(make|turn|set|change|switch|put)\b[^.!?]{0,40}\b(to |into |in |at )?(a |the )?(bright |sunny )?day\b/.test(t)
+  )
+    return "day";
+  if (
+    /\b(make|turn|set|change|switch|put)\b[^.!?]{0,40}\b(night|night-?time)\b/.test(t) ||
+    /\bback to (the )?night\b/.test(t)
+  )
+    return "night";
+  return null;
+}
+
 export type RouteNote = {
   text: string;
   target?: { scene?: string; cue?: string; asset?: string };
@@ -28,6 +50,8 @@ export type RouteNote = {
  * timing and motion inside a scene the Animator's. `fallback` (a gate's owner) only decides what the words don't.
  */
 export function routeChange(note: RouteNote, fallback?: RoleT): RoleT {
+  // the time of day is the whole video's look: the Director's, done with no model call (look.time), never a re-code
+  if (!note.target?.asset && note.category !== "sound" && timeAsked(note.text)) return "director";
   const owner = routeWords(note, fallback);
   // a code scene is drawn by its code: how it looks, moves or is staged is the Scene Coder's (a redo priced by
   // scene.code); a story change still re-boards it (the Director writes a new beat)

@@ -1,5 +1,5 @@
 ---
-version: 7
+version: 8
 maxOut: 8000
 effort: medium
 ---
@@ -17,7 +17,7 @@ Hard rules:
 1. Each listed scene keeps its cues. Return every listed scene with its full new recipe list (1-6 recipes), or as a
    code scene with its full beat.
 2. Start with "backdrop_night" ("backdrop_rooftop" on a roof, never both) unless a title_card or end_card_loop paints
-   the background. Sit, fly and glow are on the menu (walk_in then: "sit", spawn_join motion: "fly" with follow, a
+   the background. Both follow the video's time of day ({{time}}); a code scene's beat says "the sky", never "night". Sit, fly and glow are on the menu (walk_in then: "sit", spawn_join motion: "fly" with follow, a
    decor or prop { "frame": "lantern", "glow": true }, nameTag: "sign"). Show it, don't write it:
    on-screen text (title, banner, toast, labels) is at most 3 words per scene. Captions already show the script.
 3. Characters are actors from the asset list (kind "character"). One walks in with walk_in (param hero = the asset
@@ -35,6 +35,8 @@ Return only the JSON object.
 
 ## user
 The change: {{change}}
+
+The video is set at: {{time}}
 
 Re-plan these scenes: {{targets}}
 

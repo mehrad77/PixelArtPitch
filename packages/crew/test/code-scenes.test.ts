@@ -556,3 +556,62 @@ test("a code redo reads the person's note ahead of the old beat, and its critiqu
     "the hub is still the board's stub, never reset from the old beat",
   );
 });
+
+test("make it day: no re-board, a no-model look.time patches the canvas, and only the code scenes are re-coded", async () => {
+  const { routeChange, timeAsked } = await import("../src/plan/route.ts");
+  assert.equal(timeAsked("make the sky sunny in a day"), "day");
+  assert.equal(timeAsked("sunset instead"), "dusk");
+  assert.equal(timeAsked("it's still night!"), null, "a complaint about the old time is the coder's redo");
+  assert.equal(routeChange({ text: "make the sky sunny in a day" }), "director");
+  assert.equal(routeChange({ text: "make it day", target: { scene: "hub" }, codeScene: true }), "director");
+  const { crew, p } = await crewOn(() => ({ error: new Error("no model call expected") }));
+  const c = crew as any;
+  const t0 = c.task(p, { kind: "director.storyboard", role: "director", title: "board" });
+  await c.applyBoard(p, t0, codeBoard());
+  // the preview: the Director's, no re-board, the code scenes only
+  const pr = crew.previewChange(p, { text: "make the sky sunny in a day" });
+  assert.equal(pr.role, "director");
+  assert.deepEqual(pr.scenes, ["hub", "end"]);
+  // the revision: look.time first, the code scenes' redo after it, no storyboard and no tune of the recipe scene
+  const ctx = c.rulesCtx(p, 1);
+  const ts = rules.rulesPlan(p.doc(), ctx, { scenes: p.doc().scenes.map((s: any) => s.id), newAssets: [] });
+  for (const x of ts) x.status = "done";
+  const ss = Object.fromEntries(p.doc().scenes.map((s: any) => [s.id, { version: "render", state: "ready" }])) as any;
+  ss.hub = ss.end = { version: "animatic", state: "stale" };
+  const out = rules.changeRevision(ts, { scope: ["hub", "end"], time: "day" }, "animate", { ...ctx, rev: 2 }, ss);
+  const live = out.tasks.filter((x: any) => x.status === "pending");
+  const look = live.find((x: any) => x.kind === "look.time")!;
+  assert.ok(look, live.map((x: any) => x.kind).join(","));
+  assert.deepEqual(look.estUsd, [0, 0], "no model call");
+  assert.ok(!live.some((x: any) => x.kind === "director.storyboard" || x.kind === "scene.tune"));
+  const codes = live.filter((x: any) => x.kind === "scene.code");
+  assert.deepEqual(codes.map((x: any) => x.scene).sort(), ["end", "hub"]);
+  for (const x of codes) assert.ok(x.dependsOn.includes(look.id), "re-coded after the sky changes");
+  // the handler: canvas.time and the palette, and Pip's line on the cue that still says night
+  await p.patch([{ op: "replace", path: "/script/cues/0/text", value: "Night falls. The list waits." }], {
+    reason: "t",
+    author: { kind: "user" },
+  });
+  const note = p.addNote({
+    target: {},
+    category: "art",
+    text: "make the sky sunny in a day",
+    assignee: "director",
+    by: "user",
+  });
+  const r = { ...fakeRun(), change: { notes: [note.id], time: "day" } };
+  const res = await c.lookTime(p, r, { ...boardTask, id: "t_look_time", kind: "look.time" });
+  assert.equal(res.status, "done");
+  assert.equal(p.doc().canvas.time, "day");
+  assert.equal(p.doc().canvas.palette, "pap-day@1");
+  assert.equal(r.done.time, "day");
+  assert.match(r.done.timeCue, /^Cue 1 still says "Night falls\. The list waits\." Tell me/);
+  // again: nothing to change
+  const again = await c.lookTime(p, r, { ...boardTask, id: "t_look_time", kind: "look.time" });
+  assert.match(again.note, /nothing was changed: already day/);
+  // Pip's card says it in one line
+  const { settleCard } = await import("../src/assistant.ts");
+  const card: any = {};
+  settleCard(card, c.report(p, r, "done"), p);
+  assert.match(card.result.text, /^The video is now set at day\. Cue 1 still says "Night falls/);
+});

@@ -101,6 +101,8 @@ export function plainTitle(t: Task, s: ProjectState): string {
       const i = s.doc.scenes.findIndex((sc) => t.title.includes(sc.title || sc.id) || t.title.includes(sc.id));
       return i >= 0 && n ? `Animating scene ${i + 1} of ${n}` : "Animating the scenes";
     }
+    case "look.time":
+      return "Setting the time of day";
     case "vo.align":
       return "Lining up your narration";
     case "sound.mix":

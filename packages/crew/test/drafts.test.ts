@@ -727,3 +727,24 @@ test("the rights question is the person's alone (N15); the Roles page's settings
     assert.match(r.json.error.message, /no model .*nope|no model openrouter\/a\/b/);
   }
 });
+
+test("the time of day: read from the idea, shown on the brief card, checked by the registry", async () => {
+  assert.equal(R.rulesRead("A sunny pitch for QuestDay").time, "day");
+  assert.equal(R.rulesRead("QuestDay, told at sunset on a rooftop").time, "dusk");
+  assert.equal(R.rulesRead("a calm night-time pixel platformer").time, "night");
+  assert.equal(R.rulesRead("A pitch for QuestDay").time, undefined);
+  assert.equal(R.checkValue("time", "day").ok, true);
+  assert.match((R.checkValue("time", "noon") as any).fix, /night, dusk, day/);
+  const w = await setup({ localPip: true });
+  const id = (await w.call("POST", "/api/drafts", {})).json.draft.id;
+  const item = await w.say(
+    id,
+    "A 30 s sunny pitch for investors about QuestDay, no voice, let the crew run, under $5.",
+  );
+  const card = item.cards[0];
+  assert.equal(card.type, "brief", JSON.stringify(item.cards));
+  assert.deepEqual(
+    card.fields.find((f: any) => f.key === "time"),
+    { key: "time", label: "Time of day", value: "Day" },
+  );
+});

@@ -83,6 +83,11 @@ export function readIdea(text: string): Partial<Record<BriefFieldKey, unknown>> 
   else if (/\blaunch\b/.test(t)) out.audience = "launch";
   if (/let (the crew|it) run|surprise me/.test(t)) out.involvement = "auto";
   else if (/every step/.test(t)) out.involvement = "every";
+  // the time of day (the crew's timeOfIdea)
+  if (/\b(sunset|sundown|dusk|twilight|golden hour)\b/.test(t)) out.time = "dusk";
+  else if (/\b(sunny|sunshine|daylight|day-?time|midday|blue sky)\b|\b(in|during|by) (the )?(broad )?day\b/.test(t))
+    out.time = "day";
+  else if (/\b(night|night-?time|nighttime|moonlit|at midnight)\b/.test(t)) out.time = "night";
   const words = [...text.matchAll(/(^|[.!?]\s+|\s)([A-Za-z][A-Za-z0-9]*)/g)];
   const product = words.find((m, i) => i > 0 && !/[.!?]/.test(m[1]) && /^[A-Z][A-Za-z0-9]+$/.test(m[2]))?.[2];
   out.title = product ? `${product} pitch` : text.split(/\s+/).slice(0, 6).join(" ");
@@ -445,6 +450,11 @@ export class MockDrafts {
         { key: "audience", label: "For", value: aud.label },
         { key: "involvement", label: "Your picks", value: inv.picks },
         { key: "budget", label: "Budget", value: `Up to ${usdWords(cap)}` },
+        {
+          key: "time",
+          label: "Time of day",
+          value: f.time === "day" ? "Day" : f.time === "dusk" ? "Dusk" : "Night",
+        },
       ],
       refs: d.refs.map((r) => ({ ...r, label: isSensitive(r.type) ? "Private to this project" : "" })),
       estimate: { usd, sec, rough: true },
