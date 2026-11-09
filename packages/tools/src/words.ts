@@ -14,6 +14,22 @@ export function cutWords(s: string, max: number): string {
   return `${cut}…`;
 }
 
+/**
+ * `s` in whole sentences that fit `max` characters: the whole text when it fits, else the sentences that fit (never
+ * a cut word); when even the first sentence is too long, it is cut at a word with "…" (cutWords).
+ */
+export function cutSentences(s: string, max: number): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  let out = "";
+  for (const m of t.matchAll(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g)) {
+    const next = `${out}${out ? " " : ""}${m[0].trim()}`;
+    if (next.length > max) break;
+    out = next;
+  }
+  return out || cutWords(t, max);
+}
+
 /** what plainText may name: the project's scenes (id → title), its asset ids, and plan task labels by id */
 export type PlainCtx = {
   scenes?: { id: string; title?: string }[];

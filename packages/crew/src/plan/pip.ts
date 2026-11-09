@@ -2,6 +2,7 @@
 // the plan code wrote; code expands each op into catalogue tasks, the validator checks it, one repair turn follows a
 // bad answer, and a second bad answer (or any failure) keeps the rules plan at no further cost. One metered call,
 // `assistant.plan`, on Pip's own model, never escalated to a fallback model.
+import { cutSentences } from "@pap/tools";
 import { z } from "zod";
 import type { Gateway } from "../gateway.ts";
 import type { ChatMessage } from "../llm/types.ts";
@@ -49,7 +50,7 @@ export function applyDiff(
       }
       if (o.op === "drop") {
         t.status = "dropped";
-        t.note = o.reason.slice(0, 200);
+        t.note = cutSentences(o.reason, 200);
         for (const x of ts) x.dependsOn = x.dependsOn.filter((d) => d !== t.id || !isLive(x));
         ops.push({ op: "drop", task: t.id, reason: o.reason });
       } else {

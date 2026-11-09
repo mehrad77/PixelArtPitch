@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { Role, type RoleT } from "@pap/schema";
 import {
   type ChangeCategory,
+  cutSentences,
   cutWords,
   isFinalVideo,
   languageName,
@@ -2227,18 +2228,21 @@ export class Pip {
       roles: RoleT[];
     },
   ): string {
-    return this.postCrewCard(p, `The plan grew past what you approved: ${r.reason}`, {
+    // the reason is said once, whole, on the card; Pip's line is only the framing, and each effect names who joins
+    const verb = (op: string) => (op === "add" ? "Adds" : op === "drop" ? "Drops" : "Changes");
+    const effects = [...new Set(r.ops.filter((o) => o.op !== "expand").map((o) => `${verb(o.op)} ${o.label}.`))].slice(
+      0,
+      6,
+    );
+    return this.postCrewCard(p, "The plan grew past what you approved.", {
       title: `Plan change: ${money(r.fromUsd)} → about ${money(r.toUsd)}`,
-      detail: r.reason,
+      detail: cutSentences(r.reason, 400),
       who: r.roles,
       whoInstances: r.whoInstances,
       usd: [Math.max(0, r.deltaUsd[0]), Math.max(0, r.deltaUsd[1])],
       sec: null,
       effects: [
-        ...r.ops
-          .filter((o) => o.op !== "expand")
-          .slice(0, 6)
-          .map((o) => `${o.op === "add" ? "Adds" : o.op === "drop" ? "Drops" : "Changes"} ${o.label}: ${o.reason}`),
+        ...effects,
         // what really waits: other work runs on, or (when everything left needs these tasks) the rest waits too
         r.othersRun
           ? "Everything else keeps running while you decide."

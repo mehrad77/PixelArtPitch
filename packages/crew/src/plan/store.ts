@@ -6,7 +6,7 @@
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RoleT } from "@pap/schema";
-import type { OpenProject } from "@pap/tools";
+import { cutSentences, type OpenProject } from "@pap/tools";
 import { stageOf, taskLabel } from "./catalogue.ts";
 import { isLive, type PlanEnv, planEstimate, resolveTier } from "./estimate.ts";
 import {
@@ -198,7 +198,7 @@ export function revise(
     at: new Date().toISOString(),
     by: r.by,
     trigger: r.trigger,
-    reason: r.reason.slice(0, 200),
+    reason: cutSentences(r.reason, 200),
     ops: r.ops,
     tasks: r.tasks,
     estimate: planEstimate(r.tasks, spentUsd, env),

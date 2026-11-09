@@ -15,6 +15,7 @@ import { paletteFor, type RoleT } from "@pap/schema";
 import {
   type ChangeCategory,
   type ChannelMsg,
+  cutSentences,
   cutWords,
   type GateId,
   isFinalVideo,
@@ -1076,8 +1077,8 @@ export class Crew {
     const why = d.kind === "redo" ? d.why : d.direction;
     const out =
       d.kind === "redo"
-        ? addRedo(plan.tasks, d.scenes, ctx, { reason: why.slice(0, 200) })
-        : addReboard(plan.tasks, d.scenes, ctx, { reason: why.slice(0, 200) });
+        ? addRedo(plan.tasks, d.scenes, ctx, { reason: cutSentences(why, 200) })
+        : addReboard(plan.tasks, d.scenes, ctx, { reason: cutSentences(why, 200) });
     // apply()'s re-check (`by: "code"`): a fixed rule's redo carries the Reviewer's or the member's words, and the
     // budget is the overrun flow's job, so only the plan's shape is checked there
     const pip = o.by !== "code";
@@ -1155,7 +1156,7 @@ export class Crew {
             p,
             r,
             { by: "pip", trigger: "conductor", reason: why, notes: notesOn(ok) },
-            (ts, ctx) => addReboard(ts, ok, ctx, { after: o.after, reason: why.slice(0, 200) }),
+            (ts, ctx) => addReboard(ts, ok, ctx, { after: o.after, reason: cutSentences(why, 200) }),
           );
           added.push(...(res?.added.filter((id) => res.tasks.find((t) => t.id === id)?.kind === "scene.tune") ?? []));
         } else {
@@ -1172,7 +1173,7 @@ export class Crew {
             p,
             r,
             { by: "pip", trigger: "conductor", reason: why, notes: notesOn(ok) },
-            (ts, ctx) => addRedo(ts, ok, ctx, { after: o.after, reason: why.slice(0, 200) }),
+            (ts, ctx) => addRedo(ts, ok, ctx, { after: o.after, reason: cutSentences(why, 200) }),
           );
           added.push(...(res?.added ?? []));
         }
@@ -2042,7 +2043,7 @@ export class Crew {
         ref: scenes[0],
       });
       this.planRevise(p, r ?? null, { by: "person", trigger: "change", reason: why }, (ts, ctx) =>
-        addReboard(ts, scenes, ctx, { reason: why.slice(0, 200) }),
+        addReboard(ts, scenes, ctx, { reason: cutSentences(why, 200) }),
       );
     }
     if (r) this.liftHold(p, r);
@@ -5308,8 +5309,8 @@ export class Crew {
           notes: askedNotes,
         },
         (ts, ctx) => {
-          const red = addRedo(ts, asked, ctx, { reason: why.slice(0, 200) });
-          const again = rerun(red.tasks, [pt.id], ctx.rev, { reason: why.slice(0, 200) });
+          const red = addRedo(ts, asked, ctx, { reason: cutSentences(why, 200) });
+          const again = rerun(red.tasks, [pt.id], ctx.rev, { reason: cutSentences(why, 200) });
           const copy = again.map.get(pt.id)!;
           return {
             tasks: again.tasks.map((t) =>

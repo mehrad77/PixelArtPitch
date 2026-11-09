@@ -1172,3 +1172,40 @@ test("the Try again card ends its held line once, with one full stop", async () 
   assert.doesNotMatch(card.detail, /\.\./);
   assert.match(card.detail, /fly here\. It goes on from where it stopped\./);
 });
+
+test("a plan change's card: the reason once and whole, Pip's line the framing, each effect only who joins", async () => {
+  const { pip, p } = await setup();
+  const reason =
+    "The Reviewer found the cut off-brief. A fourth character is off-brief and is clipped at the edge in scene 2. The Director re-plans it, and the Art director checks the new cast.";
+  pip!.revisionCard(p, {
+    rev: 3,
+    othersRun: true,
+    reason,
+    fromUsd: 2,
+    toUsd: 3,
+    deltaUsd: [1, 1.4],
+    ops: [
+      { op: "add", task: "t1", label: "Director", reason },
+      { op: "add", task: "t2", label: "Art director", reason },
+      { op: "add", task: "t3", label: "Director", reason },
+    ],
+    whoInstances: [],
+    roles: ["director", "art-director"],
+  });
+  const item = (pip as any)
+    .log(p)
+    .all()
+    .findLast((i: any) => i.kind === "pip");
+  assert.equal(item.text, "The plan grew past what you approved.");
+  const card = item.cards[0];
+  assert.equal(card.detail, reason, "the reason whole, said once");
+  assert.deepEqual(card.effects.slice(0, 2), ["Adds Director.", "Adds Art director."]);
+  assert.ok(!card.effects.some((e: string) => e.includes("off-brief")));
+  // a reason too long for the card is cut at a sentence, never mid-word
+  const { cutSentences } = await import("@pap/tools");
+  assert.equal(cutSentences(reason, 100), "The Reviewer found the cut off-brief.");
+  assert.equal(
+    cutSentences(reason, 150),
+    "The Reviewer found the cut off-brief. A fourth character is off-brief and is clipped at the edge in scene 2.",
+  );
+});

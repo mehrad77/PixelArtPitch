@@ -399,6 +399,7 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
     - the G0 verdict (composer projects),
     - or the last confirmed revision card, change or retry: a person's change or retry sets it to the new plan's p90, the top of the range its card showed (§1.9).
   - Any revision, whoever wrote it, whose new p50 total (spent + remaining) is more than `1.2 × approvedUsd` becomes a revision card (§4.4). Its added tasks wait in `pending` with `plan.pending` set, and everything else keeps running.
+  - The card says its reason once, in the card's detail, whole (`cutSentences`: whole sentences up to 400 characters, never a cut word; a revision's stored reason keeps whole sentences up to 200). Pip's line is only "The plan grew past what you approved.", and each effect names who joins ("Adds Director."), once.
   - Confirm sets `approvedUsd` to the new total.
   - Decline writes a `by: "person"`, `trigger: "decline"` revision that drops those tasks. The conductor gets a `stage` trigger saying so.
   - A change card is consent in itself, so its revision skips the rule.

@@ -10,6 +10,7 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 
 ### Studio
 - **One timeline for Pip's thread and the milestones.** The simple view's separate "Milestones" column is gone: milestones sit among the turns, newest first, on one spine with a dot per entry (a turn hangs its framed block off its dot, a milestone is one quiet line, the newest dot is lit). The three newest milestones always show; a longer run between two turns keeps its first and folds the rest into "N more milestones", which expands in place. The timeline sits on the page, with no panel behind it.
+- **A plan change's reason shows once, in whole sentences; Pip's timeline has no nested boxes.** The card's detail carries the reason whole (cut, if at all, at a sentence); Pip's line is "The plan grew past what you approved." and each effect names only who joins.
 
 ## v0.5.1 (unreleased)
 
