@@ -97,6 +97,12 @@ test("a scene the crew has only boarded isn't a picture yet", () => {
     sceneStatus: { title: { version: "render", state: "ready" }, end: { version: "board", state: "ready" } },
   });
   assert.equal(states(r).pictures, "partial");
+  // the animatic is a finished picture: a crew's export plays it when no tune pass ran
+  const animated = partsOf({
+    doc: handmade(),
+    sceneStatus: { title: { version: "render", state: "ready" }, end: { version: "animatic", state: "ready" } },
+  });
+  assert.equal(states(animated).pictures, "ready");
 });
 
 test("a script edit after the board makes Story stale; a board after it makes it ready again", () => {

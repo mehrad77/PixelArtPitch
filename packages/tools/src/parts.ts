@@ -134,7 +134,9 @@ export function partsOf(i: PartsInput): Parts {
       stale++;
       continue;
     }
-    if (st ? st.state !== "ready" || st.version !== "render" : !hasContent(doc, s)) continue;
+    // an animated scene counts: the crew exports from the animatic when no tune pass ran; a board or slate doesn't
+    const animated = st?.version === "render" || st?.version === "animatic";
+    if (st ? st.state !== "ready" || !animated : !hasContent(doc, s)) continue;
     if (s.kind === "code") {
       const b = doc.code.find((c) => c.id === s.bundle);
       if (!b || !resolves(`file:${b.file}`)) {
