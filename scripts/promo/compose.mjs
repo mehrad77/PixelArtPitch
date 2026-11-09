@@ -24,6 +24,7 @@ const { values: o } = parseArgs({
     still: { type: "string" },
     crf: { type: "string", default: "16" },
     thumb: { type: "boolean", default: false },
+    cut: { type: "string", default: "" },
   },
 });
 if (!o.work || !o.out) throw new Error("usage: compose.mjs --work <dir> --out <file>");
@@ -105,7 +106,7 @@ await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceSc
 const work = pathToFileURL(resolve(o.work)).href;
 const page = pathToFileURL(resolve(new URL(".", import.meta.url).pathname, "compose.html")).href;
 await send("Page.navigate", {
-  url: `${page}?work=${encodeURIComponent(work)}&w=${W}&h=${H}&format=${o.format}${o.thumb ? "&thumb=1" : ""}`,
+  url: `${page}?work=${encodeURIComponent(work)}&w=${W}&h=${H}&format=${o.format}${o.thumb ? "&thumb=1" : ""}${o.cut ? `&cut=${o.cut}` : ""}`,
 });
 for (let i = 0; i < 100; i++) {
   try {

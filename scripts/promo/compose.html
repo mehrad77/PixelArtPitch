@@ -28,6 +28,7 @@ const OUT_W = Number(q.get("w") ?? 1920);
 const OUT_H = Number(q.get("h") ?? 1080);
 const FORMAT = q.get("format") ?? "wide";
 const THUMB = q.get("thumb") === "1";
+const CUT = q.get("cut") ?? "";
 const TALL = FORMAT === "tall";
 const DW = TALL ? 2160 : 3840;
 const DH = TALL ? 3840 : 2160;
@@ -226,16 +227,18 @@ const CROP = {
 };
 function cropped(src, w, h, c) {
   if (!c) return imgTag(src);
-  const [fx, fy, z] = c;
+  const [fx, fy, z0] = c;
+  // the capture is 16:9: zoom at least enough to cover a window of any shape
+  const z = Math.max(z0, (h * 16) / 9 / w);
   const W = w * z;
-  const H = h * z;
+  const H = (W * 9) / 16;
   const x = Math.min(0, Math.max(w - W, w / 2 - fx * W));
   const y = Math.min(0, Math.max(h - H, h / 2 - fy * H));
   return `<img src="${WORK}${src}" style="position:absolute;left:${fmt(x)}px;top:${fmt(y)}px;width:${fmt(W)}px;height:${fmt(H)}px;max-width:none">`;
 }
-function win(id, u, { cx = DW / 2, cy = DH / 2, w = DW * 0.8, rx = 0, ry = 0, rz = 0, tz = 0, s = 1, o = 1, blur = 0, persp = 6000, focus = null, crop = undefined } = {}) {
+function win(id, u, { cx = DW / 2, cy = DH / 2, w = DW * 0.8, rx = 0, ry = 0, rz = 0, tz = 0, s = 1, o = 1, blur = 0, persp = 6000, focus = null, crop = undefined, aspect = 16 / 9 } = {}) {
   if (o <= 0.001) return "";
-  const h = (w * 9) / 16;
+  const h = w / aspect;
   const src = shotSrc(id, u);
   let inner = src
     ? cropped(src, w, h, crop === undefined ? CROP[id] : crop)
@@ -684,6 +687,167 @@ function build(t) {
   return h;
 }
 
+// ---- the Reels cut (44 s, 9:16): the crew, roasted ----
+/** deterministic noise for the glitches */
+const hash = (n) => {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+/**
+ * The asterisk's answer: small ad-legal type that glitches in (an RGB split and a jitter for a few frames), holds, and
+ * cuts out. The leading "*" is green.
+ */
+function note(t, a, b, str, { y = DH * 0.175, size = 70, w = DW * 0.88 } = {}) {
+  if (t < a || t > b) return "";
+  const u = t - a;
+  const g = u < 0.22 ? 1 - u / 0.22 : 0;
+  const f = Math.floor(t * 30);
+  const jx = g * (hash(f) - 0.5) * 60;
+  const jy = g * (hash(f + 7) - 0.5) * 16;
+  const split = g * 10;
+  const o = clamp(u / 0.06) * (1 - clamp((t - b + 0.12) / 0.12));
+  const body = str.replace(/^\*/, `<span style="color:${C.green};font-weight:700">*</span>`);
+  return `<div class="abs type" style="left:${fmt((DW - w) / 2 + jx)}px;top:${fmt(y + jy)}px;width:${fmt(w)}px;white-space:normal;text-align:center;font-size:${size}px;line-height:1.28;font-weight:450;letter-spacing:-0.005em;color:rgba(245,245,247,.82);opacity:${fmt(o)};text-shadow:${fmt(split)}px 0 rgba(255,42,109,.75), ${fmt(-split)}px 0 rgba(5,217,232,.75)">${body}</div>`;
+}
+/** a phone-shaped card of real footage that springs up from below, tilts back, and drops away */
+function card(id, t, a, b, crop, { cy = DH * 0.64, w = DW * 0.86, aspect = 4 / 5, u0 = 0, tilt = 1 } = {}) {
+  if (t < a - 0.02 || t > b + 0.02) return "";
+  const k = spring(t, a, 1.4, 6.5);
+  const out = eIn(prog(t, b - 0.25, b));
+  const p = prog(t, a, b);
+  return win(id, t - a + u0, {
+    cx: DW / 2,
+    cy: cy + (1 - k) * DH * 0.45 + out * DH * 0.06,
+    w: w * (1 + 0.04 * p),
+    aspect,
+    rx: ((1 - k) * 30 - out * 14) * tilt,
+    rz: (1 - k) * -4 * tilt,
+    o: clamp(k * 1.6) * (1 - out),
+    blur: out * 18,
+    crop,
+  });
+}
+/** the speed-read terms and conditions that roll under the end card */
+const TERMS =
+  "Terms and conditions: No designers were employed in the making of this video. Twelve AI agents were employed, in the sense that they were run. They did not consent, being unable to. Their wages were $2.68 between them, paid to someone else. Electricity was used. Somewhere a data center got warmer so a 16×16 robot could walk, and two of its walk frames are the same frame. The planet's invoice is pending. Late capitalism is not a feature; it ships anyway. Open source means you may read the code that burns the electricity. Results may vary. Pitch videos may contain pitches. Do not show to investors before 10 a.m. The Reviewer reviewed this disclaimer and filed the same note four times. Pip says everything is fine. Pip is not a licensed advisor. Pip is a squircle with a crown. FUCK MY LIFE is a registered feeling, not a trademark. Ask your Producer if the end of the world is right for you.";
+function crawl(t, a, b) {
+  if (t < a) return "";
+  const k = clamp((t - a) / 0.2) * (1 - clamp((t - b + 0.2) / 0.2));
+  const off = (t - a) * 1300;
+  return `<div class="abs" style="left:0;right:0;bottom:0;height:${DH * 0.3}px;overflow:hidden;opacity:${fmt(k)};background:linear-gradient(transparent, rgba(0,0,0,.92) 25%)"><div class="type" style="position:absolute;left:${DW * 0.07}px;width:${DW * 0.86}px;top:${fmt(DH * 0.3 - off + 200)}px;white-space:normal;text-align:justify;font-size:36px;line-height:1.25;color:rgba(245,245,247,.62)">${TERMS} ${TERMS}</div></div>`;
+}
+const head = (t, str, a, b, o = {}) => words(str, t, a, b, { y: DH * 0.13, size: 128, stagger: 0.06, dur: 0.45, exit: 0.2, rise: 50, ...o });
+
+function buildReels(t) {
+  let h = "";
+  const bg = (c) => box(0, 0, DW, DH, `background:${c}`);
+
+  // 0-2 · the hook, on black; the silent beat at 1.5
+  if (t < 2) {
+    h += words("POV:", t, 0.0, 2.0, { y: DH * 0.36, size: 150, color: C.green, stagger: 0, dur: 0.3, exit: 0.1 });
+    h += words("you hired 12 AI agents to make your pitch video.", t, 0.25, 2.0, { y: DH * 0.44, size: 132, stagger: 0.07, dur: 0.35, exit: 0.1 });
+    if (t > 1.5) h += bg(`rgba(0,0,0,${fmt(prog(t, 1.5, 1.6))})`);
+    return h;
+  }
+
+  // 2-12 · the cold open, then the pull-back into the real studio
+  if (t < 12) {
+    const p = t < 8 ? t - 0.5 : t + 2.5;
+    const z = eInOut(prog(t, 8.2, 10.4));
+    h += studio(t, z, p);
+    if (t < 2.25) h += bg(`rgba(255,255,255,${fmt(1 - prog(t, 2, 2.25))})`);
+    h += head(t, "Every idea deserves a trailer.*", 2.3, 7.9);
+    h += note(t, 3.4, 7.9, "*Ideas not included. Electricity sold separately.");
+    if (t > 9.6) h += box(0, 0, DW, DH, `background:rgba(0,0,0,${fmt(0.55 * eOut(prog(t, 9.6, 10.2)))})`);
+    h += head(t, "This video is being made by AI agents.*", 9.8, 12);
+    h += note(t, 10.6, 12, "*Right now. In a data center. Somewhere warm.");
+    return h;
+  }
+
+  // 12-16 · the crew bursts in, with their terms of employment
+  if (t < 16) {
+    const cols = 3;
+    for (let i = 0; i < 12; i++) {
+      const pop = spring(t, 12.15 + i * 0.05, 1.8, 6.5);
+      const x = DW / 2 + ((i % cols) - 1) * 620;
+      const y = DH * 0.4 + Math.floor(i / cols) * 470;
+      h += face(i, x, y, 230, { o: clamp(pop * 2), s: 0.3 + 0.7 * pop });
+      h += `<div class="abs type" style="left:${fmt(x - 300)}px;top:${fmt(y + 145)}px;width:600px;text-align:center;font-size:48px;font-weight:500;color:${C.dim};opacity:${fmt(clamp(pop))}">${CREW[i][0]}</div>`;
+    }
+    h += head(t, "12 agents. 0 salaries.*", 12.1, 16);
+    h += note(t, 13.2, 16, "*No benefits. No union. No idea.");
+    return h;
+  }
+
+  // 16-34 · the roast: nine cards of the real run, a bar each
+  if (t < 34) {
+    const beats = [
+      ["r-script", "The Writer wrote three scripts.*", "*You picked one. The other two were deleted without severance.", [0.85, 0.45, 3.0]],
+      ["r-board", "The Director made a storyboard.*", "*From a menu. Like a microwave, but slower.", [0.3, 0.78, 2.4]],
+      ["r-agent", "The Pixel artist drew a robot.*", "*Its own report: “Couldn’t: move2 is still pixel-identical to move0.” Two of four walk frames are the same frame. It told us. Proudly.", [0.255, 1.0, 3.4]],
+      ["r-animate", "The Scene Coder checked every frame.*", "*Its own log: “Couldn’t: No shrug frame exists.” We laughed. It didn’t. It can’t.", [0.35, 0.5, 2.4]],
+      ["r-review", "The Reviewer approved the cut.*", "*After filing the same note on four scenes. Management material.", [0.86, 0.45, 3.0]],
+      ["r-budget", "Every dollar counted.*", "*$2.68. The planet’s bill arrives later. With interest.", [0.735, 0.35, 3.2]],
+      ["r-brief", "Pip runs the show.*", "*Middle management, but with a crown.", [0.42, 0.55, 2.4]],
+      ["r-teaser", "12 agents. 12 minutes. One message.*", "*Plus 3 hours of one human at 2 a.m. making a video about it. This one.", [0.5, 0.5, 2.25]],
+      ["wall", "Somewhere, a GPU fan screamed.*", "*For a 16×16 robot. Worth it? Fight about it in the comments.", null],
+    ];
+    const i = clamp(Math.floor((t - 16) / 2), 0, beats.length - 1);
+    const a = 16 + i * 2;
+    const [id, line, joke, crop] = beats[i];
+    if (id === "wall") h += spriteWall(t, a, 1, 0);
+    else {
+      if (id === "r-teaser") CLIP["r-teaser"] = 4.0;
+      if (id === "r-budget") CLIP["r-budget"] = 1.9;
+      if (id === "r-animate") CLIP["r-animate"] = 2.0;
+      h += card(id, t, a, a + 2, crop, { u0: id === "r-brief" ? 11 : 0 });
+    }
+    h += head(t, line, a + 0.02, a + 2);
+    h += note(t, a + 0.75, a + 2, joke);
+    return h;
+  }
+
+  // 34-40 · the drop, then two claims on the stabs
+  if (t < 40) {
+    if (t < 36) {
+      h += words("And now, the features.", t, 34.0, 35.5, { y: DH * 0.47, size: 120, stagger: 0.05, dur: 0.35, exit: 0.15 });
+      return h;
+    }
+    // every pixel exact, zooming into the grid
+    const pz = prog(t, 36, 39.5);
+    const zz = lerp(1, 10, eExpo(pz) * 0.85 + eInOut(pz) * 0.15);
+    const w = DW * 2.6 * zz;
+    const hh = (w * 9) / 16;
+    const x = DW / 2 - 0.505 * w;
+    const y = DH / 2 - 0.705 * hh;
+    h += `<img class="abs px" src="${WORK}pixel/frames/00105.png" style="left:${fmt(x)}px;top:${fmt(y)}px;width:${fmt(w)}px;height:${fmt(hh)}px">`;
+    h += box(0, 0, DW, DH, "background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,.3), rgba(0,0,0,.8))");
+    if (t < 39.5) {
+      h += words("Every pixel exact.*", t, 36.0, 39.5, { y: DH * 0.42, size: 150, stagger: 0.05, dur: 0.35, exit: 0.15 });
+      h += note(t, 36.8, 39.5, "*The ice caps, less so.", { y: DH * 0.5, size: 62 });
+    } else {
+      h += words("Every edit undoable.*", t, 39.5, 40.0, { y: DH * 0.42, size: 150, stagger: 0, dur: 0.15, exit: 0.05 });
+      h += note(t, 39.62, 40.0, "*Unlike the climate.", { y: DH * 0.5, size: 62 });
+    }
+    return h;
+  }
+
+  // 40-44 · the flag, the URL, the terms
+  const p = 19.5 + (t - 40);
+  h += studio(t, 0, p);
+  if (t < 40.2) h += bg(`rgba(255,255,255,${fmt(1 - prog(t, 40, 40.2))})`);
+  h += head(t, "Open source. Runs on your machine.*", 40.1, 44.5, { y: DH * 0.11, size: 112 });
+  h += note(t, 40.9, 44.5, "*Your machine was not consulted. Neither was the planet.", { y: DH * 0.17 });
+  if (t > 41.6) {
+    const url = "github.com/mehrad77/PixelArtPitch";
+    const n = Math.floor(clamp((t - 41.6) / 0.7) * url.length);
+    h += `<div class="abs type" style="left:0;top:${fmt(DH * 0.24)}px;width:${DW}px;text-align:center;font-size:86px;font-weight:650;color:${C.green}">${url.slice(0, n)}<span style="opacity:${Math.floor(t * 3) % 2 ? 1 : 0.2}">▍</span></div>`;
+  }
+  h += crawl(t, 42.0, 44.5);
+  if (t > 43.4) h += bg(`rgba(0,0,0,${fmt(eIn(prog(t, 43.4, 44)))})`);
+  return h;
+}
+
 /** the YouTube thumbnail: the finale's flag moment, Pip and the name */
 function thumb() {
   let h = studio(0, 0, 22.6);
@@ -696,7 +860,7 @@ function thumb() {
 
 window.renderFrame = async (t) => {
   await ready;
-  stage.innerHTML = THUMB ? thumb() : build(t);
+  stage.innerHTML = THUMB ? thumb() : CUT === "reels" ? buildReels(t) : build(t);
   await document.fonts.ready;
   await Promise.all(
     [...stage.querySelectorAll("img")].map((i) =>
