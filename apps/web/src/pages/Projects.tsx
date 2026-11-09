@@ -82,7 +82,7 @@ export function ProjectsPage() {
                     p.draft ? (
                       <DraftCard key={p.id} p={p} onRemoved={reload} />
                     ) : (
-                      <ProjectCard key={p.id} p={p} kind={kindOf(p)} step={step} />
+                      <ProjectCard key={p.id} p={p} kind={kindOf(p)} step={step} onRemoved={reload} />
                     ),
                   )}
                 </ul>
@@ -179,10 +179,32 @@ function Faces({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: number 
   );
 }
 
-function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: number }) {
+function ProjectCard({
+  p,
+  kind,
+  step,
+  onRemoved,
+}: {
+  p: ProjectSummary;
+  kind: Kind;
+  step: number;
+  onRemoved: () => void;
+}) {
   const [playing, setPlaying] = useState(false);
   const [showPath, setShowPath] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [removeErr, setRemoveErr] = useState<string | null>(null);
+  const remove = async (trash: boolean) => {
+    setRemoveErr(null);
+    try {
+      await client.removeProject(p.id, { trash });
+      setAsking(false);
+      onRemoved();
+    } catch (e) {
+      setRemoveErr(`${(e as Error).message}.${e instanceof ApiError && e.fix ? ` ${e.fix}.` : " Try again."}`);
+    }
+  };
   const href = `/p/${encodeURIComponent(p.id)}`;
   const video = kind === "finished" ? p.video || client.proxyUrl(p.id) : "";
   const phase = p.phase ?? (p.finished ? PHASES.length : (p.status?.phase ?? 0));
@@ -251,6 +273,8 @@ function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: n
             // the run so far as one page (docs/REPORT.md): who worked when, what it cost, what failed
             { label: "Run report", value: "report" },
             { label: showPath ? "Hide folder path" : "Show folder path", value: "path" },
+            // not while a crew works on it: pause first
+            ...(p.running ? [] : [{ label: "Remove…", value: "remove" }]),
           ]}
           onSelect={(v) => {
             if (v === "another") {
@@ -263,10 +287,48 @@ function ProjectCard({ p, kind, step }: { p: ProjectSummary; kind: Kind; step: n
             } else if (v === "studio") {
               setView("studio");
               navigate(`${href}/${p.stage}`);
+            } else if (v === "remove") {
+              setRemoveErr(null);
+              setAsking(true);
             } else setShowPath((x) => !x);
           }}
         />
       </div>
+      <Dialog
+        id={`remove-${p.id}`}
+        title={`Remove ${p.title}?`}
+        size="sm"
+        open={asking}
+        onClose={() => setAsking(false)}
+        closeLabel="Keep it"
+      >
+        <p>It leaves this list. Its folder stays where it is, untouched:</p>
+        <p className="pcard-path mono ltr">{p.dir}</p>
+        {p.canTrash && (
+          <p className="muted small">
+            It lives in PixelArtPitch's own projects folder, so it can also move to PixelArtPitch's trash folder.
+            Nothing is deleted.
+          </p>
+        )}
+        {removeErr && (
+          <p className="decision-error" role="status">
+            {removeErr}
+          </p>
+        )}
+        <div className="decision-actions">
+          <Button variant="danger" onClick={() => remove(false)}>
+            Remove from the list
+          </Button>
+          {p.canTrash && (
+            <Button variant="ghost" onClick={() => remove(true)}>
+              Move to the trash
+            </Button>
+          )}
+          <Button variant="quiet" onClick={() => setAsking(false)}>
+            Keep it
+          </Button>
+        </div>
+      </Dialog>
     </li>
   );
 }

@@ -38,6 +38,7 @@ Fixes for what the P5 run showed: Pip and the crew now share one picture of the 
 - **Pip's questions show every option**, Pip is never "the producer", and a hold's "Fix the key" and "Tell Pip what to change" act (Settings, or a field on the card).
 - **G3's "Change something" shows who will do it and what it costs**, from the server's routing, not "the animator redoes all of animation".
 - **The Library shows all three folders**: the public library, your own library and each project's private assets (likenesses, logos), each with its path. Scope filters by folder, and a project's assets say which project they belong to. Before, "Private to a project" never listed anything.
+- **Remove a project** from its card's ⋯ menu. It leaves the list and its folder stays; a project in PixelArtPitch's own projects folder can also move to PixelArtPitch's trash folder. Nothing is deleted.
 - **A rerun is Working on Projects**, not ✓ Finished; Pip's box never keeps words typed on New video; an old UI build says so in a banner.
 
 ### For contributors

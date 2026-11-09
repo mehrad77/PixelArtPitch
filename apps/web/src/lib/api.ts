@@ -242,6 +242,12 @@ export class HttpClient implements Client {
   async deleteDraft(id: string) {
     await this.req("DELETE", `/api/drafts/${enc(id)}`);
   }
+  removeProject(id: string, opts: { trash?: boolean } = {}) {
+    return this.req<{ dir: string; trashed: string | null }>(
+      "DELETE",
+      `/api/p/${enc(id)}${opts.trash ? "?trash=1" : ""}`,
+    );
+  }
   draftFile(id: string, name: string, body: Blob) {
     return this.req<{ ref: DraftRef }>("POST", `/api/drafts/${enc(id)}/files?name=${enc(name)}`, undefined, body);
   }

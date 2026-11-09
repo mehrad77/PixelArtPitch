@@ -1,6 +1,6 @@
 // Small studio routes (docs/API.md): the change preview passes its body to the crew and checks it first.
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -35,7 +35,17 @@ function setup(crew: Record<string, unknown>) {
     });
   const get = (path: string) =>
     app.request(path, { headers: { host: "127.0.0.1:5997", cookie: `pap_session=${token}`, "x-pap-token": token } });
-  return { id, post, get, workspace };
+  const del = (path: string) =>
+    app.request(path, {
+      method: "DELETE",
+      headers: {
+        host: "127.0.0.1:5997",
+        origin: "http://127.0.0.1:5997",
+        cookie: `pap_session=${token}`,
+        "x-pap-token": token,
+      },
+    });
+  return { id, post, get, del, workspace };
 }
 
 test("POST /api/p/:id/changes/preview: the crew's dry preview, its body checked first", async () => {
@@ -149,6 +159,53 @@ test("GET /api/library: three layers, a project's own assets private to it, with
     assert.equal(sheet.status, 200);
     assert.equal(sheet.headers.get("content-type"), "image/png");
     assert.equal((await get(`/api/library/project/${id}/nope/sheet.png`)).status, 404);
+  } finally {
+    workspace.closeAll();
+  }
+});
+
+test("DELETE /api/p/:id: off the list and kept off a scan; the trash only inside the app's projects folder", async () => {
+  let running = true;
+  const status = () => ({
+    budget: { capUsd: 1, spentUsd: 0, reservedUsd: 0, estTotalUsd: null },
+    time: { startedAt: null, etaSec: null, deadline: null },
+    crew: { running, paused: false, stage: "brief", lastActiveAt: null, queued: 0 },
+  });
+  const { id, get, workspace, del } = setup({ status });
+  try {
+    const dir = workspace.list().find((x) => x.id === id)!.dir;
+    assert.equal((await del(`/api/p/${id}`)).status, 409, "not while the crew works");
+    running = false;
+    const outside = await del(`/api/p/${id}?trash=1`);
+    assert.equal(outside.status, 400, "a folder outside the app's projects folder never moves");
+    assert.ok(existsSync(join(dir, "pitch.json")));
+    const ok = await del(`/api/p/${id}`);
+    assert.equal(ok.status, 200);
+    assert.equal(((await ok.json()) as any).trashed, null);
+    assert.ok(existsSync(join(dir, "pitch.json")), "the folder stays");
+    const ids = ((await (await get("/api/projects")).json()) as any[]).map((x) => x.id);
+    assert.ok(!ids.includes(id), "a scan of its root doesn't bring it back");
+    // opening the folder by path is the way back
+    assert.equal(workspace.openDir(dir).id, id);
+  } finally {
+    workspace.closeAll();
+  }
+});
+
+test("Workspace.remove with trash: a project in the app's own projects folder moves to <PAP_HOME>/trash", async () => {
+  const root = join(home, "projects");
+  mkdirSync(root, { recursive: true });
+  cpSync(EXAMPLE, join(root, "qd"), { recursive: true, filter: (f) => !f.endsWith(".pap-lock") });
+  const workspace = new Workspace(() => [root]);
+  try {
+    const row = workspace.list().find((x) => x.dir === join(root, "qd"))!;
+    assert.ok(workspace.canTrash(row.id));
+    workspace.get(row.id);
+    const r = workspace.remove(row.id, { trash: true });
+    assert.ok(r.trashed?.startsWith(join(home, "trash")));
+    assert.ok(existsSync(join(r.trashed!, "pitch.json")), "moved, not deleted");
+    assert.ok(!existsSync(join(root, "qd")));
+    assert.ok(!workspace.list().some((x) => x.id === row.id));
   } finally {
     workspace.closeAll();
   }

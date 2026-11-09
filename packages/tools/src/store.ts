@@ -836,6 +836,8 @@ export class Workspace {
   readonly libraryDir = LIBRARY_DIR;
   private open = new Map<string, OpenProject>();
   private known = new Map<string, string>(); // id -> dir
+  /** folders removed from the list: a scan of their root skips them until they are opened by path again */
+  private removed = new Set<string>();
   private roots: () => string[];
   /** the crew's hook on an answer to a hold question (OpenProject.answerHook), for every project this opens */
   onAnswer?: (
@@ -846,6 +848,11 @@ export class Workspace {
   ) => "keep" | void;
   constructor(roots: () => string[]) {
     this.roots = roots;
+    const gone = join(PAP_HOME, "removed.json");
+    if (existsSync(gone))
+      try {
+        for (const d of JSON.parse(readFileSync(gone, "utf8")) as string[]) this.removed.add(resolve(d));
+      } catch {}
     const recent = join(PAP_HOME, "projects.json");
     if (existsSync(recent)) for (const d of JSON.parse(readFileSync(recent, "utf8")) as string[]) this.remember(d);
     this.scan();
@@ -853,10 +860,53 @@ export class Workspace {
   private persist() {
     mkdirSync(PAP_HOME, { recursive: true });
     writeFileSync(join(PAP_HOME, "projects.json"), JSON.stringify([...this.known.values()], null, 1));
+    writeFileSync(join(PAP_HOME, "removed.json"), JSON.stringify([...this.removed], null, 1));
   }
-  private remember(dir: string) {
+  /** the app's own projects folder: only a project inside it may be moved to the trash */
+  static readonly HOME_PROJECTS = join(PAP_HOME, "projects");
+  /** a project in the app's own projects folder, which removing may also move to <PAP_HOME>/trash */
+  canTrash(id: string) {
+    const dir = this.known.get(id);
+    return !!dir && resolve(dir).startsWith(`${resolve(Workspace.HOME_PROJECTS)}/`);
+  }
+  /**
+   * Takes a project off the list. Its folder stays where it is, unless `trash` and it lives in the app's own projects
+   * folder: then it moves to <PAP_HOME>/trash/<name>-<time>, never deleted. Opening the folder by path brings it back.
+   */
+  remove(id: string, opts: { trash?: boolean } = {}): { dir: string; trashed: string | null } {
+    const dir = this.known.get(id);
+    if (!dir) throw new StoreError("not_found", `no project ${id}`, `known: ${[...this.known.keys()].join(", ")}`, 404);
+    if (opts.trash && !this.canTrash(id))
+      throw new StoreError(
+        "outside_home",
+        `${dir} isn't in PixelArtPitch's own projects folder, so it isn't moved`,
+        "remove it from the list only, and delete the folder yourself if you want it gone",
+        400,
+      );
+    const open = this.open.get(id);
+    if (open) {
+      open.close();
+      unlock(dir);
+      this.open.delete(id);
+    }
+    this.known.delete(id);
+    let trashed: string | null = null;
+    if (opts.trash) {
+      const bin = join(PAP_HOME, "trash");
+      mkdirSync(bin, { recursive: true });
+      trashed = join(bin, `${basename(dir)}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+      renameSync(dir, trashed);
+    } else this.removed.add(resolve(dir));
+    this.persist();
+    return { dir, trashed };
+  }
+  private remember(dir: string, opts: { force?: boolean } = {}) {
     dir = resolve(dir);
     if (!existsSync(join(dir, "pitch.json"))) return null;
+    if (this.removed.has(dir)) {
+      if (!opts.force) return null;
+      this.removed.delete(dir);
+    }
     try {
       const id0 = JSON.parse(readFileSync(join(dir, "pitch.json"), "utf8")).id ?? basename(dir);
       for (const [id, d] of this.known) if (d === dir) return id;
@@ -899,7 +949,8 @@ export class Workspace {
     return p;
   }
   openDir(dir: string): OpenProject {
-    const id = this.remember(dir);
+    // opening a removed folder by path is the way back
+    const id = this.remember(dir, { force: true });
     if (!id) throw new StoreError("not_found", `no pitch.json in ${dir}`);
     this.persist();
     return this.get(id);

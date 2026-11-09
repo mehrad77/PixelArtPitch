@@ -45,6 +45,8 @@ export type ProjectSummary = {
   working?: Role[];
   /** extension: roles waiting on the person */
   waiting?: Role[];
+  /** removing it may also move its folder to the app's trash (it lives in the app's own projects folder) */
+  canTrash?: boolean;
   /** a 320×180 frame */
   thumb?: string;
   /** the video, to play in the card (when the server names it) */
@@ -652,6 +654,8 @@ export interface Client {
   draft(id: string): Promise<{ draft: Draft; items: PipItem[] }>;
   /** DELETE /api/drafts/:id: the folder goes too */
   deleteDraft(id: string): Promise<void>;
+  /** DELETE /api/p/:id[?trash=1]: off the list; the folder stays, or moves to the app's trash */
+  removeProject(id: string, opts?: { trash?: boolean }): Promise<{ dir: string; trashed: string | null }>;
   /** POST /api/drafts/:id/files?name= (raw body) */
   draftFile(id: string, name: string, body: Blob): Promise<{ ref: DraftRef }>;
   /** PATCH /api/drafts/:id/refs/:name: the rights chips */

@@ -311,6 +311,7 @@ Buttons: **Start** (primary) · **Show all options** (quiet).
 - **Drafts.** A group, "Drafts · N", is shown last.
   - Each card has no thumbnail (an empty-stage box), the title (from the idea: "QuestDay pitch"), the mark "✎ Draft", Pip's last question as the line (the summary's `status.line`), and "Started <time>" (the summary's `createdAt`, N14).
   - The card links to `/new/:id`.
+  - A project card's ⋯ menu has "Remove…" (not while a crew works on it). Its Dialog, "Remove <title>?", says the project leaves the list and shows its folder, which stays untouched. **Remove from the list** (danger), **Move to the trash** (only for a project in PixelArtPitch's own projects folder: it moves to `<PAP_HOME>/trash`, nothing is deleted) and **Keep it**.
   - Its ⋯ menu has "Remove draft". That opens a Dialog: "Remove this draft? Only the conversation is saved, and it goes too." with **Remove draft** (danger) and **Keep it**.
 - **"Make another like this".**
   - It is in a finished card's ⋯ menu and in a finished project's Pip chips. The chip doesn't ask Pip: like the menu item, it calls the route directly, with no model call.

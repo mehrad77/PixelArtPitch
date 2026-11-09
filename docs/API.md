@@ -79,6 +79,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `GET /api/projects` | | `ProjectSummary[]`. `finished` is true when the project has an exported video (not the rough cut's `proxy.mp4`) and no crew is running on it |
 | `POST /api/projects` | `{ title, brief, budgetUsd, dir? }` | `{ id }` (a new folder under the first project root unless `dir`) |
 | `POST /api/projects/open` | `{ dir }` | `{ id }` |
+| `DELETE /api/p/:id` | `?trash=1` | `{ dir, trashed }`: takes the project off the list and keeps a scan of its root from bringing it back (`<PAP_HOME>/removed.json`); its folder stays. With `trash=1` a folder inside `<PAP_HOME>/projects` moves to `<PAP_HOME>/trash/<name>-<time>` (moved, never deleted); anywhere else is 400 `outside_home`. 409 `busy` while the crew works. `POST /api/projects/open` with its folder brings it back. Project rows carry `canTrash` |
 | `GET /api/p/:id` | | `ProjectState` |
 | `GET /api/p/:id/history` | `?since=seq` | `PatchEntry[]` |
 | `POST /api/p/:id/patch` | `{ ops, reason, baseRev }` | `{ rev, seq }` (409 on stale `baseRev` over overlapping paths) |

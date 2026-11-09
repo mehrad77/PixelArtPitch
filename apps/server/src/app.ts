@@ -345,6 +345,8 @@ export function createApp(o: ServerOpts) {
             // a finished video (not the rough cut's proxy) and no crew working on it now: a live rerun isn't finished
             finished: p.files().some(isFinalVideo) && !(st?.crew?.running ?? false),
             working: p.state.tasks.filter((t) => t.status === "working").map((t) => t.role),
+            // removing it may also move its folder to the app's trash (only inside the app's own projects folder)
+            canTrash: o.workspace.canTrash(x.id),
             thumb: `/api/p/${p.id}/frame?t=${Math.max(0.5, Math.min(p.timeline().duration - 0.5, p.timeline().duration * 0.4)).toFixed(2)}&scale=1`,
           };
           if (!extra.running) extra.etaSec = null;
@@ -372,6 +374,20 @@ export function createApp(o: ServerOpts) {
     const { dir } = await c.req.json();
     const p = o.workspace.openDir(resolve(String(dir)));
     return c.json({ id: p.id });
+  });
+  // off the list; the folder stays, or with ?trash=1 moves to <PAP_HOME>/trash when it's in the app's own projects folder
+  app.delete("/api/p/:id", (c) => {
+    const id = c.req.param("id");
+    const p = proj(id);
+    if (o.crew?.status(p).crew?.running)
+      throw new StoreError(
+        "busy",
+        "the crew is working on this project",
+        "pause it (Pause now) and wait for it to stop, then remove it",
+        409,
+      );
+    const trash = c.req.query("trash") === "1";
+    return c.json(o.workspace.remove(id, { trash }));
   });
   app.get("/api/p/:id", (c) => c.json(stateOf(proj(c.req.param("id")))));
   app.get("/api/p/:id/history", async (c) =>

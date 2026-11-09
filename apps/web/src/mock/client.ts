@@ -1622,6 +1622,7 @@ export class MockClient implements Client {
         id: s.doc.id,
         title: s.doc.title,
         dir: `~/Movies/PixelArtPitch/${s.doc.id}`,
+        canTrash: true,
         rev: s.rev,
         stage: s.stage,
         spentUsd: s.budget.spentUsd,
@@ -2083,6 +2084,14 @@ export class MockClient implements Client {
     await wait();
     be().drafts.remove(id);
     be().pip.convs.delete(id);
+  }
+  async removeProject(id: string, opts: { trash?: boolean } = {}) {
+    await wait();
+    const p = be().projects.get(id);
+    if (!p) throw new Error(`no project ${id}`);
+    be().projects.delete(id);
+    const dir = `~/Movies/PixelArtPitch/${id}`;
+    return { dir, trashed: opts.trash ? `~/.pixelartpitch/trash/${id}` : null };
   }
   async draftFile(id: string, name: string, body: Blob): Promise<{ ref: DraftRef }> {
     await wait(200);
