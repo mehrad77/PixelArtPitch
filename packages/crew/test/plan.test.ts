@@ -586,6 +586,6 @@ test("resume: after a kill the plan picks up from runs/plan.json; done work isn'
   assert.equal(tunes - before, 3, "the running tune and the two never started; the done one stays done");
   const after = JSON.parse(readFileSync(join(dir, "runs", "plan.json"), "utf8"));
   assert.ok(after.tasks.filter((t: any) => !t.expand).every((t: any) => ["done", "skipped"].includes(t.status)));
-  assert.equal(b.p.state.status.line, "Your video is ready");
+  assert.match(b.p.state.status.line ?? "", /^Exported v[0-9]+$/);
   assert.equal(after.runs.length, 1, "a resume continues the same plan run list");
 });

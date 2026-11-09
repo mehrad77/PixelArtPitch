@@ -166,7 +166,7 @@ test("a Pip hold asks with three options, counts in Needs you, and answering it 
   assert.equal(holdQ(p)?.id, q.id);
   await p.answer(q.id, { optionId: "accept" }, "user");
   await run;
-  assert.equal(p.state.status.line, "Your video is ready");
+  assert.match(p.state.status.line ?? "", /^Exported v[0-9]+$/);
   assert.equal(p.state.paused, false);
   assert.equal(holdQ(p), undefined);
   assert.equal(p.state.questions.find((x) => x.id === q.id)?.status, "answered");
@@ -241,7 +241,7 @@ test("a provider hold asks Fix the key · Try again; Fix the key stays open unti
   assert.deepEqual(crew.providerFixed("fake"), [p.id]);
   assert.equal(p.state.questions.find((x) => x.id === q.id)?.status, "withdrawn");
   await run;
-  assert.equal(p.state.status.line, "Your video is ready");
+  assert.match(p.state.status.line ?? "", /^Exported v[0-9]+$/);
 });
 
 test("the escalation recommends the cheapest option that fits the cap", () => {

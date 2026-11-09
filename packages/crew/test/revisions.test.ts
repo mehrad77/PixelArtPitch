@@ -227,6 +227,8 @@ test("sprite size scales the estimate: an icon's draw costs less than an 8-frame
 
 test("a person's change moves what they approved; its card prices the change's own revision", async () => {
   const { crew, p } = await crewOn();
+  // every scene drawn, so the change has a tune to add (a pending one would cost nothing more)
+  for (const s of p.doc().scenes) p.setSceneStatus(s.id, { version: "render", state: "ready" });
   const before = (crew as any).ensurePlan(p, null);
   (before as any).approvedUsd = 0.01;
   const cost = crew.changeCost(p, { assignee: "animator", scene: "grind" });
@@ -246,6 +248,25 @@ test("a person's change moves what they approved; its card prices the change's o
   assert.equal(plan.approvedUsd, plan.estimate.usd[1], "the top of the range the person said yes to");
   assert.ok(Math.abs(plan.estimate.usd[0] - before.estimate.usd[0] - cost!.usd[0]) < 1e-6, "the card's figure");
   assert.ok(!plan.tasks.some((t) => t.addedIn === plan.rev && t.kind === "scene.tune" && t.scene !== "grind"));
+});
+
+test("a handmade project with no state reopens an animation note from animate, not the brief", async () => {
+  const { crew, p } = await crewOn();
+  // examples/questday has no runs/state.json: its story and pictures are there, its sound isn't
+  assert.equal(p.parts().next, "narrate");
+  assert.equal(p.state.stage, "narrate");
+  assert.equal(p.state.gates.find((g) => g.id === "g1_script")?.verdict?.by, "content");
+  const note = p.addNote({
+    target: { scene: "grind" },
+    category: "art",
+    text: "slower walk",
+    assignee: "animator",
+    by: "user",
+  });
+  p.state.paused = true;
+  crew.requestChange(p, note);
+  assert.equal(p.state.stage, "animate");
+  assert.equal(p.state.gates.find((g) => g.id === "g1_script")?.status, "passed", "the script isn't asked again");
 });
 
 // ---------------------------------------------------------------- 3. slash commands

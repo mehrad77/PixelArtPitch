@@ -90,8 +90,12 @@ export function partsOf(i: PartsInput): Parts {
   const boarded = scenes.filter((s) => hasContent(doc, s));
   const cuesAt = lastSeq(history, "/script/cues");
   const boardAt = lastSeq(history, "/scenes");
+  // a cue change after the storyboard makes it stale only when the cues the scenes carry aren't the script's cues any
+  // more: a caption fix (the Editor's script_set_cues, same ids) keeps the board. With no scene naming its cues, any change counts
+  const carried = new Set(scenes.flatMap((s) => s.cues));
+  const sameCues = carried.size > 0 && carried.size === cues.length && cues.every((c) => carried.has(c.id));
   if (!cues.length) parts.push(part("story", "missing", 0, 0, "no script yet"));
-  else if (boardAt && cuesAt > boardAt)
+  else if (boardAt && cuesAt > boardAt && !sameCues)
     parts.push(part("story", "stale", boarded.length, scenes.length, "the script changed after the storyboard"));
   else if (scenes.length && boarded.length === scenes.length)
     parts.push(part("story", "ready", boarded.length, scenes.length));
@@ -203,7 +207,8 @@ export function partsOf(i: PartsInput): Parts {
       latest.rev < doc.rev &&
       // a rev with no patch on record (pitch.json edited by hand) counts as a change
       (!since.length || since.some((h) => h.ops.some((o) => !NOT_EXPORTED.some((re) => re.test(o.path)))));
-    const redoing = scenes.some((s) => status[s.id]?.state === "stale");
+    // a scene the crew is redoing (stale, or drafting its new version) keeps the video older than the document
+    const redoing = scenes.some((s) => ["stale", "drafting"].includes(status[s.id]?.state ?? ""));
     parts.push(
       changed || redoing
         ? part("video", "stale", 0, 1, `v${latest.v} is older than your changes`)

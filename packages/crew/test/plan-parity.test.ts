@@ -193,7 +193,7 @@ test("parity: a whole run on `auto` gives today's task order, calls and gates", 
     "g4_final:passed:producer",
   ]);
   assert.equal(p.state.stage, "deliver");
-  assert.equal(p.state.status.line, "Your video is ready");
+  assert.match(p.state.status.line ?? "", /^Exported v[0-9]+$/);
   assert.ok(p.files().some((f: any) => f.kind === "video"));
 });
 

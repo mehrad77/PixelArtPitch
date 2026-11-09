@@ -155,7 +155,7 @@ export const projectFork = defineTool({
     const np = ctx.workspace.create({ title, brief, budgetUsd: d.budget.capUsd });
     await copyLook(src, np, ctx.author);
     np.setGate("g0_brief", { status: "open", items: [{ label: "Brief and budget" }] });
-    np.setStatus({ line: "Waiting for you: check the brief", phase: 0 });
+    np.setStatus({ line: "Waiting for you: check the brief" });
     np.setDigest(`Made from ${d.title}. Check the brief, then start the crew.`);
     return ok({ projectId: np.id, dir: np.dir });
   },

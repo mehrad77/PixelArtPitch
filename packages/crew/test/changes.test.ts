@@ -186,7 +186,7 @@ test("G3 'Change something' runs once, approving the new rough cut exports, and 
   assert.equal(g3note.assignee, "animator");
   assert.deepEqual(g3note.target, { scene: "grind" });
   crew.gate(p, "g3_rough", { verdict: "approve", by: "user" });
-  await wait(() => !crew.status(p).crew.running && p.state.status.line === "Your video is ready");
+  await wait(() => !crew.status(p).crew.running && /^Exported v\d+$/.test(p.state.status.line));
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(p.state.notes.find((x) => x.id === g3note.id)?.status, "done");
   assert.equal(crew.planNow(p)!.runs.length, runs + 2, "no third run after the export");
@@ -224,7 +224,7 @@ test("auto: leftover blockers on the changed scene are logged and the cut export
     by: "user",
   });
   crew.requestChange(p, note);
-  await wait(() => !crew.status(p).crew.running && p.state.status.line === "Your video is ready");
+  await wait(() => !crew.status(p).crew.running && /^Exported v\d+$/.test(p.state.status.line));
   assert.notEqual(p.state.gates.find((g) => g.id === "g3_rough")?.status, "open", "no G3 at auto");
   assert.ok(logs.some((t) => /exporting without asking \(auto\)/.test(t)));
   // the review wrote a playable rough cut with its sound, and said so

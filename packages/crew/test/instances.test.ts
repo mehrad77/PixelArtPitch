@@ -582,7 +582,7 @@ test("a whole run at one slot: live events in order, replay equals live, the kep
     failedBefore,
     "no new failure (the Pixel artist's fake failures are the first run's)",
   );
-  assert.equal(p.state.status?.line, "Your video is ready");
+  assert.match(p.state.status?.line ?? "", /^Exported v[0-9]+$/);
   const warned = said.filter((x) => x.startsWith("instances:"));
   assert.equal(warned.length, 1, "it says so once");
   assert.match(

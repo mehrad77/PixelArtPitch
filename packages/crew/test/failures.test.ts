@@ -296,7 +296,7 @@ test("Pip's crew line says what is true now: idle after the export, held and why
     running: false,
     paused: false,
     stage: "deliver",
-    line: "Your video is ready",
+    line: "Exported v1",
     gates: [],
     passed: ["g3_rough", "g4_final"],
     questions: 0,
@@ -402,7 +402,7 @@ test("a rejected key in a fallback handler holds the run (no stand-in), tells th
   assert.ok(p.state.status.problem);
   assert.deepEqual(crew.providerFixed("fake"), [p.id]);
   await run;
-  assert.equal(p.state.status.line, "Your video is ready");
+  assert.match(p.state.status.line ?? "", /^Exported v[0-9]+$/);
   assert.equal(p.state.status.problem, undefined, "the problem is cleared on ready");
   assert.equal(p.state.paused, false);
   const after = crew.planNow(p)!;

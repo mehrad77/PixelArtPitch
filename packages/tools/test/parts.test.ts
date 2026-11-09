@@ -80,6 +80,17 @@ test("a stale scene makes Pictures partial and Video stale", () => {
   assert.equal(r.next, "art");
 });
 
+test("a scene the crew is redrawing (drafting) keeps Video stale", () => {
+  const doc = handmade();
+  const versions = [{ v: 1, rev: 0, at: "2026-11-09T10:00:00.000Z", file: "out/versions/v1.mp4", sec: 30, sha1: "x" }];
+  const r = partsOf({
+    doc,
+    versions,
+    sceneStatus: { title: { version: "render", state: "ready" }, end: { version: "animatic", state: "drafting" } },
+  });
+  assert.equal(states(r).video, "stale");
+});
+
 test("a scene the crew has only boarded isn't a picture yet", () => {
   const r = partsOf({
     doc: handmade(),
@@ -89,9 +100,18 @@ test("a scene the crew has only boarded isn't a picture yet", () => {
 });
 
 test("a script edit after the board makes Story stale; a board after it makes it ready again", () => {
-  const doc = handmade();
+  // the edit added a cue no scene carries yet
+  const base = handmade();
+  const doc = handmade({
+    script: {
+      ...base.script,
+      cues: [...base.script.cues, { id: "c07", text: "One more line." }],
+      timing: { mode: "estimate" },
+    },
+    brief: { ...base.brief, narration: "none" },
+  });
   const board = { seq: 1, baseRev: 0, ops: [{ path: "/scenes/0/to" }] };
-  const cue = { seq: 2, baseRev: 1, ops: [{ path: "/script/cues/2/text" }] };
+  const cue = { seq: 2, baseRev: 1, ops: [{ path: "/script/cues" }] };
   assert.equal(states(partsOf({ doc, history: [board, cue] })).story, "stale");
   assert.equal(partsOf({ doc, history: [board, cue] }).next, "script");
   // the script came first (the normal order), or the board followed the edit
@@ -102,6 +122,16 @@ test("a script edit after the board makes Story stale; a board after it makes it
     states(partsOf({ doc, history: [board, { seq: 2, baseRev: 1, ops: [{ path: "/script/timing/aligned" }] }] })).story,
     "ready",
   );
+});
+
+test("a caption fix after the board (the same cues, new words) keeps Story ready", () => {
+  const doc = handmade();
+  const board = { seq: 1, baseRev: 0, ops: [{ path: "/scenes/0/to" }] };
+  // the Editor's script_set_cues at review replaces /script/cues with the same ids
+  const fix = { seq: 2, baseRev: 1, ops: [{ path: "/script/cues" }, { path: "/script/timing/mode" }] };
+  const r = partsOf({ doc, history: [board, fix] });
+  assert.equal(states(r).story, "ready");
+  assert.equal(r.next, "review");
 });
 
 test("the person's narration: every cue aligned to the take is ready, some is partial, none is missing", () => {

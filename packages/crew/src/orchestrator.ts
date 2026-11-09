@@ -238,6 +238,11 @@ export const PHASE: Record<string, number> = {
   review: 4,
   deliver: 4,
 };
+/** a change's start, clamped to the first part that isn't ready (partsOf().next): never past what's still missing */
+function clampToContent(p: OpenProject, from: Stage): Stage {
+  const next = p.parts().next;
+  return next && STAGES.indexOf(next) < STAGES.indexOf(from) ? next : from;
+}
 export const STAGE_LINE: Record<string, string> = {
   brief: "Reading your idea",
   script: "Writing the script",
@@ -2145,8 +2150,7 @@ export class Crew {
       target: { ...(c.scene ? { scene: c.scene } : {}), ...(c.asset ? { asset: c.asset } : {}) },
       assignee: c.assignee,
     } as Note;
-    let from = OWNER_STAGE[c.assignee] ?? "review";
-    if (STAGES.indexOf(p.state.stage) < STAGES.indexOf(from)) from = p.state.stage;
+    const from = clampToContent(p, OWNER_STAGE[c.assignee] ?? "review");
     const ss = structuredClone(p.state.sceneStatus);
     for (const id of c.scene ? [c.scene] : c.assignee === "animator" ? Object.keys(ss) : [])
       if (ss[id]) ss[id] = { version: "animatic", state: "stale" };
@@ -2198,10 +2202,12 @@ export class Crew {
     ).map((n, i) => ({ ...n, id: `preview${i}` }) as unknown as Note);
     const ctx = this.rulesCtx(p, (this.planNow(p)?.rev ?? 0) + 1);
     const before = this.planNow(p)?.tasks ?? startPlan(p.doc(), p.state, ctx);
-    let from = notes
-      .map((n) => OWNER_STAGE[n.assignee] ?? "review")
-      .reduce((a, x) => (STAGES.indexOf(x) < STAGES.indexOf(a) ? x : a));
-    if (STAGES.indexOf(p.state.stage) < STAGES.indexOf(from)) from = p.state.stage;
+    const from = clampToContent(
+      p,
+      notes
+        .map((n) => OWNER_STAGE[n.assignee] ?? "review")
+        .reduce((a, x) => (STAGES.indexOf(x) < STAGES.indexOf(a) ? x : a)),
+    );
     const ss = structuredClone(p.state.sceneStatus);
     for (const n of notes)
       for (const id of n.target.scene ? [n.target.scene] : n.assignee === "animator" ? Object.keys(ss) : [])
@@ -2323,9 +2329,12 @@ export class Crew {
   private reopen(p: OpenProject, notes: Note[]): Stage {
     const order = STAGES;
     const owners = notes.map((n) => OWNER_STAGE[n.assignee] ?? "review");
-    let from = owners.reduce((a, b) => (order.indexOf(b) < order.indexOf(a) ? b : a));
-    // a project that never got this far just carries on; the note is read when the stage comes
-    if (order.indexOf(p.state.stage) < order.indexOf(from)) from = p.state.stage;
+    // not past a part that's still missing: the crew makes it first, and the note is read when its stage comes
+    // (read before the scenes below go stale, or every note would clamp to the art)
+    const from = clampToContent(
+      p,
+      owners.reduce((a, b) => (order.indexOf(b) < order.indexOf(a) ? b : a)),
+    );
     for (const n of notes)
       for (const id of n.target.scene
         ? [n.target.scene]
@@ -2343,7 +2352,7 @@ export class Crew {
       p.saveState();
     }
     p.setStage(from);
-    p.setStatus({ phase: PHASE[from] ?? 0, line: "The crew is making your change", problem: undefined });
+    p.setStatus({ line: "The crew is making your change", problem: undefined });
     return from;
   }
 
@@ -2516,7 +2525,8 @@ export class Crew {
         (ts, ctx) => retryRevision(ts, targets, ctx.rev),
       );
     } else if (!opts.change) {
-      const from = (opts.stage as Stage | undefined) ?? (plan.tasks.some(isLive) ? null : p.state.stage);
+      // a bare run over a finished plan starts where the content ends, not where the crew last stopped
+      const from = (opts.stage as Stage | undefined) ?? (plan.tasks.some(isLive) ? null : (p.parts().next ?? "review"));
       if (from || (opts.resume && !had)) {
         const at = (from ?? p.state.stage) as Stage;
         if (from) this.relockFrom(p, at);
@@ -2568,9 +2578,7 @@ export class Crew {
         }),
       stageChanged: (s) => {
         if (p.state.stage !== s) p.setStage(s);
-        if (!r.held && !/^Waiting for you/.test(p.state.status.line))
-          p.setStatus({ phase: PHASE[s] ?? 0, line: STAGE_LINE[s] ?? "Working" });
-        else p.setStatus({ phase: PHASE[s] ?? 0 });
+        if (!r.held && !/^Waiting for you/.test(p.state.status.line)) p.setStatus({ line: STAGE_LINE[s] ?? "Working" });
       },
       drain: async (s) => {
         if (s === "animate" && this.planNow(p)?.tasks.some((t) => t.kind === "scene.tune" && t.status === "done"))
@@ -2591,7 +2599,8 @@ export class Crew {
     r.exec = exec;
     await exec.run();
     if (r.abort.signal.aborted) return;
-    p.setStatus({ phase: 4, line: "Your video is ready", problem: undefined, waiting: undefined });
+    const v = p.versions().reduce((m, x) => Math.max(m, x.v), 0);
+    p.setStatus({ line: v ? `Exported v${v}` : "Exported", problem: undefined, waiting: undefined });
     p.setDigest(
       `Done: ${
         p

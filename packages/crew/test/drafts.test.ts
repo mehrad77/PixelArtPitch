@@ -253,8 +253,8 @@ test("the Projects line (D7): finished → working → waiting, at most 3 clause
   const t = Date.now();
   const line = lineOf(
     [
-      { id: "a", title: "QuestDay teaser", finishedAt: t - 3600_000 },
-      { id: "old", title: "Old one", finishedAt: t - 3 * 86400_000 },
+      { id: "a", title: "QuestDay teaser", finishedAt: t - 3600_000, version: 1 },
+      { id: "old", title: "Old one", finishedAt: t - 3 * 86400_000, version: 4 },
       { id: "b", title: "Lantern", questions: 1, gates: [], running: true, stage: "script" },
       { id: "c", title: "Harbor", running: true, stage: "animate" },
       { id: "d", title: "Moth", gates: ["g3_rough"] },
@@ -271,12 +271,21 @@ test("the Projects line (D7): finished → working → waiting, at most 3 clause
   );
   const two = lineOf(
     [
-      { id: "a", title: "QuestDay teaser", finishedAt: t - 60_000 },
+      { id: "a", title: "QuestDay teaser", finishedAt: t - 60_000, version: 2 },
       { id: "x", title: "X", questions: 2, gates: ["g1_script"] },
     ],
     t,
   );
-  assert.equal(two.text, "QuestDay teaser is finished. X is waiting on 3 things from you.");
+  assert.equal(two.text, "QuestDay teaser has v2. X is waiting on 3 things from you.");
+  // a change to a video that has a version makes the next one, while the last keeps playing
+  assert.equal(
+    lineOf(
+      [{ id: "a", title: "QuestDay teaser", finishedAt: t - 60_000, version: 2, running: true, stage: "animate" }],
+      t,
+    ).text,
+    "QuestDay teaser is making v3.",
+  );
+  assert.equal(lineOf([{ id: "a", title: "Old", finishedAt: t - 60_000 }], t).text, "Old has a video.");
   assert.equal(lineOf([], t).text, "Nothing needs you right now.");
 });
 

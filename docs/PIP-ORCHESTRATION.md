@@ -432,12 +432,15 @@ The validator runs on every revision, whoever wrote it. Errors carry a `fix` the
   - `resumeInterrupted()` loads `plan.json`. `running` and `ready` tasks become `pending`, `done` tasks are kept, and `waiting_person` tasks wait again.
   - The catalogue's "on resume" column decides each kind.
 - **Stages are a view.**
-  - `state.stage` is the catalogue stage of the earliest unfinished required task, in `STAGES` order, gates included. `setStage` fires when it changes, and `PHASE` and `STAGE_LINE` are unchanged.
+  - `state.stage` is the catalogue stage of the earliest unfinished required task, in `STAGES` order, gates included. `setStage` fires when it changes, and `STAGE_LINE` is unchanged. It is the crew's scheduler cursor only: what the person sees reads the parts (`partsOf`), and nothing writes `status.phase` any more (the field is deprecated, kept until the server and web stop reading it).
+  - **The crew starts from what exists.** A project with no `runs/state.json` (a handmade one, a copied example) starts where its content ends: its stage is `partsOf().next`, or `deliver` when only the Video is left (or nothing is). The gates of the parts it already has are `passed` with `verdict.by: "content"` (G0 idea, G1 and G2 story, G3 pictures and sound, G4 video), so it isn't asked to approve its own script. A project with no script yet (every new one) is still a brief: its idea alone passes nothing.
+  - A bare run over a finished plan (no stage, nothing live) starts from `partsOf().next ?? "review"`, not from `state.stage`.
   - The conductor's end-of-stage trigger fires when the view's stage advances.
   - The stage nav groups `plan.tasks` by stage.
   - `remaining()` is replaced by the plan's unfinished tasks, so `status().budget.estTotalUsd` equals the plan estimate.
 - **Change requests become revisions.**
   - `crew_request_change` on an idle crew keeps `reopen()` exactly: stale scenes, relocked gates, the export superseded, milestones cleared.
+  - **The clamp.** A change starts at the earliest stage its notes' owners need, clamped to `partsOf().next` (read before its scenes go stale): never past a part that's still missing, and no clamp when all five are ready. `reopen()`, `changeCost` and the change preview share it (`clampToContent`). It used to clamp to `state.stage`, so an animation note on a handmade project at `brief` reran everything from the brief.
   - It then writes a `by: "person"`, `trigger: "change"` revision:
     - in-scope `scene.tune(s, r + 1)` on the same instance,
     - `director.storyboard{scenes}` and `art.cast{scenes}` for a reboard,
@@ -491,7 +494,7 @@ The P4 run's key went 401 mid-run and every step fell back to a stand-in without
   - a stand-in is not the drawing: the judge's fallback cast is marked `standIn: true` on its ref, the "already in the project" guards don't count it, and a successful judge replaces it in place (one ref per name).
 - **Pip never offers "Start the crew" over a failure.** A `crew_run` card without a stage becomes the "Redo what failed" card when something failed, fell back or is held; the menu has a `retry` intent.
 - **Status hygiene.**
-  - `problem` clears on "Your video is ready", a raised cap, a declined overrun, a confirmed or declined plan card, a resume and a lifted hold.
+  - `problem` clears on the run's end ("Exported v<N>", the version the export made), a raised cap, a declined overrun, a confirmed or declined plan card, a resume and a lifted hold.
   - The overrun and a card's hold are waits ("Waiting for you: …", tone `needs` in the web, `status.waiting: "budget" | "plan"`), not problems.
   - The web's `problemOf` ignores a problem while the crew is running, except a held run's own (its line is "Waiting for you: …", live on the `status` event), and drops failed rows that ended before the current run started (`crew.runStartedAt`).
   - A held run's problem reads as a wait on you, not a stop (`isHeld`): `humanStatus` gives it the `needs` tone, so the simple view drops the red "Stopped ·" prefix and keeps the problem's button ("Fix the key"), and the Projects page files it under Needs you. Only a run that broke off reads Stopped.
@@ -774,8 +777,8 @@ type RefType = "likeness" | "logo" | "style" | "as-is" | "sound" | "voice";
 
 - **Endpoint.** `GET /api/workspace/line` → `{text, parts}`.
 - **Clauses.** At most 3, ordered finished → working → waiting, so the line ends on what needs the person:
-  - **finished:** a video exported within 24 h ("QuestDay teaser is finished.");
-  - **working:** a crew is running ("Lantern is being animated.", from `STAGE_LINE`);
+  - **finished:** a version exported within 24 h, from `history/versions.jsonl` ("QuestDay teaser has v2."; "has a video" for an export from before versions);
+  - **working:** a crew is running ("Lantern is being animated.", from `STAGE_LINE`; "QuestDay teaser is making v3." once it has a version, since the last one keeps playing);
   - **waiting:** `needsYou > 0`, saying what is needed ("Lantern is waiting on one pick from you.": `one pick` for one question, `your OK on the rough cut` for one gate, `N things` otherwise);
   - **failed:** the status problem's text.
 - If no clause applies: "Nothing needs you right now."

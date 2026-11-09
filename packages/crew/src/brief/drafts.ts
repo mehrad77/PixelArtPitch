@@ -243,7 +243,7 @@ export class DraftConversations {
       updatedAt: d.updatedAt,
       createdAt: d.createdAt,
       draft: true as const,
-      status: { line: this.lastLine(d.id), phase: 0 },
+      status: { line: this.lastLine(d.id) },
     }));
   }
   lastLine(id: string): string {

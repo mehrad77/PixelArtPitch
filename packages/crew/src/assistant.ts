@@ -383,6 +383,14 @@ async function facts(p: OpenProject | undefined, budget: { capUsd: number; spent
   ].join("\n");
 }
 
+/** what the project has (its five parts) and its latest version, in place of the crew's stage */
+function partsLine(p: OpenProject): string {
+  const { parts } = p.parts();
+  const latest = p.versions().reduce((m, v) => (v.v > m.v ? v : m), { v: 0, rev: 0 });
+  const has = parts.map((x) => `${x.id} ${x.state}${x.why ? ` (${x.why})` : ""}`).join(", ");
+  return `Parts: ${has}. ${latest.v ? `Latest version: v${latest.v}, from rev ${latest.rev} (the document is at rev ${p.doc().rev}).` : "No version exported yet."}`;
+}
+
 function summary(p: OpenProject | undefined, deps: PipDeps, ws: Workspace): string {
   if (!p) {
     const ps = ws.list();
@@ -397,7 +405,8 @@ function summary(p: OpenProject | undefined, deps: PipDeps, ws: Workspace): stri
   return [
     `Project ${p.id}: "${d.title}". Idea: ${d.brief.idea.slice(0, 300)}`,
     `Length ${tl.duration.toFixed(1)} s; narration: ${d.brief.narration}; involvement: ${d.brief.involvement}.`,
-    `Status: ${st.status.line}. Stage: ${st.stage}. Crew ${running ? "working now" : st.paused ? "paused" : "idle"}.`,
+    `Status: ${st.status.line}. Crew ${running ? "working now" : st.paused ? "paused" : "idle"}.`,
+    partsLine(p),
     crewNow(deps.crewSnapshot?.(p)),
     `Scenes: ${tl.scenes
       .map((s, k) => {

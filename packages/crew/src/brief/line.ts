@@ -3,7 +3,7 @@
 // person; the oldest clauses go first when there are more.
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { isFinalVideo, type OpenProject, type Workspace } from "@pap/tools";
+import { isFinalVideo, type OpenProject, type Version, type Workspace } from "@pap/tools";
 
 export type LinePart = { projectId: string; kind: "finished" | "working" | "waiting" | "failed"; text: string };
 export type WorkspaceLine = { text: string; parts: LinePart[] };
@@ -12,8 +12,10 @@ export type WorkspaceLine = { text: string; parts: LinePart[] };
 export type LineRow = {
   id: string;
   title: string;
-  /** when its video was exported (ms), if it was */
+  /** when its latest version was exported (ms), if it was */
   finishedAt?: number;
+  /** its latest version's number (history/versions.jsonl): "has v2", "is making v3" */
+  version?: number;
   /** the crew is running on it */
   running?: boolean;
   stage?: string;
@@ -103,13 +105,20 @@ export function lineOf(rows: LineRow[], nowMs = Date.now()): WorkspaceLine {
   const needs = (r: LineRow) => needsWords(r.questions ?? 0, r.gates ?? [], r.cards ?? [], r.waiting ?? 0);
   for (const r of rows)
     if (r.finishedAt && r.finishedAt > day && !r.running && !needs(r))
-      parts.push({ projectId: r.id, kind: "finished", text: `${r.title} is finished.` });
+      parts.push({
+        projectId: r.id,
+        kind: "finished",
+        text: `${r.title} has ${r.version ? `v${r.version}` : "a video"}.`,
+      });
   for (const r of rows)
     if (r.running && !needs(r) && !r.problem)
       parts.push({
         projectId: r.id,
         kind: "working",
-        text: `${r.title} is ${STAGE_BEING[r.stage ?? ""] ?? "being made"}.`,
+        // a video that has a version is being changed, not made: the last one plays meanwhile
+        text: r.version
+          ? `${r.title} is making v${r.version + 1}.`
+          : `${r.title} is ${STAGE_BEING[r.stage ?? ""] ?? "being made"}.`,
       });
   for (const r of rows)
     if (r.problem)
@@ -136,18 +145,21 @@ export function lineRows(
     } catch {
       continue;
     }
-    const video = p.files().filter(isFinalVideo);
-    let finishedAt: number | undefined;
-    for (const f of video)
-      try {
-        finishedAt = Math.max(finishedAt ?? 0, statSync(join(p.dir, "out", f.name)).mtimeMs);
-      } catch {}
+    const latest = p.versions().reduce<Version | null>((m, v) => (!m || v.v > m.v ? v : m), null);
+    let finishedAt = latest ? Date.parse(latest.at) : undefined;
+    // an export from before versions were kept: the file's time
+    if (!latest)
+      for (const f of p.files().filter(isFinalVideo))
+        try {
+          finishedAt = Math.max(finishedAt ?? 0, statSync(join(p.dir, "out", f.name)).mtimeMs);
+        } catch {}
     const run = running(p);
     const { questions, gates, cards, waiting } = openNeeds(p, extra(p));
     out.push({
       id: p.id,
       title: p.doc().title,
       ...(finishedAt ? { finishedAt } : {}),
+      ...(latest ? { version: latest.v } : {}),
       running: run,
       stage: p.state.stage,
       questions,

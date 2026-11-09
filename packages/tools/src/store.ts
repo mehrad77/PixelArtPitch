@@ -128,10 +128,11 @@ export type RuntimeState = {
   /** a crew run was in progress; if the process dies, the next start resumes it */
   running?: boolean;
   files: { name: string; bytes: number; kind: string }[];
-  /** what a person reads: one plain line, the phase (0-4), and an unrecovered problem if any */
+  /** what a person reads: one plain line and an unrecovered problem if any */
   status: {
     line: string;
-    phase: number;
+    /** @deprecated nothing writes it any more (read the parts); kept until the server and web stop reading it */
+    phase?: number;
     problem?: {
       text: string;
       /** fix_key: Settings → Providers on `provider` (a rejected key, no credit, a provider turned off) */
@@ -175,7 +176,7 @@ const freshState = (): RuntimeState => ({
   startedAt: null,
   paused: false,
   files: [],
-  status: { line: "Waiting to start", phase: 0 },
+  status: { line: "Waiting to start" },
   milestones: [],
   sceneStatus: {},
 });
@@ -333,7 +334,11 @@ export class OpenProject {
     mkdirSync(join(dir, "out"), { recursive: true });
     this.seqHist = this.readHistory().at(-1)?.seq ?? 0;
     const sf = join(dir, "runs", "state.json");
-    this.state = existsSync(sf) ? { ...freshState(), ...JSON.parse(readFileSync(sf, "utf8")) } : freshState();
+    if (existsSync(sf)) this.state = { ...freshState(), ...JSON.parse(readFileSync(sf, "utf8")) };
+    else {
+      this.state = freshState();
+      this.startFromContent();
+    }
     // tasks that were running when the last process died are not running now
     for (const t of this.state.tasks) if (t.status === "working" || t.status === "queued") t.status = "cancelled";
     this.evSeq = this.lastEventSeq();
@@ -820,6 +825,31 @@ export class OpenProject {
     };
     appendFileSync(join(this.dir, "history", "versions.jsonl"), `${JSON.stringify(entry)}\n`);
     return entry;
+  }
+  /**
+   * A project no crew has run (no runs/state.json) starts where its content ends, not at the brief: the stage that
+   * makes its first part that isn't ready (`deliver` when only the Video is left, or everything is), and the gates of
+   * the parts it already has passed by "content", so a handmade project isn't asked to approve its own script. A
+   * project with no script yet (every new one) is still a brief: its idea alone passes nothing.
+   */
+  private startFromContent() {
+    const { parts, next } = this.parts();
+    const ready = (id: string) => parts.find((x) => x.id === id)?.state === "ready";
+    if (!ready("idea") || parts.find((x) => x.id === "story")?.state === "missing") return;
+    this.state.stage = !next || next === "review" ? "deliver" : next;
+    const byPart: Record<GateId, boolean> = {
+      g0_brief: ready("idea"),
+      g1_script: ready("story"),
+      g2_animatic: ready("story"),
+      g3_rough: ready("pictures") && ready("sound"),
+      g4_final: ready("video"),
+    };
+    const at = new Date().toISOString();
+    for (const g of this.state.gates)
+      if (byPart[g.id]) {
+        g.status = "passed";
+        g.verdict = { by: "content", verdict: "approve", at, note: "already in the project" };
+      }
   }
   /** what the project has (partsOf), with its library and files looked up on disk */
   parts(): Parts {
