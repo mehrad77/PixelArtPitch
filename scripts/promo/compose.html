@@ -72,6 +72,7 @@ let PAL = {};
 let ENV = null;
 let SPR = [];
 let FONT5 = {};
+let AGENT = null;
 const dataUrls = new Map();
 async function boot() {
   const ff = new FontFace("InterVar", `url(${WORK}fonts/inter-var-latin.woff2)`, { weight: "100 900" });
@@ -84,6 +85,12 @@ async function boot() {
   ENV = await json("audio/envelope.json");
   SPR = (await json("brand/sprites.json"))?.sprites ?? [];
   FONT5 = (await json("brand/font.json")) ?? {};
+  AGENT = await json("brand/agent.json");
+  try {
+    const fa = new FontFace("Vazir", `url(${WORK}fonts/vazirmatn-arabic-wght-normal.woff2)`, { weight: "100 900" });
+    await fa.load();
+    document.fonts.add(fa);
+  } catch {}
 }
 const ready = boot();
 
@@ -738,113 +745,141 @@ function crawl(t, a, b) {
 }
 const head = (t, str, a, b, o = {}) => words(str, t, a, b, { y: DH * 0.13, size: 128, stagger: 0.06, dur: 0.45, exit: 0.2, rise: 50, ...o });
 
+/** a pixel video's frame at its own time, from a folder of 1-based JPEGs at 30 fps */
+const vidSrc = (dir, sec) => `${dir}/${String(Math.max(1, 1 + Math.round(sec * 30))).padStart(4, "0")}.jpg`;
+/**
+ * Pixel art filling the tall frame: the 16:9 frame scaled to the height with its caption strip cut off (the top 146 of
+ * 180 rows fill the screen), cropped across at fx (it can pan from fx to fx2), punching in a little on the cut.
+ */
+function pixFull(src, t, a, b, fx, fx2 = fx, { native = false, top = 40, bottom = 158 } = {}) {
+  const k = spring(t, a, 1.6, 7);
+  const z = 1.06 - 0.06 * k + 0.03 * prog(t, a, b);
+  // rows top..bottom of 180 fill the height: less empty sky, the ground under their feet, no caption strip
+  const H = ((DH * 180) / (bottom - top)) * z;
+  const W = (H * 16) / 9;
+  const f = lerp(fx, fx2, eInOut(prog(t, a, b)));
+  const x = Math.min(0, Math.max(DW - W, DW / 2 - f * W));
+  const y = (DH - DH * z) / 2 - (top / 180) * H;
+  const url = native ? src : `${WORK}${src}`;
+  return `<img class="abs px" src="${url}" style="left:${fmt(x)}px;top:${fmt(y)}px;width:${fmt(W)}px;height:${fmt(H)}px;max-width:none">`;
+}
+/** the crew's robot, walking big across the night */
+function robotWalk(t, a, b) {
+  let h = pixFull("pixel/still-3.5-night.png", t, a, b, 0.62);
+  h += box(0, 0, DW, DH, "background:rgba(0,0,0,.25)");
+  if (AGENT) {
+    const moves = ["move0", "move1", "move2", "move3"];
+    const fr = AGENT[moves[Math.floor((t - a) * 8) % 4]];
+    const cell = 52;
+    const x = lerp(-16 * cell, DW, prog(t, a, b));
+    const ground = DH * 0.68;
+    h += sprite(fr, `agent:${Math.floor((t - a) * 8) % 4}`, x, ground - 16 * cell, cell);
+  }
+  return h;
+}
+const hook = (t, str, a, b, o = {}) => words(str, t, a, b, { y: DH * 0.45, size: 140, stagger: 0.06, dur: 0.4, exit: 0.15, rise: 50, ...o });
+
 function buildReels(t) {
   let h = "";
   const bg = (c) => box(0, 0, DW, DH, `background:${c}`);
+  const dim = (a) => box(0, 0, DW, DH, `background:rgba(0,0,0,${fmt(a)})`);
 
-  // 0-2 · the hook, on black; the silent beat at 1.5
+  // 0-2 · the hook
   if (t < 2) {
-    h += words("POV:", t, 0.0, 2.0, { y: DH * 0.36, size: 150, color: C.green, stagger: 0, dur: 0.3, exit: 0.1 });
-    h += words("you hired 12 AI agents to make your pitch video.", t, 0.25, 2.0, { y: DH * 0.44, size: 132, stagger: 0.07, dur: 0.35, exit: 0.1 });
-    if (t > 1.5) h += bg(`rgba(0,0,0,${fmt(prog(t, 1.5, 1.6))})`);
+    h += hook(t, "This video was made by 12 AI agents.", 0.1, 1.95, { y: DH * 0.47, size: 150 });
     return h;
   }
 
-  // 2-12 · the cold open, then the pull-back into the real studio
+  // 2-8 · what it is: Pip and the name on the hit, then the pixel city
+  if (t < 8) {
+    h += pixFull(pixelSrc(t < 5 ? 1.5 + (t - 2) : t - 1.5), t, t < 5 ? 2 : 5, t < 5 ? 5 : 8, t < 5 ? 0.3 : 0.32, t < 5 ? 0.3 : 0.48);
+    h += dim(t < 5 ? 0.62 : 0.62 * (1 - eOut(prog(t, 5, 5.6))));
+    if (t < 2.2) h += bg(`rgba(255,255,255,${fmt(1 - prog(t, 2, 2.2))})`);
+    if (t < 5.2) {
+      const pk = spring(t, 2.0, 1.8, 6);
+      if (PIP) h += sprite(PIP.grid.big, "pip", DW / 2 - 16 * 14, DH * 0.22 - (1 - pk) * 300, 14, `opacity:${fmt(clamp(pk * 2) * (1 - prog(t, 4.9, 5.2)))}`);
+      h += words("PixelArtPitch", t, 2.15, 5.2, { y: DH * 0.42, size: 230, stagger: 0, dur: 0.6, exit: 0.3, blur: 30 });
+      h += sweep("PixelArtPitch", t, 2.8, 1.0, { y: DH * 0.42, size: 230 });
+      h += words("Type an idea. AI agents make the pixel-art video.", t, 2.8, 5.2, { y: DH * 0.5, size: 84, weight: 450, color: "#c7c7cc", stagger: 0.04, dur: 0.4, exit: 0.3 });
+    }
+    return h;
+  }
+
+  // 8-12 · the crew, and their terms of employment
   if (t < 12) {
-    const p = t < 8 ? t - 0.5 : t + 2.5;
-    const z = eInOut(prog(t, 8.2, 10.4));
-    h += studio(t, z, p);
-    if (t < 2.25) h += bg(`rgba(255,255,255,${fmt(1 - prog(t, 2, 2.25))})`);
-    h += head(t, "Every idea deserves a trailer.*", 2.3, 7.9);
-    h += note(t, 3.4, 7.9, "*Ideas not included. Electricity sold separately.");
-    if (t > 9.6) h += box(0, 0, DW, DH, `background:rgba(0,0,0,${fmt(0.55 * eOut(prog(t, 9.6, 10.2)))})`);
-    h += head(t, "This video is being made by AI agents.*", 9.8, 12);
-    h += note(t, 10.6, 12, "*Right now. In a data center. Somewhere warm.");
-    return h;
-  }
-
-  // 12-16 · the crew bursts in, with their terms of employment
-  if (t < 16) {
-    const cols = 3;
     for (let i = 0; i < 12; i++) {
-      const pop = spring(t, 12.15 + i * 0.05, 1.8, 6.5);
-      const x = DW / 2 + ((i % cols) - 1) * 620;
-      const y = DH * 0.4 + Math.floor(i / cols) * 470;
-      h += face(i, x, y, 230, { o: clamp(pop * 2), s: 0.3 + 0.7 * pop });
-      h += `<div class="abs type" style="left:${fmt(x - 300)}px;top:${fmt(y + 145)}px;width:600px;text-align:center;font-size:48px;font-weight:500;color:${C.dim};opacity:${fmt(clamp(pop))}">${CREW[i][0]}</div>`;
+      const pop = spring(t, 8.15 + i * 0.05, 1.8, 6.5);
+      const x = DW / 2 + ((i % 3) - 1) * 620;
+      const y = DH * 0.4 + Math.floor(i / 3) * 450;
+      h += face(i, x, y, 240, { o: clamp(pop * 2), s: 0.3 + 0.7 * pop });
     }
-    h += head(t, "12 agents. 0 salaries.*", 12.1, 16);
-    h += note(t, 13.2, 16, "*No benefits. No union. No idea.");
+    h += head(t, "12 agents. 0 salaries.*", 8.1, 12, { size: 140 });
+    h += note(t, 9.2, 12, "*No benefits. No union. No idea.", { size: 76, y: DH * 0.19 });
     return h;
   }
 
-  // 16-34 · the roast: nine cards of the real run, a bar each
+  // 12-24 · the pixel art, a bar each
+  if (t < 24) {
+    if (t < 14) return pixFull(vidSrc("teaser", 7 + (t - 12)), t, 12, 14, 0.3);
+    if (t < 16) return pixFull(vidSrc("teaser", 10.5 + (t - 14)), t, 14, 16, 0.46);
+    if (t < 18) return robotWalk(t, 16, 18);
+    if (t < 20) return pixFull(vidSrc("p8full", 5.5 + (t - 18)), t, 18, 20, 0.38);
+    if (t < 22) return pixFull(vidSrc("p8full", 50 + (t - 20)), t, 20, 22, 0.2, 0.8);
+    return pixFull(vidSrc("teaser", 15 + (t - 22)), t, 22, 24, 0.3, 0.7);
+  }
+
+  // 24-28 · the one look at the app: the real run, sped up
+  if (t < 28) {
+    CLIP["r-plan"] = 3.8;
+    h += card("r-plan", t, 24, 28, [0.5, 0.42, 2.2], { cy: DH * 0.6 });
+    h += head(t, "One message. 12 minutes. $2.68.*", 24.05, 28, { size: 120 });
+    h += note(t, 25.0, 28, "*The planet’s bill arrives later.", { size: 76, y: DH * 0.19 });
+    return h;
+  }
+
+  // 28-34 · more pixel art: the library, three skies, the locked level
   if (t < 34) {
-    const beats = [
-      ["r-script", "The Writer wrote three scripts.*", "*You picked one. The other two were deleted without severance.", [0.85, 0.45, 3.0]],
-      ["r-board", "The Director made a storyboard.*", "*From a menu. Like a microwave, but slower.", [0.3, 0.78, 2.4]],
-      ["r-agent", "The Pixel artist drew a robot.*", "*Its own report: “Couldn’t: move2 is still pixel-identical to move0.” Two of four walk frames are the same frame. It told us. Proudly.", [0.255, 1.0, 3.4]],
-      ["r-animate", "The Scene Coder checked every frame.*", "*Its own log: “Couldn’t: No shrug frame exists.” We laughed. It didn’t. It can’t.", [0.35, 0.5, 2.4]],
-      ["r-review", "The Reviewer approved the cut.*", "*After filing the same note on four scenes. Management material.", [0.86, 0.45, 3.0]],
-      ["r-budget", "Every dollar counted.*", "*$2.68. The planet’s bill arrives later. With interest.", [0.735, 0.35, 3.2]],
-      ["r-brief", "Pip runs the show.*", "*Middle management, but with a crown.", [0.42, 0.55, 2.4]],
-      ["r-teaser", "12 agents. 12 minutes. One message.*", "*Plus 3 hours of one human at 2 a.m. making a video about it. This one.", [0.5, 0.5, 2.25]],
-      ["wall", "Somewhere, a GPU fan screamed.*", "*For a 16×16 robot. Worth it? Fight about it in the comments.", null],
-    ];
-    const i = clamp(Math.floor((t - 16) / 2), 0, beats.length - 1);
-    const a = 16 + i * 2;
-    const [id, line, joke, crop] = beats[i];
-    if (id === "wall") h += spriteWall(t, a, 1, 0);
-    else {
-      if (id === "r-teaser") CLIP["r-teaser"] = 4.0;
-      if (id === "r-budget") CLIP["r-budget"] = 1.9;
-      if (id === "r-animate") CLIP["r-animate"] = 2.0;
-      h += card(id, t, a, a + 2, crop, { u0: id === "r-brief" ? 11 : 0 });
-    }
-    h += head(t, line, a + 0.02, a + 2);
-    h += note(t, a + 0.75, a + 2, joke);
-    return h;
-  }
-
-  // 34-40 · the drop, then two claims on the stabs
-  if (t < 40) {
-    if (t < 36) {
-      h += words("And now, the features.", t, 34.0, 35.5, { y: DH * 0.47, size: 120, stagger: 0.05, dur: 0.35, exit: 0.15 });
+    if (t < 30) return spriteWall(t, 28, 1, 0);
+    if (t < 32) {
+      const layer = (time, m) => `<div class="abs" style="inset:0;-webkit-mask-image:linear-gradient(160deg, #000 ${fmt(m - 2)}%, transparent ${fmt(m + 2)}%);mask-image:linear-gradient(160deg, #000 ${fmt(m - 2)}%, transparent ${fmt(m + 2)}%)">${pixFull(`pixel/still-7.3-${time}.png`, t, 30, 32, 0.47)}</div>`;
+      h += pixFull("pixel/still-7.3-night.png", t, 30, 32, 0.47);
+      h += layer("dusk", lerp(-5, 105, eInOut(prog(t, 30.3, 30.9))));
+      h += layer("day", lerp(-5, 105, eInOut(prog(t, 31.0, 31.6))));
       return h;
     }
-    // every pixel exact, zooming into the grid
-    const pz = prog(t, 36, 39.5);
-    const zz = lerp(1, 10, eExpo(pz) * 0.85 + eInOut(pz) * 0.15);
-    const w = DW * 2.6 * zz;
-    const hh = (w * 9) / 16;
-    const x = DW / 2 - 0.505 * w;
-    const y = DH / 2 - 0.705 * hh;
-    h += `<img class="abs px" src="${WORK}pixel/frames/00105.png" style="left:${fmt(x)}px;top:${fmt(y)}px;width:${fmt(w)}px;height:${fmt(hh)}px">`;
-    h += box(0, 0, DW, DH, "background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,.3), rgba(0,0,0,.8))");
-    if (t < 39.5) {
-      h += words("Every pixel exact.*", t, 36.0, 39.5, { y: DH * 0.42, size: 150, stagger: 0.05, dur: 0.35, exit: 0.15 });
-      h += note(t, 36.8, 39.5, "*The ice caps, less so.", { y: DH * 0.5, size: 62 });
-    } else {
-      h += words("Every edit undoable.*", t, 39.5, 40.0, { y: DH * 0.42, size: 150, stagger: 0, dur: 0.15, exit: 0.05 });
-      h += note(t, 39.62, 40.0, "*Unlike the climate.", { y: DH * 0.5, size: 62 });
+    return pixFull(vidSrc("p8full", 18 + (t - 32)), t, 32, 34, 0.3, 0.75);
+  }
+
+  // 34-40 · the confession, on the silent beat; the answer on the stab
+  if (t < 40) {
+    if (t < 36) {
+      h += pixFull(vidSrc("p8full", 20), t, 32, 34, 0.75);
+      h += dim(0.6 + 0.3 * prog(t, 34, 35.5));
+      h += hook(t, "Honestly? I made this for the dopamine.", 34.1, 36, { size: 130 });
+      return h;
     }
+    if (t < 38) h += pixFull(vidSrc("teaser", 17.6 + (t - 36)), t, 36, 38, 0.42);
+    else h += pixFull(vidSrc("p8full", 55.5 + (t - 38)), t, 38, 40, 0.3, 0.7);
+    h += dim(0.35);
+    h += words("*It wasn’t worth the tokens.", t, 36.0, 40, { y: DH * 0.15, size: 120, stagger: 0.05, dur: 0.3, exit: 0.2, gradient: `linear-gradient(90deg, ${C.green}, ${C.teal})` });
     return h;
   }
 
-  // 40-44 · the flag, the URL, the terms
-  const p = 19.5 + (t - 40);
-  h += studio(t, 0, p);
-  if (t < 40.2) h += bg(`rgba(255,255,255,${fmt(1 - prog(t, 40, 40.2))})`);
-  h += head(t, "Open source. Runs on your machine.*", 40.1, 44.5, { y: DH * 0.11, size: 112 });
-  h += note(t, 40.9, 44.5, "*Your machine was not consulted. Neither was the planet.", { y: DH * 0.17 });
-  if (t > 41.6) {
+  // 40-44 · the flag, the URL, and the last word
+  h += pixFull(pixelSrc(19.5 + (t - 40)), t, 40, 44, 0.45, 0.76, { top: 20 });
+  if (t < 40.15) h += bg(`rgba(255,255,255,${fmt(1 - prog(t, 40, 40.15))})`);
+  h += head(t, "Open source.", 40.1, 42.6, { y: DH * 0.12, size: 140 });
+  if (t > 40.7 && t < 42.6) {
     const url = "github.com/mehrad77/PixelArtPitch";
-    const n = Math.floor(clamp((t - 41.6) / 0.7) * url.length);
-    h += `<div class="abs type" style="left:0;top:${fmt(DH * 0.24)}px;width:${DW}px;text-align:center;font-size:86px;font-weight:650;color:${C.green}">${url.slice(0, n)}<span style="opacity:${Math.floor(t * 3) % 2 ? 1 : 0.2}">▍</span></div>`;
+    const n = Math.floor(clamp((t - 40.7) / 0.7) * url.length);
+    h += `<div class="abs type" style="left:0;top:${fmt(DH * 0.16)}px;width:${DW}px;text-align:center;font-size:86px;font-weight:650;color:${C.green}">${url.slice(0, n)}<span style="opacity:${Math.floor(t * 3) % 2 ? 1 : 0.2}">▍</span></div>`;
   }
-  h += crawl(t, 42.0, 44.5);
-  if (t > 43.4) h += bg(`rgba(0,0,0,${fmt(eIn(prog(t, 43.4, 44)))})`);
+  if (t > 42.4) {
+    h += bg(`rgba(0,0,0,${fmt(eOut(prog(t, 42.4, 42.8)))})`);
+    const k = eOut(prog(t, 42.7, 43.1));
+    h += `<div class="abs" style="left:0;top:${fmt(DH * 0.42)}px;width:${DW}px;text-align:center;direction:rtl;font-family:Vazir, sans-serif;font-size:190px;font-weight:700;color:#f5f5f7;opacity:${fmt(k)};filter:blur(${fmt((1 - k) * 20)}px)">پشیمانم.</div>`;
+    h += `<div class="abs type" style="left:0;top:${fmt(DH * 0.53)}px;width:${DW}px;text-align:center;font-size:84px;font-weight:450;color:${C.dim};opacity:${fmt(eOut(prog(t, 43.0, 43.3)))}">(I regret it.)</div>`;
+  }
   return h;
 }
 
