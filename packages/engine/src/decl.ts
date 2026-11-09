@@ -815,8 +815,10 @@ function stateOf(l: CLayer, env: Env, t = env.t, withFx = true): LayerState {
       }
     }
   }
-  if (l.keys.state) {
-    const forced = String(keyAt(l.keys.state, t));
+  // a forced state applies from its first key on; before it the behaviours' own motion shows (a walk runs)
+  const sk = l.keys.state;
+  if (sk?.length && t >= sk[0].t) {
+    const forced = String(keyAt(sk, t));
     if (forced !== "auto") st.motion = forced;
   }
   if (memo) env.memo.set(l.id, st);

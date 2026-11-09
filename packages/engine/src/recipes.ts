@@ -109,7 +109,8 @@ function mergeState(l: LayerT, from: number, add: { t: number; v: string }[]) {
     (k) => typeof k.t !== "number" || k.t < from,
   );
   const lastOld = old[old.length - 1];
-  const bridge = lastOld && lastOld.v !== "auto" && add.length ? [{ t: from, v: "auto" }] : [];
+  // a leading auto key: the layer's own motion (its walk's run) shows until the first forced state
+  const bridge = (!lastOld || lastOld.v !== "auto") && add.length ? [{ t: from, v: "auto" }] : [];
   l.keys = { ...(l.keys ?? {}), state: [...old, ...bridge, ...add] as any };
 }
 /** a walk speed inside the walk behaviour's range (a reused hero far away just arrives a little late) */
@@ -427,6 +428,7 @@ export const RECIPES: Recipe[] = [
       const keys: LayerT["keys"] = p.wave
         ? {
             state: [
+              { t: p.at, v: "auto" },
               { t: p.arrive + 0.3, v: "wave" },
               { t: p.arrive + 1.2, v: "auto" },
             ],
