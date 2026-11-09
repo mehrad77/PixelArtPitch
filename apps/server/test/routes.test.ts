@@ -106,6 +106,50 @@ test("GET /api/projects: finished means a video and no crew working; the rough c
   }
 });
 
+test("GET /api/p/:id: parts and versions; GET /api/p/:id/versions/:v.mp4 plays an older one", async () => {
+  const { id, workspace, get } = setup({
+    status: () => ({
+      budget: { capUsd: 1, spentUsd: 0, reservedUsd: 0, estTotalUsd: null },
+      time: { startedAt: null, etaSec: null, deadline: null },
+      crew: { running: false, paused: false, stage: "brief", lastActiveAt: null, queued: 0 },
+    }),
+  });
+  try {
+    const p = workspace.get(id);
+    const before = (await (await get(`/api/p/${id}`)).json()) as any;
+    assert.deepEqual(
+      before.parts.parts.map((x: any) => x.id),
+      ["idea", "story", "pictures", "sound", "video"],
+    );
+    assert.equal(before.parts.parts[4].state, "missing");
+    assert.deepEqual(before.versions, []);
+    mkdirSync(join(p.dir, "out"), { recursive: true });
+    writeFileSync(join(p.dir, "out", "questday.mp4"), "first");
+    p.recordVersion(join(p.dir, "out", "questday.mp4"), { rev: p.rev(), sec: 1 });
+    writeFileSync(join(p.dir, "out", "questday.mp4"), "second");
+    p.recordVersion(join(p.dir, "out", "questday.mp4"), { rev: p.rev(), sec: 1 });
+    const after = (await (await get(`/api/p/${id}`)).json()) as any;
+    assert.deepEqual(
+      after.versions.map((v: any) => [v.v, v.url]),
+      [
+        [1, `/api/p/${id}/versions/1.mp4`],
+        [2, `/api/p/${id}/versions/2.mp4`],
+      ],
+    );
+    assert.equal(after.parts.parts[4].state, "ready");
+    assert.ok(!after.files.some((f: any) => f.name === "versions"), "the versions folder isn't a file");
+    const v1 = await get(`/api/p/${id}/versions/1.mp4`);
+    assert.equal(v1.status, 200);
+    assert.equal(v1.headers.get("content-type"), "video/mp4");
+    assert.equal(await v1.text(), "first");
+    assert.equal((await get(`/api/p/${id}/versions/3.mp4`)).status, 404);
+    for (const bad of ["v1.mp4", "0.mp4", "1.5.mp4", "..%2F1.mp4", "1.mov"])
+      assert.equal((await get(`/api/p/${id}/versions/${bad}`)).status, 400, bad);
+  } finally {
+    workspace.closeAll();
+  }
+});
+
 test("the web build check: stale when dist/index.html is older than the newest source file", async () => {
   const { webBuild } = await import("../src/build.ts");
   const { utimesSync } = await import("node:fs");

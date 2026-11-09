@@ -93,6 +93,25 @@ export type Task = {
   /** PIP-ORCHESTRATION §4.1: the plan task this row runs, and the crew instance running it */
   planTask?: string;
   instance?: string;
+  /** deliver.export: the version the export made */
+  v?: number;
+};
+
+/** what a project has (partsOf in @pap/tools/parts; docs/API.md) */
+export type PartId = "idea" | "story" | "pictures" | "sound" | "video";
+export type PartState = "missing" | "partial" | "ready" | "stale";
+export type Part = { id: PartId; state: PartState; done: number; of: number; why?: string };
+export type Parts = { parts: Part[]; next: Stage | null };
+/** one export: v1, v2, … with the document rev it was made from, and the URL that plays it */
+export type Version = {
+  v: number;
+  rev: number;
+  at: string;
+  file: string;
+  sec: number;
+  sha1: string;
+  delivery?: string;
+  url: string;
 };
 
 export type GateId = "g0_brief" | "g1_script" | "g2_animatic" | "g3_rough" | "g4_final";
@@ -258,6 +277,9 @@ export type ProjectState = {
   /** what waits on the person, cards included, as last fetched (older servers send none); `waiting` is the plan's
    * waits on the person that no gate or question stands for */
   needs?: { count: number; words: string | null; waiting?: number };
+  /** what the project has, and every export oldest first (optional until every server and the mock send them) */
+  parts?: Parts;
+  versions?: Version[];
 };
 
 export type Session = {

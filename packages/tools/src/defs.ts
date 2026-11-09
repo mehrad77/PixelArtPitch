@@ -809,6 +809,8 @@ export const exportVideo = defineTool({
   }),
   output: z.object({
     file: z.string(),
+    /** the version this export is (v1, v2, …): copied to out/versions/v<N>.mp4, listed in history/versions.jsonl */
+    v: z.number(),
     seconds: z.number(),
     frames: z.number(),
     lufs: z.number().nullable(),
@@ -822,6 +824,8 @@ export const exportVideo = defineTool({
   handler: async (i, ctx) => {
     const p = P(ctx);
     const d = p.doc();
+    // the rev this export renders: a patch landing while it encodes doesn't make the version newer than it is
+    const rev = d.rev;
     const del = (i.delivery ? d.delivery.find((x) => x.id === i.delivery) : d.delivery[0]) ?? {
       id: "hd",
       scale: 6 as const,
@@ -866,10 +870,13 @@ export const exportVideo = defineTool({
       audio: join(out, "audio.wav"),
       onProgress: (f) => ctx.emit({ type: "progress", what: "export", fraction: f }),
     });
+    // out/<name>.mp4 stays "the current one"; the numbered copy is the version
+    const version = p.recordVersion(join(out, del.out), { rev, sec: res.seconds, delivery: del.id });
     // an absolute URL: the page resolves a relative one against /p/<id>, which is the app, not the file
     ctx.emit({ type: "render", kind: "final", url: `/api/p/${p.id}/files/${encodeURIComponent(del.out)}` });
     return ok({
       file: `out/${del.out}`,
+      v: version.v,
       seconds: res.seconds,
       frames: res.frames,
       lufs: Number.isFinite(mx.lufs) ? mx.lufs : null,

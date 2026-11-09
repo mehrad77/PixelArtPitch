@@ -4779,7 +4779,8 @@ export class Crew {
     try {
       const res = await this.tool(p, "editor", t.id, "export_video", {});
       r.done.exported = true;
-      this.done(p, t, { summary: `${(res.data as any).file}, ${(res.data as any).seconds.toFixed(1)} s` });
+      const d = res.data as any;
+      this.done(p, t, { summary: `${d.file}, ${d.seconds.toFixed(1)} s`, v: d.v });
     } catch (e) {
       this.failTask(p, t, e);
       throw e;

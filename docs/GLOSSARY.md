@@ -39,6 +39,7 @@ One line per term. Where a term has a source file, it is named in brackets.
 | **gate** | A stop where the user decides: `g0_brief`, `g1_script`, `g2_animatic`, `g3_rough`, `g4_final`. The verdict is approve, approve with notes, or changes. |
 | **stage** | Where the project is: brief, script, storyboard, art, animate, narrate, sound, review, deliver. |
 | **part** | What a project has: Idea, Story, Pictures, Sound and Video, each `missing`, `partial`, `ready` or `stale`. Worked out from the document, the scene status, the patch history and the versions, never from the stage, so a handmade project reads as far as its content goes. `next` is the stage that makes the first part that isn't ready (`PART_STAGES`) [`packages/tools/src/parts.ts`]. |
+| **version** | One export: v1, v2 and so on, each with the document rev it rendered. `export_video` copies the video to `out/versions/v<N>.mp4` and appends it to `history/versions.jsonl`, which stays with the project; `out/<name>.mp4` is the current one [`OpenProject.versions()`]. |
 | **task** | One unit of crew work with a role, a status, a cost and an ETA, e.g. "Drawing hero, variant 2 of 3, critique 1". |
 | **question** | A multiple-choice card for the user (`ask_user`). It has 2–6 options and a recommended one. Crew members ask Pip (`ask_pip`), and Pip asks the person only what they alone know. |
 | **note** | Feedback pinned to a scene, cue, asset, time range or track, routed to the role that owns it (`note_add`). Its status moves open → picked_up → proposed → done or declined. |

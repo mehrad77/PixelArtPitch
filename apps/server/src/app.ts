@@ -292,6 +292,9 @@ export function createApp(o: ServerOpts) {
       // what happened, as markers in Pip's chat: derived from the event log, with the events' own times
       milestones: p.markers(),
       sceneStatus: p.state.sceneStatus,
+      // what the project has (Idea, Story, Pictures, Sound, Video) and every export, oldest first
+      parts: p.parts(),
+      versions: p.versions().map((v) => ({ ...v, url: `/api/p/${p.id}/versions/${v.v}.mp4` })),
       // the production plan (null until a crew first runs) and the crew members that come and go (N4)
       plan: o.crew?.planView?.(p) ?? null,
       instances: o.crew?.instances?.(p) ?? [],
@@ -476,6 +479,15 @@ export function createApp(o: ServerOpts) {
   };
   app.get("/api/p/:id/variants/:name", variant);
   app.get("/api/p/:id/runs/:name", variant);
+  // an exported version (out/versions/v<N>.mp4): the latest is also out/<name>.mp4, older ones only here
+  app.get("/api/p/:id/versions/:name", (c) => {
+    const p = proj(c.req.param("id"));
+    const m = /^([1-9]\d{0,5})\.mp4$/.exec(c.req.param("name"));
+    if (!m) return c.text("bad version", 400);
+    const f = join(p.dir, "out", "versions", `v${m[1]}.mp4`);
+    if (!existsSync(f)) return c.text("no such version", 404);
+    return fileResponse(f, c.req.header("range"));
+  });
   app.get("/api/p/:id/proxy.mp4", (c) => {
     const p = proj(c.req.param("id"));
     const f = join(p.dir, "out", "proxy.mp4");

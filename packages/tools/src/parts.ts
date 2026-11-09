@@ -148,7 +148,11 @@ export function partsOf(i: PartsInput): Parts {
       return !a || a.standIn || !resolves(a.src);
     });
     if (bad) {
-      problems.push(`${s.id} draws ${bad}, which isn't there yet`);
+      problems.push(
+        assetBy.get(bad)?.standIn
+          ? `${s.id} uses a stand-in for ${bad}`
+          : `${s.id} draws ${bad}, which isn't there yet`,
+      );
       continue;
     }
     ready++;

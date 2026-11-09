@@ -13,7 +13,8 @@ type Task = { id: string; kind: string; role: Role; title: string;            //
     | "failed" | "cancelled";
   model?: string; usd: number; estUsd?: number; etaSec?: number; startedAt?: string; endedAt?: string;
   summary?: string; error?: { message: string; fix?: string }; lastImage?: string /* URL */; parent?: string;
-  planTask?: string /* the plan task this row is an attempt at */; instance?: string /* "animator:s03" */ };
+  planTask?: string /* the plan task this row is an attempt at */; instance?: string /* "animator:s03" */;
+  v?: number /* deliver.export: the version the export made */ };
 type Gate = { id: "g0_brief" | "g1_script" | "g2_animatic" | "g3_rough" | "g4_final"; status: "locked" | "open" | "passed" | "changes";
   items: { label: string; ref?: string }[] };
 type Note = { id: string; target: { scene?: string; cue?: string; asset?: string; range?: [number, number]; track?: string };
@@ -39,7 +40,23 @@ type ProjectState = { doc: Project; rev: number; timeline: Timeline /* cues, sce
   needs: { count: number; words: string | null; waiting: number /* plan waits no gate or question stands for */ } /* "Needs you": questions, gates, the crew's open Pip cards (a plan
     change, the budget) and the plan's other waits, each once; also ProjectSummary.needsYou */;
   plan: PlanView | null /* the production plan; null until a crew first runs (GET never writes one) */;
-  instances: Instance[] /* the crew members that come and go (docs/PIP-ORCHESTRATION.md §2), join order */ };
+  instances: Instance[] /* the crew members that come and go (docs/PIP-ORCHESTRATION.md §2), join order */;
+  parts: Parts /* what the project has, from its content, never from `stage` */;
+  versions: Version[] /* every export, oldest first */ };
+// What a project has (partsOf, packages/tools/src/parts.ts). Idea: the brief's idea. Story: a script (not the new
+// project's placeholder) and every scene boarded; stale when a cue changed after the last scene patch. Pictures: per
+// scene, everything it draws resolves (file: exists, lib: in the library, no stand-in) and the crew isn't redoing it
+// (with a scene status, only `render`/`ready` counts). Sound: some audio, and with `brief.narration: "user"` every cue
+// aligned to the take (`done`/`of` count cues). Video: the latest version; stale when a patch since its rev touched
+// what the export reads (not notes, budget, crew or brief), or a scene is stale.
+type Part = { id: "idea" | "story" | "pictures" | "sound" | "video"; state: "missing" | "partial" | "ready" | "stale";
+  done: number; of: number /* Pictures: scenes; Sound with narration: cues */; why?: string };
+type Parts = { parts: Part[] /* in that order */; next: Stage | null /* the stage that makes the first part not ready */ };
+// One export (history/versions.jsonl, kept with the project, so it survives deleting runs/). Each `export_video` call
+// is the next version, whatever its delivery; out/<name>.mp4 stays the current one.
+type Version = { v: number; rev: number /* the document rev it rendered */; at: string;
+  file: string /* out/versions/v<N>.mp4 */; sec: number; sha1: string; delivery?: string /* its delivery id */;
+  url: string /* /api/p/:id/versions/<N>.mp4 */ };
 // A crew member, derived from the event log (never stored). `id` is its key: "writer", "animator:s03", "pixel-artist:founder".
 type Instance = { id: string; role: Role; label: string /* "Animator · scene 3" */; subject?: { scene?: string; asset?: string };
   model: string | null /* its latest attempt's */;
@@ -86,6 +103,7 @@ type PlanRevisionSummary = { rev: number; at: string; by: PlanView["by"]; trigge
 | `POST /api/p/:id/undo` | `{ seq, reason }` | `{ rev, seq }` |
 | `GET /api/p/:id/frame` | `?t=<scene seconds>&scale=1..6` | `image/png` (cached by input hash) |
 | `GET /api/p/:id/contact` | `?every=1` | `image/png` |
+| `GET /api/p/:id/versions/:v.mp4` | Range | one exported version, `out/versions/v<N>.mp4` (`Version.url`). `400` for a name that isn't `<N>.mp4`, `404` for a version with no file |
 | `GET /api/p/:id/proxy.mp4` | Range | the rough cut, playable with its sound: `out/proxy.mp4` at scale 2 with `out/audio.wav`, written by each `review.final` (PIP-ORCHESTRATION §1.14). `404` until built; the SSE `render { kind: "proxy", url: "/api/p/:id/proxy.mp4" }` announces it (an absolute URL, as for `final`). It never counts as a finished video and is not in the project's `files` |
 | `POST /api/p/:id/tools/:name` | `{ input }` | `ToolResult` |
 | `POST /api/p/:id/questions/:qid/answer` | `{ optionId?, value?, note? }` | `QuestionT`. A hold's question (`hold: true`, from Pip, PIP-ORCHESTRATION §1.11) lifts the hold and acts on the choice: `retry`, `accept` go on; `redo_director` re-plans the scenes in `blocks`, then goes on; `tell` with words in `note` makes them the person's change, which resumes the run. `fix_key`, and `tell` without a `note`, can't act yet: the question comes back still `open` (same id). Any other lift (Resume, Try again, a saved key, a change) marks it `withdrawn` |

@@ -6,6 +6,7 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 
 ### Parts and versions
 - **Parts:** a project says what it has, as five parts (Idea, Story, Pictures, Sound, Video), each missing, partial, ready or stale. They're worked out from the document, not from where the crew stopped, so a handmade project with a full script, scenes and sound reads as such (`partsOf` in `@pap/tools`).
+- **Versions:** every export is a numbered version (v1, v2, …) with the document rev it was made from. The video is copied to `out/versions/v<N>.mp4` and listed in `history/versions.jsonl`, which stays with the project. `GET /api/p/:id` sends `parts` and `versions`, `GET /api/p/:id/versions/:v.mp4` plays an older one, and the export's task row records its `v`.
 
 ## v0.3.0 (unreleased)
 

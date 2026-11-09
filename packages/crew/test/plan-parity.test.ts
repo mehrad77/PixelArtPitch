@@ -150,6 +150,14 @@ test("parity: a whole run on `auto` gives today's task order, calls and gates", 
   assert.ok(at("asset.spec") < at("asset.draw") && last("scene.tune") < at("sound.mix"));
   assert.ok(at("sound.mix") < at("review.final") && at("review.final") < at("deliver.export"));
   assert.equal(r.kinds.at(-1), "deliver.export");
+  // the export is v1, and its row says so
+  assert.equal(p.state.tasks.find((t: any) => t.kind === "deliver.export")?.v, 1);
+  assert.deepEqual(
+    p.versions().map((v: any) => [v.v, v.rev]),
+    [[1, p.rev()]],
+  );
+  // the latest version is up to date (Pictures waits on a stand-in the fake couldn't draw)
+  assert.equal(p.parts().parts.find((x: any) => x.id === "video")?.state, "ready");
   // the hook walks the new hero in, so it waits for the hero; the payoff and the end card don't
   const plan = (crew as any).planNow(p);
   const deps = (id: string) => plan.tasks.find((t: any) => t.id === id).dependsOn;

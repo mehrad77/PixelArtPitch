@@ -1,10 +1,12 @@
 // The project store: opens project folders, applies validated patches (with history and undo), keeps the runtime state
 // the UI shows (stage, gates, tasks, questions, notes, digest) and an event log the UI follows over SSE.
 // One process writes a project at a time: a lock file in the folder holds the writer's pid.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   appendFileSync,
+  constants,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -16,7 +18,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { LIBRARY_DIR, type LoadedProject, openDoc, openRenderer, png, type Renderer } from "@pap/render";
+import { LIBRARY_DIR, type LoadedProject, libraryIndex, openDoc, openRenderer, png, type Renderer } from "@pap/render";
 import {
   applyPatch,
   overlaps,
@@ -26,6 +28,7 @@ import {
   type ProjectT,
   resolveTimeline,
 } from "@pap/schema";
+import { type Parts, partsOf, type Version } from "./parts.ts";
 import { Question, QuestionInput, type QuestionT } from "./registry.ts";
 import { cutWords, type PlainCtx, plainText } from "./words.ts";
 
@@ -78,6 +81,8 @@ export type Task = {
   planTask?: string;
   /** the crew member it belongs to: "writer", "animator:s03", "pixel-artist:founder" */
   instance?: string;
+  /** deliver.export: the version the export made (history/versions.jsonl) */
+  v?: number;
 };
 export type GateId = "g0_brief" | "g1_script" | "g2_animatic" | "g3_rough" | "g4_final";
 export type Gate = {
@@ -767,9 +772,10 @@ export class OpenProject {
   files() {
     const out = join(this.dir, "out");
     if (!existsSync(out)) return [];
-    return readdirSync(out)
-      .filter((f) => !f.startsWith("."))
-      .map((name) => {
+    // files only: out/versions/ holds the numbered copies, listed by versions()
+    return readdirSync(out, { withFileTypes: true })
+      .filter((f) => f.isFile() && !f.name.startsWith("."))
+      .map(({ name }) => {
         const kind = /\.mp4$/.test(name)
           ? "video"
           : /\.(srt|vtt)$/.test(name)
@@ -779,6 +785,58 @@ export class OpenProject {
               : "image";
         return { name, bytes: statSync(join(out, name)).size, kind };
       });
+  }
+
+  // ---- versions and parts ----
+  /** every export, oldest first (history/versions.jsonl: kept with the project, so it survives deleting runs/) */
+  versions(): Version[] {
+    const f = join(this.dir, "history", "versions.jsonl");
+    if (!existsSync(f)) return [];
+    return readFileSync(f, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Version);
+  }
+  /**
+   * An export becomes the next version: `src` (the finished video in out/) is copied to out/versions/v<N>.mp4 and
+   * the entry appended to history/versions.jsonl. `rev` is the document rev the export rendered.
+   */
+  recordVersion(src: string, meta: { rev: number; sec: number; delivery?: string }): Version {
+    const v = this.versions().reduce((m, x) => Math.max(m, x.v), 0) + 1;
+    const file = `out/versions/v${v}.mp4`;
+    mkdirSync(join(this.dir, "out", "versions"), { recursive: true });
+    // a copy-on-write clone where the disk has them: the next export rewrites out/<name>.mp4 in place
+    copyFileSync(src, join(this.dir, file), constants.COPYFILE_FICLONE);
+    const entry: Version = {
+      v,
+      rev: meta.rev,
+      at: new Date().toISOString(),
+      file,
+      sec: meta.sec,
+      sha1: createHash("sha1")
+        .update(readFileSync(join(this.dir, file)))
+        .digest("hex"),
+      ...(meta.delivery ? { delivery: meta.delivery } : {}),
+    };
+    appendFileSync(join(this.dir, "history", "versions.jsonl"), `${JSON.stringify(entry)}\n`);
+    return entry;
+  }
+  /** what the project has (partsOf), with its library and files looked up on disk */
+  parts(): Parts {
+    let lib: Set<string> | null = null;
+    return partsOf({
+      doc: this._doc,
+      sceneStatus: this.state.sceneStatus,
+      history: this.readHistory(),
+      versions: this.versions(),
+      resolves: (src) => {
+        if (src.startsWith("lib:")) {
+          lib ??= new Set(libraryIndex().assets.map((a) => a.id));
+          return lib.has(src.slice(4).split("@")[0]);
+        }
+        return existsSync(join(this.dir, src.replace(/^file:/, "")));
+      },
+    });
   }
 }
 
