@@ -873,6 +873,14 @@ a.pip-file:hover {
 .pip-thread[data-order="newest"] > :is(.pip-turn, .pip-milestone) {
   position: relative;
 }
+/* newest first reads against the grain of a chat: a wide gap around each turn keeps one exchange (your message,
+   Pip's reply and its card) visibly together and apart from the next, so it doesn't read as a reversed thread */
+.pip-thread[data-order="newest"] > .pip-turn:not(:first-child) {
+  margin-block-start: var(--space-4);
+}
+.pip-thread[data-order="newest"] > .pip-turn:not(:last-child) {
+  margin-block-end: var(--space-4);
+}
 .pip-dot {
   --dot: 0.5rem;
   position: absolute;
