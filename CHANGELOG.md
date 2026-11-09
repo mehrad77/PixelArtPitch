@@ -15,6 +15,9 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 ### Studio art
 - Projects can use the studio's private art: another project's likeness or logo is copied in with its flags when a scene uses it, and its rights are still asked.
 
+### Library
+- Two new assets from the code-scene smoke run: `gamer`, a 16×24 character with a ponytail, a hoodie and headphones (8 frames), and `vr-headset`, a 16×16 icon.
+
 ## v0.4.0 (unreleased)
 
 ### Parts and versions
