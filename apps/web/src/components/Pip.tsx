@@ -50,7 +50,7 @@ import {
 import { planCrew, planDiff, planUsd, titleWords } from "../lib/plancard.ts";
 import { Link, navigate } from "../lib/router.tsx";
 import { cutWords, dedupeMarkers } from "../lib/text.ts";
-import { type Marker, type Turn, trackOf, turnsOf } from "../lib/thread.ts";
+import { type Entry, foldRuns, type Marker, type Turn, timelineOf, trackOf, turnsOf } from "../lib/thread.ts";
 import type { PipCard, PipFile, PipItem, PipSummary, ProjectState, RefType } from "../lib/types.ts";
 import { BriefCard, BriefFieldsCard, briefLines, settledFields } from "./BriefCards.tsx";
 import { ConductContext, CrewFace } from "./CrewStrip.tsx";
@@ -281,9 +281,10 @@ const Thinking = () => (
   </div>
 );
 
-/** the simple view's thread: turns newest first, each its own framed block read top-down (your message, then Pip's
- * reply and its card); what the summary folded comes last, under its divider. The milestones are a track of their own
- * beside it (under it on a narrow screen), newest first, so a turn never reads as part of the timeline */
+/** the simple view's thread: one timeline, newest first, with a dot per entry on a spine at its inline start. A turn
+ * is its own framed block read top-down (your message, then Pip's reply and its card); a milestone is one quiet line
+ * between them, by time; a long run of milestones folds into "N more milestones". What the summary folded comes
+ * last, under its divider */
 function NewestThread({
   project,
   conv,
@@ -301,14 +302,38 @@ function NewestThread({
   /** items said elsewhere (the stage's own first line) */
   skip?: (it: PipItem) => boolean;
 }) {
+  const id = useId();
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const items = conv.items.filter((i) => i.kind !== "thinking" && !skip?.(i));
-  const track = trackOf(markers ?? []);
   const upTo = conv.summary && items.some((i) => i.id === conv.summary?.upTo) ? conv.summary.upTo : null;
-  const turns = turnsOf(items, upTo, conv.thinking).reverse();
-  const recent = turns.filter((t) => !t.old);
-  const folded = turns.filter((t) => t.old);
-  const row = (t: Turn) => (
-    <li key={t.key} className="pip-turn" data-by={t.by} data-old={t.old ? "" : undefined}>
+  const entries = foldRuns(timelineOf(turnsOf(items, upTo, conv.thinking), trackOf(markers ?? [])));
+  // the divider goes over the newest turn the summary folded; with none, at the end
+  const cut = entries.findIndex((e) => e.kind === "turn" && e.turn.old);
+  const toggle = (key: string) =>
+    setOpen((s) => {
+      const n = new Set(s);
+      if (!n.delete(key)) n.add(key);
+      return n;
+    });
+  const mark = (m: Marker, newest: boolean) => (
+    <li key={m.id} className="pip-milestone" data-newest={newest ? "" : undefined}>
+      <span className="pip-dot" aria-hidden="true" />
+      <time dateTime={m.at}>
+        <span className="visually-hidden">Milestone, at </span>
+        <bdi>{clock(new Date(m.at))}</bdi>
+      </time>
+      <bdi className="pip-milestone-text">{m.text}</bdi>
+    </li>
+  );
+  const turn = (t: Turn, newest: boolean) => (
+    <li
+      key={t.key}
+      className="pip-turn"
+      data-by={t.by}
+      data-old={t.old ? "" : undefined}
+      data-newest={newest ? "" : undefined}
+    >
+      <span className="pip-dot" aria-hidden="true" />
       {t.at > 0 && t.key !== "thinking" && (
         <p className="pip-turn-time">
           <span className="visually-hidden">{t.by === "person" ? "You asked at " : "Pip, at "}</span>
@@ -323,52 +348,48 @@ function NewestThread({
       {t.thinking && <Thinking />}
     </li>
   );
+  const row = (e: Entry, i: number) => {
+    if (e.kind === "turn") return turn(e.turn, i === 0);
+    if (e.kind === "mark") return mark(e.mark, i === 0);
+    const shown = open.has(e.key);
+    const n = e.marks.length;
+    return (
+      <Fragment key={e.key}>
+        {shown && e.marks.map((m) => mark(m, false))}
+        <li className="pip-more">
+          <button type="button" className="linkish small" aria-expanded={shown} onClick={() => toggle(e.key)}>
+            {shown ? `Hide these ${n} milestones` : `${n} more milestones`}
+          </button>
+        </li>
+      </Fragment>
+    );
+  };
   const quiet = !items.length && !conv.thinking;
   return (
-    <div className="pip-convo" data-track={track.length ? "" : undefined}>
-      <ol className="pip-thread" data-order="newest" aria-label="Conversation, newest first">
+    <div className="pip-convo">
+      {entries.length > 0 && (
+        <h3 id={`${id}-h`} className="pip-timeline-head label">
+          Timeline <span className="pip-timeline-hint">· newest first</span>
+        </h3>
+      )}
+      <ol
+        className="pip-thread"
+        data-order="newest"
+        {...(entries.length > 0 ? { "aria-labelledby": `${id}-h` } : { "aria-label": "Conversation, newest first" })}
+      >
         {conv.unavailable && !items.length && <li className="pip-note small muted">{conv.unavailable}</li>}
         {emptyNote && conv.loaded && !conv.unavailable && quiet && (
           <li className="pip-note small muted">{emptyNote}</li>
         )}
-        {recent.map(row)}
-        {conv.summary && <SummaryDivider project={project} summary={conv.summary} />}
-        {folded.map(row)}
-      </ol>
-      {track.length > 0 && <MilestoneTrack marks={track} />}
-    </div>
-  );
-}
-
-/** how many milestones the track shows before "Show all" */
-const TRACK_SHOWN = 6;
-
-/** the milestones, newest first, on a quiet rail: the run's own timeline, apart from the conversation */
-function MilestoneTrack({ marks }: { marks: Marker[] }) {
-  const [all, setAll] = useState(false);
-  const id = useId();
-  const shown = all ? marks : marks.slice(0, TRACK_SHOWN);
-  return (
-    <section className="pip-track" aria-labelledby={`${id}-h`}>
-      <h3 id={`${id}-h`} className="pip-track-head label">
-        Milestones <span className="pip-track-hint">· newest first</span>
-      </h3>
-      <ol className="pip-track-list">
-        {shown.map((m, i) => (
-          <li key={m.id} className="pip-track-row" data-newest={i === 0 ? "" : undefined}>
-            <time dateTime={m.at}>
-              <bdi>{clock(new Date(m.at))}</bdi>
-            </time>
-            <bdi className="pip-track-text">{m.text}</bdi>
-          </li>
+        {entries.map((e, i) => (
+          <Fragment key={e.key}>
+            {i === cut && conv.summary && <SummaryDivider project={project} summary={conv.summary} />}
+            {row(e, i)}
+          </Fragment>
         ))}
+        {cut < 0 && conv.summary && <SummaryDivider project={project} summary={conv.summary} />}
       </ol>
-      {marks.length > TRACK_SHOWN && (
-        <button type="button" className="linkish small pip-track-more" onClick={() => setAll((x) => !x)}>
-          {all ? "Show fewer" : `Show all ${marks.length}`}
-        </button>
-      )}
-    </section>
+    </div>
   );
 }
 

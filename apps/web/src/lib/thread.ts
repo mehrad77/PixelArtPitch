@@ -1,7 +1,7 @@
 // Pip's thread as turns (the simple view, newest first): the person's message with Pip's reply under it is one turn,
-// read top to bottom; a message Pip starts on its own is a turn of its own. The milestones are not turns: they are a
-// track of their own, newest first, so a turn never reads as if it ran on into the timeline (the turns read down, the
-// timeline reads up). Pure, no React.
+// read top to bottom; a message Pip starts on its own is a turn of its own. The milestones are not turns, but they sit
+// on the same timeline: one list, newest first, a dot per entry, a turn as its framed block and a milestone as one
+// quiet line; long runs of milestones fold into "N more milestones". Pure, no React.
 import { cutWords, dedupeMarkers } from "./text.ts";
 import type { PipItem } from "./types.ts";
 
@@ -49,4 +49,52 @@ export function trackOf(marks: Marker[], max = 90): Marker[] {
   return dedupeMarkers(marks)
     .reverse()
     .map((m) => ({ ...m, text: cutWords(m.text, max) }));
+}
+
+/** one entry on the simple view's timeline: a turn, a milestone, or a folded run of milestones */
+export type Entry =
+  | { kind: "turn"; key: string; at: number; turn: Turn }
+  | { kind: "mark"; key: string; at: number; mark: Marker }
+  | { kind: "more"; key: string; at: number; marks: Marker[] };
+
+/** turns and milestones on one timeline, newest first. A turn and a milestone at the same moment: the turn first;
+ * otherwise ties keep the order given. A turn with no time (`at` 0) sinks to the end. */
+export function timelineOf(turns: Turn[], marks: Marker[]): Entry[] {
+  const all: Entry[] = [
+    ...[...turns].reverse().map((t): Entry => ({ kind: "turn", key: t.key, at: t.at, turn: t })),
+    ...marks.map((m): Entry => ({ kind: "mark", key: m.id, at: Date.parse(m.at) || 0, mark: m })),
+  ];
+  // stable: equal times keep the order above (turns before milestones, each newest first as given)
+  return all.sort((a, b) => b.at - a.at);
+}
+
+/** fold long runs of milestones: the `keep` newest milestones always show, and each run of milestones between two
+ * turns shows its first `lead`; the rest of a run fold into one "more" entry, only when two or more would fold */
+export function foldRuns(entries: Entry[], { keep = 3, lead = 1 }: { keep?: number; lead?: number } = {}): Entry[] {
+  const out: Entry[] = [];
+  let seen = 0;
+  let run: Extract<Entry, { kind: "mark" }>[] = [];
+  const flush = () => {
+    const shown: Entry[] = [];
+    const hidden: Marker[] = [];
+    run.forEach((e, i) => {
+      if (i < lead || seen < keep) shown.push(e);
+      else hidden.push(e.mark);
+      seen++;
+    });
+    out.push(...shown);
+    if (hidden.length >= 2)
+      out.push({ kind: "more", key: `more-${hidden[0].id}`, at: Date.parse(hidden[0].at) || 0, marks: hidden });
+    else out.push(...hidden.map((m): Entry => ({ kind: "mark", key: m.id, at: Date.parse(m.at) || 0, mark: m })));
+    run = [];
+  };
+  for (const e of entries) {
+    if (e.kind === "mark") run.push(e);
+    else {
+      flush();
+      out.push(e);
+    }
+  }
+  flush();
+  return out;
 }

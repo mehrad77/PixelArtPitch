@@ -2,6 +2,11 @@
 
 Each release's section is also its GitHub release notes: the release job in `.github/workflows/ci.yml` publishes the section whose heading matches the tag.
 
+## v0.5.2 (unreleased)
+
+### Studio
+- **One timeline for Pip's thread and the milestones.** The simple view's separate "Milestones" column is gone: milestones sit among the turns, newest first, on one spine with a dot per entry (a turn hangs its framed block off its dot, a milestone is one quiet line, the newest dot is lit). The three newest milestones always show; a longer run between two turns keeps its first and folds the rest into "N more milestones", which expands in place. The timeline sits on the page, with no panel behind it.
+
 ## v0.5.1 (unreleased)
 
 ### Crew

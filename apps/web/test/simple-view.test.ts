@@ -14,7 +14,7 @@ import { stuckInstances, waitingInstances } from "../src/lib/instances.ts";
 import { isPick, needsItems, previewOf } from "../src/lib/needs.ts";
 import { planCrew, planDiff, planUsd, titleWords } from "../src/lib/plancard.ts";
 import { applyEvent } from "../src/lib/reducer.ts";
-import { turnsOf } from "../src/lib/thread.ts";
+import { foldRuns, timelineOf, turnsOf } from "../src/lib/thread.ts";
 import type {
   ActivityEntry,
   Gate,
@@ -214,6 +214,53 @@ test("Pip's thread: your message and the reply are one turn; Pip's own message s
   const thinking = turnsOf(items.slice(0, 1), null, true);
   assert.equal(thinking.length, 1);
   assert.ok(thinking[0].thinking, "Pip's dots go under your message, in the same turn");
+});
+
+test("one timeline: turns and milestones by time, newest first; a tie puts the turn first, then keeps the order", () => {
+  const at = (s: number) => new Date(Date.UTC(2026, 10, 8, 20, 0, s)).toISOString();
+  const items: PipItem[] = [
+    { id: "u1", at: at(1), kind: "user", text: "Make it longer" },
+    { id: "p1", at: at(2), kind: "pip", text: "On it.", cards: [] },
+    { id: "p2", at: at(10), kind: "pip", text: "Your video is ready.", cards: [] },
+  ];
+  const marks = [
+    { id: "m4", at: at(10), text: "Your video is ready" },
+    { id: "m3", at: at(5), text: "Plan changed" },
+    { id: "m2", at: at(5), text: "Scene 1 drawn" },
+    { id: "m1", at: at(0), text: "Plan ready" },
+  ];
+  const keys = (es: ReturnType<typeof timelineOf>) => es.map((e) => e.key);
+  assert.deepEqual(keys(timelineOf(turnsOf(items, null, false), marks)), ["p2", "m4", "m3", "m2", "u1", "m1"]);
+  const untimed: PipItem[] = [{ id: "u0", at: "", kind: "user", text: "hi" }];
+  assert.deepEqual(
+    keys(timelineOf(turnsOf(untimed, null, false), marks.slice(3))),
+    ["m1", "u0"],
+    "no time: at the end",
+  );
+});
+
+test("one timeline: a long run of milestones folds, the newest few always show, one never folds alone", () => {
+  const at = (s: number) => new Date(Date.UTC(2026, 10, 8, 20, 0, s)).toISOString();
+  const turn = (id: string, s: number) => ({ id, at: at(s), kind: "pip", text: "…", cards: [] }) as PipItem;
+  const marks = Array.from({ length: 8 }, (_, i) => ({ id: `m${i}`, at: at(20 - i), text: `step ${i}` }));
+  // m0..m2 newest, then a turn at 16.5, then m4..m7, then a turn at 9
+  const items = [turn("old", 9), turn("mid", 16.5)];
+  const es = foldRuns(timelineOf(turnsOf(items, null, false), marks), { keep: 3, lead: 1 });
+  assert.deepEqual(
+    es.map((e) => (e.kind === "more" ? `+${e.marks.map((m) => m.id).join(",")}` : e.key)),
+    ["m0", "m1", "m2", "m3", "mid", "m4", "+m5,m6,m7", "old"],
+    "the run of four newest: three kept plus one that would fold alone; the next run keeps its first",
+  );
+  const two = foldRuns(timelineOf([], marks.slice(0, 5)), { keep: 3, lead: 1 });
+  assert.deepEqual(
+    two.map((e) => e.kind),
+    ["mark", "mark", "mark", "more"],
+  );
+  assert.deepEqual(
+    foldRuns(timelineOf([], marks.slice(0, 4)), { keep: 3, lead: 1 }).map((e) => e.kind),
+    ["mark", "mark", "mark", "mark"],
+    "one hidden milestone just shows",
+  );
 });
 
 test("the scope chip's words: sent as an About lead, shown apart in the bubble, never on a command", () => {

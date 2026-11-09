@@ -200,7 +200,7 @@
 }
 .pip-sheet {
   position: relative;
-  /* the milestones sit beside the conversation when the sheet is wide enough (@container below) */
+  /* the timeline's gutter narrows when the sheet does (@container below) */
   container-type: inline-size;
 }
 .pip-sheet-head {
@@ -579,13 +579,6 @@ a.pip-file:hover {
   max-inline-size: 38rem;
   margin-inline: 0;
 }
-/* with milestones, the sheet widens so they sit beside the turns; the field and the chips keep their width */
-.pip-line .pip-ask:has(.pip-track) {
-  max-inline-size: 58rem;
-}
-.pip-line .pip-ask:has(.pip-track) > :not(.pip-sheet) {
-  max-inline-size: 38rem;
-}
 .pip-line .pip-under,
 .pip-line .pip-chips {
   justify-content: flex-start;
@@ -742,9 +735,12 @@ a.pip-file:hover {
 
 /* the simple view, newest first: the field on top, the thread under it, no inner scroll */
 .pip-ask[data-order="newest"] .pip-sheet {
-  padding-block: var(--space-3);
+  /* no panel: the timeline sits on the page, its spine in its own gutter */
+  padding: var(--space-2) 0 0;
+  border-radius: 0;
+  background: transparent;
 }
-.pip-ask[data-order="newest"] .pip-sheet:has(.pip-thread:empty):not(:has(.pip-track)) {
+.pip-ask[data-order="newest"] .pip-sheet:has(.pip-thread:empty) {
   display: none;
 }
 .pip-cmds[data-below] {
@@ -825,11 +821,8 @@ a.pip-file:hover {
 }
 
 /* ---- the simple view's thread as turns, newest first: a turn is read top-down (your bubble at the inline end,
-   Pip's reply at the inline start under it); clear space between turns, each with its time; milestones stay quiet
-   hairlines between them ---- */
-.pip-thread[data-order="newest"] {
-  gap: var(--space-3);
-}
+   Pip's reply at the inline start under it), each with its time; milestones sit between them on the same timeline
+   (below) ---- */
 /* each turn is its own block: framed, read top-down, apart from the turns around it */
 .pip-turn {
   display: grid;
@@ -846,81 +839,99 @@ a.pip-file:hover {
   font-size: var(--step--2);
 }
 
-/* the conversation and the milestones side by side when there is room; the milestones under it when not */
+/* one timeline, newest first: a spine at the inline start with a dot per entry. A turn hangs its framed block off
+   its dot; a milestone is one quiet line with a smaller dot; the newest entry's dot is lit. The dots are decoration
+   (aria-hidden): each entry says its kind and time in words */
 .pip-convo {
   display: grid;
-  gap: var(--space-5);
-  align-items: start;
-}
-@container (min-width: 48rem) {
-  .pip-convo[data-track] {
-    grid-template-columns: minmax(0, 1fr) minmax(12rem, 15rem);
-  }
-  .pip-convo[data-track] .pip-track {
-    position: sticky;
-    inset-block-start: calc(var(--topbar-h, 2.75rem) + var(--space-3));
-  }
-}
-/* the milestone track: the run's own timeline, newest first, on a quiet rail; never a turn */
-.pip-track {
-  display: grid;
   gap: var(--space-2);
-  min-inline-size: 0;
 }
-.pip-track-head {
+.pip-timeline-head {
   margin: 0;
   color: var(--text-muted);
 }
-.pip-track-hint {
+.pip-timeline-hint {
   text-transform: none;
   letter-spacing: normal;
 }
-.pip-track-list {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-inline-start: 1px solid var(--stroke);
-}
-.pip-track-row {
+.pip-thread[data-order="newest"] {
+  /* the spine sits in the gutter, on the axis; a dot centres on it */
+  --tl-gutter: var(--space-5);
+  --tl-axis: var(--space-2);
+  --tl-spine: 2px;
   position: relative;
-  display: grid;
-  gap: 0;
-  padding-block: var(--space-1);
-  padding-inline: var(--space-3) 0;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--step--2);
+  gap: var(--space-2);
+  padding-inline-start: var(--tl-gutter);
 }
-/* a dot on the rail for each milestone; the newest one is lit */
-.pip-track-row::before {
+.pip-thread[data-order="newest"]:has(> .pip-turn, > .pip-milestone)::before {
   content: "";
   position: absolute;
-  inset-inline-start: calc(-0.25rem - 0.5px);
-  inset-block-start: calc(var(--space-1) + 0.4em);
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
+  inset-block: var(--space-2);
+  inset-inline-start: var(--tl-axis);
+  inline-size: var(--tl-spine);
+  border-radius: var(--radius-pill);
+  background: var(--stroke-control);
+}
+.pip-thread[data-order="newest"] > :is(.pip-turn, .pip-milestone) {
+  position: relative;
+}
+.pip-dot {
+  --dot: 0.5rem;
+  position: absolute;
+  /* from the entry's start edge back across the gutter to the axis (a turn's 1px border shifts it by one) */
+  inset-inline-start: calc(var(--tl-axis) + var(--tl-spine) / 2 - var(--tl-gutter) - var(--dot) / 2);
+  inline-size: var(--dot);
+  block-size: var(--dot);
   border-radius: 50%;
+  /* the page's own surface, so the spine stops at a hollow dot */
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--stroke-control);
 }
-.pip-track-row[data-newest] {
-  color: var(--text);
+.pip-turn > .pip-dot {
+  --dot: 0.75rem;
+  inset-inline-start: calc(var(--tl-axis) + var(--tl-spine) / 2 - var(--tl-gutter) - var(--dot) / 2 - 1px);
+  inset-block-start: calc(var(--space-3) + 0.1em);
+  box-shadow: inset 0 0 0 2px var(--stroke-control);
 }
-.pip-track-row[data-newest]::before {
+.pip-milestone > .pip-dot {
+  inset-block-start: calc(var(--space-1) + 0.45em);
+}
+[data-newest] > .pip-dot {
   background: var(--fill-accent);
   box-shadow: none;
 }
-.pip-track-text {
+.pip-thread > .pip-milestone,
+.pip-thread > .pip-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  padding-block: var(--space-1);
+  color: var(--text-muted);
+}
+.pip-milestone > time {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  white-space: nowrap;
+}
+.pip-milestone-text {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
   font-family: var(--font-serif);
   font-size: var(--step--1);
   overflow-wrap: anywhere;
 }
-.pip-track-more {
-  justify-self: start;
+.pip-milestone[data-newest] {
+  color: var(--text);
 }
-:is(:lang(fa), :lang(ar)) :is(.pip-track-row, .pip-track-text) {
+:is(:lang(fa), :lang(ar)) :is(.pip-milestone > time, .pip-milestone-text) {
   font-family: var(--font-arabic);
+}
+@container (max-width: 30rem) {
+  .pip-thread[data-order="newest"] {
+    --tl-gutter: var(--space-4);
+    --tl-axis: var(--space-1);
+  }
 }
 
 /* what needs you, asked at the newest end of the drawer's thread: the same parts as under Pip's line */
