@@ -207,11 +207,12 @@ export const CATALOGUE: Record<PlanKind, CatalogueRow> = {
     kind: "scene.code",
     role: "scene-coder",
     stage: "animate",
-    calls: [2, 6],
-    // the write, then a repair or critique at p50; at p90 two repairs and two critique rounds (priors from the PoC)
+    calls: [2, 4],
+    // the write, then one repair or critique at p50, three at p90 (P7's code scenes used about one of the two repairs
+    // and two critique rounds a run may take); past MIN_LEDGER_SAMPLES the ledger's own rows price each call
     prices: [
       ["scene.code", 1, 1],
-      ["scene.patch", 1, 5],
+      ["scene.patch", 1, 3],
     ],
     pipMay: ["retier"],
     droppable: false,

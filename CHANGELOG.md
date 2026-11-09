@@ -2,6 +2,11 @@
 
 Each release's section is also its GitHub release notes: the release job in `.github/workflows/ci.yml` publishes the section whose heading matches the tag.
 
+## v0.5.1 (unreleased)
+
+### Crew
+- **Code scenes are priced from what they cost.** A `scene.code` task counts one write plus one repair or critique at p50 and three at p90 (it was five, which put a code scene's p90 at $2.64). Past five ledger rows the ledger prices each call.
+
 ## v0.5.0 (unreleased)
 
 ### Code scenes

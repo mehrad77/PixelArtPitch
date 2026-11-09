@@ -678,3 +678,17 @@ test("the critique input drops what the artist can't fix: provenance and the fil
   );
   assert.ok(existsSync(EXAMPLE));
 });
+
+test("a code scene is priced as one write plus one patch at p50 and three at p90 (not five)", async () => {
+  const { estimateTask, priceFor } = await import("../src/llm/index.ts");
+  const model = env.modelFor();
+  const one = (kind: string) =>
+    estimateTask({ kind, model: { id: model, price: priceFor(model), caps: { local: false } } });
+  const t = estimatePlanTask(
+    { kind: "scene.code", role: "scene-coder", tier: "role", conditional: false } as any,
+    env as any,
+  );
+  const [code, patch] = [one("scene.code"), one("scene.patch")];
+  assert.ok(Math.abs(t.usd[0] - (code.usd[0] + patch.usd[0])) < 1e-9, `p50 ${t.usd[0]}`);
+  assert.ok(Math.abs(t.usd[1] - (code.usd[1] + 3 * patch.usd[1])) < 1e-9, `p90 ${t.usd[1]}`);
+});
