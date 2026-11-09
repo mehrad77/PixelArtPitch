@@ -146,6 +146,7 @@ There is one row per plan task kind. Every handler wraps today's code, named in 
 | `asset.draw` | pixel-artist | art | `drawVariant(v)`; with one variant per asset it also writes and casts the drawing (or the library stand-in) | 1–4 | `asset`, `variant` 1–3 | – | drop variant 2 or 3, retier | `pixel-artist:<asset>` | rerun that variant |
 | `asset.judge` | art-director | art | the judge, write and cast part of `art()`, including the library fallback; only in a chain of 2–3 variants | 0–1 | `asset` | – | – | `art-director` | rerun |
 | `scene.tune` | animator | animate | `animate()`'s `one(s)` | 1 | `scene`, `round` | round ≥ 2 | add (a redo), retier | `animator:<scene>` | skip when `sceneStatus` is render/ready (as today) |
+| `scene.code` **(v0.5)** | scene-coder | animate | `sceneCode()`: write, trial render and repair, critique (§1.16) | 2–6 | `scene`, `round` | round ≥ 2 | retier | `scene-coder:<scene>` | skip when `sceneStatus` is render/ready and the bundle is not a stub |
 | `vo.align` | editor | narrate | `narrate()` | 0 | – | – | – | `editor` | rerun; asks again |
 | `sound.mix` | mixer | sound | `sound()` | 0 | – | – | – | `mixer` | rerun |
 | `review.final` | reviewer | review | one round of `review()` | 1 | `round` | round ≥ 2 | retier, drop round 2 | `reviewer` | rerun |
@@ -262,10 +263,11 @@ per new asset a (placeholder per_new_asset, count = E[assets]; the draw placehol
   asset.spec(a) <- g2; asset.draw(a,1..N) <- spec; asset.judge(a) <- every draw   N = variants (§1.10), default 2
   with N = 1: no judge; the draw is the pick, and the scenes and rights wait on it
 rights(a)              <- judge(a) | draw(a) | import(a) for each likeness or logo asset (§1.5 V5)
-per scene s (placeholder per_scene, count = E[scenes]):
+per scene s (placeholders per_scene: tunes, count = E[scenes] − E[code]; code scenes, count = E[code]):
   scene.tune(s, r1)    <- g2 + the last task of every new asset s uses (before expansion: of all of them)
-vo.align               <- every scene.tune               only when narration == "user"
-sound.mix              <- every scene.tune [+ vo.align]
+  scene.code(s, r1)    <- the same, for a code scene (in place of its tune)
+vo.align               <- every scene.tune and scene.code   only when narration == "user"
+sound.mix              <- every scene.tune and scene.code [+ vo.align]
 review.final(r1)       <- sound.mix
 g3_rough               <- review.final(r1)
 deliver.export         <- g3
@@ -276,7 +278,7 @@ lib.publish(a)         <- g4   conditional, for each new asset that isn't privat
 - **Where a logo can go.** No recipe today places an arbitrary prop or a "sign". A logo can only appear as an icon asset: `toast.iconAsset` or `item_collect.itemAsset`. The end card (`end_card_loop`) has no logo param.
   - So the brief card describes it as "your logo in an achievement toast", never "on a sign".
   - A sign recipe would be engine work (open question 4).
-- **Expected counts.** `E[scenes] = clamp(round(lengthSec / 8), 2, 6)`, which is 4 for 30 s. `E[assets] = max(1, number of likeness references)`, where the 1 is the hero `baselineBoard` assumes. Logos are imports and cost $0.
+- **Expected counts.** `E[scenes] = clamp(round(lengthSec / 8), 2, 6)`, which is 4 for 30 s. `E[code] = floor(E[scenes] / 3 + 0.5)` (`expectedCodeScenes`): 1 of 4 at 30 s, 2 of 6 at 60 s; `ctx.codeScenes` overrides it. `E[assets] = max(1, number of likeness references)`, where the 1 is the hero `baselineBoard` assumes. Logos are imports and cost $0.
 - **Rev 0 for a project that has no `plan.json`.** This covers every existing project, a crew that was running at the upgrade, and a copy of `examples/questday` (which ships with a script, 4 boarded scenes, assets and no `runs/`).
   - Run `rulesPlan(doc)` with the placeholders already expanded from `doc.scenes` and `doc.assets`, then mark tasks from evidence:
     - `state.tasks` rows that are done and not superseded → `done`, with `taskIds` linked;
@@ -287,7 +289,7 @@ lib.publish(a)         <- g4   conditional, for each new asset that isn't privat
   - Authored as `by: "code"`, `trigger: "start"`. A change request on such a project is then a true change run, not a full run.
   - So rev 0 already prices the usual expansion, and the storyboard rarely trips the 20% card.
 - **Expansion.** When `director.storyboard` is done, code writes a revision with `by: "code"`, `trigger: "expand"`.
-  - It replaces `per_scene` with one `scene.tune` per decl scene, and `per_new_asset` with one chain per `newAssets` item.
+  - It replaces the `per_scene` placeholders with one `scene.tune` per recipe scene and one `scene.code` per code scene, and `per_new_asset` with one chain per `newAssets` item. Each placeholder expands into the tasks of its own kind; a pending task of the wrong kind for its scene (a re-board changed it) is dropped.
   - Each `scene.tune` gets the exact dependencies for the assets its recipes name. A scene that uses no new art can animate while the art is drawn. Today all art runs first.
   - The reason is in Pip's words, from a template: "The storyboard has 4 scenes. The library had no founder sprite, so I added one drawing."
 - **Review round 2** is added by code when round 1 returns blockers (`by: "code"`, or `"pip"` when the conductor decided). The redo becomes `scene.tune(s, round + 1)` on the same instance (D5), plus `review.final(r2)` before G3.
@@ -614,6 +616,26 @@ In P5 the engine could make an owl sit, a moth fly and a lantern glow, but no re
 - **The cards stop saying "can't".** `director/storyboard.md` (v5) and `reboard.md` (v4) say sit, fly and glow are on the menu and how; Pip's `conduct.md` (v3) puts library art and behaviours before new drawings.
 - **Board checks.** `checkBoard` checks `who` and `follow` against the asset list, and a `spawn_join` without `who` gets "fix: cast moth as who" with the first asset the brief names that isn't already in that scene (`castOf`).
 - **The Writer's angles aren't cut.** The script pick's option detail keeps whole cues: those that fit 280 characters, then "…" (`cueDetail`).
+
+### 1.16 Code scenes (v0.5)
+
+Recipes tell a walk-in, a collect, a bump, a join, a cheer and a flag. A beat that needs its own picture (a diagram, a map, a build, a transformation, a counter) or a device that needs its own language (a game's title screen, HUD and overworld) is a **code scene**: the Director boards it, the Scene Coder writes it.
+
+- **The board.** A board scene is `{ id, title, cues, kind: "recipe", recipes }` or `{ id, title, cues, kind: "code", beat, assets, endCard? }` (`BoardScene`, one object so a board without `kind` parses). `beat` is the choreography, second by second, in plain words; `assets` are names from the asset list. The window comes from the cues, as for a recipe scene.
+  - `checkBoard`: a code scene needs a beat of at least 20 characters, no recipes and listed assets (library, studio, project or `newAssets`); only the last scene may be `endCard`, and the last scene is the end card (`end_card_loop`, or a code scene with `endCard`).
+  - `applyBoard` writes the scene as `kind: "code"`, `bundle: <scene id>`, `beat`, `assets`, `endCard`, and a **stub** `code/<scene>.mjs` with its `/code` entry `{ fullFrame: false, sfx: false, stub: true }`: the night, the title and the scene's assets on the ground (only those the project has). The animatic and the stills work before the code exists. A re-board can turn a scene either way; crew bundles no scene uses are removed (every listed bundle loads).
+  - `art.cast` casts the assets a code scene names (library and studio art), like a recipe's.
+- **The task.** `scene.code` (row in §1.1) stands in for the scene's `scene.tune` with the same asset dependencies. The handler dispatches on the scene's kind, so a tune planned before a re-board still reaches the coder. It codes only the crew's own bundle (the scene's id, used by no other scene); an imported bundle such as `legacy` is skipped as hand-written.
+  1. **Write** (`scene-coder/write`, ledger kind `scene.code`): the brief, the beat, the cues with their `S()`/`E()` seconds, the assets with frame names and sizes, the palette table, the style rules, the API sheet (`apiSheet()`: one line per `ENGINE_EXPORTS` name and per `pap:timeline` name, signatures read from the real functions; a test keeps the doc tables equal to the exports), the example `prompts/scene-coder/example.mjs` (written for PAP, library assets only), the sandbox rules and the open notes. A redo also gets the current code to revise. The answer is `{ code, notes }`.
+  2. **Trial and repair** (`trialRender`, ledger kind `scene.patch` for repairs): the candidate runs in a fresh sandbox on a copy of the project (`trialProject`, `probe: true`), never in the project. It checks the source (`lintBundleSource`: exports `draw`, imports, no randomness or clock or globals, literal `frame()`/`asset()` names), probes 12 frames (`lintCodeProbes`: text off the frame or in the caption zone, a panel in the caption zone, a placeholder box, a frame the asset lacks, a draw over 150 ms), calls `sfxEvents()` (every type an `SfxType`, every time inside the video) and renders three stills and a 6-frame strip. Any error goes back as a repair with the error text, at most 2 rounds. A reply cut off at `max_tokens` counts as a repair ("think less, write a shorter module"), never a crash.
+  3. **Critique** (`scene-coder/critique`, `scene.patch`): `reviewRounds` rounds (settings, default 2) on the strip and the beat, each returning the whole module; "ship" in `notes` or the same code ends them. A round that fails the trial is dropped and the last good version stays.
+  4. The last good version is written to `code/<scene>.mjs` and its `/code` entry replaced (`stub` gone, `sfx` from the trial) through the patch path, authored by the scene-coder. Its `sfxEvents()` feed `sound.mix` through the sandbox. `sceneStatus` becomes render/ready.
+  5. With no version that loads, the stub stays, a `/notes` entry says why, and the task ends done with `outcome: "fallback"`.
+- **Timing.** Bundles time beats from the script: `S("c05")`, `E("c05")` (or `S(4)` by index) and the scene's window from `SCENES`, never raw seconds. `pap:timeline` exports `CUE_IDS` for this.
+- **Prices.** `scene.code` is priced from the `scene.code` prior (1 call) and `scene.patch` (1 at p50, 5 at p90). It doesn't hold the render slot: each code scene has its own trial sandbox, so code scenes are written side by side.
+- **Every scene check knows them.** `isEndCard` (a code scene's `endCard`; the music bed settles there), a change for the whole video (`planChange`) and its preview, Pip's state lines (`sceneMakeup`: "code (sketch): 0-1 s: …"), `missingAssets` and `lintProject` (a missing bundle, the named assets), `partsOf` (a stub is "still a sketch", not a finished picture), the rights' "leave it out" (drops the asset from `assets`).
+- **Changes.** A note on a code scene (one with a beat) that its words would give the Animator, or the Director for anything but a `story` change, goes to the Scene Coder (`routeIn`, `RouteNote.codeScene`). That covers a gate's notes, a hold's "Tell Pip", Pip's change card and the change preview; `requestChange` re-routes a note that arrives through a router without the document. The redo is `scene.code(s, round + 1)` for that scene only (`addRedo` by `ctx.kindOf`; `changeRevision` keeps the other scenes' work), and Pip's change card prices it from `scene.code` and `scene.patch`. A story change re-boards the scene and the Director writes a new beat.
+- **Studio art.** Studio art cast from another project (`copiedFrom`) adds only a `rights` gate after the animatic (rules `copiedRights`), with no drawing and no cost; scenes that use it wait for it.
 
 ### 1.14 What a person reads (v0.3, after the P5 run)
 

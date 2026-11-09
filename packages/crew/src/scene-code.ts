@@ -1,4 +1,4 @@
-// Code scenes (docs/PIP-ORCHESTRATION.md §1.13): the stub bundle the storyboard writes, the engine API sheet the Scene
+// Code scenes (docs/PIP-ORCHESTRATION.md §1.16): the stub bundle the storyboard writes, the engine API sheet the Scene
 // Coder reads (generated from the exports a bundle really gets, so it can't drift), and the trial render that loads a
 // candidate bundle in the sandbox, probes what it draws and renders its stills, without touching the project.
 import { readFileSync } from "node:fs";

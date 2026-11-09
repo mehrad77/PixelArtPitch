@@ -1,4 +1,4 @@
-// Code scenes in the crew (docs/PIP-ORCHESTRATION.md §1.13): the storyboard can board one (a beat and its assets, a
+// Code scenes in the crew (docs/PIP-ORCHESTRATION.md §1.16): the storyboard can board one (a beat and its assets, a
 // stub bundle), the plan codes it with scene.code in place of a tune, the Scene Coder's handler writes a bundle that
 // loads and renders (repairs, a fallback that keeps the stub, critique rounds that keep the last loading version), and
 // a change on a code scene reaches the coder. Over FakeProvider and the fictional QuestDay example only.

@@ -26,7 +26,10 @@ One line per term. Where a term has a source file, it is named in brackets.
 | **behaviour** | Motion attached to a layer: `walk`, `jumpArc`, `arc`, `bob`, `blink`, `pulse`, `shake`, `squash`, `appear`, `disappear`, `attach`, `dissolve`, `dust`, `sparkle` [`docs/BEHAVIORS.md`]. Some of them emit sounds. |
 | **key** | A keyframe `{ t, v, ease }` on a layer prop or the camera. |
 | **hit-stop** | A short freeze of world motion (about 0.06 s) on a big impact. Recipes add them as `pauses`. |
-| **code bundle** | An ES module in `code/` that draws a whole scene itself. It runs in the render sandbox. It is used only when recipes can't do the job (Scene Coder). |
+| **code bundle** | An ES module in `code/` that draws a whole scene itself. It runs in the render sandbox and may import only `pap:engine` and `pap:timeline`. |
+| **code scene** | A scene the Director boards with a `beat` (what it shows, second by second) and the `assets` it draws, because no recipe draws that picture. The Scene Coder writes its bundle (`code/<scene>.mjs`, task `scene.code`); until then a stub (the night, the title, the assets) stands in. |
+| **beat** | A code scene's choreography in plain words: what is on screen, where and when ("1-3 s: six icons pop in around the card, one every 0.3 s"). |
+| **stub** | The placeholder bundle the storyboard writes for a code scene (`stub: true` in `/code`). It renders, but it isn't a finished picture. |
 | **hold** | The still first frame before anything moves (`composition.hold`, 3 s by default). Render, audio and subtitles are shifted by it. |
 | **end card** | The last scene: product name, call to action and URL, held as a loop for `composition.endHold` seconds. |
 | **dissolve** | The pixel dissolve that opens each scene (`composition.dissolveIn`, 0.3 s). |

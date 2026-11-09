@@ -12,6 +12,19 @@ A recipe is a ready-made beat. Pick one, fill a few params, and the engine draws
 }
 ```
 
+## When a code scene instead
+
+A recipe tells one ready-made beat. When the beat needs its own picture, the Director boards a **code scene** instead: `kind: "code"` with a `beat` (what it shows, second by second) and the `assets` it draws, and the Scene Coder writes it ([roles/scene-coder.md](roles/scene-coder.md)).
+
+| The beat needs | Use |
+|---|---|
+| A walk-in, a bump, a collect, a join, a cheer, a flag, a title, an end card with a URL | a recipe |
+| A diagram (one profile linked to six devices), a map (three weeks on an overworld), something being built, a transformation, a counter (1-2-3) | a code scene |
+| The device's own language (a game's title screen or HUD, a comic's panels, a terminal) | a code scene |
+| A closing card in that language (both logos, PRESS START) | a code scene with `endCard: true` |
+
+Prefer the picture the beat needs over a recipe that only approximates it (a banner standing in for a map).
+
 ## Rules that hold for every recipe
 - **Only required params are needed.** Everything else has a default that fits the scene. Start with `{}` and change one thing at a time.
 - **Times are cue-anchored strings:** `"S(c02)"` (cue start), `"E(c02)+0.3"` (cue end + 0.3 s), `"@land"` (a named event), `"grind.to"` (a scene edge). Never write raw seconds like `2.5`. The `raw-seconds` lint flags them.

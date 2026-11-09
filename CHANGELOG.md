@@ -2,6 +2,19 @@
 
 Each release's section is also its GitHub release notes: the release job in `.github/workflows/ci.yml` publishes the section whose heading matches the tag.
 
+## v0.5.0 (unreleased)
+
+### Code scenes
+- **The Director can board a code scene.** When a beat needs its own picture (a diagram, a map, a build, a transformation, a counter) or the device needs its own language (a game's title screen, HUD or overworld), the scene is `kind: "code"` with a beat, second by second, and the assets it draws. The end card can be one (`endCard: true`). Recipes still tell the beats they fit; the "fewer than 1 in 10" stance is gone.
+- **A stub until it's coded.** The board writes each code scene a stub bundle (the night, its title, its assets), so the animatic and the stills work at once.
+- **The Scene Coder writes it.** A new plan task, `scene.code`, takes the scene's tune's place: it writes the bundle from the beat, loads it in a trial sandbox and repairs it (at most twice) on a load or draw error, text off the frame or in the caption zone, a placeholder box, a slow draw or bad sound events, then critiques it on a 6-frame strip for `reviewRounds` rounds. A round that breaks it is dropped. If nothing loads, the stub stays with a note and the run goes on.
+- **Its prompt can't drift from the engine.** The API sheet is generated from what a bundle really imports, the example bundle is written fresh for PAP, and every beat is timed from the script (`S("c05")`, `E("c05")`), never in raw seconds.
+- **Changes reach the coder.** A note on a code scene goes to the Scene Coder and redoes only that scene's code; a story change still re-boards it.
+- **Everything knows code scenes:** the estimate before the board counts about a third of the scenes as code scenes, the parts call a stub a sketch, Pip names a code scene by its beat, and the music settles at a code end card.
+
+### Studio art
+- Projects can use the studio's private art: another project's likeness or logo is copied in with its flags when a scene uses it, and its rights are still asked.
+
 ## v0.4.0 (unreleased)
 
 ### Parts and versions
