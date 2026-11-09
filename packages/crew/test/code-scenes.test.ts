@@ -502,3 +502,57 @@ test("a counted list: a cue reading three things asks for one code scene whose b
   assert.ok(beatHasSlots("slots(3, { x: 40, y: 60 }) fill on c12, c13, c14", 3));
   assert.ok(!beatHasSlots("the three mentors walk in one by one", 3));
 });
+
+test("a code redo reads the person's note ahead of the old beat, and its critique checks the change too", async () => {
+  const seen: { write?: string; critique?: string } = {};
+  const { crew, p, pt } = await boarded((req) => {
+    if (isWrite(req)) {
+      seen.write = lastText(req);
+      return { json: { code: hubCode(), notes: "a day sky" } };
+    }
+    if (isCritique(req)) {
+      seen.critique = lastText(req);
+      return { json: { code: hubCode(), notes: "ship" } };
+    }
+    return { error: new Error(`unexpected: ${(req.system ?? "").slice(0, 40)}`) };
+  });
+  p.addNote({
+    target: { scene: "hub" },
+    category: "art",
+    text: "it's still night! make it day",
+    assignee: "scene-coder",
+    by: "user",
+  });
+  await (crew as any).sceneCode(p, run(), pt);
+  const w = seen.write ?? "";
+  const change = w.indexOf("The person asked for this change");
+  assert.ok(change >= 0, "the change is in the prompt");
+  assert.ok(change < w.indexOf("The beat (from the Director)"), "ahead of the beat");
+  assert.match(w, /the change wins[\s\S]*- it's still night! make it day/);
+  assert.match(seen.critique ?? "", /it's still night! make it day/);
+  // a re-plan that hands back the same beat for a code scene is told to rewrite it
+  const rb = await crewOn((req) => {
+    if (/The person asked for a change/.test(req.system ?? ""))
+      return {
+        json: { scenes: [{ id: "hub", kind: "code", beat: codeBoard().scenes[1].beat, assets: ["hero", "items"] }] },
+      };
+    return { error: new Error("unexpected") };
+  });
+  const t = (rb.crew as any).task(rb.p, { kind: "director.storyboard", role: "director", title: "board" });
+  await (rb.crew as any).applyBoard(rb.p, t, codeBoard());
+  rb.p.addNote({
+    target: { scene: "hub" },
+    category: "story",
+    text: "make it a castle",
+    assignee: "director",
+    by: "user",
+  });
+  const logs: string[] = [];
+  rb.p.events.on("event", (e: any) => e.event === "log" && logs.push(String(e.data?.text ?? "")));
+  const out = await (rb.crew as any).reboard(rb.p, fakeRun(), ["hub"], { ...boardTask, scenes: ["hub"] });
+  assert.equal(out.outcome, "fallback", "the same beat twice is no change");
+  assert.ok(
+    (rb.p.doc().code.find((c: any) => c.id === "hub") as any).stub,
+    "the hub is still the board's stub, never reset from the old beat",
+  );
+});

@@ -21,6 +21,7 @@ import {
 import { extname, join } from "node:path";
 import { z } from "zod";
 import { PAP_HOME, StoreError } from "./store.ts";
+import { isSvg, rasterizeSvg } from "./svg.ts";
 
 export const DRAFT_ID = /^draft_[a-z0-9]{1,40}$/;
 export const RefTypeZ = z.enum(["likeness", "logo", "style", "as-is", "sound", "voice"]);
@@ -66,7 +67,7 @@ export const publicDraft = (d: StoredDraftT): DraftT => {
 };
 
 export const MAX_REF_BYTES = 20 * 1024 * 1024;
-const IMAGE = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+const IMAGE = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
 const AUDIO = new Set([".wav", ".mp3", ".m4a", ".ogg", ".webm", ".aac", ".flac"]);
 
 /**
@@ -187,6 +188,22 @@ export class DraftStore {
     const name = safeRefName(rawName);
     if (body.byteLength > MAX_REF_BYTES)
       throw new StoreError("too_big", `${name} is over 20 MB`, "send a smaller file (at most 20 MB)", 413);
+    // an SVG is kept as the source; it must draw (the logo import rasterises it to a 512 px PNG)
+    if (extname(name).toLowerCase() === ".svg") {
+      const bad = () =>
+        new StoreError(
+          "bad_image",
+          `${name} isn't an SVG that can be drawn`,
+          "export the logo again as a plain SVG (no scripts or external images) or as a PNG",
+          415,
+        );
+      if (!isSvg(body)) throw bad();
+      try {
+        rasterizeSvg(body, 64);
+      } catch {
+        throw bad();
+      }
+    }
     mkdirSync(join(this.folder(id), "refs"), { recursive: true });
     writeFileSync(join(this.folder(id), "refs", name), body);
     const ref: DraftRefT = {

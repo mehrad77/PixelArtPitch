@@ -56,7 +56,7 @@ import {
 import { CATALOGUE, ROLE_LABEL, stageOf, taskLabel } from "./plan/catalogue.ts";
 import { envOf, estimatePlanTask, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
 import { Executor, type Outcome } from "./plan/executor.ts";
-import { logoIcon } from "./plan/import.ts";
+import { logoFrames } from "./plan/import.ts";
 import { aboutText, type Instance, InstanceTracker } from "./plan/instances.ts";
 import { applyDiff, type PipRevisionResult, pipRevision, planPromptVars } from "./plan/pip.ts";
 import { isCodeScene, routeIn } from "./plan/route.ts";
@@ -4006,6 +4006,12 @@ export class Crew {
           if (sc.kind === "code") {
             if (sc.beat.trim().length < 20)
               issues.push(`${sc.id}: a code scene needs its beat (what it shows, second by second, in plain words)`);
+            // the change rewrites the beat: the same beat would re-code what the person asked to change
+            const was = d.scenes.find((x) => x.id === sc.id);
+            if (was?.kind === "code" && (was.beat ?? "").trim() === sc.beat.trim())
+              issues.push(
+                `${sc.id}: the beat is the same as before; rewrite it for the change (drop what the change replaces, say what it shows now)`,
+              );
             for (const a of sc.assets)
               if (!known.has(a))
                 issues.push(`${sc.id}.assets: "${a}" is not in the asset list (fix: use a listed asset)`);
@@ -4191,23 +4197,31 @@ export class Crew {
           fix: "add the logo file to the project's references again",
         });
       const { colours } = this.palette();
-      const q = logoIcon(readFileSync(path), colours);
+      // an SVG is drawn at 512 px first; a flat background is cleared; icon is 16x16, big 32x32 (the end card's)
+      const q = logoFrames(readFileSync(path), colours);
       const file = {
         id: name,
         version: 1,
         kind: "icon",
         w: 16,
         h: 16,
-        frames: ["icon"],
+        frames: ["icon", "big"],
         palette: "pap-night@1",
-        tags: ["icon"],
-        description: "The person's logo, imported as is (private).",
+        tags: ["icon", "logo"],
+        description: "The person's logo, imported as is (private): icon 16x16, big 32x32 for flags and the end card.",
         licence: "LicenseRef-Private",
         rights: { likeness: false, brand: true, trademark: true, public: false },
-        provenance: { source: "imported", role: "art-director", origin: p.id, ref: pt.fromRef, maxErr: q.maxErr },
+        provenance: {
+          source: "imported",
+          role: "art-director",
+          origin: p.id,
+          ref: pt.fromRef,
+          maxErr: q.maxErr,
+          ...(q.background.cleared ? { backgroundCleared: q.background.cleared } : {}),
+        },
         hash: randomUUID().slice(0, 16),
         standard: null,
-        grid: { icon: q.rows },
+        grid: { icon: q.icon, big: q.big },
       };
       mkdirSync(join(p.dir, "assets"), { recursive: true });
       writeFileSync(join(p.dir, "assets", `${name}.json`), `${JSON.stringify(file, null, 1)}\n`);
@@ -4225,7 +4239,9 @@ export class Crew {
         ],
         { reason: `import the logo as ${name}`, author: { kind: "agent", role: "art-director", task: t.id } },
       );
-      this.done(p, t, { summary: `${name}: 16x16 icon, private (colour error ${q.meanErr.toFixed(3)})` });
+      this.done(p, t, {
+        summary: `${name}: 16x16 icon and 32x32 big, private (colour error ${q.meanErr.toFixed(3)}${q.background.cleared ? ", background cleared" : ""})`,
+      });
     } catch (e) {
       this.failTask(p, t, e);
       throw e;
@@ -4901,6 +4917,16 @@ export class Crew {
         duration: tl.duration.toFixed(2),
         role: s.endCard ? "It is the end card: it holds to the end of the video while the music plays out." : "",
         beat: s.beat?.trim() || s.title || "(no beat: show the scene's cues as pictures)",
+        // the person's change comes ahead of the beat and wins where they differ (P7: "it's still night!" was
+        // re-coded from the old "Night sky…" beat and checked as "clearly night")
+        change: [...notes.filter((n) => n.by === "user"), ...asks].length
+          ? `The person asked for this change. Do it: where it and the beat below disagree, the change wins, and drop what it replaces from the beat.\n${[
+              ...notes.filter((n) => n.by === "user"),
+              ...asks,
+            ]
+              .map((n) => `- ${n.text}`)
+              .join("\n")}\n\n`
+          : "",
         cues: cueLines(lp, s.cues).join("\n") || "(none)",
         assets: assetLines(lp, names).join("\n") || "(none: draw with shapes and text)",
         palette: this.palette().table,
@@ -4978,7 +5004,8 @@ export class Crew {
               scene: s.id,
               from: vars.from,
               to: vars.to,
-              beat: vars.beat,
+              // the critique checks the change too, not only the old beat
+              beat: `${vars.change}${vars.beat}`,
               times,
               lints: good.trial.warnings.length ? `Lint warnings:\n- ${good.trial.warnings.join("\n- ")}` : "",
               code: good.code,

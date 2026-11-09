@@ -163,3 +163,61 @@ export function framesToSheet(frames: string[][], colours: Record<string, string
   });
   return { w: W, h, data };
 }
+
+export type FlatBackground = { cleared: number; colour: [number, number, number] | null; skipped?: string };
+
+/**
+ * Turn a flat background into transparency (an imported logo on a white or coloured square): when at least `share`
+ * of the image's border pixels are one colour (within OKLab ΔE `deltaE`, in ΔE×100 units), flood-fill that colour in
+ * from the border and clear it. A border that isn't one colour means the logo's own shape reaches the edge (a
+ * full-bleed badge), so nothing is cleared. Changes `img` in place.
+ */
+export function clearFlatBackground(img: RGBA, o: { deltaE?: number; share?: number } = {}): FlatBackground {
+  const { w, h, data } = img;
+  const lim = (o.deltaE ?? 8) / 100;
+  const border: number[] = [];
+  for (let x = 0; x < w; x++) border.push(x, (h - 1) * w + x);
+  for (let y = 1; y < h - 1; y++) border.push(y * w, y * w + w - 1);
+  const opaque = border.filter((i) => data[i * 4 + 3] >= 128);
+  if (opaque.length < border.length * 0.5) return { cleared: 0, colour: null, skipped: "the border is already clear" };
+  // the border's commonest colour (by 16-level buckets), then its average as the background
+  const buckets = new Map<number, number[]>();
+  for (const i of opaque) {
+    const k = ((data[i * 4] >> 4) << 8) | ((data[i * 4 + 1] >> 4) << 4) | (data[i * 4 + 2] >> 4);
+    const b = buckets.get(k);
+    if (b) b.push(i);
+    else buckets.set(k, [i]);
+  }
+  const top = [...buckets.values()].reduce((a, b) => (b.length > a.length ? b : a));
+  const avg = [0, 1, 2].map((c) => Math.round(top.reduce((s, i) => s + data[i * 4 + c], 0) / top.length)) as [
+    number,
+    number,
+    number,
+  ];
+  const bg = oklab(...avg);
+  const near = (i: number) => {
+    if (data[i * 4 + 3] < 128) return false;
+    const p = oklab(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]);
+    return Math.hypot(p[0] - bg[0], p[1] - bg[1], p[2] - bg[2]) < lim;
+  };
+  const flat = opaque.filter(near).length;
+  if (flat < border.length * (o.share ?? 0.9))
+    return { cleared: 0, colour: avg, skipped: "the logo's shape reaches the edge" };
+  const seen = new Uint8Array(w * h);
+  const stack = border.filter(near);
+  for (const i of stack) seen[i] = 1;
+  let cleared = 0;
+  while (stack.length) {
+    const i = stack.pop()!;
+    data[i * 4 + 3] = 0;
+    cleared++;
+    const x = i % w;
+    const y = (i - x) / w;
+    for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1])
+      if (j >= 0 && !seen[j]) {
+        seen[j] = 1;
+        if (near(j)) stack.push(j);
+      }
+  }
+  return { cleared, colour: avg };
+}

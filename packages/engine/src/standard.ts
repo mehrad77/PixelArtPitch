@@ -178,11 +178,15 @@ export function checkAsset(input: unknown, palette: StdPalette): StdResult {
     );
   // grid shape and legend
   for (const [f, rows] of Object.entries(a.grid)) {
-    if (rows.length !== a.h)
-      add("grid", `${rows.length} rows, expected ${a.h}`, `make every frame exactly ${a.h} rows`, f);
+    // an icon or logo may carry a "big" frame at twice its size (an imported logo's 32x32, for flags and end cards)
+    const big = f === "big" && (a.kind === "icon" || a.kind === "logo");
+    const fh = big ? a.h * 2 : a.h;
+    const fw = big ? a.w * 2 : a.w;
+    if (rows.length !== fh)
+      add("grid", `${rows.length} rows, expected ${fh}`, `make every frame exactly ${fh} rows`, f);
     rows.forEach((r, y) => {
-      if (r.length !== a.w)
-        add("grid", `row ${y} has ${r.length} cells, expected ${a.w}`, `make every row exactly ${a.w} cells`, f);
+      if (r.length !== fw)
+        add("grid", `row ${y} has ${r.length} cells, expected ${fw}`, `make every row exactly ${fw} cells`, f);
       const bad = new Set([...r].filter((ch) => ch !== "." && !palette.colours[ch]));
       if (r.includes("#")) add("legend", `row ${y} uses "#"`, 'never use "#"; "." is transparent', f);
       bad.delete("#");

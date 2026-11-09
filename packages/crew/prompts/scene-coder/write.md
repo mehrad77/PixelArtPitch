@@ -47,7 +47,7 @@ Return the whole module in `code`, and one line in `notes` on what it draws.
 The brief: {{brief}}
 
 Scene "{{scene}}" ("{{title}}"), {{from}}-{{to}} s of a {{duration}} s video. {{role}}
-The beat (from the Director):
+{{change}}The beat (from the Director):
 {{beat}}
 
 Its cues (the captions the host draws; time against them):

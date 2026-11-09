@@ -85,6 +85,7 @@ Loops are named `name0, name1, …` (`flag0 flag1`, `cheer0 cheer1`).
 | `version` | Integer ≥ 1. Bump it on any pixel change; projects pin `lib:<id>@<version>`. |
 | `description` | What it shows, the letters it uses, and the anchor ("feet on the bottom row"). It is used for search. |
 | `facing` | Characters and creatures: `"right"` or `"left"`, the way the art looks (its run frames). Drawn heroes are `"right"`, the library NPCs `"left"`. The engine mirrors the sprite to face its walk. Absent, a "facing left/right" in the description counts, else `"left"`. |
+| `grid` | Every frame is `w`×`h`, except an icon's or logo's `big` frame, which is 2w×2h (an imported logo's 32×32 beside its 16×16 `icon`). |
 | `tags` | 3–7 search words. `npc` changes the required frames, and `hero` adds the face-right check. |
 | `provenance.source` | `generated`, `drawn` (by a human), `imported` or `derived` |
 | `provenance.sourceAssets` | Every asset this one was built from (for kitbash and edits). Required when `source` is `derived`. |

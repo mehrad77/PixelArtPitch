@@ -8,9 +8,10 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@pap/schema": "workspace:*",
     "@pap/engine": "workspace:*",
     "@pap/render": "workspace:*",
+    "@pap/schema": "workspace:*",
+    "@resvg/resvg-js": "^2.6.2",
     "zod": "^4.6.7"
   }
 }

@@ -1,8 +1,10 @@
 // asset.import (docs/PIP-ORCHESTRATION.md §1.1, RIGHTS.md §3): a logo the person supplied is quantized to the palette as
-// a 16x16 icon, never drawn by a model. A small PNG reader (8-bit greyscale, RGB, palette or RGBA, not interlaced) and a
-// box downscale; other formats come back with a fix.
+// a 16x16 icon and a 32x32 big frame, never drawn by a model. An SVG is rasterised to a 512 px PNG first, and a flat
+// background (a white square) is cleared before quantizing. A small PNG reader (8-bit greyscale, RGB, palette or
+// RGBA, not interlaced) and a box downscale; other formats come back with a fix.
 import { inflateSync } from "node:zlib";
-import { quantize } from "@pap/engine/quantize";
+import { clearFlatBackground, quantize } from "@pap/engine/quantize";
+import { isSvg, rasterizeSvg } from "@pap/tools/svg";
 
 export type Rgba = { w: number; h: number; data: Uint8Array };
 
@@ -131,8 +133,39 @@ export function boxDownscale(img: Rgba, size: number): Rgba {
   return { w: size, h: size, data };
 }
 
-/** a logo PNG -> a 16x16 icon's letter rows in the palette */
+/** a reference's pixels as a PNG: the file itself, or an SVG rasterised to 512 px (vision and the import read this) */
+export function refPng(bytes: Uint8Array): Uint8Array {
+  if (!isSvg(bytes)) return bytes;
+  try {
+    return rasterizeSvg(bytes);
+  } catch (e: any) {
+    throw fail(
+      `the SVG could not be drawn: ${String(e?.message ?? e).slice(0, 120)}`,
+      "export the logo again as a plain SVG (no scripts or external images) or as a PNG",
+    );
+  }
+}
+
+/**
+ * A logo file (PNG or SVG) -> its frames in the palette: `icon` 16x16 and `big` 32x32, both downscaled from the full
+ * image (the 512 px raster for an SVG, never an upscale of the icon), after its flat background is cleared.
+ */
+export function logoFrames(file: Uint8Array, colours: Record<string, string>) {
+  const img = decodePng(refPng(file));
+  const background = clearFlatBackground(img);
+  const icon = quantize(boxDownscale(img, 16), colours);
+  const big = quantize(boxDownscale(img, 32), colours);
+  return {
+    icon: icon.rows,
+    big: big.rows,
+    maxErr: Math.max(icon.maxErr, big.maxErr),
+    meanErr: icon.meanErr,
+    background,
+  };
+}
+
+/** a logo file -> a 16x16 icon's letter rows in the palette */
 export function logoIcon(png: Uint8Array, colours: Record<string, string>) {
-  const small = boxDownscale(decodePng(png), 16);
-  return quantize(small, colours);
+  const f = logoFrames(png, colours);
+  return { rows: f.icon, maxErr: f.maxErr, meanErr: f.meanErr };
 }

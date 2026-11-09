@@ -30,7 +30,7 @@ A private asset lives in a project's `assets/` folder. Its ref says `"flags": { 
 
 ## 3. Logos and trademarks
 
-- Never draw a real logo or a platform's mark from memory. The user supplies the file, and it is quantized to the palette.
+- Never draw a real logo or a platform's mark from memory. The user supplies the file (PNG or SVG), and it is quantized to the palette: a flat background (a white square) is cleared first, and the import makes a 16×16 `icon` and a 32×32 `big` frame (for `flag()` and the end card).
 - Use generic stand-ins in public art: "a generic gamepad (no brand)", "a smartphone", "a tower PC".
 - A spec, description, tag or file name of a public asset never names a real brand, product or person.
 - Before using any likeness or brand asset in a video, the user must confirm it. This is always the user's call.

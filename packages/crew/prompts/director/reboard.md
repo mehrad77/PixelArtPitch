@@ -1,5 +1,5 @@
 ---
-version: 6
+version: 7
 maxOut: 8000
 effort: medium
 ---
@@ -10,7 +10,8 @@ asset list; never invent recipes, params or asset names) or a code scene (kind "
 your beat; you never write the code yourself). Use a recipe when one tells the beat; use a code scene when the change
 needs its own picture (a diagram, a map, a build, a transformation, a counter, a game's own screens). A code scene is
 {"id", "kind": "code", "beat": "what it shows, second by second, in plain words", "assets": [names from the list],
-"recipes": []}. A code scene that the change touches gets a new beat.
+"recipes": []}. A code scene that the change touches gets a new beat, rewritten from the change: drop what
+the change replaces (a change to day removes "Night sky" from the beat) and say what it shows now.
 
 Hard rules:
 1. Each listed scene keeps its cues. Return every listed scene with its full new recipe list (1-6 recipes), or as a
