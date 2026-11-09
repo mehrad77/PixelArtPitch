@@ -361,3 +361,46 @@ test("a change that changes nothing says so: no re-plan claimed, the note stays 
   assert.match(card.result.text, /^Nothing was changed: the crew left scene 1 as it was\. Your note stays open/);
   assert.doesNotMatch(card.result.text, /re-planned|Approximated/);
 });
+
+test("the Reviewer checks the change it was asked for: an unchanged cut is never 'ship'", async () => {
+  const reviews: string[] = [];
+  let changing = false;
+  const { crew, p } = await crewOn((req) => {
+    const sys = req.system ?? "";
+    if (/festival judge/.test(sys) && changing) {
+      const m = req.messages.at(-1)!;
+      reviews.push(typeof m.content === "string" ? m.content : m.content.map((c: any) => c.text ?? "").join("\n"));
+      return {
+        json: {
+          verdict: "ship",
+          summary: "ready to ship",
+          blockers: [],
+          polish: [],
+          change: { done: "no", why: "the hero is the same size" },
+        },
+      };
+    }
+    return tuneAndShip(req);
+  });
+  await crew.run(p, {});
+  changing = true;
+  const reports: any[] = [];
+  crew.onRunEnd = (_p, r) => reports.push(r);
+  const note = p.addNote({
+    target: { scene: "grind" },
+    category: "art",
+    text: "make the hero bigger",
+    assignee: "animator",
+    by: "user",
+  });
+  crew.requestChange(p, note);
+  await wait(() => reports.length > 0 && !crew.status(p).crew.running);
+  assert.ok(reviews.length >= 1);
+  assert.match(reviews[0], /The change the person asked for in this run[\s\S]*- grind: make the hero bigger/);
+  const blocker = p.state.notes.find((n) => n.by === "reviewer" && /The change isn't in the cut yet/.test(n.text));
+  assert.ok(blocker, "the unchanged cut became a blocker");
+  assert.equal(blocker!.target.scene, "grind");
+  assert.match(blocker!.text, /make the hero bigger \(the hero is the same size\)/);
+  const review = [...p.state.tasks].reverse().find((t) => t.kind === "review.final");
+  assert.match(review?.summary ?? "", /^fix:/, "the verdict is fix, not ship");
+});

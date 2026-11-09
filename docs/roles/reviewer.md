@@ -26,7 +26,8 @@ Three passes:
 3. For each scene: `render_still` at start + 0.8 s, middle and end − 0.5 s, at `scale: 3`.
 4. Go through the checklist for the pass (REVIEW-RUBRICS §3, §4 or §5). Look for the 3 seeded blockers every time: clipped text, a prop on a head, an icon that reads as something else.
 5. Write each finding as one `note_add`: the target scene and time range, the category, and text in the form "t=<s>: <what>. Fix: <how>." Start the text with `BLOCKER:` or `POLISH:`.
-6. Final pass: return `{ verdict, blockers, polish }`. Say `ship` only with zero blockers.
+6. After a person's change, check the change first. The prompt lists it. Answer `change: { done: "yes" | "partly" | "no", why }` from what you see, for example `{ "done": "no", "why": "scenes 2 and 4 still have a night sky" }`. A change the cut doesn't show is a blocker on each scene that should show it.
+7. Final pass: return `{ verdict, blockers, polish, change? }`. Say `ship` only with zero blockers. Never say `ship` when `change.done` isn't `yes`: the crew turns it into `fix`, with a blocker "The change isn't in the cut yet" on each changed scene that has none.
 
 ## Stop conditions
 - Every scene has been looked at and every finding is a note. Then stop; don't re-review the same render.

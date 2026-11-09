@@ -140,6 +140,8 @@ export const ReviewOut = z.object({
     .array(z.object({ t: z.number(), scene: z.string(), issue: z.string().max(300), fix: z.string().max(300) }))
     .max(12),
   polish: z.array(z.object({ t: z.number(), scene: z.string(), issue: z.string().max(300) })).max(12),
+  /** after a person's change: does the cut now do it? (absent: no change was asked, or a weak model left it out) */
+  change: z.object({ done: z.enum(["yes", "partly", "no"]), why: z.string().max(300).default("") }).optional(),
 });
 
 export type PlanOutT = z.infer<typeof PlanOut>;

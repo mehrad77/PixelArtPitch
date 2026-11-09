@@ -5230,6 +5230,11 @@ export class Crew {
       ...this.ptOf(pt),
     });
     let rev: ReviewOutT;
+    // the person's change in this run: the Reviewer must say whether the cut now does it (P7: "ready to ship" on an
+    // unchanged cut)
+    const asks = (r.change?.notes ?? [])
+      .map((id) => p.state.notes.find((n) => n.id === id))
+      .filter((n): n is Note => !!n && n.by === "user");
     try {
       const d = p.doc();
       const tl = p.timeline();
@@ -5251,12 +5256,44 @@ export class Crew {
               : d.brief.idea,
             cues: tl.cues.map((c) => `${c.id} ${c.start.toFixed(1)}-${c.end.toFixed(1)}s: ${c.text}`).join(" | "),
             scenes: tl.scenes.map((s) => `${s.id} ${s.from.toFixed(1)}-${s.to.toFixed(1)}s`).join(", "),
+            change: asks.length
+              ? `The change the person asked for in this run (answer "change": does the cut now do it?):\n${asks.map((n) => `- ${n.target.scene ? `${n.target.scene}: ` : ""}${n.text}`).join("\n")}\n`
+              : "",
           },
           schema: ReviewOut,
           images: [{ caption: "Contact sheet:", data: sheet }, ...stills],
           model: this.modelOf(p, pt),
         })
       ).data;
+      // a change the cut doesn't do is never "ship": a blocker on each scene it should be in that has none
+      if (asks.length && rev.change && rev.change.done !== "yes") {
+        const scenes = [
+          ...new Set(
+            asks.flatMap((n) => (n.target.scene ? [n.target.scene] : [...(r.scope ?? d.scenes.map((x) => x.id))])),
+          ),
+        ].filter((id) => d.scenes.some((x) => x.id === id) && !rev.blockers.some((b) => b.scene === id));
+        const w = tl.scenes;
+        rev = {
+          ...rev,
+          verdict: "fix",
+          blockers: [
+            ...rev.blockers,
+            ...scenes.map((id) => {
+              const sw = w.find((x) => x.id === id);
+              return {
+                t: sw ? +((sw.from + sw.to) / 2).toFixed(1) : 0,
+                scene: id,
+                issue:
+                  `The change isn't in the cut yet: ${cutWords(asks.map((n) => n.text).join("; "), 140)}${rev.change?.why ? ` (${cutWords(rev.change.why, 120)})` : ""}.`.slice(
+                    0,
+                    300,
+                  ),
+                fix: `Do the change: ${cutWords(asks.map((n) => n.text).join("; "), 200)}`.slice(0, 300),
+              };
+            }),
+          ].slice(0, 12),
+        };
+      }
       // the report says the verdict: "Found 6 problems in scenes 2 and 4.", or "The cut is ready to ship."
       this.reports.set(t.id, { status: "done", did: reviewVerdict(rev, (id) => sceneWord(p, id)) });
       this.done(p, t, { summary: `${rev.verdict}: ${rev.summary}` });
