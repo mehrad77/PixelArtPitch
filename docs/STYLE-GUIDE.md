@@ -28,6 +28,23 @@ The source of truth is `library/palettes/pap-night.json`. `.` is transparent. Ne
 | Hair | `H h j` straw, `n` umber, `c` chestnut, `A a` black-brown | Hair, wood (`c n`) |
 | Cloth and colour | `M m` mint, `D d L` denim, `X x` teal, `C E` turquoise, `Q` sky blue, `U` violet-blue, `I` indigo, `R` wine, `r` red, `V` violet | Clothes, screens (`C E`), hearts (`r R`), P2 (`Q`) |
 
+### Dusk and day (`pap-dusk@1`, `pap-day@1`)
+
+A video is set at night unless `canvas.time` says `"dusk"` or `"day"`; the palette follows it. Both palettes keep **every** `pap-night` letter and hex, so all art works unchanged, and add seven letters of their own:
+
+| Letter | Day | Dusk | Use |
+|---|---|---|---|
+| `b` | `#3f86cf` | `#2a2a55` | sky top |
+| `i` | `#64a2da` | `#4a3a6a` | the sky (the palette's `sky`) |
+| `o` | `#a9d3f0` | `#e8895a` | sky at the horizon |
+| `u` `v` | `#f4f6f2` `#c9d6e0` | `#f2a98a` `#8a4d6e` | cloud and its shade |
+| `y` `t` | `#ffe27a` `#ffc94a` | `#ffb347` `#f2733f` | sun core and rim |
+
+- By day: a blue ramp, a small sun high up, slow clouds, unlit windows, no stars, no moon and no lamp or lantern glow.
+- At dusk: an indigo-to-amber ramp, a big low sun, the first faint stars and only some windows lit.
+- Code scenes draw the sky for `TIME` with `skyGradient()`, `sun()`, `clouds(t)` and `stars(t)`; never a hard-coded night. A beat says "the sky" unless the brief asks for night.
+- The sprite check measures edges against the project's own sky; the library passes on all three.
+
 Rules:
 - Each colour group has a light, a mid and a dark tone. Shade with the darker tone of the same group, never with black.
 - Use 3–5 tones per object. More than that looks noisy at 1×.

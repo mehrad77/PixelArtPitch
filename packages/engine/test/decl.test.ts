@@ -166,7 +166,7 @@ test("an actor without run frames still walks (idle frames with a bob) and flips
 });
 
 test("the sandbox import graph is pure: no zod, no value imports from the schema, no eval or Math.random", () => {
-  const files = ["decl.ts", "decl-spec.ts", "decl-check.ts", "recipes.ts", "core.ts"];
+  const files = ["decl.ts", "decl-spec.ts", "decl-check.ts", "recipes.ts", "core.ts", "kit.ts"];
   for (const f of files) {
     const src = readFileSync(join(ROOT, "packages/engine/src", f), "utf8");
     for (const m of src.matchAll(/^import\s+(type\s+)?[^;]*?from\s+"([^"]+)"/gms)) {

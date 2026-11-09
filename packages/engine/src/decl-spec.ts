@@ -124,6 +124,11 @@ export const KIND_SPECS: Record<string, Spec> = {
       "night: sky band, stars, moon and skyline; plain: flat sky colour; rooftop: the night sky over a slate roof whose ridge is the feet line (y=148)",
     ),
     sky: colour(null, "sky colour (default: the palette sky)"),
+    time: {
+      t: "enum",
+      of: ["night", "dusk", "day"],
+      doc: "this backdrop's time of day (default: the video's canvas.time): day is a blue sky, a sun, clouds and unlit windows; dusk an amber-to-violet ramp, a low sun, the first stars and a few lit windows",
+    },
     band: bool(true, "a soft lighter band near the horizon"),
     stars: int(70, "number of twinkling stars", 0, 200),
     moon: bool(true, "draw the moon asset"),

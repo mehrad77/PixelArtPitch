@@ -47,6 +47,164 @@ export type SlotsOpts = {
 export type Slot = { i: number; x: number; y: number; w: number; h: number; on: boolean };
 
 const has = (fr: Record<string, Rows> | null, n: string) => !!fr && Array.isArray(fr[n]);
+
+// ---------------------------------------------------------------- the sky for the time of day
+/** the feet line: skies are painted down to it, the ground covers the rest */
+const HORIZON = 148;
+/** the day and dusk palettes' own sky letters (pap-day / pap-dusk), as hexes so any palette can draw them */
+export const SKY_TONES = {
+  day: {
+    top: "#3f86cf",
+    mid: "#64a2da",
+    low: "#a9d3f0",
+    cloud: "#f4f6f2",
+    shade: "#c9d6e0",
+    sun: "#ffe27a",
+    rim: "#ffc94a",
+  },
+  dusk: {
+    top: "#2a2a55",
+    mid: "#4a3a6a",
+    low: "#e8895a",
+    cloud: "#f2a98a",
+    shade: "#8a4d6e",
+    sun: "#ffb347",
+    rim: "#f2733f",
+  },
+} as const;
+/** [from y, colour] bands of each sky, top down; two rows of checker dither join each pair */
+const BANDS: Record<"day" | "dusk", [number, string][]> = {
+  day: [
+    [0, SKY_TONES.day.top],
+    [44, SKY_TONES.day.mid],
+    [104, SKY_TONES.day.low],
+  ],
+  dusk: [
+    [0, SKY_TONES.dusk.top],
+    [48, SKY_TONES.dusk.mid],
+    [100, SKY_TONES.dusk.shade],
+    [124, SKY_TONES.dusk.low],
+  ],
+};
+const mod = (v: number, n: number) => ((v % n) + n) % n;
+
+const SKYLINE_TONES: Record<"day" | "dusk", Record<string, Record<string, string>>> = {
+  // by day the city is lit grey-blue stone with dark, unlit windows
+  day: {
+    far: { l: "w", e: "W", K: "q", k: "q", B: "q", O: "q", T: "q" },
+    near: { K: "Y", l: "p", k: "e", B: "F", O: "F", T: "F" },
+  },
+  // at dusk the silhouettes stay dark and only some windows are lit
+  dusk: { far: { O: "l", T: "l" }, near: { O: "K", T: "K" } },
+};
+const skylineCache = new WeakMap<Rows, Map<string, Rows>>();
+/** a skyline layer's rows recoloured for the time of day (night: as drawn) */
+export function skylineFor(rows: Rows, layer: string, time: string): Rows {
+  if (time !== "day" && time !== "dusk") return rows;
+  const key = `${time}:${layer}`;
+  let byKey = skylineCache.get(rows);
+  if (!byKey) skylineCache.set(rows, (byKey = new Map()));
+  const hit = byKey.get(key);
+  if (hit) return hit;
+  const map = SKYLINE_TONES[time][layer === "near" ? "near" : "far"];
+  const out = rows.map((r, j) =>
+    [...r]
+      .map((c, i) => {
+        // dusk: two windows in three stay dark (the body tone around them)
+        if (time === "dusk" && c === "B" && hash(j * 131 + i) < 0.66) return layer === "near" ? "K" : "l";
+        return map[c] ?? c;
+      })
+      .join(""),
+  );
+  byKey.set(key, out);
+  return out;
+}
+const hash = (i: number) => {
+  let s = (i * 2654435761) >>> 0;
+  s ^= s >>> 13;
+  s = Math.imul(s, 1274126177) >>> 0;
+  return (s >>> 0) / 4294967296;
+};
+
+/**
+ * The whole frame's sky for `time`: night is the palette sky with a soft lighter band near the horizon; dusk an
+ * indigo-to-amber ramp; day a deep-to-pale blue ramp. Bands are whole colours joined by a checker row (pixel art,
+ * never a smooth blend).
+ */
+export function drawSky(e: Engine, time: string, o: { band?: boolean } = {}) {
+  e.clear();
+  if (time !== "day" && time !== "dusk") {
+    if (o.band !== false && e.RGB.l)
+      for (let y = 70; y < HORIZON; y++) e.rect(0, y, e.W, 1, "l", ((y - 70) / (HORIZON - 70)) * 0.35);
+    return;
+  }
+  const bands = BANDS[time];
+  bands.forEach(([y0, c], i) => {
+    const y1 = bands[i + 1]?.[0] ?? e.H;
+    e.rect(0, y0, e.W, y1 - y0, c);
+    const next = bands[i + 1]?.[1];
+    // the join: every 4th pixel of the next colour two rows up, every 2nd one row up
+    if (next) {
+      for (let x = 0; x < e.W; x += 4) e.rect(x, y1 - 2, 1, 1, next);
+      for (let x = 1; x < e.W; x += 2) e.rect(x, y1 - 1, 1, 1, next);
+    }
+  });
+}
+
+/** the sun: by day a small disc high up, at dusk a big low one sinking into the horizon; nothing at night */
+export function drawSun(e: Engine, time: string, x?: number, y?: number) {
+  if (time !== "day" && time !== "dusk") return;
+  const day = time === "day";
+  const tone = SKY_TONES[time];
+  const cx = Math.round(x ?? 264);
+  const cy = Math.round(y ?? (day ? 30 : 114));
+  const r = day ? 8 : 13;
+  for (let j = -r - 2; j <= r + 2; j++)
+    for (let i = -r - 2; i <= r + 2; i++) {
+      const d = Math.hypot(i, j);
+      if (cy + j >= HORIZON) continue;
+      if (d <= r - 1) e.rect(cx + i, cy + j, 1, 1, tone.sun);
+      else if (d <= r + 0.5) e.rect(cx + i, cy + j, 1, 1, tone.rim);
+      else if (d <= r + 2 && day && (i + j) % 2 === 0) e.rect(cx + i, cy + j, 1, 1, tone.sun, 0.35);
+    }
+}
+
+/** slow clouds drifting right (day: white with a blue-grey underside; dusk: peach lit with plum); none at night */
+export function drawClouds(e: Engine, time: string, t: number, cam = 0) {
+  if (time !== "day" && time !== "dusk") return;
+  const tone = SKY_TONES[time];
+  const n = time === "day" ? 5 : 3;
+  for (let k = 0; k < n; k++) {
+    const w = 24 + Math.floor(hash(k * 7 + 1) * 28);
+    const y = 12 + Math.floor(hash(k * 7 + 2) * (time === "day" ? 60 : 50));
+    const x = Math.round(mod(hash(k * 7 + 3) * 420 + t * (2 + k * 0.5) - cam * 0.03, 420)) - 50;
+    // a flat-bottomed puff: a body, two bumps on top, the shade along the bottom
+    e.rect(x, y + 4, w, 5, tone.cloud);
+    e.rect(x + 4, y + 1, Math.floor(w * 0.4), 4, tone.cloud);
+    e.rect(x + Math.floor(w * 0.45), y - 1, Math.floor(w * 0.35), 6, tone.cloud);
+    e.rect(x + 1, y + 8, w - 2, 2, tone.shade);
+  }
+}
+
+/** stars that twinkle: many at night, a few faint ones high up at dusk, none by day */
+export function drawStars(e: Engine, time: string, t: number, cam = 0, n = 70) {
+  if (time === "day") return;
+  const dusk = time === "dusk";
+  const count = dusk ? Math.min(n, 14) : n;
+  const P = e.RGB.P ? "P" : Object.keys(e.RGB)[0];
+  for (let i = 0; i < count; i++) {
+    const x = Math.floor(mod(hash(i) * 420 - cam * 0.05, 420)) - 50;
+    const y = Math.floor(hash(i + 99) * (dusk ? 46 : 110));
+    const tw = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * (1 + hash(i + 7) * 3) + i));
+    e.rect(x, y, 1, 1, P, dusk ? tw * 0.6 : tw);
+    if (!dusk && hash(i + 3) < 0.12) {
+      e.rect(x - 1, y, 1, 1, P, tw * 0.4);
+      e.rect(x + 1, y, 1, 1, P, tw * 0.4);
+      e.rect(x, y - 1, 1, 1, P, tw * 0.4);
+      e.rect(x, y + 1, 1, 1, P, tw * 0.4);
+    }
+  }
+}
 const cycle = (fr: Record<string, Rows> | null, base: string) =>
   [0, 1, 2, 3].map((i) => `${base}${i}`).filter((n) => has(fr, n));
 
@@ -159,7 +317,19 @@ export function createKit(e: Engine) {
     return out;
   }
 
-  return { walk, flag, slots };
+  return {
+    walk,
+    flag,
+    slots,
+    /** the sky for TIME over the whole frame: call it first in draw(t), in place of clear() */
+    skyGradient: () => drawSky(e, e.TIME),
+    /** the sun at x, y (default: high by day, low and big at dusk; nothing at night) */
+    sun: (x?: number, y?: number) => drawSun(e, e.TIME, x, y),
+    /** slow drifting clouds by day and dusk, at t */
+    clouds: (t: number) => drawClouds(e, e.TIME, t),
+    /** twinkling stars at night (a few at dusk, none by day), at t */
+    stars: (t: number) => drawStars(e, e.TIME, t),
+  };
 }
 export type Kit = ReturnType<typeof createKit>;
 

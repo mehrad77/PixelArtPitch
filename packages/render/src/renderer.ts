@@ -23,6 +23,7 @@ export function initMessage(p: LoadedProject): InitMsg {
     cmd: "init",
     colours: p.palette.colours,
     sky: p.palette.sky,
+    time: p.doc.canvas.time ?? "night",
     assets: p.assets,
     facing: p.facing ?? {},
     fontAssets: usesFont ? ["font"] : undefined,

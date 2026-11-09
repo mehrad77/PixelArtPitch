@@ -35,20 +35,22 @@ export function sceneMakeup(
 export const isStub = (doc: Pick<ProjectT, "scenes" | "code">, sceneId: string) => !!crewBundle(doc, sceneId)?.stub;
 
 /**
- * The stub a code scene starts with: the night sky with a few stars, the ground, its title and the assets it names
+ * The stub a code scene starts with: the sky for the video's time of day, the ground, its title and the assets it names
  * standing on the ground (only those the project has, so there is never a placeholder box). Deterministic, and the
  * same for the same scene. The Scene Coder replaces it.
  */
 export function stubSource(s: { id: string; title: string; assets: string[] }) {
-  return `// The storyboard's sketch of scene "${s.id}": the night, its title and its assets. The Scene Coder replaces it.
-import { asset, clear, px, rect, rnd, RGB, sprite, text } from "pap:engine";
+  return `// The storyboard's sketch of scene "${s.id}": the sky, its title and its assets. The Scene Coder replaces it.
+import { asset, clouds, rect, skyGradient, sprite, stars, sun, text } from "pap:engine";
 
 const TITLE = ${JSON.stringify(s.title.slice(0, 40))};
 const ASSETS = ${JSON.stringify(s.assets.slice(0, 8))};
 
 export function draw(t) {
-  clear();
-  for (let i = 0; i < 40; i++) px(Math.floor(rnd(i * 2 + 1) * 320), Math.floor(rnd(i * 2 + 2) * 120), RGB.q);
+  skyGradient();
+  sun();
+  clouds(t);
+  stars(t);
   rect(0, 148, 320, 32, "K");
   rect(0, 148, 320, 1, "l");
   text(TITLE, 160, 24, { align: "center", colour: "T" });
@@ -71,8 +73,9 @@ export const ENGINE_DOC: Record<(typeof ENGINE_EXPORTS)[number], string> = {
   buf: "the frame: a Uint8Array of 320*180*3 RGB bytes (rarely needed: draw with the functions below)",
   COLOURS: 'palette letter -> "#rrggbb"',
   RGB: "palette letter -> [r, g, b]; px() takes these triples (RGB.P), not letters",
-  SKY: 'the night sky "#0f1411"; clear() paints it',
-  clear: "paint the whole frame one colour (default the sky); call it first in every draw(t)",
+  SKY: 'the palette\'s sky colour (night "#0f1411", dusk "#4a3a6a", day "#64a2da"); clear() paints it',
+  TIME: 'the video\'s time of day, "night" | "dusk" | "day" (canvas.time): draw the sky for it, never a hard-coded night',
+  clear: "paint the whole frame one colour (default the sky); skyGradient() is the usual first call instead",
   px: "one pixel; c is an RGB triple such as RGB.P (a letter here writes black), a is 0..1",
   rect: 'a filled rectangle; c is a palette letter ("K") or "#rrggbb", a is 0..1',
   box: "a 1 px rectangle outline in colour c",
@@ -94,6 +97,11 @@ export const ENGINE_DOC: Record<(typeof ENGINE_EXPORTS)[number], string> = {
   rnd: "deterministic noise in 0..1 from an integer i (the only randomness allowed)",
   walk: "a character walking: walk(id, { x0, x1, y = 148, t0, t1, t, fps = 8, scale, face }) draws idle before t0 and after t1 and run0-run3 between, one step per 32/fps px so the feet never slide, turned to face its travel; x is the feet centre; returns { x, frame, facing, box }. Every walk, run or stroll is walk(): never hand-roll a run cycle or flip by hand",
   flag: "a flag flying a logo: flag(id, { x, y = 148, pole = 96, t, up = 1 }) draws the pole at x, a green cloth the logo's big frame plus 8 px with a 1 px light ring, its tail rippling; up 0..1 raises it (prog(t, a, b)); returns the cloth box. A castle or goal-flag finale flies the product's logo with it",
+  skyGradient:
+    "paint the whole frame with the sky for TIME (night: dark with a soft horizon band; dusk: indigo to amber; day: deep to pale blue); call it first in every draw(t)",
+  sun: "the sun at x, y (defaults: high and small by day, big and low into the horizon at dusk; nothing at night)",
+  clouds: "slow drifting clouds at t, by day and dusk (nothing at night)",
+  stars: "twinkling stars at t: many at night, a few high up at dusk, none by day",
   slots:
     "numbered slots for a counted list: slots(n, { x, y, w = 48, h = 40, gap = 8, filled, t }) draws n panels in a row numbered 1..n, green once filled; filled is a count or the time each slot fills (a 0.3 s flash); returns [{ i, x, y, w, h, on }] to draw each item inside",
 };

@@ -9,12 +9,32 @@ export const Id = z
 /** "E(c03)+0.1", "min(140, E(c17)+32)", "@join_land", or a plain number of seconds where a lint allows it */
 export const TimeExpr = z.union([z.string().min(1).max(200), z.number()]);
 
+export const TimeOfDay = z.enum(["night", "dusk", "day"]);
+export type TimeOfDayT = z.infer<typeof TimeOfDay>;
 export const Canvas = z.object({
   w: z.literal(320),
   h: z.literal(180),
   fps: z.literal(30),
   palette: z.string().default("pap-night@1"),
+  /** the time of day the video is set in (absent: night); the palette follows it (paletteFor) */
+  time: TimeOfDay.optional(),
 });
+
+/** the built-in palette of each time of day; they share every pap-night letter and hex */
+export const TIME_PALETTES: Record<TimeOfDayT, string> = {
+  night: "pap-night@1",
+  dusk: "pap-dusk@1",
+  day: "pap-day@1",
+};
+/**
+ * The palette a canvas renders with: a built-in pap-night/dusk/day palette follows `time` (so a "make it day" that
+ * sets only the time still turns the sky), any other palette is kept as it is.
+ */
+export function paletteFor(canvas: { palette?: string; time?: TimeOfDayT }): string {
+  const p = canvas.palette ?? "pap-night@1";
+  if (!canvas.time) return p;
+  return Object.values(TIME_PALETTES).includes(p) ? TIME_PALETTES[canvas.time] : p;
+}
 
 export const Brief = z.object({
   idea: z.string().min(1).max(4000),

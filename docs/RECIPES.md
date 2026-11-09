@@ -33,7 +33,7 @@ Prefer the picture the beat needs over a recipe that only approximates it (a ban
 - **One hero per character:** `walk_in`, `item_collect`, `flag_raise` and `end_card_loop` reuse an actor an earlier recipe in the scene drew with the same asset (it walks on, collects, cheers) instead of drawing a twin. Pass `"second": true` to draw another copy on purpose.
 - **Text fits:** banners wrap to two lines or drop a scale, toasts widen, `fit` titles wrap; what still does not fit ends in "...". Typographic dashes, quotes, ellipses and non-breaking spaces are drawn as their plain ASCII glyphs.
 - **Layer ids** are `<recipe id>_<part>` (`walk_in_hero`, `block_bump_block`). A recipe used twice in one scene gets `walk_in2_hero`.
-- **Default backdrop:** a scene with no backdrop gets the night sky, ground, lamp and bush automatically. Use `backdrop_night` to change them.
+- **Default backdrop:** a scene with no backdrop gets the sky for the video's time of day (`canvas.time`: night, dusk or day), ground, lamp and bush automatically. Use `backdrop_night` to change them.
 - **Asset slots** (`hero`, `crowd`, `items`...) are asset ids from the project's `assets`. Some recipes also draw fixed ids (`castle`, `moon`, `skyline`, `tiles`); the crew casts those from the library after the storyboard. The `missing-asset` lint names the `cast_asset` call and library source to add, e.g. `{ "id": "hero", "src": "lib:mentor-ai@1" }`.
 - **Art direction:** the asset's `facing` field says which way its art looks (drawn heroes right, library NPCs left), and every recipe turns the character to face where it walks. `faces` overrides it; leave it out.
 - **Screen layout:** 320×180 px. The ground top is y=148. Captions sit below y=146, so keep words above that.
@@ -43,13 +43,14 @@ The menu, in order of use: [backdrop_night](#backdrop_night) · [backdrop_roofto
 ---
 
 ## backdrop_night
-Night sky with twinkling stars, a moon, a two-row parallax skyline, ground tiles, a lamp and a bush. Add it only when you want to change the default backdrop.
+The sky for the video's time of day (`canvas.time`), a two-row parallax skyline, ground tiles, a lamp and a bush. Night: twinkling stars and the moon. Dusk: an indigo-to-amber ramp, a low sun, a few faint stars, lit clouds and only some windows lit. Day: a deep-to-pale blue ramp, a sun, slow clouds, unlit windows, no stars and no lamp glow. Add it only when you want to change the default backdrop.
 **Slots:** `moon`, `skyline`, `tiles`, `props` (fixed ids). **Anchors:** none. **SFX:** none.
 
 | param | type | default | range | what |
 |---|---|---|---|---|
-| stars | int | 70 | 0–200 | how many stars |
-| moon | bool | true | | draw the moon |
+| sky | auto/night/dusk/day | auto | | this scene's time of day; `auto` follows the video's `canvas.time` |
+| stars | int | 70 | 0–200 | how many stars (at dusk at most 14; none by day) |
+| moon | bool | true | | draw the moon (night only) |
 | skyline | bool | true | | draw the skyline |
 | ground | bool | true | | draw the ground tiles |
 | decor | list | lamp at 24, bush at 290 | | `[{ "frame", "x", "glow"? }]`: a street prop (`lamp`, `bush`, `signpost`) or a small prop (`lantern`, `candle`, `campfire`, `book`, `book-open`, `rock`, `tree-stump`, from `props-small`); `"glow": true` lights a small prop with the [`glow`](BEHAVIORS.md#glow) fx |
@@ -62,13 +63,14 @@ A lit lantern on the street: `{ "frame": "lantern", "x": 60, "glow": true }`.
 **Mistakes:** putting decor where a character stops (it hides them); `gaps` wider than a jump; `glow` on a lamp, bush or signpost (only a small prop glows: an error names them).
 
 ## backdrop_rooftop
-The city from up high: the night sky with stars and the moon, the skyline lower than from the street, and a slate roof whose ridge is the ground line (y=148), with brick chimneys. Characters stand on the ridge with no other changes. Light comes from the upper left: the ridge caps, the slates and the chimney bricks are lit on their top and left edges and dark on their right and bottom edges. Use it instead of `backdrop_night` (not with it): a scene with this backdrop gets no street tiles, lamp or bush.
+The city from up high: the sky for the video's time of day (as `backdrop_night`'s), the skyline lower than from the street, and a slate roof whose ridge is the ground line (y=148), with brick chimneys. Characters stand on the ridge with no other changes. Light comes from the upper left: the ridge caps, the slates and the chimney bricks are lit on their top and left edges and dark on their right and bottom edges. Use it instead of `backdrop_night` (not with it): a scene with this backdrop gets no street tiles, lamp or bush.
 **Slots:** `moon`, `skyline` (fixed ids), `props` (only with `decor`). **Anchors:** none. **SFX:** none.
 
 | param | type | default | range | what |
 |---|---|---|---|---|
-| stars | int | 70 | 0–200 | how many stars |
-| moon | bool | true | | draw the moon |
+| sky | auto/night/dusk/day | auto | | this scene's time of day; `auto` follows the video's `canvas.time` |
+| stars | int | 70 | 0–200 | how many stars (at dusk at most 14; none by day) |
+| moon | bool | true | | draw the moon (night only) |
 | skyline | bool | true | | draw the skyline beyond the roof |
 | chimneys | list | [252] | | world x of each chimney's left edge; each is 14 px wide and 22 px tall, its top at y=126. `[]` for none |
 | decor | list | [] | | props on the roof: `[{ "frame": "lantern" \| "candle" \| "signpost", "x": 136, "glow"?: true }]`; a lit lantern is `{ "frame": "lantern", "x": 136, "glow": true }` (the lantern from `props-small`, with the [`glow`](BEHAVIORS.md#glow) fx round its flame) |

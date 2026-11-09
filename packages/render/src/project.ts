@@ -9,6 +9,7 @@ import {
   type FacingT,
   Project,
   type ProjectT,
+  paletteFor,
   resolveTimeline,
   type Timeline,
 } from "@pap/schema";
@@ -102,7 +103,7 @@ export function loadProject(dir: string): LoadedProject {
 
 export function openDoc(dir: string, doc: ProjectT): LoadedProject {
   const timeline = resolveTimeline(doc);
-  const palette = loadPalette(doc.canvas.palette);
+  const palette = loadPalette(paletteFor(doc.canvas));
   const assets = resolveAssets(dir, doc);
   const about = resolveAbout(dir, doc);
   const facing = facingMap(about);

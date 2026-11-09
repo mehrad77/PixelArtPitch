@@ -124,6 +124,13 @@ const second: RParam = {
 };
 
 const asset = (d: string, lib: string, doc: string): RParam => ({ t: "str", d, lib, doc });
+/** a backdrop's time of day: auto follows the video's canvas.time */
+const SKY_PARAM: RParam = {
+  t: "enum",
+  of: ["auto", "night", "dusk", "day"],
+  d: "auto",
+  doc: "the sky's time of day: auto follows the video (canvas.time); day is a blue sky, sun and clouds, dusk an amber ramp, a low sun and the first stars",
+};
 /** an override of the asset's own facing (its asset.json says which way it looks) */
 const FACES: RParam = {
   t: "enum",
@@ -229,11 +236,13 @@ export const RECIPES: Recipe[] = [
   {
     id: "backdrop_night",
     title: "Night backdrop",
-    description: "Night sky with twinkling stars, moon, parallax skyline, ground tiles and a lamp and a bush.",
+    description:
+      "The sky for the video's time of day (night: twinkling stars and the moon; dusk: an amber ramp, a low sun, the first stars; day: blue, a sun and clouds), parallax skyline, ground tiles and a lamp and a bush.",
     minDurationSec: 0,
     anchors: [],
     sfx: [],
     params: {
+      sky: SKY_PARAM,
       stars: { t: "int", d: 70, min: 0, max: 200, doc: "how many stars" },
       moon: { t: "bool", d: true, doc: "draw the moon" },
       skyline: { t: "bool", d: true, doc: "draw the city skyline" },
@@ -251,7 +260,12 @@ export const RECIPES: Recipe[] = [
     },
     expand(p, h) {
       const layers: LayerT[] = [
-        L(h.id("sky"), "backdrop", { stars: p.stars, moon: p.moon, skyline: p.skyline }, { z: -100, space: "screen" }),
+        L(
+          h.id("sky"),
+          "backdrop",
+          { stars: p.stars, moon: p.moon, skyline: p.skyline, ...(p.sky !== "auto" ? { time: p.sky } : {}) },
+          { z: -100, space: "screen" },
+        ),
       ];
       if (p.ground) layers.push(L(h.id("ground"), "tiled", { gaps: p.gaps }, { z: -50 }));
       layers.push(...decorLayers(p, h, '{ "frame": "lamp", "x": 24 }'));
@@ -262,11 +276,12 @@ export const RECIPES: Recipe[] = [
     id: "backdrop_rooftop",
     title: "Rooftop backdrop",
     description:
-      "The night sky over the city from up high: stars, moon, a lower skyline and a slate roof whose ridge is the ground line, with brick chimneys.",
+      "The sky over the city from up high (night, dusk or day, as the video's), a lower skyline and a slate roof whose ridge is the ground line, with brick chimneys.",
     minDurationSec: 0,
     anchors: [],
     sfx: [],
     params: {
+      sky: SKY_PARAM,
       stars: { t: "int", d: 70, min: 0, max: 200, doc: "how many stars" },
       moon: { t: "bool", d: true, doc: "draw the moon" },
       skyline: { t: "bool", d: true, doc: "draw the city skyline beyond the roof" },
@@ -288,7 +303,14 @@ export const RECIPES: Recipe[] = [
         L(
           h.id("sky"),
           "backdrop",
-          { style: "rooftop", stars: p.stars, moon: p.moon, skyline: p.skyline, chimneys: p.chimneys },
+          {
+            style: "rooftop",
+            stars: p.stars,
+            moon: p.moon,
+            skyline: p.skyline,
+            chimneys: p.chimneys,
+            ...(p.sky !== "auto" ? { time: p.sky } : {}),
+          },
           { z: -100, space: "screen" },
         ),
       ];

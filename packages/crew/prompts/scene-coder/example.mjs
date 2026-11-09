@@ -1,8 +1,24 @@
 // Example code scene "quest" (the fictional QuestDay pitch): the hero walks in from the left while three stars drop
 // into a row above, one per beat, and a 0-3 counter in the corner counts them. Cue c02 carries the scene.
 // Every time comes from the script (S/E of a cue, the scene's window), never a raw second, so a re-timed script
-// moves the beats with it.
-import { asset, clamp, clear, ease, frame, prog, px, RGB, rect, rnd, sprite, step, text, walk } from "pap:engine";
+// moves the beats with it. The sky is drawn for TIME (night, dusk or day), never a hard-coded night.
+import {
+  asset,
+  clamp,
+  clouds,
+  ease,
+  frame,
+  prog,
+  rect,
+  skyGradient,
+  sprite,
+  stars,
+  step,
+  sun,
+  TIME,
+  text,
+  walk,
+} from "pap:engine";
 import { E, S, SCENES } from "pap:timeline";
 
 const ID = "quest";
@@ -16,13 +32,15 @@ const GAP = (E("c02") - T0) / 3.5;
 const LANDS = [0, 1, 2].map((i) => T0 + i * GAP);
 
 // what never changes is worked out once, at load time (draw must stay well under 250 ms)
-const DOTS = Array.from({ length: 36 }, (_, i) => [Math.floor(rnd(i * 3 + 1) * 320), Math.floor(rnd(i * 3 + 2) * 110)]);
 const TILES = asset("tiles") ? [frame("tiles", "ground-top"), frame("tiles", "ground")] : null;
 
 function backdrop(t) {
-  clear();
-  for (const [i, [x, y]] of DOTS.entries()) if ((Math.floor(t * 2) + i) % 9) px(x, y, RGB.q);
-  if (asset("moon")) sprite(frame("moon", "moon"), 268, 14);
+  // the sky for the video's time of day: stars and the moon at night, the sun and clouds by day, a low sun at dusk
+  skyGradient();
+  stars(t);
+  sun();
+  clouds(t);
+  if (TIME === "night" && asset("moon")) sprite(frame("moon", "moon"), 268, 14);
   if (TILES)
     for (let x = 0; x < 320; x += 16) {
       sprite(TILES[0], x, GROUND);

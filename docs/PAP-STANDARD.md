@@ -23,7 +23,7 @@ The checker is `checkAsset()` in `packages/engine/src/standard.ts`. Per-kind tem
 | `feet` | Characters: the bottom row is not empty, except in frames named `jump…` or `fall…` | Move the figure down |
 | `orphans` | No opaque cell with all 8 neighbours transparent (fonts are exempt) | Remove or connect the pixel |
 | `swap` | Characters and creatures: idle0 → idle1, each run or move step, and perch0 → perch1 repaint ≤ 50% of the opaque cells | Change less between loop frames |
-| `contrast` | Kinds drawn on the sky (character, creature, crowd, prop, icon, block, decor, logo): ≥ 40% of the silhouette's edge ring reaches 1.7:1 against `#0f1411`, on every frame | Lighten the ring just inside the outline |
+| `contrast` | Kinds drawn on the sky (character, creature, crowd, prop, icon, block, decor, logo): ≥ 40% of the silhouette's edge ring reaches 1.7:1 against the project's sky (`#0f1411` at night, `#4a3a6a` at dusk, `#64a2da` by day), on every frame | Lighten the ring just inside the outline |
 | `rights` | `licence` is not empty, and `provenance` is not empty | Fill both (§5) |
 
 The edge ring is the first ring of non-ink cells next to transparency or ink. Ink means any colour under 1.25:1 against the sky, such as `k`.

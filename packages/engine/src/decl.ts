@@ -20,6 +20,7 @@ import {
   WIDGET_SPECS,
   walkPlan,
 } from "./decl-spec.ts";
+import { drawClouds, drawSky, drawStars, drawSun, skylineFor } from "./kit.ts";
 import { expandRecipe, RECIPE_MAP, RECIPES, type RecipeOut } from "./recipes.ts";
 
 export { type At, checkSpec, DeclError, type DeclIssue, timeOf } from "./decl-check.ts";
@@ -911,17 +912,20 @@ function starfield(e: Engine, t: number, cam: number, n: number) {
 /** the rooftop backdrop: the night sky, a lower skyline and a slate roof whose ridge is the feet line, with brick
  * chimneys. Every cell is a palette letter (the sky band aside); light comes from the upper left, so top and left
  * edges take the lighter tone and right and bottom edges the darker one. */
-function rooftopBackdrop(e: Engine, p: Record<string, any>, t: number, camX: number) {
-  if (p.band && e.RGB.l) for (let y = 70; y < GROUND; y++) e.rect(0, y, e.W, 1, "l", ((y - 70) / (GROUND - 70)) * 0.35);
-  starfield(e, t, camX, p.stars);
-  if (p.moon && e.asset("moon")) e.sprite(e.frame("moon", "moon", [24, 24]), p.moonX - camX * 0.02, p.moonY);
+function rooftopBackdrop(e: Engine, p: Record<string, any>, t: number, camX: number, time = "night") {
+  if (time === "night") {
+    if (p.band && e.RGB.l)
+      for (let y = 70; y < GROUND; y++) e.rect(0, y, e.W, 1, "l", ((y - 70) / (GROUND - 70)) * 0.35);
+    starfield(e, t, camX, p.stars);
+    if (p.moon && e.asset("moon")) e.sprite(e.frame("moon", "moon", [24, 24]), p.moonX - camX * 0.02, p.moonY);
+  } else daySky(e, p, t, camX, time);
   // the city sits lower than from the street: we look across it from a roof
   if (p.skyline && e.asset("skyline"))
     for (const [layer, par, y] of [
       ["far", 0.15, GROUND - 40],
       ["near", 0.4, GROUND - 28],
     ] as const) {
-      const rows = e.frame("skyline", layer, [96, 40]);
+      const rows = skylineFor(e.frame("skyline", layer, [96, 40]), layer, time);
       const w = rows[0]?.length || 96;
       const off = mod(camX * par, w);
       for (let x = -off; x < e.W; x += w) e.sprite(rows, x, y);
@@ -983,6 +987,14 @@ function rooftopBackdrop(e: Engine, p: Record<string, any>, t: number, camX: num
     }
     for (let i = 3; i < 11; i++) e.px(x0 + i, top - 1, c(i === 3 ? "e" : "k"));
   }
+}
+
+/** a dusk or day sky behind a backdrop: the ramp, the sun, the clouds and (at dusk) the first stars; no moon */
+function daySky(e: Engine, p: Record<string, any>, t: number, camX: number, time: string) {
+  drawSky(e, time);
+  drawSun(e, time, 262 - camX * 0.02);
+  drawClouds(e, time, t, camX);
+  drawStars(e, time, t, camX, p.stars);
 }
 
 const CHECK = ["......T", ".....TT", "T...TT.", "TT.TT..", ".TTT...", "..T...."];
@@ -1065,21 +1077,26 @@ function drawLayer(e: Engine, l: CLayer, env: Env, ox: number, oy: number, am: n
     case "backdrop": {
       if (rec) break;
       e.clear(p.sky ?? e.SKY);
+      // the scene's own time (a backdrop's sky param) or the video's (canvas.time)
+      const time: string = p.time ?? e.TIME;
       if (p.style === "rooftop") {
-        rooftopBackdrop(e, p, t, env.camX);
+        rooftopBackdrop(e, p, t, env.camX, time);
         break;
       }
       if (p.style !== "night") break;
-      if (p.band && e.RGB.l)
-        for (let y = 70; y < GROUND; y++) e.rect(0, y, e.W, 1, "l", ((y - 70) / (GROUND - 70)) * 0.35);
-      starfield(e, t, env.camX, p.stars);
-      if (p.moon && e.asset("moon")) e.sprite(e.frame("moon", "moon", [24, 24]), p.moonX - env.camX * 0.02, p.moonY);
+      if (time !== "night") daySky(e, p, t, env.camX, time);
+      else {
+        if (p.band && e.RGB.l)
+          for (let y = 70; y < GROUND; y++) e.rect(0, y, e.W, 1, "l", ((y - 70) / (GROUND - 70)) * 0.35);
+        starfield(e, t, env.camX, p.stars);
+        if (p.moon && e.asset("moon")) e.sprite(e.frame("moon", "moon", [24, 24]), p.moonX - env.camX * 0.02, p.moonY);
+      }
       if (p.skyline && e.asset("skyline"))
         for (const [layer, par, y] of [
           ["far", 0.15, GROUND - 52],
           ["near", 0.4, GROUND - 40],
         ] as const) {
-          const rows = e.frame("skyline", layer, [96, 40]);
+          const rows = skylineFor(e.frame("skyline", layer, [96, 40]), layer, time);
           const w = rows[0]?.length || 96;
           const off = mod(env.camX * par, w);
           for (let x = -off; x < e.W; x += w) e.sprite(rows, x, y);
@@ -1371,7 +1388,8 @@ function drawFx(e: Engine, l: CLayer, env: Env, x: number, y: number) {
       break;
     }
     case "glow": {
-      if (t < at) break;
+      // a lamp or a lantern doesn't glow in daylight
+      if (t < at || e.TIME === "day") break;
       const tones = ((p.tones as string[] | undefined)?.length ? p.tones : ["A", "n", "c", "H"]) as string[];
       const rgb = tones.map((k) => e.RGB[col(e, k)]);
       const breath = p.pulse ? Math.round(p.pulse * Math.sin(((t - at) / (p.period ?? 2)) * Math.PI * 2)) : 0;

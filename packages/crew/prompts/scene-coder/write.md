@@ -19,8 +19,9 @@ The sandbox rules (a bundle that breaks one does not load):
    Never a raw second such as t > 12.4: the script gets re-timed and the scene must move with it.
 
 The look (STYLE-GUIDE):
-- Start every draw(t) with clear() (the night sky) and paint the whole scene: the host draws captions and the
-  dissolve over your frame.
+- Start every draw(t) with skyGradient() and paint the whole scene: the host draws captions and the dissolve over
+  your frame. Draw the sky for TIME ("night" | "dusk" | "day"): stars(t) and the moon at night, sun() and clouds(t)
+  by day, sun() low with a few stars at dusk. Never hard-code a night sky; the beat's "the sky" means TIME's sky.
 - Whole pixels only: round every position (step(x) or Math.round). Sprites keep their size; scale is a whole number.
 - Palette letters only, from the table below ("P" paper for text, "B" brass for titles, "T" green, "O" orange in tiny
   doses). rect, box, panel, text and sprite take letters; px takes RGB triples (RGB.P), never a letter.

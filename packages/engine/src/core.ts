@@ -12,8 +12,10 @@ export const hexToRgb = (h: string): RGBT => [1, 3, 5].map((i) => Number.parseIn
 export type EngineInit = {
   /** letter -> "#rrggbb" */
   colours: Record<string, string>;
-  /** the night sky the sprites stand on */
+  /** the sky the sprites stand on (the palette's) */
   sky: string;
+  /** the time of day (canvas.time, default night): backdrops and a bundle's TIME follow it */
+  time?: "night" | "dusk" | "day";
   /** asset name -> frames (letter grids), already resolved with any frame aliases */
   assets: Map<string, Frames | null>;
   /** asset name -> which way its art looks (characters and creatures that say; others are taken to look left) */
@@ -33,6 +35,7 @@ export function createEngine(init: EngineInit) {
   const COLOURS = { ...init.colours };
   const RGB: Record<string, RGBT> = Object.fromEntries(Object.entries(COLOURS).map(([k, h]) => [k, hexToRgb(h)]));
   const SKY = init.sky;
+  const TIME: "night" | "dusk" | "day" = init.time === "day" || init.time === "dusk" ? init.time : "night";
 
   const rgbOf = (c: Colour): RGBT => (Array.isArray(c) ? c : c.length === 1 ? RGB[c] : hexToRgb(c));
 
@@ -238,6 +241,7 @@ export function createEngine(init: EngineInit) {
     COLOURS,
     RGB,
     SKY,
+    TIME,
     rgbOf,
     clear,
     px,
@@ -347,6 +351,7 @@ export const ENGINE_EXPORTS = [
   "COLOURS",
   "RGB",
   "SKY",
+  "TIME",
   "clear",
   "px",
   "rect",
@@ -369,4 +374,8 @@ export const ENGINE_EXPORTS = [
   "walk",
   "flag",
   "slots",
+  "skyGradient",
+  "sun",
+  "clouds",
+  "stars",
 ] as const;

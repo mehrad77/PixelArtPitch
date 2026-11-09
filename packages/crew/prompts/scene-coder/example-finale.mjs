@@ -1,7 +1,7 @@
 // Example code scene "finale" (the fictional QuestDay pitch), the end card: the hero walks up to the goal, the
 // product's logo flies up the pole with flag(), and the final hold shows the logo, PRESS START and the URL together,
 // from the last cue to the end (never the URL alone after the last cue).
-import { clear, flag, prog, rect, text, walk } from "pap:engine";
+import { flag, prog, rect, skyGradient, sun, text, walk } from "pap:engine";
 import { DURATION, E, S, SCENES } from "pap:timeline";
 
 const SC = SCENES.find((s) => s.id === "finale");
@@ -9,7 +9,8 @@ const GROUND = 148;
 const RAISE = [S("c04"), S("c04") + 1.2];
 
 export function draw(t) {
-  clear();
+  skyGradient();
+  sun();
   rect(0, GROUND, 320, 32, "K");
   rect(0, GROUND, 320, 1, "l");
   // the hero walks to the foot of the pole as the cue starts, then watches the flag go up

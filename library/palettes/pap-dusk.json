@@ -1,0 +1,209 @@
+{
+ "id": "pap-dusk",
+ "version": 1,
+ "sky": "#4a3a6a",
+ "transparent": ".",
+ "note": "Dusk palette: every pap-night letter and hex unchanged (all art works as is), a sunset sky and seven letters of its own for the sky ramp, lit clouds and the low sun.",
+ "colours": {
+  "k": {
+   "hex": "#090c0a",
+   "use": "ink: outlines, deepest shadow"
+  },
+  "K": {
+   "hex": "#161d18",
+   "use": "ink-3: the night ground/background tone"
+  },
+  "l": {
+   "hex": "#24302a",
+   "use": "line: dark green-grey"
+  },
+  "e": {
+   "hex": "#3c463f",
+   "use": "limb: mid dark grey-green"
+  },
+  "P": {
+   "hex": "#e6e4da",
+   "use": "paper: off-white highlight, text"
+  },
+  "p": {
+   "hex": "#9a9d93",
+   "use": "paper-dim: light grey"
+  },
+  "q": {
+   "hex": "#666b63",
+   "use": "paper-off: mid grey"
+  },
+  "g": {
+   "hex": "#1f5a3d",
+   "use": "accent: dark green"
+  },
+  "G": {
+   "hex": "#2c7a53",
+   "use": "accent-strong: green"
+  },
+  "T": {
+   "hex": "#6cbf8e",
+   "use": "accent-text: light green"
+  },
+  "O": {
+   "hex": "#ff6b3d",
+   "use": "signal: orange highlight (tiny doses)"
+  },
+  "B": {
+   "hex": "#d6a642",
+   "use": "brass: gold / yellow"
+  },
+  "S": {
+   "hex": "#e0a985",
+   "use": "skin light"
+  },
+  "s": {
+   "hex": "#b9805f",
+   "use": "skin shade"
+  },
+  "z": {
+   "hex": "#8a5a42",
+   "use": "skin deep shade"
+  },
+  "H": {
+   "hex": "#d8d68f",
+   "use": "straw: blond hair light"
+  },
+  "h": {
+   "hex": "#a3a35a",
+   "use": "straw shade"
+  },
+  "j": {
+   "hex": "#7a7a3c",
+   "use": "straw deep"
+  },
+  "n": {
+   "hex": "#5c4030",
+   "use": "umber: dark brown"
+  },
+  "c": {
+   "hex": "#9a5a2c",
+   "use": "chestnut: brown"
+  },
+  "A": {
+   "hex": "#2a211c",
+   "use": "black-brown hair"
+  },
+  "a": {
+   "hex": "#4a3a30",
+   "use": "dark hair highlight"
+  },
+  "M": {
+   "hex": "#b8e6d2",
+   "use": "mint"
+  },
+  "m": {
+   "hex": "#8fc4ae",
+   "use": "mint shade"
+  },
+  "D": {
+   "hex": "#4a6fae",
+   "use": "denim"
+  },
+  "d": {
+   "hex": "#304f86",
+   "use": "denim shade"
+  },
+  "L": {
+   "hex": "#7aa0dc",
+   "use": "denim light"
+  },
+  "W": {
+   "hex": "#c9c6bc",
+   "use": "light grey"
+  },
+  "w": {
+   "hex": "#96938a",
+   "use": "light grey shade"
+  },
+  "X": {
+   "hex": "#2f8a90",
+   "use": "teal"
+  },
+  "x": {
+   "hex": "#1f5f66",
+   "use": "teal shade"
+  },
+  "F": {
+   "hex": "#2a2f33",
+   "use": "near-black (lit)"
+  },
+  "f": {
+   "hex": "#1a1d20",
+   "use": "near-black shade"
+  },
+  "C": {
+   "hex": "#4fbfcf",
+   "use": "turquoise"
+  },
+  "E": {
+   "hex": "#86d8e2",
+   "use": "pale turquoise"
+  },
+  "Q": {
+   "hex": "#a3e0ff",
+   "use": "light sky blue"
+  },
+  "U": {
+   "hex": "#5b4fd0",
+   "use": "ultramarine / violet-blue"
+  },
+  "I": {
+   "hex": "#2c3f8a",
+   "use": "indigo"
+  },
+  "N": {
+   "hex": "#1b2240",
+   "use": "navy"
+  },
+  "Y": {
+   "hex": "#4a5563",
+   "use": "slate grey"
+  },
+  "R": {
+   "hex": "#8e2f4a",
+   "use": "wine red"
+  },
+  "r": {
+   "hex": "#d9475a",
+   "use": "bright red (hearts)"
+  },
+  "V": {
+   "hex": "#b996e6",
+   "use": "violet"
+  },
+  "b": {
+   "hex": "#2a2a55",
+   "use": "dusk sky top: indigo"
+  },
+  "i": {
+   "hex": "#4a3a6a",
+   "use": "dusk sky: violet (the sky)"
+  },
+  "o": {
+   "hex": "#e8895a",
+   "use": "dusk horizon: amber"
+  },
+  "u": {
+   "hex": "#f2a98a",
+   "use": "cloud lit by the sunset: peach"
+  },
+  "v": {
+   "hex": "#8a4d6e",
+   "use": "cloud shade: plum"
+  },
+  "y": {
+   "hex": "#ffb347",
+   "use": "low sun core: orange"
+  },
+  "t": {
+   "hex": "#f2733f",
+   "use": "low sun rim: red-orange"
+  }
+ }
+}

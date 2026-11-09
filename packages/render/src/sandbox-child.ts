@@ -15,6 +15,8 @@ export type InitMsg = {
   cmd: "init";
   colours: Record<string, string>;
   sky: string;
+  /** the video's time of day (canvas.time): backdrops and TIME follow it */
+  time?: "night" | "dusk" | "day";
   assets: [string, Frames][];
   /** asset id -> which way its art looks (only the assets that say) */
   facing?: Record<string, "left" | "right">;
@@ -173,6 +175,7 @@ process.on("message", async (m: Msg) => {
       engine = createEngine({
         colours: m.colours,
         sky: m.sky,
+        time: m.time,
         assets: new Map(m.assets),
         facing: m.facing,
         fontAssets: m.fontAssets,

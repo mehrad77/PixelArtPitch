@@ -1,7 +1,7 @@
 // Example code scene "three" (the fictional QuestDay pitch): a counted list. The script says "QuestDay gives you
 // three things:" and gives each thing its own cue (c02, c03, c04), so the scene is three numbered slots that fill one
 // per cue with that thing's icon, while the hero stands beside them and turns to look at each new one.
-import { asset, clear, frame, rect, slots, sprite, text, walk } from "pap:engine";
+import { asset, frame, rect, skyGradient, slots, sprite, text, walk } from "pap:engine";
 import { S, SCENES } from "pap:timeline";
 
 const SC = SCENES.find((s) => s.id === "three");
@@ -16,7 +16,7 @@ const ICONS = [
 const ROW = { x: 76, y: 52, w: 48, h: 44, gap: 12 };
 
 export function draw(t) {
-  clear();
+  skyGradient();
   rect(0, GROUND, 320, 32, "K");
   rect(0, GROUND, 320, 1, "l");
   // the title holds over the row for the whole scene: one short text, above it
