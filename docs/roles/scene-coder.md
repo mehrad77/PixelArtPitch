@@ -1,13 +1,15 @@
 # Scene Coder
 
-**Purpose:** Write a code bundle for a scene that no recipe can express. **Escalation only**: the Producer calls you after the Animator and the Director agree that recipes can't do it.
+**Purpose:** Write the code bundle for a code scene: a scene the Director boarded as `kind: "code"` with a beat, because no recipe draws the picture it needs.
 Read first: [STYLE-GUIDE.md](../STYLE-GUIDE.md), [RECIPES.md](../RECIPES.md) (to be sure no recipe fits), `packages/engine/src/core.ts` (the engine API a bundle may import).
 
 ## When it runs
-- Only when a note says "needs Scene Coder: …" and the Producer approves it. Expect this in fewer than 1 in 10 scenes.
+- The plan task `scene.code`, one per code scene, after the animatic and the new art the scene uses (in place of the Animator's `scene.tune`).
+- Again as a redo (round 2 or 3) when the Reviewer or the person sends a note on a code scene: the note comes to you.
 
 ## Inputs
-- `project_get` `scene:<id>` and `all`, `timeline_get`, the note that escalated it, the assets' frame names (`library_get`), `render_still`.
+- The brief, the scene's `beat`, its cues with their `S()`/`E()` times, its `assets` with frame names and sizes, the palette letters, the engine API sheet (generated from `pap:engine` and `pap:timeline`), one example bundle, the sandbox rules, and the open notes on the scene.
+- Over MCP: `project_get` `scene:<id>` and `all`, `timeline_get`, `library_get`, `render_still`.
 
 ## Outputs (patch scope and tools)
 - Scope: one file `code/<bundle>.mjs`, one entry in `/code`, and that scene's `kind: "code"` and `bundle`. Or `/scenes/<k>/layers` for a hand-placed layer fix.
@@ -26,12 +28,13 @@ Read first: [STYLE-GUIDE.md](../STYLE-GUIDE.md), [RECIPES.md](../RECIPES.md) (to
 - Optional exports: `init(asset)` (with `initAsset`), and `sfxEvents()` returning `[{ t, type }]` (set `sfx: true`).
 
 ## How to work
-1. Confirm in the note what exactly no recipe can do. If a recipe plus a few layers can, use `scene_set_layers` instead and stop.
-2. Write the smallest bundle: `export function draw(t) { … }` for the scene window only.
+1. Read the beat. Draw what it says, where and when it says.
+2. Write the smallest bundle: `export function draw(t) { … }` for the scene window only. Time every beat from the script: `S("c05")`, `E("c05")` or the scene's window (`SCENES.find((s) => s.id === "<id>")`), never a raw second.
 3. Keep the style rules: palette letters only, one text, the caption zone clear (the host draws captions unless `fullFrame` is set; prefer `fullFrame: false`).
 4. Derive SFX from the same constants as the motion, in `sfxEvents()`.
 5. Register it: add `{ "id", "file": "code/<id>.mjs", "fullFrame": false, "sfx": true }` to `/code`, and set the scene to `{ "kind": "code", "bundle": "<id>" }`.
-6. Render stills at the start, middle and end, and fix what you see.
+6. The crew loads it in a trial sandbox, probes 12 frames and renders stills at the start, middle and end. A load or draw error, text off the frame or in the caption zone, a placeholder box (an asset or frame the project lacks), a draw over 150 ms or bad `sfxEvents()` comes back as a repair, at most 2 rounds. Then `reviewRounds` critique rounds on a 6-frame strip: return the whole revised module, or the same one with "ship" in `notes`. A round that breaks loading is dropped.
+7. If no version loads, the stub stays and a note says so; the run goes on.
 
 ## Stop conditions
 - The scene renders without a sandbox error, the stills pass REVIEW-RUBRICS §3, and the golden test still passes if the project has one.
@@ -55,7 +58,8 @@ Read first: [STYLE-GUIDE.md](../STYLE-GUIDE.md), [RECIPES.md](../RECIPES.md) (to
 ```
 
 ## Common mistakes
-- Writing a bundle when a recipe plus layers would do.
+- Using raw seconds (`t > 12.4`): a re-timed script breaks the scene. Use `S()`/`E()`.
+- `px(x, y, "P")`: `px` takes an RGB triple (`RGB.P`); a letter writes black.
 - Using `Math.random` for stars (breaks byte-exact renders). Use a seeded hash of the index.
 - Sub-pixel positions that shimmer at ×6.
 - Drawing into the caption zone.

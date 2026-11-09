@@ -14,6 +14,7 @@ export const CATALOGUE_KINDS = [
   "asset.draw",
   "asset.judge",
   "scene.tune",
+  "scene.code",
   "vo.align",
   "sound.mix",
   "review.final",
@@ -110,7 +111,7 @@ export const CATALOGUE: Record<PlanKind, CatalogueRow> = {
     vision: false,
     onResume: "rerun",
     toolSec: 0,
-    what: "turns the script into scenes from the recipe menu and lists the new art it needs",
+    what: "turns the script into scenes (from the recipe menu, or a code scene's beat) and lists the new art it needs",
   }),
   "art.cast": row({
     kind: "art.cast",
@@ -201,6 +202,26 @@ export const CATALOGUE: Record<PlanKind, CatalogueRow> = {
     onResume: "skip_ready",
     toolSec: 0,
     what: "tunes one scene's recipe params from three stills and the lints",
+  }),
+  "scene.code": row({
+    kind: "scene.code",
+    role: "scene-coder",
+    stage: "animate",
+    calls: [2, 6],
+    // the write, then a repair or critique at p50; at p90 two repairs and two critique rounds (priors from the PoC)
+    prices: [
+      ["scene.code", 1, 1],
+      ["scene.patch", 1, 5],
+    ],
+    pipMay: ["retier"],
+    droppable: false,
+    fatal: false,
+    // its trial sandbox is its own: code scenes are written side by side, not one at a time in the render slot
+    render: false,
+    vision: true,
+    onResume: "skip_ready",
+    toolSec: 10,
+    what: "writes one code scene's bundle from the Director's beat, loads it in a trial sandbox, repairs it, then critiques it on a 6-frame strip",
   }),
   "vo.align": row({
     kind: "vo.align",
@@ -325,6 +346,7 @@ export function instanceKey(t: { kind: PlanKind; scene?: string; asset?: string 
   const role = CATALOGUE[t.kind].role;
   if (role === "person") return "person";
   if (t.kind === "scene.tune") return t.scene ? `animator:${t.scene}` : "animator";
+  if (t.kind === "scene.code") return t.scene ? `scene-coder:${t.scene}` : "scene-coder";
   if (t.kind === "asset.draw") return t.asset ? `pixel-artist:${t.asset}` : "pixel-artist";
   return role;
 }

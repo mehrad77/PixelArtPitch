@@ -37,7 +37,7 @@ export const MAX_OPS = 8;
 export const MAX_NEW_ASSETS = 4;
 export const MAX_REDO_ROUNDS = 2;
 
-const VISION_KINDS = new Set<PlanKind>(["asset.draw", "asset.judge", "scene.tune", "review.final"]);
+const VISION_KINDS = new Set<PlanKind>(["asset.draw", "asset.judge", "scene.tune", "scene.code", "review.final"]);
 
 export function validate(tasks: PlanTaskT[], ctx: ValidateCtx): { errors: PlanIssue[]; warnings: PlanIssue[] } {
   const errors: PlanIssue[] = [];
@@ -230,8 +230,8 @@ export function validate(tasks: PlanTaskT[], ctx: ValidateCtx): { errors: PlanIs
   }
   // V11 subject_shape
   for (const t of tasks.filter((x) => isLive(x) && !x.expand)) {
-    if (t.kind === "scene.tune" && !t.scene)
-      err("V11", "subject_shape", `${t.id}: scene.tune needs a scene`, "set scene", t.id);
+    if ((t.kind === "scene.tune" || t.kind === "scene.code") && !t.scene)
+      err("V11", "subject_shape", `${t.id}: ${t.kind} needs a scene`, "set scene", t.id);
     if (t.kind.startsWith("asset.") && !t.asset)
       err("V11", "subject_shape", `${t.id}: ${t.kind} needs an asset`, "set asset", t.id);
     if (t.kind === "gate" && !t.gate) err("V11", "subject_shape", `${t.id}: a gate needs its id`, "set gate", t.id);
@@ -300,9 +300,11 @@ export function knownIds(doc: ProjectT, tasks: PlanTaskT[], library: Set<string>
     ...Object.keys(RECIPE_MAP),
     ...Object.values(RECIPE_MAP).flatMap((r) => Object.keys((r as { params?: object }).params ?? {})),
   ]);
-  for (const s of doc.scenes)
-    if (s.kind === "decl")
+  for (const s of doc.scenes) {
+    if (s.kind === "code") for (const a of s.assets ?? []) out.add(a);
+    else
       for (const r of s.recipes) for (const v of Object.values(r.params ?? {})) if (typeof v === "string") out.add(v);
+  }
   return out;
 }
 /**
@@ -316,7 +318,9 @@ export function namedInProject(doc: ProjectT, name: string) {
     ...doc.script.cues.map((c) => c.text),
     ...doc.scenes.map((s) => s.title ?? ""),
     ...doc.scenes.flatMap((s) =>
-      s.kind === "decl" ? s.recipes.flatMap((r) => Object.values(r.params ?? {}).map(String)) : [],
+      s.kind === "decl"
+        ? s.recipes.flatMap((r) => Object.values(r.params ?? {}).map(String))
+        : [s.beat ?? "", ...(s.assets ?? [])],
     ),
   ]
     .join(" ")

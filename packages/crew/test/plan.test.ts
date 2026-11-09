@@ -129,6 +129,7 @@ test("rules plan: a 30 s brief with no voice is today's stage machine, gates ins
     "t_draw_new",
     "t_judge_new",
     "t_tune_scenes",
+    "t_code_scenes",
     "t_mix",
     "t_review_r1",
     "t_g3",
@@ -136,8 +137,17 @@ test("rules plan: a 30 s brief with no voice is today's stage machine, gates ins
     "t_g4",
     "t_publish_new",
   ]);
-  assert.equal(byId(ts, "t_tune_scenes").count, 4, "E[scenes] = round(30 / 8) = 4");
+  // E[scenes] = round(30 / 8) = 4, a third of them (1) expected to be code scenes
+  assert.equal(byId(ts, "t_tune_scenes").count, 3);
+  assert.equal(byId(ts, "t_code_scenes").count, 1);
+  assert.equal(byId(ts, "t_code_scenes").role, "scene-coder");
+  assert.ok(byId(ts, "t_code_scenes").estUsd[0] > byId(ts, "t_tune_scenes").estUsd[0] / 3, "a code scene is priced");
   assert.deepEqual(byId(ts, "t_tune_scenes").dependsOn, ["t_g2", "t_judge_new"]);
+  assert.deepEqual(byId(ts, "t_mix").dependsOn, ["t_tune_scenes", "t_code_scenes"]);
+  // a ctx that expects no code scenes: every scene is tuned
+  const none = rules.rulesPlan(doc(), { ...ctx(), codeScenes: 0 });
+  assert.equal(byId(none, "t_tune_scenes").count, 4);
+  assert.ok(!none.some((t) => t.id === "t_code_scenes"));
   assert.ok(!ts.some((t) => t.kind === "vo.align"));
   assert.equal(byId(ts, "t_publish_new").conditional, true);
   assert.equal(byId(ts, "t_publish_new").estUsd[0], 0, "a conditional task is $0 at p50");
@@ -148,8 +158,9 @@ test("rules plan: a 30 s brief with no voice is today's stage machine, gates ins
 
 test("rules plan: narration by the person adds vo.align; 60 s expects 6 scenes; a /new brief skips the Producer", () => {
   const ts = rules.rulesPlan(doc({ narration: "user", lengthSec: 60 }), ctx());
-  assert.deepEqual(byId(ts, "t_mix").dependsOn, ["t_tune_scenes", "t_vo"]);
-  assert.equal(byId(ts, "t_tune_scenes").count, 6);
+  assert.deepEqual(byId(ts, "t_mix").dependsOn, ["t_tune_scenes", "t_code_scenes", "t_vo"]);
+  assert.equal(byId(ts, "t_tune_scenes").count! + byId(ts, "t_code_scenes").count!, 6);
+  assert.equal(byId(ts, "t_code_scenes").count, 2);
   const pip = rules.rulesPlan(doc({ source: "pip" }), ctx());
   assert.ok(!pip.some((t) => t.kind === "producer.plan"));
   assert.equal(byId(pip, "t_g0").status, "done");
@@ -239,8 +250,9 @@ test("expansion: one tune per scene, one chain per new asset; a tune waits only 
   assert.ok(ts.some((t) => t.id === "t_publish_hero" && t.conditional));
   assert.deepEqual(
     out.ops.filter((o) => o.op === "expand").map((o: any) => o.placeholder),
-    ["t_spec_new", "t_draw_new", "t_judge_new", "t_publish_new", "t_tune_scenes"],
+    ["t_spec_new", "t_draw_new", "t_judge_new", "t_publish_new", "t_tune_scenes", "t_code_scenes"],
   );
+  assert.equal(byId(ts, "t_code_scenes").status, "skipped");
   assert.deepEqual(errs(ts, d), []);
 });
 

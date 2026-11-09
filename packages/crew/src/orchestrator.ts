@@ -40,6 +40,7 @@ import {
   type AssetKindT,
   artistIssues,
   type BoardSceneT,
+  CodeOut,
   DrawOut,
   type DrawOutT,
   JudgeOut,
@@ -91,8 +92,20 @@ import {
   viewOf,
 } from "./plan/store.ts";
 import { validate as validatePlan } from "./plan/validate.ts";
-import { card, fill } from "./prompts.ts";
-import { stubSource } from "./scene-code.ts";
+import { card, fill, type PromptCard } from "./prompts.ts";
+
+type PromptCardEffort = PromptCard["effort"];
+
+import {
+  apiSheet,
+  assetLines,
+  crewBundle,
+  cueLines,
+  exampleBundle,
+  stubSource,
+  type Trial,
+  trialRender,
+} from "./scene-code.ts";
 import { castStudioArt, studioArt, studioLine } from "./studio-art.ts";
 
 const js = (s: z.ZodType) => z.toJSONSchema(s, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
@@ -1192,7 +1205,13 @@ export class Crew {
     return variantsOf({ variants: p.doc().crew.variants }, { variants: this.deps.gateway.defaults?.().variants });
   }
   private rulesCtx(p: OpenProject, rev: number): RulesCtx {
-    return { env: this.planEnv(p), rev, assetsOf: (id) => this.sceneAssets(p, id), variants: this.variants(p) };
+    return {
+      env: this.planEnv(p),
+      rev,
+      assetsOf: (id) => this.sceneAssets(p, id),
+      variants: this.variants(p),
+      kindOf: (id) => p.doc().scenes.find((s) => s.id === id)?.kind,
+    };
   }
   /** the asset ids a decl scene's recipes draw: their asset params, or the params' defaults */
   private sceneAssets(p: OpenProject, sceneId: string): string[] {
@@ -2794,8 +2813,12 @@ export class Crew {
         return this.assetDraw(p, r, t);
       case "asset.judge":
         return this.assetJudge(p, r, t);
+      // the scene's kind decides (a re-board may have turned it): a code scene is coded, a recipe scene tuned
       case "scene.tune":
-        return this.tune(p, r, t);
+      case "scene.code":
+        return p.doc().scenes.find((s) => s.id === t.scene)?.kind === "code"
+          ? this.sceneCode(p, r, t)
+          : this.tune(p, r, t);
       case "vo.align":
         return this.narrate(p, r, t);
       case "sound.mix":
@@ -2938,6 +2961,11 @@ export class Crew {
       history?: ChatMessage[];
       extra?: ContentPart[];
       normalize?: (raw: unknown) => T | null;
+      /** the user turn in place of the card's (a repair after `history`); the card's system stays */
+      user?: string;
+      /** this call's output cap and thinking effort, in place of the card's */
+      maxOut?: number;
+      effort?: PromptCardEffort;
     },
   ): Promise<{ data: T; messages: ChatMessage[] }> {
     const [role, name] = o.prompt.split("/");
@@ -2948,7 +2976,7 @@ export class Crew {
     this.briefs.delete(key);
     for (const b of briefs) p.log(t.id, { kind: "step", title: `Brief from Pip: ${b.text.slice(0, 200)}` });
     const userText =
-      fill(c.user, o.vars) +
+      (o.user ?? fill(c.user, o.vars)) +
       (briefs.length
         ? `\n\nDirection from Pip (as important as the person's notes):\n${briefs.map((b) => `- ${b.text}`).join("\n")}`
         : "");
@@ -2997,8 +3025,8 @@ export class Crew {
         messages,
         schema: withReport(o.schema),
         jsonSchema: js(withReport(o.schema)),
-        maxOut: c.maxOut,
-        effort: c.effort,
+        maxOut: o.maxOut ?? c.maxOut,
+        effort: o.effort ?? c.effort,
         model,
         signal: r.abort.signal,
         normalize: o.normalize,
@@ -4636,6 +4664,220 @@ export class Crew {
         level: "warn",
         role: "animator",
         text: `${s.id}: kept as built (${String(e?.message ?? e).slice(0, 120)})`,
+      });
+      return fb;
+    }
+    return { status: "done" };
+  }
+
+  /** the open notes a code scene's coder addresses: on that scene, for the coder, the Animator or the Director */
+  private codeNotes(p: OpenProject, scene: string) {
+    return p.state.notes.filter(
+      (n) =>
+        n.target.scene === scene &&
+        n.status === "open" &&
+        (n.assignee === "scene-coder" || n.assignee === "animator" || n.assignee === "director"),
+    );
+  }
+
+  /**
+   * scene.code: the Scene Coder writes one code scene's bundle from the Director's beat. Write, then load it in a trial
+   * sandbox (probes, stills, sfxEvents) with up to 2 repairs on an error or a lint (a reply cut off at max_tokens is a
+   * repair too), then `reviewRounds` critique rounds on a 6-frame strip, each returning the whole module; a round that
+   * breaks loading is dropped. The last good version becomes code/<scene>.mjs; with none, the stub stays with a note.
+   */
+  private async sceneCode(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
+    const d0 = p.doc();
+    const s = d0.scenes.find((x) => x.id === pt.scene);
+    if (s?.kind !== "code") return { status: "skipped", note: "not a code scene" };
+    const entry = crewBundle(d0, s.id);
+    if (!entry) return { status: "skipped", note: "its code is hand-written (a bundle the crew doesn't own)" };
+    const ss = p.state.sceneStatus[s.id];
+    if (ss?.version === "render" && ss.state === "ready" && !entry.stub)
+      return { status: "skipped", note: "already coded" };
+    const t = this.sceneTask(
+      s.id,
+      this.task(p, { kind: "scene.code", role: "scene-coder", title: `Coding ${s.title || s.id}`, ...this.ptOf(pt) }),
+    );
+    p.setSceneStatus(s.id, { version: "animatic", state: "drafting" });
+    const notes = this.codeNotes(p, s.id);
+    const asks = (r.change?.notes ?? [])
+      .map((id) => p.state.notes.find((n) => n.id === id))
+      .filter((n): n is Note => !!n && !n.target.scene && (!r.scope || r.scope.has(s.id)));
+    try {
+      const lp = p.project();
+      const tl = p.timeline();
+      const w = tl.scenes.find((x) => x.id === s.id)!;
+      let current: string | null = null;
+      if (!entry.stub)
+        try {
+          current = readFileSync(join(p.dir, entry.file), "utf8");
+        } catch {}
+      const have = new Set(lp.assets.map(([id]) => id));
+      const names = [...new Set([...(s.assets?.length ? s.assets : [...have]), "font"])].filter((n) => have.has(n));
+      const model = this.modelOf(p, pt);
+      const vars = {
+        brief: d0.brief.idea.slice(0, 1500),
+        scene: s.id,
+        title: s.title || s.id,
+        from: w.from.toFixed(2),
+        to: w.to.toFixed(2),
+        duration: tl.duration.toFixed(2),
+        role: s.endCard ? "It is the end card: it holds to the end of the video while the music plays out." : "",
+        beat: s.beat?.trim() || s.title || "(no beat: show the scene's cues as pictures)",
+        cues: cueLines(lp, s.cues).join("\n") || "(none)",
+        assets: assetLines(lp, names).join("\n") || "(none: draw with shapes and text)",
+        palette: this.palette().table,
+        api: apiSheet(),
+        example: exampleBundle().trim(),
+        notes:
+          notes.length || asks.length
+            ? [...notes, ...asks].map((n) => `${n.id} (${n.category}): ${n.text}`).join("\n")
+            : "(none)",
+        current: current
+          ? `The scene's code now (revise it for the notes; keep what works):\n\`\`\`js\n${current}\n\`\`\``
+          : "Write the module from scratch.",
+      };
+      const tooLong = (e: unknown) =>
+        (e as { code?: string })?.code === "structured" || /max_tokens/.test(String((e as Error)?.message ?? e));
+      const LIMIT =
+        "Your answer hit the output limit before the module was complete. Think less and write a shorter module (precompute tables, no repeated code), and return it whole.";
+      let good: { code: string; notes: string; trial: Trial } | null = null;
+      let issues: string[] = [];
+      let history: ChatMessage[] | undefined;
+      let base: ChatMessage[] | undefined;
+      for (let attempt = 0; attempt < 3 && !good; attempt++) {
+        let out: { data: z.infer<typeof CodeOut>; messages: ChatMessage[] };
+        try {
+          out = history
+            ? await this.ask(p, r, t, {
+                role: "scene-coder",
+                kind: "scene.patch",
+                prompt: "scene-coder/write",
+                vars,
+                schema: CodeOut,
+                model,
+                history,
+                user: `The module failed its checks in the sandbox:\n- ${issues.join("\n- ")}\n\nFix every one and return the whole module.`,
+                maxOut: 20000,
+              })
+            : await this.ask(p, r, t, {
+                role: "scene-coder",
+                kind: attempt ? "scene.patch" : "scene.code",
+                prompt: "scene-coder/write",
+                vars,
+                schema: CodeOut,
+                model,
+                ...(attempt ? { extra: [{ type: "text" as const, text: LIMIT }], effort: "medium" as const } : {}),
+              });
+        } catch (e) {
+          if (r.abort.signal.aborted || !tooLong(e)) throw e;
+          // the original's lesson: thinking that fills the whole output is a repair, not a crash
+          issues = [LIMIT];
+          p.log(t.id, { kind: "step", title: "The answer was cut off at the output limit: asking again, shorter" });
+          continue;
+        }
+        const trial = await trialRender(lp, s.id, out.data.code, { signal: r.abort.signal });
+        if (trial.ok) {
+          good = { code: out.data.code, notes: out.data.notes, trial };
+          base = out.messages;
+          p.log(t.id, { kind: "step", title: `The bundle loads and draws${attempt ? ` (repair ${attempt})` : ""}` });
+        } else {
+          issues = trial.errors.slice(0, 8);
+          history = out.messages;
+          p.log(t.id, { kind: "step", title: `Needs a repair: ${issues[0]}`.slice(0, 240) });
+        }
+      }
+      // critique rounds on the strip: each returns the whole module; one that breaks loading is dropped
+      const span = Math.max(0.2, w.to - w.from);
+      const times = Array.from({ length: 6 }, (_, i) => (w.from + 0.1 + (span - 0.2) * (i / 5)).toFixed(2)).join(", ");
+      for (let k = 0; good?.trial.strip && k < this.reviewRounds(); k++) {
+        let out: { data: z.infer<typeof CodeOut>; messages: ChatMessage[] };
+        try {
+          out = await this.ask(p, r, t, {
+            role: "scene-coder",
+            kind: "scene.patch",
+            prompt: "scene-coder/critique",
+            vars: {
+              scene: s.id,
+              from: vars.from,
+              to: vars.to,
+              beat: vars.beat,
+              times,
+              lints: good.trial.warnings.length ? `Lint warnings:\n- ${good.trial.warnings.join("\n- ")}` : "",
+              code: good.code,
+            },
+            schema: CodeOut,
+            images: [{ caption: `scene ${s.id}, six frames`, data: good.trial.strip }],
+            model,
+            history: base,
+          });
+        } catch (e) {
+          if (r.abort.signal.aborted || !tooLong(e)) throw e;
+          p.log(t.id, { kind: "step", title: "A critique round hit the output limit: keeping the last good version" });
+          break;
+        }
+        if (/^\s*ship\b/i.test(out.data.notes) || out.data.code.trim() === good.code.trim()) {
+          p.log(t.id, { kind: "step", title: `Critique ${k + 1}: ship` });
+          break;
+        }
+        const trial = await trialRender(lp, s.id, out.data.code, { signal: r.abort.signal });
+        if (!trial.ok) {
+          p.log(t.id, {
+            kind: "step",
+            title: `Critique ${k + 1} broke the scene (${trial.errors[0] ?? "?"}): kept the last good version`.slice(
+              0,
+              240,
+            ),
+          });
+          break;
+        }
+        good = { code: out.data.code, notes: out.data.notes || good.notes, trial };
+        p.log(t.id, { kind: "step", title: `Critique ${k + 1}: ${out.data.notes || "revised"}`.slice(0, 240) });
+      }
+      const author = { kind: "agent" as const, role: "scene-coder" as RoleT, task: t.id };
+      if (!good) {
+        const why = (issues[0] ?? "no version loaded").slice(0, 200);
+        await p.patch(
+          [
+            {
+              op: "add",
+              path: "/notes/-",
+              value: {
+                by: "scene-coder",
+                text: `${s.id} keeps the storyboard's sketch: no version of its code loaded (${why})`,
+              },
+            },
+          ],
+          { reason: `record ${s.id}'s fallback`, author },
+        );
+        p.emit("log", { level: "warn", role: "scene-coder", text: `${s.id}: kept the sketch (${why})` });
+        this.done(p, t, { summary: `kept the sketch: ${why}` });
+        p.setSceneStatus(s.id, { version: "animatic", state: "ready" });
+        return { status: "done", note: `partial: kept the sketch (${why})`.slice(0, 200), outcome: "fallback" };
+      }
+      writeFileSync(join(p.dir, entry.file), good.code);
+      const k = p.doc().code.findIndex((c) => c.id === entry.id);
+      await p.patch(
+        [
+          {
+            op: "replace",
+            path: `/code/${k}`,
+            value: { id: entry.id, file: entry.file, fullFrame: false, sfx: good.trial.sfx },
+          },
+        ],
+        { reason: `the Scene Coder's code for ${s.id}: ${good.notes || "from the beat"}`.slice(0, 300), author },
+      );
+      this.handled(p, notes, good.notes || "coded the scene");
+      this.done(p, t, { summary: good.notes || "coded the scene from its beat" });
+      p.setSceneStatus(s.id, { version: "render", state: "ready" });
+      r.done.redone.add(s.id);
+    } catch (e: any) {
+      const fb = this.fallbackOr(p, r, t, e, `kept the sketch (${String(e?.message ?? e).slice(0, 140)})`);
+      p.emit("log", {
+        level: "warn",
+        role: "scene-coder",
+        text: `${s.id}: kept the sketch (${String(e?.message ?? e).slice(0, 120)})`,
       });
       return fb;
     }

@@ -29,7 +29,24 @@ export type RulesCtx = {
   assetsOf?: (sceneId: string) => string[];
   /** drawings per new asset (the project's `crew.variants`, else Settings' `defaults.variants`); absent means 2 */
   variants?: number;
+  /** a scene's kind: a code scene is coded (scene.code), a recipe scene tuned (scene.tune); absent: every scene tuned */
+  kindOf?: (sceneId: string) => "decl" | "code" | undefined;
+  /** code scenes the board may add, for the estimate before it (absent: expectedCodeScenes) */
+  codeScenes?: number;
 };
+
+/** a scene's own work: the Animator's tune of a recipe scene, or the Scene Coder's code of a code scene */
+export const isSceneWork = (t: { kind: string }) => t.kind === "scene.tune" || t.kind === "scene.code";
+/** the kind of work a scene gets, and its task id stem */
+export const workFor = (ctx: Pick<RulesCtx, "kindOf">, scene: string) =>
+  ctx.kindOf?.(scene) === "code"
+    ? { kind: "scene.code" as const, stem: `t_code_${idPart(scene)}` }
+    : { kind: "scene.tune" as const, stem: `t_tune_${idPart(scene)}` };
+/**
+ * Code scenes a board is expected to have before it exists, for the estimate: about a third of the scenes (the
+ * Director codes a beat no recipe draws; a device such as a game may need more). At least 1 from 3 scenes.
+ */
+export const expectedCodeScenes = (lengthSec: number) => Math.floor(expectedScenes(lengthSec) / 3 + 0.5);
 
 /** drawings per new asset: the asset's own count, then the plan's (project, then Settings), then 2; always 1-3 */
 export const variantsOf = (a: { variants?: number } | undefined, ctx: { variants?: number }) =>
@@ -261,13 +278,15 @@ export function rulesPlan(doc: ProjectT, ctx: RulesCtx, expanded?: Expanded): Pl
       ...(nNew ? [nv > 1 ? "t_judge_new" : "t_draw_new"] : []),
       ...assetNames.map((n) => lastOf(T, n)).filter((x): x is string => !!x),
     ];
+    const all = expectedScenes(doc.brief.lengthSec);
+    const coded = Math.min(all, Math.max(0, ctx.codeScenes ?? expectedCodeScenes(doc.brief.lengthSec)));
     add(
       mkTask(
         {
           id: "t_tune_scenes",
           kind: "scene.tune",
           expand: "per_scene",
-          count: expectedScenes(doc.brief.lengthSec),
+          count: all - coded,
           round: 1,
           dependsOn: waits,
         },
@@ -275,19 +294,31 @@ export function rulesPlan(doc: ProjectT, ctx: RulesCtx, expanded?: Expanded): Pl
       ),
     );
     tunes = ["t_tune_scenes"];
+    if (coded) {
+      add(
+        mkTask(
+          {
+            id: "t_code_scenes",
+            kind: "scene.code",
+            expand: "per_scene",
+            count: coded,
+            round: 1,
+            dependsOn: waits,
+          },
+          ctx,
+        ),
+      );
+      tunes.push("t_code_scenes");
+    }
   } else {
     for (const a of expanded.newAssets) if (!assetNames.includes(a.name)) add(...chain(a, ["t_g2"], ctx));
     const fresh = [...assetNames, ...expanded.newAssets.map((a) => a.name)];
     tunes = expanded.scenes.map((s) => {
       const uses = ctx.assetsOf ? ctx.assetsOf(s).filter((n) => fresh.includes(n)) : fresh;
       const deps = ["t_g2", ...uses.map((n) => lastOf(T, n)).filter((x): x is string => !!x)];
-      add(
-        mkTask(
-          { id: `t_tune_${idPart(s)}_r1`, kind: "scene.tune", scene: s, round: 1, dependsOn: [...new Set(deps)] },
-          ctx,
-        ),
-      );
-      return `t_tune_${idPart(s)}_r1`;
+      const w = workFor(ctx, s);
+      add(mkTask({ id: `${w.stem}_r1`, kind: w.kind, scene: s, round: 1, dependsOn: [...new Set(deps)] }, ctx));
+      return `${w.stem}_r1`;
     });
   }
   const voice = doc.brief.narration === "user";
@@ -353,9 +384,12 @@ export function startPlan(
   const rows = state.tasks.filter((t) => t.status === "done" && !t.supersededBy);
   const placeholderScript = doc.script.cues.length === 1 && PLACEHOLDER_SCRIPT.test(doc.script.cues[0].text);
   const decl = doc.scenes.filter((s) => s.kind === "decl");
+  // a scene the board made: recipes, or a code scene with the Director's beat (an imported bundle is not a board)
   const boarded =
     !placeholderScript &&
-    (rows.some((t) => t.kind === "director.storyboard") || (!rows.length && decl.some((s) => s.recipes.length > 0)));
+    (rows.some((t) => t.kind === "director.storyboard") ||
+      (!rows.length && doc.scenes.some((s) => (s.kind === "decl" ? s.recipes.length > 0 : !!s.beat))));
+  const boardScenes = doc.scenes.filter((s) => s.kind === "decl" || !!s.beat);
   const drawn: NewAsset[] = doc.assets
     .filter((a) => a.src.startsWith("file:"))
     .map((a) => ({
@@ -369,7 +403,7 @@ export function startPlan(
     ctx,
     boarded
       ? {
-          scenes: decl.map((s) => s.id),
+          scenes: (boardScenes.length ? boardScenes : decl).map((s) => s.id),
           newAssets: [...drawn, ...pendingNew.filter((a) => !drawn.some((d) => d.name === a.name))],
         }
       : undefined,
@@ -411,7 +445,7 @@ export function startPlan(
   if (tasks.find((t) => t.kind === "director.storyboard")?.status === "done")
     for (const t of tasks) if (t.kind === "art.cast") done(t);
   for (const t of tasks) {
-    if (t.kind === "scene.tune" && t.scene) {
+    if (isSceneWork(t) && t.scene) {
       const s = state.sceneStatus[t.scene];
       if (s?.version === "render" && s.state === "ready") done(t);
     }
@@ -534,7 +568,7 @@ export function reopenFrom(
         (t.status === "done" || (t.status === "skipped" && !t.expand)) &&
         !o.exclude?.(t) &&
         !o.keep?.(t) &&
-        !(t.kind === "scene.tune" && sceneReady(o.sceneStatus, t.scene)) &&
+        !(isSceneWork(t) && sceneReady(o.sceneStatus, t.scene)) &&
         !live.has(jobKey(t)),
     )
     // one copy per job: the latest
@@ -576,7 +610,8 @@ function waitAlsoOn(tasks: PlanTaskT[], from: string[], extra: string[]) {
 
 /**
  * A redo (the conductor's crew_redo, a review's blockers, a blocked report): scene.tune(s, round + 1) on the same
- * instance, after `after` (the task that found the problem). Whatever waited on the scene's last tune waits on the redo.
+ * instance, after `after` (the task that found the problem), or scene.code for a code scene (`ctx.kindOf`). Whatever
+ * waited on the scene's last tune waits on the redo.
  */
 export function addRedo(
   tasks: PlanTaskT[],
@@ -588,10 +623,11 @@ export function addRedo(
   const taken = new Set(ts.map((t) => t.id));
   const added: string[] = [];
   for (const s of scenes) {
-    const prev = latest(ts, (t) => t.kind === "scene.tune" && t.scene === s && t.status !== "dropped");
+    const prev = latest(ts, (t) => isSceneWork(t) && t.scene === s && t.status !== "dropped");
     const round = Math.min(3, (prev?.round ?? 1) + 1);
-    const id = freshId(`t_tune_${idPart(s)}_r${round}`, ctx.rev, taken);
-    ts = [...ts, mkTask({ id, kind: "scene.tune", scene: s, round, dependsOn: o.after ?? [], reason: o.reason }, ctx)];
+    const w = workFor(ctx, s);
+    const id = freshId(`${w.stem}_r${round}`, ctx.rev, taken);
+    ts = [...ts, mkTask({ id, kind: w.kind, scene: s, round, dependsOn: o.after ?? [], reason: o.reason }, ctx)];
     if (prev) ts = waitAlsoOn(ts, [prev.id], [id]);
     added.push(id);
   }
@@ -633,7 +669,7 @@ export function addReboard(
       : t,
   );
   // a scene the change touches is tuned again after the cast, unless a live tune is already planned
-  const live = new Set(ts.filter((t) => isLive(t) && t.kind === "scene.tune").map((t) => t.scene));
+  const live = new Set(ts.filter((t) => isLive(t) && isSceneWork(t)).map((t) => t.scene));
   const r = addRedo(
     ts,
     scenes.filter((s) => !live.has(s)),
@@ -672,8 +708,7 @@ export function changeRevision(
         (t.kind === "gate" && t.gate === "g2_animatic")
     : undefined;
   const scope = change.scope ? new Set(change.scope) : null;
-  const keeps = (t: PlanTaskT) =>
-    !!keep?.(t) || (!!scope && t.kind === "scene.tune" && !!t.scene && !scope.has(t.scene));
+  const keeps = (t: PlanTaskT) => !!keep?.(t) || (!!scope && isSceneWork(t) && !!t.scene && !scope.has(t.scene));
   const r = reopenFrom(tasks, from, ctx.rev, { sceneStatus, exclude, keep: keeps, reason: "your change" });
   if (!reboard) return { tasks: r.tasks, ops: r.ops };
   const b = addReboard(r.tasks, reboard, ctx, { reason: "your change" });
@@ -681,8 +716,9 @@ export function changeRevision(
 }
 
 /**
- * After a full storyboard: the scene and new-art placeholders become one scene.tune per decl scene and one chain per
- * new asset; tunes of scenes the board no longer has are dropped. Each tune waits only for the new art it uses.
+ * After a full storyboard: the scene and new-art placeholders become one scene.tune per recipe scene, one scene.code
+ * per code scene (`ctx.kindOf`) and one chain per new asset; work on scenes the board no longer has (or of the other
+ * kind) is dropped. Each waits only for the new art it uses.
  */
 export function expandPlan(
   tasks: PlanTaskT[],
@@ -692,7 +728,9 @@ export function expandPlan(
 ): { tasks: PlanTaskT[]; ops: PlanOpT[]; reason: string } | null {
   let ts = tasks.map((t) => ({ ...t }));
   const ops: PlanOpT[] = [];
-  const decl = doc.scenes.filter((s) => s.kind === "decl").map((s) => s.id);
+  const decl = doc.scenes.filter((s) => s.kind === "decl" || !!s.beat).map((s) => s.id);
+  const kindOf = (id: string) => ctx.kindOf?.(id) ?? doc.scenes.find((s) => s.id === id)?.kind;
+  const workOf = (id: string) => workFor({ kindOf }, id);
   const g2 = latest(ts, (t) => t.kind === "gate" && t.gate === "g2_animatic" && t.status !== "dropped")?.id ?? "t_g2";
   const taken = new Set(ts.map((t) => t.id));
   // new art: one chain per asset the board lists that has no chain yet
@@ -740,42 +778,50 @@ export function expandPlan(
     const uses = ctx.assetsOf ? ctx.assetsOf(s).filter((n) => newNames.has(n)) : [...newNames];
     return uses.map((n) => lastOf(ts, n)).filter((x): x is string => !!x);
   };
-  // scenes: one live tune per decl scene
-  const tunePh = placeholders.find((t) => t.expand === "per_scene");
+  // scenes: one live tune per recipe scene, one live scene.code per code scene
+  const scenePhs = placeholders.filter((t) => t.expand === "per_scene");
   const tuneIds: string[] = [];
   const dropped: string[] = [];
   for (const t of ts)
     if (
-      t.kind === "scene.tune" &&
+      isSceneWork(t) &&
       !t.expand &&
       isLive(t) &&
       t.status === "pending" &&
       t.scene &&
-      !decl.includes(t.scene)
+      (!decl.includes(t.scene) || workOf(t.scene).kind !== t.kind)
     ) {
       t.status = "dropped";
-      t.note = "no longer in the storyboard";
+      t.note = decl.includes(t.scene) ? "the scene changed kind" : "no longer in the storyboard";
       dropped.push(t.id);
-      ops.push({ op: "drop", task: t.id, reason: "the storyboard no longer has this scene" });
+      ops.push({
+        op: "drop",
+        task: t.id,
+        reason: decl.includes(t.scene)
+          ? "the storyboard made it a different kind of scene"
+          : "the storyboard no longer has this scene",
+      });
     }
   for (const s of decl) {
-    const have = ts.find((t) => t.kind === "scene.tune" && t.scene === s && isLive(t));
+    const w = workOf(s);
+    const have = ts.find((t) => t.kind === w.kind && t.scene === s && isLive(t));
     if (have) {
       have.dependsOn = [...new Set([...have.dependsOn, ...waitsFor(s)])];
       tuneIds.push(have.id);
       continue;
     }
-    const id = freshId(`t_tune_${idPart(s)}_r1`, ctx.rev, taken);
-    ts.push(mkTask({ id, kind: "scene.tune", scene: s, round: 1, dependsOn: [...new Set([g2, ...waitsFor(s)])] }, ctx));
+    const id = freshId(`${w.stem}_r1`, ctx.rev, taken);
+    ts.push(mkTask({ id, kind: w.kind, scene: s, round: 1, dependsOn: [...new Set([g2, ...waitsFor(s)])] }, ctx));
     tuneIds.push(id);
   }
-  if (tunePh) {
-    tunePh.status = "skipped";
-    tunePh.note = "expanded";
+  // each placeholder expands into the new tasks of its own kind (the tunes, or the code scenes)
+  for (const ph of scenePhs) {
+    ph.status = "skipped";
+    ph.note = "expanded";
     ops.push({
       op: "expand",
-      placeholder: tunePh.id,
-      into: tuneIds.filter((id) => !tasks.some((t) => t.id === id)),
+      placeholder: ph.id,
+      into: tuneIds.filter((id) => !tasks.some((t) => t.id === id) && ts.find((t) => t.id === id)?.kind === ph.kind),
       reason: "the storyboard is done",
     });
   }
@@ -783,7 +829,7 @@ export function expandPlan(
   const gone = new Set([...placeholders.map((t) => t.id), ...dropped]);
   ts = ts.map((t) => {
     if (!isLive(t) || !t.dependsOn.some((d) => gone.has(d))) return t;
-    const tune = t.dependsOn.some((d) => d === tunePh?.id || dropped.includes(d));
+    const tune = t.dependsOn.some((d) => scenePhs.some((ph) => ph.id === d) || dropped.includes(d));
     const deps = t.dependsOn.filter((d) => !gone.has(d));
     return { ...t, dependsOn: [...new Set([...deps, ...(tune ? tuneIds : [])])] };
   });
@@ -947,7 +993,7 @@ export function copiedRights(
     ops.push({ op: "add", task: id, reason: `${a.id} comes from ${a.copiedFrom}: only you can say yes` });
     for (const t of ts)
       if (
-        t.kind === "scene.tune" &&
+        isSceneWork(t) &&
         t.status === "pending" &&
         (!t.scene || !ctx.assetsOf || ctx.assetsOf(t.scene).includes(a.id)) &&
         !t.dependsOn.includes(id)

@@ -120,6 +120,7 @@ type Meta = {
 /** kinds whose task names a subject (catalogue "subject"); without one it is a placeholder */
 const SUBJECT: Record<string, "scene" | "asset"> = {
   "scene.tune": "scene",
+  "scene.code": "scene",
   "asset.import": "asset",
   "asset.spec": "asset",
   "asset.draw": "asset",
@@ -190,6 +191,8 @@ function spawnLine(kind: string, role: string, s: string) {
       return s ? `Pip brought in a Pixel artist for the ${s}` : "Pip brought in a Pixel artist for the new art";
     case "scene.tune":
       return s ? `Pip brought in an Animator for scene ${s}` : "Pip brought in the Animator for the scenes";
+    case "scene.code":
+      return s ? `Pip brought in a Scene coder for scene ${s}` : "Pip brought in the Scene coder for the code scenes";
     case "vo.align":
       return "Pip brought in the Editor to fit your narration";
     case "sound.mix":
@@ -672,7 +675,7 @@ export class InstanceFold {
     if (r?.by === "person" && /^your change: /i.test(r.reason))
       return `Pip brought the ${role} back for your change: ${trimDot(r.reason.replace(/^your change: /i, ""))}`;
     const base =
-      t.kind === "scene.tune"
+      t.kind === "scene.tune" || t.kind === "scene.code"
         ? `Pip brought the ${role} back to fix scene ${this.subjectWords(t)}`
         : t.kind === "review.final"
           ? `Pip brought the ${role} back to check the fixes`

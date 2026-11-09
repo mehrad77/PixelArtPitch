@@ -91,6 +91,9 @@ export function plainTitle(t: Task, s: ProjectState): string {
     case "asset.repair":
     case "asset.judge":
       return name ? `Drawing your ${name.toLowerCase()}` : "Drawing the pictures";
+    case "scene.code":
+    case "scene.patch":
+      return "Drawing a scene in code";
     case "scene.tune": {
       const said = t.title.match(/scene \d+ of \d+/i)?.[0];
       if (said) return `Animating ${said}`;

@@ -162,7 +162,11 @@ export function applyDiff(
     const last = added.at(-1)!.id;
     // the scenes that use it wait for it (before the storyboard: the scene placeholder)
     for (const t of ts)
-      if (t.kind === "scene.tune" && isLive(t) && (t.expand || (t.scene && ctx.assetsOf?.(t.scene).includes(o.asset))))
+      if (
+        (t.kind === "scene.tune" || t.kind === "scene.code") &&
+        isLive(t) &&
+        (t.expand || (t.scene && ctx.assetsOf?.(t.scene).includes(o.asset)))
+      )
         t.dependsOn.push(last);
     ts.push(...added);
     for (const t of added) ops.push({ op: "add", task: t.id, reason: o.reason });

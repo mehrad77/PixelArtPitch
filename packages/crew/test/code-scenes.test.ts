@@ -104,9 +104,18 @@ test("the storyboard boards a code scene: checked, written as kind code with its
   bad.scenes[1].assets = ["dragon"];
   bad.scenes[2].endCard = false;
   const issues = (crew as any).checkBoard(p, bad, checkRecipeParams) as string[];
-  assert.ok(issues.some((i) => /hub is a code scene with no beat/.test(i)), issues.join("\n"));
-  assert.ok(issues.some((i) => /hub\.assets: "dragon" is not in the asset list/.test(i)), issues.join("\n"));
-  assert.ok(issues.some((i) => /last scene must be the end card/.test(i)), issues.join("\n"));
+  assert.ok(
+    issues.some((i) => /hub is a code scene with no beat/.test(i)),
+    issues.join("\n"),
+  );
+  assert.ok(
+    issues.some((i) => /hub\.assets: "dragon" is not in the asset list/.test(i)),
+    issues.join("\n"),
+  );
+  assert.ok(
+    issues.some((i) => /last scene must be the end card/.test(i)),
+    issues.join("\n"),
+  );
 
   const t = (crew as any).task(p, { kind: "director.storyboard", role: "director", title: "board" });
   await (crew as any).applyBoard(p, t, board);
@@ -133,4 +142,179 @@ test("the storyboard boards a code scene: checked, written as kind code with its
   assert.ok(!p.doc().code.some((c: any) => c.id === "hub"));
   assert.ok(p.doc().code.some((c: any) => c.id === "end"));
   assert.ok(existsSync(join(dir, "code", "end.mjs")));
+});
+
+const rules = await import("../src/plan/rules.ts");
+const EXAMPLE_BUNDLE = readFileSync(new URL("../prompts/scene-coder/example.mjs", import.meta.url), "utf8");
+/** the public example, as the hub's code (it carries c02 too) */
+const hubCode = (tweak = "") => EXAMPLE_BUNDLE.replace('const ID = "quest";', `const ID = "hub";${tweak}`);
+const BROKEN =
+  'import { clear } from "pap:engine";\nexport function draw(t) { clear(); throw new Error("boom at " + t); }\n';
+const run = () =>
+  ({
+    abort: new AbortController(),
+    paused: false,
+    startedAt: new Date().toISOString(),
+    done: { redone: new Set(), reboarded: [], approximated: [], exported: false },
+    triggers: [],
+    redos: new Map(),
+    id: "run_x",
+    revisions: 0,
+  }) as any;
+const isWrite = (req: Req) => /You are the Scene Coder of a pixel-art pitch video/.test(req.system ?? "");
+const isCritique = (req: Req) => /checking your own code scene/.test(req.system ?? "");
+const lastText = (req: Req) => {
+  const m = req.messages.at(-1)!;
+  return typeof m.content === "string" ? m.content : m.content.map((c: any) => c.text ?? "").join("\n");
+};
+
+async function boarded(answer: (req: Req) => any) {
+  const c = await crewOn(answer);
+  const t = (c.crew as any).task(c.p, { kind: "director.storyboard", role: "director", title: "board" });
+  await (c.crew as any).applyBoard(c.p, t, codeBoard());
+  const pt = rules.mkTask({ id: "t_code_hub_r1", kind: "scene.code", scene: "hub", dependsOn: [] } as any, {
+    env: (c.crew as any).planEnv(c.p),
+    rev: 1,
+  });
+  return { ...c, pt };
+}
+
+test("the plan codes a code scene: scene.code by the Scene Coder in place of its tune, waiting for its art", async () => {
+  const { crew, p } = await crewOn(() => ({ error: new Error("no model call expected") }));
+  const t = (crew as any).task(p, { kind: "director.storyboard", role: "director", title: "board" });
+  await (crew as any).applyBoard(p, t, codeBoard());
+  const ctx = (crew as any).rulesCtx(p, 1);
+  let ts = rules.rulesPlan(p.doc(), ctx);
+  assert.ok(
+    ts.some((x) => x.id === "t_code_scenes" && x.expand === "per_scene"),
+    "the estimate counts code scenes",
+  );
+  for (const x of ts) if (["t_producer", "t_g0", "t_angles", "t_g1", "t_storyboard"].includes(x.id)) x.status = "done";
+  const out = rules.expandPlan(
+    ts,
+    p.doc(),
+    [{ name: "badge", kind: "icon", description: "a small quest badge icon" }],
+    {
+      ...ctx,
+      assetsOf: (s: string) => (s === "hub" ? ["hero", "items", "badge"] : (ctx.assetsOf(s) as string[])),
+    },
+  )!;
+  ts = out.tasks;
+  const code = ts.find((x) => x.id === "t_code_hub_r1")!;
+  assert.equal(code.kind, "scene.code");
+  assert.equal(code.role, "scene-coder");
+  assert.equal(code.instance, "scene-coder:hub");
+  assert.ok(code.dependsOn.includes("t_judge_badge"), "it waits for the new art it draws");
+  assert.ok(!ts.some((x) => x.kind === "scene.tune" && x.scene === "hub"), "no tune for a code scene");
+  assert.ok(ts.some((x) => x.id === "t_tune_grind_r1" && x.kind === "scene.tune"));
+  assert.ok(ts.some((x) => x.id === "t_code_end_r1"));
+  assert.ok(ts.find((x) => x.id === "t_mix")!.dependsOn.includes("t_code_hub_r1"));
+  assert.ok(code.estUsd[1] > 0, "priced from the scene.code and scene.patch priors");
+  // a redo of a code scene is the coder's again, round 2
+  const red = rules.addRedo(ts, ["hub"], { ...ctx, rev: 2 }, { reason: "a note" });
+  const again = red.tasks.find((x) => red.added.includes(x.id))!;
+  assert.equal(again.kind, "scene.code");
+  assert.equal(again.round, 2);
+});
+
+test("scene.code writes a bundle that loads and renders; its sfxEvents feed the sound; the critique can ship", async () => {
+  const seen: string[] = [];
+  const { crew, p, pt, dir } = await boarded((req) => {
+    if (isWrite(req)) {
+      seen.push("write");
+      const u = lastText(req);
+      assert.match(u, /three stars drop/, "the beat");
+      assert.match(u, /c02: S\("c02"\) = /, "the cue times");
+      assert.match(u, /items \(12x12\): pc, gamepad/, "the assets with frames and sizes");
+      assert.match(u, /- text\(str, x, y, opts = \{\}\)/, "the API sheet from the real exports");
+      assert.match(u, /const ID = "quest"/, "the example bundle");
+      return { json: { code: hubCode(), notes: "three stars drop into the row" } };
+    }
+    if (isCritique(req)) {
+      seen.push("critique");
+      assert.ok(
+        (req.messages.at(-1)!.content as any[]).some((c: any) => c.type === "image"),
+        "the strip",
+      );
+      return { json: { code: hubCode(), notes: "ship" } };
+    }
+    return { error: new Error(`unexpected: ${(req.system ?? "").slice(0, 40)}`) };
+  });
+  const out = await (crew as any).sceneCode(p, run(), pt);
+  assert.equal(out.status, "done");
+  assert.equal(out.outcome, undefined);
+  assert.deepEqual(seen, ["write", "critique"]);
+  assert.match(readFileSync(join(dir, "code", "hub.mjs"), "utf8"), /const ID = "hub"/);
+  const entry = p.doc().code.find((c: any) => c.id === "hub")!;
+  assert.deepEqual(entry, { id: "hub", file: "code/hub.mjs", fullFrame: false, sfx: true });
+  assert.deepEqual(p.state.sceneStatus.hub, { version: "render", state: "ready" });
+  const last = p.readHistory().at(-1)!;
+  assert.equal(last.author.role, "scene-coder");
+  const ren = await p.renderer_();
+  const sfx = await ren.sfxEvents();
+  const w = p.timeline().scenes.find((s) => s.id === "hub")!;
+  assert.equal(sfx.filter((e) => e.type === "coin" && e.t >= w.from && e.t < w.to).length, 3);
+  assert.ok((await p.still(w.to - 0.2, 1)).length > 100);
+  // coded and ready: a resume skips it
+  assert.equal((await (crew as any).sceneCode(p, run(), pt)).status, "skipped");
+});
+
+test("scene.code repairs a sandbox error twice, then keeps the stub with a note (a fallback, never a crash)", async () => {
+  const asked: string[] = [];
+  const { crew, p, pt } = await boarded((req) => {
+    if (!isWrite(req)) return { error: new Error("unexpected") };
+    asked.push(lastText(req));
+    // the first answer runs into the output limit: that is a repair too
+    if (asked.length === 1) return { text: "Thinking about where the stars land", stop: "max_tokens" };
+    return { json: { code: BROKEN, notes: "draws" } };
+  });
+  const out = await (crew as any).sceneCode(p, run(), pt);
+  assert.equal(out.outcome, "fallback");
+  assert.match(out.note, /kept the sketch/);
+  assert.equal(asked.length, 3, "one write and two repairs (the cut-off answer was the first)");
+  assert.match(asked[1], /Think less and write a shorter module/);
+  assert.match(asked[2], /draw\([0-9.]+\) threw: boom at/);
+  const entry = p.doc().code.find((c: any) => c.id === "hub")!;
+  assert.equal(entry.stub, true, "the stub stays");
+  assert.ok(p.doc().notes.some((n: any) => /hub keeps the storyboard's sketch/.test(n.text)));
+  assert.notEqual(p.state.sceneStatus.hub?.version, "render");
+  const parts = p.parts();
+  assert.notEqual(
+    parts.parts.find((x: any) => x.id === "pictures")?.state,
+    "ready",
+    "a stub is not a finished picture",
+  );
+});
+
+test("scene.code: a critique round that breaks loading is dropped and the last loading version stays", async () => {
+  let critiques = 0;
+  const { crew, p, pt, dir } = await boarded((req) => {
+    if (isWrite(req)) return { json: { code: hubCode("\n// v1"), notes: "v1" } };
+    if (isCritique(req)) {
+      critiques++;
+      // round 1 improves it (it loads); round 2 breaks it
+      return critiques === 1
+        ? { json: { code: hubCode("\n// v2"), notes: "slower stars" } }
+        : { json: { code: BROKEN, notes: "a bolder look" } };
+    }
+    return { error: new Error("unexpected") };
+  });
+  const out = await (crew as any).sceneCode(p, run(), pt);
+  assert.equal(out.status, "done");
+  assert.equal(critiques, 2);
+  const src = readFileSync(join(dir, "code", "hub.mjs"), "utf8");
+  assert.match(src, /\/\/ v2/, "the last version that loaded");
+  assert.ok(!src.includes("boom"));
+});
+
+test("the API sheet can't drift: one line per pap:engine export and per pap:timeline name", async () => {
+  const { ENGINE_DOC, TIMELINE_DOC, apiSheet } = await import("../src/scene-code.ts");
+  const { ENGINE_EXPORTS } = await import("@pap/engine/core");
+  const { loadProject, timelineModule } = await import("@pap/render");
+  assert.deepEqual(Object.keys(ENGINE_DOC).sort(), [...ENGINE_EXPORTS].sort());
+  const tl = timelineModule(loadProject(EXAMPLE));
+  assert.deepEqual(Object.keys(TIMELINE_DOC).sort(), [...Object.keys(tl), "S", "E"].sort());
+  const sheet = apiSheet();
+  for (const k of ENGINE_EXPORTS) assert.match(sheet, new RegExp(`^- ${k}\\b`, "m"), k);
+  assert.match(sheet, /- sprite\(rows, x, y, opts = \{\}\)/);
 });
