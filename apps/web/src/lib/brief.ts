@@ -17,7 +17,7 @@ export const isSensitive = (t: RefType) => t === "likeness" || t === "logo" || t
 export function guessType(name: string, mime = ""): RefType {
   const n = name.toLowerCase();
   if (mime.startsWith("audio/")) return /voice|vo|narrat/.test(n) ? "voice" : "sound";
-  if (/logo|brand|mark/.test(n)) return "logo";
+  if (/logo|brand|mark/.test(n) || /\.svg$/.test(n) || mime === "image/svg+xml") return "logo";
   if (/face|portrait|me\b|selfie|headshot/.test(n)) return "likeness";
   return "style";
 }

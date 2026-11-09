@@ -102,7 +102,8 @@ export function guessType(name: string, mime = ""): RefType {
   const n = name.toLowerCase();
   if (mime.startsWith("audio/") || /\.(wav|mp3|m4a|ogg|aac|flac)$/.test(n))
     return /voice|vo|narrat/.test(n) ? "voice" : "sound";
-  if (/logo|brand|mark/.test(n)) return "logo";
+  // a vector file is a logo (an SVG is drawn to a PNG for the import and for vision)
+  if (/logo|brand|mark/.test(n) || /\.svg$/.test(n) || mime === "image/svg+xml") return "logo";
   if (/face|portrait|me\b|selfie|headshot/.test(n)) return "likeness";
   return "style";
 }

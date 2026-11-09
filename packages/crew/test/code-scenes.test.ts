@@ -3,7 +3,7 @@
 // loads and renders (repairs, a fallback that keeps the stub, critique rounds that keep the last loading version), and
 // a change on a code scene reaches the coder. Over FakeProvider and the fictional QuestDay example only.
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -603,7 +603,12 @@ test("make it day: no re-board, a no-model look.time patches the canvas, and onl
   const res = await c.lookTime(p, r, { ...boardTask, id: "t_look_time", kind: "look.time" });
   assert.equal(res.status, "done");
   assert.equal(p.doc().canvas.time, "day");
-  assert.equal(p.doc().canvas.palette, "pap-day@1");
+  assert.equal(p.doc().canvas.palette, "pap-night@1", "the time only: the built-in palette follows it");
+  const { paletteFor } = await import("@pap/schema");
+  assert.equal(paletteFor(p.doc().canvas), "pap-day@1");
+  // the crew's palette table follows too: the Scene Coder and the sprite check see the day letters
+  const night = c.palette().table.split("\n").length;
+  assert.ok(c.palette(p).table.split("\n").length > night, "day adds sky, cloud and sun letters");
   assert.equal(r.done.time, "day");
   assert.match(r.done.timeCue, /^Cue 1 still says "Night falls\. The list waits\." Tell me/);
   // again: nothing to change
@@ -614,4 +619,19 @@ test("make it day: no re-board, a no-model look.time patches the canvas, and onl
   const card: any = {};
   settleCard(card, c.report(p, r, "done"), p);
   assert.match(card.result.text, /^The video is now set at day\. Cue 1 still says "Night falls/);
+});
+
+test("an SVG reference reaches vision as a PNG, and an .svg upload is a logo", async () => {
+  const { guessType } = await import("../src/brief/registry.ts");
+  assert.equal(guessType("gs.svg"), "logo");
+  assert.equal(guessType("mark", "image/svg+xml"), "logo");
+  const { crew, p, dir } = await crewOn(() => ({ error: new Error("no model call expected") }));
+  mkdirSync(join(dir, "private", "refs"), { recursive: true });
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect x="4" y="4" width="24" height="24" fill="#3a7"/></svg>';
+  writeFileSync(join(dir, "private", "refs", "gs.svg"), svg);
+  const t = (crew as any).task(p, { kind: "asset.spec", role: "art-director", title: "spec" });
+  const [img] = (crew as any).refImage(p, t, "private/refs/gs.svg");
+  assert.equal(img.mediaType, "image/png");
+  assert.deepEqual([...img.data.slice(0, 4)], [0x89, 0x50, 0x4e, 0x47], "PNG bytes, not the SVG text");
 });

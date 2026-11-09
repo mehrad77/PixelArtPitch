@@ -11,7 +11,7 @@ import { extname, join } from "node:path";
 import { RECIPE_MAP } from "@pap/engine/recipes";
 import { checkAsset } from "@pap/engine/standard";
 import { contactSheet, libraryAssetDir, libraryFile, libraryIndex, publishAsset, renderSheet } from "@pap/render";
-import { type RoleT, TIME_PALETTES } from "@pap/schema";
+import { paletteFor, type RoleT } from "@pap/schema";
 import {
   type ChangeCategory,
   type ChannelMsg,
@@ -56,7 +56,7 @@ import {
 import { CATALOGUE, ROLE_LABEL, stageOf, taskLabel } from "./plan/catalogue.ts";
 import { envOf, estimatePlanTask, isLive, type PlanEnv, planEstimate, resolveTier } from "./plan/estimate.ts";
 import { Executor, type Outcome } from "./plan/executor.ts";
-import { logoFrames } from "./plan/import.ts";
+import { logoFrames, refPng } from "./plan/import.ts";
 import { aboutText, type Instance, InstanceTracker } from "./plan/instances.ts";
 import { applyDiff, type PipRevisionResult, pipRevision, planPromptVars } from "./plan/pip.ts";
 import { isCodeScene, routeIn, timeAsked } from "./plan/route.ts";
@@ -116,6 +116,8 @@ const img = (data: Uint8Array, mediaType: "image/png" | "image/jpeg" = "image/pn
   data: Buffer.from(data).toString("base64"),
 });
 const MEDIA: Record<string, "image/png" | "image/jpeg"> = {
+  // an SVG goes to vision as the PNG it is drawn to (refPng)
+  ".svg": "image/png",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -3098,7 +3100,7 @@ export class Crew {
     // also streams its raw JSON so far and the palette, for the live canvas. Throttled to one event per 250 ms, and a
     // heartbeat each second so the clock moves while a provider sends nothing
     const draws = o.prompt.startsWith("pixel-artist/");
-    const colours = draws ? this.palette().colours : undefined;
+    const colours = draws ? this.palette(p).colours : undefined;
     const live = { phase: "thinking" as "thinking" | "writing", chars: 0, tail: "", draft: "", last: 0 };
     const beat = (force = false) => {
       const now = Date.now();
@@ -4169,8 +4171,16 @@ export class Crew {
   }
 
   // ---------------------------------------------------------------- art: import, spec, draw, judge, rights
-  private palette() {
-    const palette = JSON.parse(readFileSync(libraryFile("palettes", "pap-night.json"), "utf8"));
+  /** the project's palette (day and dusk add sky, cloud and sun letters to every pap-night one); none: pap-night */
+  private palette(p?: OpenProject) {
+    const id = p ? paletteFor(p.doc().canvas) : "pap-night@1";
+    const file = `${id.replace(/@\d+$/, "")}.json`;
+    const palette = JSON.parse(
+      readFileSync(
+        libraryFile("palettes", existsSync(libraryFile("palettes", file)) ? file : "pap-night.json"),
+        "utf8",
+      ),
+    );
     const table = Object.entries<any>(palette.colours)
       .map(([k, v]) => `${k}  ${v.hex}  ${v.use}`)
       .join("\n");
@@ -4202,7 +4212,7 @@ export class Crew {
     return [
       {
         caption: "The person's reference (capture two or three traits, never trace it):",
-        data: readFileSync(path),
+        data: refPng(readFileSync(path)),
         mediaType,
       },
     ];
@@ -4299,7 +4309,7 @@ export class Crew {
   private async assetSpec(p: OpenProject, r: Run, pt: PlanTaskT): Promise<Outcome> {
     const a = this.assetOf(p, pt);
     if (this.drawn(p, a.name)) return { status: "skipped", note: "already in the project" };
-    const { palette, table } = this.palette();
+    const { palette, table } = this.palette(p);
     const tpl = templateFor(a.kind, a);
     const ts = this.task(p, {
       kind: "asset.spec",
@@ -4353,7 +4363,7 @@ export class Crew {
     if (this.drawn(p, name)) return { status: "skipped", note: "already in the project" };
     const st = this.specOf(p, name);
     if (!st) return { status: "skipped", note: "no spec to draw from" };
-    const { palette, table } = this.palette();
+    const { palette, table } = this.palette(p);
     const tpl = templateFor(st.kind, st);
     // one drawing per asset (the chain's `variants: 1`): no judge follows, this draw is the pick
     const solo = pt.variants === 1;
@@ -4495,6 +4505,8 @@ export class Crew {
       frames: tpl.frames,
       palette: "pap-night@1",
       tags: [st.kind, ...(st.motion ? [st.motion] : [])],
+      // the artist draws heroes and creatures facing right (outputs.ts); the engine turns them to their walk
+      ...(st.kind === "character" || st.kind === "creature" ? { facing: "right" as const } : {}),
       description: st.spec.description,
       licence: likeness ? "LicenseRef-Private" : "LicenseRef-PAP-Library",
       rights: { likeness, brand: false, trademark: false, public: !likeness },
@@ -4639,6 +4651,7 @@ export class Crew {
         frames: tpl.frames,
         palette: "pap-night@1",
         tags: [],
+        ...(a.kind === "character" || a.kind === "creature" ? { facing: "right" as const } : {}),
         description: spec.description,
         licence: "LicenseRef-PAP-Library",
         rights: { likeness: !!pt.fromRef, brand: false, trademark: false, public: !pt.fromRef },
@@ -4976,7 +4989,7 @@ export class Crew {
           : "",
         cues: cueLines(lp, s.cues).join("\n") || "(none)",
         assets: assetLines(lp, names).join("\n") || "(none: draw with shapes and text)",
-        palette: this.palette().table,
+        palette: this.palette(p).table,
         api: apiSheet(),
         example: exampleBundle().trim(),
         notes:
@@ -5154,18 +5167,14 @@ export class Crew {
       ...this.ptOf(pt),
     });
     const was = (d.canvas as { time?: string }).time ?? "night";
-    const palette = TIME_PALETTES[want];
-    const builtIn = Object.values(TIME_PALETTES).includes(d.canvas.palette);
-    if (was === want && (!builtIn || d.canvas.palette === palette)) {
+    if (was === want) {
       this.done(p, t, { summary: `it is already ${words[want]}` });
       p.log(t.id, { kind: "step", title: `The video is already set at ${words[want]}` });
       return { status: "done", note: `nothing was changed: already ${words[want]}` };
     }
     await p.patch(
-      [
-        { op: "add", path: "/canvas/time", value: want },
-        ...(builtIn ? [{ op: "replace" as const, path: "/canvas/palette", value: palette }] : []),
-      ],
+      // the time only: a built-in palette follows it (paletteFor)
+      [{ op: "add", path: "/canvas/time", value: want }],
       {
         reason: `the person's change: the video is set at ${words[want]}`,
         author: { kind: "agent", role: "director", task: t.id },

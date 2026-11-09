@@ -369,6 +369,7 @@ test("variants=1 on the crew: the project's count reaches the plan, and the sing
   assert.equal(file.kind, "creature");
   assert.deepEqual([file.w, file.h], [16, 16]);
   assert.deepEqual(file.frames, ["idle0", "idle1", "move0", "move1", "move2", "move3", "perch0", "perch1"]);
+  assert.equal(file.facing, "right", "the artist draws right-facing; the file says so");
 });
 
 test("variants=1: a failed single drawing casts the library stand-in, as the judge would", async () => {

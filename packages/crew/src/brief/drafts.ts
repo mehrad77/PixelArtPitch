@@ -4,7 +4,7 @@
 // itself spends nothing but the reading, metered on the workspace guard; the brief card is the rules plan, free.
 // Draft turns stream as `pip` events on /api/events with `draft` on each (the third conversation kind).
 import { randomUUID } from "node:crypto";
-import { type ProjectT, type RoleT, TIME_PALETTES } from "@pap/schema";
+import type { ProjectT, RoleT } from "@pap/schema";
 import {
   copyLook,
   type DraftRefT,
@@ -610,14 +610,12 @@ export class DraftConversations {
         await copyLook(src, p, { kind: "user" }, { skipPrivate: true, budget: false });
       } catch {}
     }
-    // the time of day the idea set: the canvas and its built-in palette (night needs nothing)
+    // the time of day the idea set (night needs nothing)
     const time = TIMES.find((x) => x.id === d.fields.time)?.id;
     if (time && time !== "night")
       await p.patch(
-        [
-          { op: "add", path: "/canvas/time", value: time },
-          { op: "replace", path: "/canvas/palette", value: TIME_PALETTES[time] },
-        ],
+        // the time only: a built-in palette follows it (paletteFor)
+        [{ op: "add", path: "/canvas/time", value: time }],
         { reason: `the idea is set at ${time}`, author: { kind: "user" } },
       );
     const crew = { profile, models: { ...(p.doc().crew.models ?? {}), ...models } };

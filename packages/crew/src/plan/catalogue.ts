@@ -237,7 +237,7 @@ export const CATALOGUE: Record<PlanKind, CatalogueRow> = {
     vision: false,
     onResume: "rerun",
     toolSec: 1,
-    what: "sets the video's time of day (night, dusk or day) and its palette; recipe scenes follow, code scenes are re-coded (code)",
+    what: "sets the video's time of day (night, dusk or day; the palette follows); recipe scenes follow, code scenes are re-coded (code)",
   }),
   "vo.align": row({
     kind: "vo.align",
