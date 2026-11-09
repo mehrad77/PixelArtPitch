@@ -2,6 +2,11 @@
 
 Each release's section is also its GitHub release notes: the release job in `.github/workflows/ci.yml` publishes the section whose heading matches the tag.
 
+## v0.4.0 (unreleased)
+
+### Parts and versions
+- **Parts:** a project says what it has, as five parts (Idea, Story, Pictures, Sound, Video), each missing, partial, ready or stale. They're worked out from the document, not from where the crew stopped, so a handmade project with a full script, scenes and sound reads as such (`partsOf` in `@pap/tools`).
+
 ## v0.3.0 (unreleased)
 
 Fixes for what the P5 run showed: Pip and the crew now share one picture of the run, the same words reach the same crew member, a note closes once it's done, and the crew knows what the engine can draw.
