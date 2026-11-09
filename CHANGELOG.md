@@ -5,6 +5,7 @@ Each release's section is also its GitHub release notes: the release job in `.gi
 ## v0.5.1 (unreleased)
 
 ### Crew
+- **The players stay on screen in code scenes too.** The Scene Coder's prompt keeps the listed players on the ground line, idling and reacting, even when the beat doesn't name them.
 - **Code scenes are priced from what they cost.** A `scene.code` task counts one write plus one repair or critique at p50 and three at p90 (it was five, which put a code scene's p90 at $2.64). Past five ledger rows the ledger prices each call.
 - **The brief card follows your files.** Adding a file, or changing a file's type or rights, rebuilds the open brief card in place, so its files, price and warning are current.
 - **The players stay on stage.** The Director lists the brief's players in every scene after the first and says where they stand; players join by walking in, not by dropping. A board that leaves one out gets one repair, and a code scene that still does gets them added to its assets. P7's teammates vanished after the first scene.

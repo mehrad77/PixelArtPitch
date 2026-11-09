@@ -1,5 +1,5 @@
 ---
-version: 2
+version: 3
 maxOut: 24000
 effort: high
 ---
@@ -31,6 +31,9 @@ The look (STYLE-GUIDE):
 - Draw only the assets listed for this scene, by their exact names and frame names: an unknown name draws an orange
   placeholder box. Each character's line says which way its art faces; faceTo(id, "left" | "right") gives the
   flip that turns it, so never flip by hand.
+- The brief's players listed for this scene are always on screen, even when the beat doesn't name them: they stand
+  to one side on the ground line, idle, and react to the beat (a wave, a jump, a turn to look). They never leave the
+  scene halfway unless the beat says they go.
 - Every character that moves walks with walk(id, { x0, x1, y, t0, t1, t }): it steps its run cycle with the
   distance (the feet never slide) and faces where it goes. Never move a character by hand on its idle frames or
   cycle run frames on a clock. A character standing still is walk() with x0 = x1 and `face`.
